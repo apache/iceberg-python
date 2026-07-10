@@ -292,6 +292,8 @@ def test_deserialize_partition_field_multi_arg() -> None:
     assert "source-id" not in serialized
     assert serialized["transform"] == "bucket[4]"
 
+    assert str(field) == "1000: multi_bucket: bucket[4](1, 2)"
+
 
 def test_serialize_partition_field_single_source_id_only() -> None:
     import json as json_lib

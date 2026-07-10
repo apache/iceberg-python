@@ -193,6 +193,8 @@ def test_deserialize_sort_field_multi_arg() -> None:
     assert "source-id" not in serialized
     assert serialized["transform"] == "bucket[4]"
 
+    assert str(field) == "bucket[4](19, 20) ASC NULLS FIRST"
+
 
 def test_deserialize_sort_field_multi_arg_requires_transform() -> None:
     payload = '{"source-ids":[19,20],"direction":"asc","null-order":"nulls-first"}'

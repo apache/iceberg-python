@@ -134,10 +134,8 @@ class PartitionField(IcebergBaseModel):
         # multi-argument transforms write only source-ids
         if self.source_ids is not None and len(self.source_ids) > 1:
             serialized.pop("source-id", None)
-            serialized.pop("source_id", None)
         else:
             serialized.pop("source-ids", None)
-            serialized.pop("source_ids", None)
         return serialized
 
     def __str__(self) -> str:
