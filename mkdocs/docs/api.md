@@ -307,7 +307,56 @@ catalog = load_catalog("default")
 tbl = catalog.create_table("default.cities", schema=df.schema)
 ```
 
-Next, write the data to the table. Both `append` and `overwrite` produce the same result, since the table is empty on creation:
+### Write API modes: `Table` and `Transaction`
+
+Every write operation is available through two APIs:
+
+- **The `Table` API** — `tbl.append(...)`, `tbl.overwrite(...)`, `tbl.delete(...)`,
+  `tbl.dynamic_partition_overwrite(...)` and `tbl.upsert(...)`. Each call opens a
+  transaction, applies the single operation and commits it as one atomic unit.
+  This is the simplest mode and the right default.
+- **The `Transaction` API** — the same operations on a transaction object,
+  batching multiple operations into a *single* atomic commit. Either every
+  operation becomes visible together, or (on failure) none of them do, and
+  readers never observe the intermediate state:
+
+```python
+with tbl.transaction() as txn:
+    txn.delete(delete_filter="city == 'Paris'")
+    txn.append(df_new_cities)
+    # both changes commit together when the block exits
+```
+
+A transaction can also mix data and metadata changes — for example evolving the
+schema and writing in one commit:
+
+```python
+from pyiceberg.types import LongType
+
+with tbl.transaction() as txn:
+    with txn.update_schema() as update_schema:
+        update_schema.add_column("population", LongType())
+    txn.append(df_with_population)
+```
+
+If any statement in the block raises, the whole transaction is discarded and
+the table is left untouched.
+
+All write operations, in both modes, accept two optional keyword arguments:
+
+- `snapshot_properties`: custom key/value pairs added to the summary of the
+  snapshot(s) the operation produces (see
+  [Snapshot properties](#snapshot-properties)).
+- `branch`: the branch reference to write to; defaults to `main` (see
+  [Branching](#branching)).
+
+Operations that take a row filter (`overwrite`, `delete`, `upsert`) additionally
+accept `case_sensitive` (default `True`) controlling how column names in the
+filter are bound.
+
+### Append
+
+Use `tbl.append(df)` to add data to a table without touching existing rows. Both `append` and `overwrite` produce the same result on the first write, since the table is empty on creation:
 
 <!-- prettier-ignore-start -->
 
@@ -386,30 +435,25 @@ df = pa.Table.from_pylist(
 tbl.append(df)
 ```
 
-You can delete some of the data from the table by calling `tbl.delete()` with a desired `delete_filter`. This will use the Iceberg metadata to only open up the Parquet files that contain relevant information.
+### Overwrite
 
-```python
-tbl.delete(delete_filter="city == 'Paris'")
-```
+`tbl.overwrite(df)` replaces data in the table with the provided Arrow table. By
+default (`overwrite_filter=ALWAYS_TRUE`) the *entire* table is replaced: all
+existing rows are deleted and `df` is appended. Like `append`, `overwrite` also
+accepts a `pa.RecordBatchReader` for
+[streaming writes](#streaming-writes-from-a-recordbatchreader).
 
-In the above example, any records where the city field value equals to `Paris` will be deleted. Running `tbl.scan().to_arrow()` will now yield:
+Depending on what the operation has to do to the existing files, one commit may
+produce up to three snapshots:
 
-```python
-pyarrow.Table
-city: string
-lat: double
-long: double
-----
-city: [["Amsterdam","San Francisco","Drachten"],["Groningen"]]
-lat: [[52.371807,37.773972,53.11254],[53.21917]]
-long: [[4.896029,-122.431297,6.0989],[6.56667]]
-```
+- a `DELETE` snapshot, when existing Parquet files could be dropped entirely;
+- an `OVERWRITE` snapshot, when existing Parquet files had to be rewritten to
+  remove only the rows matching the filter;
+- an `APPEND` snapshot for the newly inserted data.
 
-In the case of `tbl.delete(delete_filter="city == 'Groningen'")`, the whole Parquet file will be dropped without checking it contents, since from the Iceberg metadata PyIceberg can derive that all the content in the file matches the predicate.
+#### Partial overwrites
 
-### Partial overwrites
-
-When using the `overwrite` API, you can use an `overwrite_filter` to delete data that matches the filter before appending new data into the table. For example, consider the following Iceberg table:
+You can use an `overwrite_filter` to delete only the data that matches the filter before appending new data into the table — an atomic "delete + insert". The filter is either a `BooleanExpression` or a string predicate, and `case_sensitive=False` can be passed to bind column names case-insensitively. For example, consider the following Iceberg table:
 
 ```python
 import pyarrow as pa
@@ -454,6 +498,8 @@ city: [["New York"],["Amsterdam","San Francisco","Drachten"]]
 lat: [[40.7128],[52.371807,37.773972,53.11254]]
 long: [[-74.006],[4.896029,-122.431297,6.0989]]
 ```
+
+### Dynamic partition overwrite
 
 If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the existing partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically from the provided arrow table.
 For example, with an iceberg table with a partition specified on `"city"` field:
@@ -512,6 +558,30 @@ city: [["Paris"],["Amsterdam"],["Drachten"],["San Francisco"]]
 lat: [[48.864716],[52.371807],[53.11254],[37.773972]]
 long: [[2.349014],[4.896029],[6.0989],[-122.431297]]
 ```
+
+### Delete
+
+You can delete some of the data from the table by calling `tbl.delete()` with a desired `delete_filter`. This will use the Iceberg metadata to only open up the Parquet files that contain relevant information.
+
+```python
+tbl.delete(delete_filter="city == 'Paris'")
+```
+
+In the above example, any records where the city field value equals to `Paris` will be deleted. The `delete_filter` is either a string predicate as above or a typed `BooleanExpression`; pass `case_sensitive=False` to bind column names case-insensitively.
+
+How much work a delete does depends on what the filter matches, and one call may produce up to two snapshots:
+
+- Files whose content matches the filter entirely (derivable from Iceberg metadata alone, e.g. `tbl.delete(delete_filter="city == 'Groningen'")` when a whole file only contains `Groningen` rows) are dropped in a `DELETE` snapshot without being read or rewritten.
+- Files that match the filter only partially are read, filtered, and rewritten in an `OVERWRITE` snapshot (copy-on-write).
+
+If nothing matches the filter, no snapshot is committed and PyIceberg emits a `Delete operation did not match any records` warning.
+
+<!-- prettier-ignore-start -->
+
+!!! note "Copy-on-write only"
+    PyIceberg currently always deletes copy-on-write: matching data files are rewritten at delete time. If the table property `write.delete.mode` is set to `merge-on-read`, PyIceberg warns and falls back to copy-on-write; positional delete files are not yet written (they are, however, applied on read).
+
+<!-- prettier-ignore-end -->
 
 ### Upsert
 
