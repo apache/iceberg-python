@@ -138,3 +138,15 @@ class WaitingForLockException(Exception):
 
 class ValidationException(Exception):
     """Raised when validation fails."""
+
+
+class NoSuchSnapshotRefError(ValueError):
+    """Raised when a named snapshot ref (branch or tag) does not exist."""
+
+
+class SnapshotRefTypeError(ValueError):
+    """Raised when an operation expects a branch and gets a tag (or vice versa)."""
+
+
+class NotAncestorError(ValueError):
+    """Raised when an operation requires ancestry between two snapshots and it does not hold."""

@@ -283,6 +283,39 @@ def test_rollback_to_timestamp_no_valid_snapshot(table_with_snapshots: Table) ->
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_fast_forward_branch(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    assert len(tbl.history()) > 2
+
+    # Create a side branch off an older snapshot on main, then append to it
+    # so that the side branch is a strict descendant of main's older snapshot
+    # but the *current* main is not yet caught up.
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot is not None
+    main_snapshot_id = current_snapshot.snapshot_id
+    side_branch = "audit_ff"
+
+    tbl.manage_snapshots().create_branch(snapshot_id=main_snapshot_id, branch_name=side_branch).commit()
+
+    arrow_schema = tbl.schema().as_arrow()
+    new_rows = pa.Table.from_pylist([{col.name: None for col in arrow_schema}], schema=arrow_schema)
+    tbl.append(new_rows, branch=side_branch)
+
+    # Validate appending to the side branch has advanced its snapshot.
+    tbl = catalog.load_table(identifier)
+    audit_snapshot_id = tbl.refs()[side_branch].snapshot_id
+    assert audit_snapshot_id != main_snapshot_id, "side-branch append should have advanced it"
+
+    # Fast-forward main to the side branch.
+    tbl.manage_snapshots().fast_forward_branch(from_branch="main", to_ref=side_branch).commit()
+
+    tbl = catalog.load_table(identifier)
+    assert tbl.refs()["main"].snapshot_id == audit_snapshot_id
+
+
+@pytest.mark.integration
 def test_rollback_to_timestamp(table_with_snapshots: Table) -> None:
     current_snapshot = table_with_snapshots.current_snapshot()
     assert current_snapshot is not None

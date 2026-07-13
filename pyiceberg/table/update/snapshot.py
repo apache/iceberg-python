@@ -26,6 +26,11 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
+from pyiceberg.exceptions import (
+    NoSuchSnapshotRefError,
+    NotAncestorError,
+    SnapshotRefTypeError,
+)
 from pyiceberg.expressions import AlwaysFalse, BooleanExpression, Or
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
@@ -56,6 +61,7 @@ from pyiceberg.table.snapshots import (
     SnapshotSummaryCollector,
     Summary,
     ancestors_of,
+    is_ancestor_of,
     latest_ancestor_before_timestamp,
     update_snapshot_summaries,
 )
@@ -1027,6 +1033,70 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
                 self._transaction.table_metadata,
             )
         }
+
+    def fast_forward_branch(self, from_branch: str, to_ref: str) -> ManageSnapshots:
+        """Fast-forward ``from_branch`` to the snapshot referenced by ``to_ref``.
+
+        If ``from_branch`` does not exist, it is created pointing at ``to_ref``'s snapshot (Java/Spark parity).
+        If both refs already point to the same snapshot the call is a no-op.
+        Otherwise ``from_branch`` must be a branch (not a tag) and its current
+        snapshot must be an ancestor of ``to_ref``'s snapshot.
+
+        Note:
+            Unlike Java's ``ManageSnapshots.fastForwardBranch``, this method does not
+            provide Java-parity for intra-chain semantics.
+
+            1) Java maintains a mutable ``updatedRefs`` map that reflects prior operations
+            in the same chain, so calling ``createBranch`` and then ``fastForwardBranch``
+            on the same ref in one chain observes the freshly-created state.
+
+            2) pyiceberg's ``ManageSnapshots`` accumulates ``SetSnapshotRefUpdate`` values without
+            mutating ``table_metadata.refs`` between chained calls;
+            -> The no-op and ancestry checks below operate on committed metadata only.
+            -> Callers that need Java-parity behavior should commit between chain steps.
+
+        Args:
+            from_branch: name of the branch to advance.
+            to_ref: name of the branch or tag whose snapshot ``from_branch`` will point to.
+
+        Returns:
+            This for method chaining.
+
+        Raises:
+            NoSuchSnapshotRefError: ``to_ref`` does not exist.
+            SnapshotRefTypeError: ``from_branch`` exists but is a tag.
+            NotAncestorError: ``from_branch``'s snapshot is not an ancestor of ``to_ref``'s snapshot.
+        """
+        refs = self._transaction.table_metadata.refs
+
+        if to_ref not in refs:
+            raise NoSuchSnapshotRefError(f"Ref does not exist: {to_ref}")
+        to_snapshot_id = refs[to_ref].snapshot_id
+
+        if from_branch not in refs:
+            return self.create_branch(snapshot_id=to_snapshot_id, branch_name=from_branch)
+
+        from_ref = refs[from_branch]
+        if from_ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+            raise SnapshotRefTypeError(f"Ref {from_branch} is a tag, not a branch")
+
+        if from_ref.snapshot_id == to_snapshot_id:
+            return self
+
+        if not is_ancestor_of(to_snapshot_id, from_ref.snapshot_id, self._transaction.table_metadata):
+            raise NotAncestorError(f"Cannot fast-forward: {from_branch} is not an ancestor of {to_ref}")
+
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=to_snapshot_id,
+            ref_name=from_branch,
+            type=SnapshotRefType.BRANCH,
+            max_ref_age_ms=from_ref.max_ref_age_ms,
+            max_snapshot_age_ms=from_ref.max_snapshot_age_ms,
+            min_snapshots_to_keep=from_ref.min_snapshots_to_keep,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
 
 
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
