@@ -350,3 +350,67 @@ def test_fast_forward_branch_chains(table_v2: Table) -> None:
     assert len(stream_updates) == 2
     assert stream_updates[0].snapshot_id == parent_snapshot_id
     assert stream_updates[1].snapshot_id == 3055729675574597004
+
+
+def test_fast_forward_branch_preserves_retention_intra_chain(table_v2: Table) -> None:
+    """
+    With _effective_refs, a fast-forward that observes a same-chain create_branch preserves the branch's retention fields.
+    Without _effective_refs, these fields would be ignored on the fast_forward branch creation.
+    """
+    parent_snapshot_id = 3051729675574597004
+    child_snapshot_id = 3055729675574597004  # main's current snapshot
+
+    table_v2.catalog = MagicMock()
+    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+
+    (
+        table_v2.manage_snapshots()
+        .create_branch(
+            snapshot_id=parent_snapshot_id,
+            branch_name="feature",
+            max_ref_age_ms=5000,
+            max_snapshot_age_ms=6000,
+            min_snapshots_to_keep=7,
+        )
+        .fast_forward_branch(from_branch="feature", to_ref="main")
+        .commit()
+    )
+
+    updates = _get_updates(table_v2.catalog)
+    feature_updates = [u for u in updates if isinstance(u, SetSnapshotRefUpdate) and u.ref_name == "feature"]
+    assert len(feature_updates) == 2
+
+    # First: create_branch stages "feature" at parent with retention.
+    assert feature_updates[0].snapshot_id == parent_snapshot_id
+    assert feature_updates[0].max_ref_age_ms == 5000
+    assert feature_updates[0].max_snapshot_age_ms == 6000
+    assert feature_updates[0].min_snapshots_to_keep == 7
+
+    # Second: fast_forward_branch observes the staged branch via _effective_refs,
+    #   advances it to main's snapshot, and preserves retention fields.
+    assert feature_updates[1].snapshot_id == child_snapshot_id
+    assert feature_updates[1].max_ref_age_ms == 5000
+    assert feature_updates[1].max_snapshot_age_ms == 6000
+    assert feature_updates[1].min_snapshots_to_keep == 7
+
+
+def test_fast_forward_branch_rejects_intra_chain_tag(table_v2: Table) -> None:
+    """
+    A tag staged earlier in the same chain must be observed as a tag by a later fast_forward_branch.
+
+    Without _effective_refs, the tag wouldn't appear in refs and fast_forward_branch's auto-create path would
+    silently create a branch of the same name, subverting the tag.
+    """
+    parent_snapshot_id = 3051729675574597004
+
+    table_v2.catalog = MagicMock()
+
+    with pytest.raises(SnapshotRefTypeError, match="Ref mytag is a tag, not a branch"):
+        (
+            table_v2.manage_snapshots()
+            .create_tag(snapshot_id=parent_snapshot_id, tag_name="mytag")
+            .fast_forward_branch(from_branch="mytag", to_ref="main")
+            .commit()
+        )
+
+    table_v2.catalog.commit_table.assert_not_called()
