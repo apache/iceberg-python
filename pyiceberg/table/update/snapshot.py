@@ -54,7 +54,7 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRefType
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -845,6 +845,35 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             self._updates = ()
             self._requirements = ()
 
+    def _effective_refs(self) -> dict[str, SnapshotRef]:
+        """Return refs as they would appear after all currently-staged updates.
+
+        Committed refs from ``table_metadata.refs`` overlaid with the effects
+        of every ``SetSnapshotRefUpdate`` / ``RemoveSnapshotRefUpdate`` that has
+        been accumulated onto ``self._updates`` in this chain, in order. Later
+        stages win. Callers use this instead of ``table_metadata.refs`` when a
+        decision needs to observe the results of earlier operations in the
+        same ``manage_snapshots()`` chain.
+
+        Note that this projection is for *decision-making* only. Requirements
+        emitted via ``_set_ref_snapshot`` continue to reference committed
+        state, which is what the catalog checks at commit time and what makes
+        concurrent-write detection correct.
+        """
+        refs: dict[str, SnapshotRef] = dict(self._transaction.table_metadata.refs)
+        for update in self._updates:
+            if isinstance(update, SetSnapshotRefUpdate):
+                refs[update.ref_name] = SnapshotRef(
+                    snapshot_id=update.snapshot_id,
+                    snapshot_ref_type=update.type,
+                    max_ref_age_ms=update.max_ref_age_ms,
+                    max_snapshot_age_ms=update.max_snapshot_age_ms,
+                    min_snapshots_to_keep=update.min_snapshots_to_keep,
+                )
+            elif isinstance(update, RemoveSnapshotRefUpdate):
+                refs.pop(update.ref_name, None)
+        return refs
+
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
         """Remove a snapshot ref.
 
@@ -1040,20 +1069,10 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         If ``from_branch`` does not exist, it is created pointing at ``to_ref``'s snapshot (Java/Spark parity).
         If both refs already point to the same snapshot the call is a no-op.
         Otherwise ``from_branch`` must be a branch (not a tag) and its current
-        snapshot must be an ancestor of ``to_ref``'s snapshot.
-
-        Note:
-            Unlike Java's ``ManageSnapshots.fastForwardBranch``, this method does not
-            provide Java-parity for intra-chain semantics.
-
-            1) Java maintains a mutable ``updatedRefs`` map that reflects prior operations
-            in the same chain, so calling ``createBranch`` and then ``fastForwardBranch``
-            on the same ref in one chain observes the freshly-created state.
-
-            2) pyiceberg's ``ManageSnapshots`` accumulates ``SetSnapshotRefUpdate`` values without
-            mutating ``table_metadata.refs`` between chained calls;
-            -> The no-op and ancestry checks below operate on committed metadata only.
-            -> Callers that need Java-parity behavior should commit between chain steps.
+        snapshot must be an ancestor of ``to_ref``'s snapshot. Within a single
+        ``manage_snapshots()`` chain, ref lookups observe earlier staged
+        operations via :meth:`_effective_refs`, so `create_branch(...)` followed
+        by `fast_forward_branch(...)` on the same ref works as expected.
 
         Args:
             from_branch: name of the branch to advance.
@@ -1067,7 +1086,7 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             SnapshotRefTypeError: ``from_branch`` exists but is a tag.
             NotAncestorError: ``from_branch``'s snapshot is not an ancestor of ``to_ref``'s snapshot.
         """
-        refs = self._transaction.table_metadata.refs
+        refs = self._effective_refs()
 
         if to_ref not in refs:
             raise NoSuchSnapshotRefError(f"Ref does not exist: {to_ref}")
