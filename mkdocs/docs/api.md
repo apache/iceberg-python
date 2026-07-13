@@ -1483,6 +1483,72 @@ Remove an existing branch:
 table.manage_snapshots().remove_branch("dev").commit()
 ```
 
+#### Fast-forwarding a branch
+
+Fast-forward `from_branch` to point at the snapshot referenced by
+`to_ref`. `to_ref` may be a branch or tag; `from_branch` must be a
+branch. If `from_branch` does not yet exist it is created pointing at
+`to_ref`'s snapshot. If both already point at the same snapshot the
+call is a no-op. Otherwise `from_branch`'s current snapshot must be an
+ancestor of `to_ref`'s snapshot; if not, `NotAncestorError` is raised.
+
+```python
+with table.manage_snapshots() as ms:
+    ms.fast_forward_branch("main", "audit-branch")
+```
+
+##### End-to-end: write-audit-publish
+
+The canonical use case for fast-forward is the write-audit-publish
+(WAP) pattern: writes proceed on a side branch, validation runs
+against that branch, and only after validation succeeds is the main
+branch advanced to publish the new data.
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("prod")
+table = catalog.load_table("sales.orders")
+
+# 1. WRITE — create a side branch off main and append to it.
+main_snapshot_id = table.current_snapshot().snapshot_id
+table.manage_snapshots().create_branch(
+    snapshot_id=main_snapshot_id,
+    branch_name="audit",
+).commit()
+
+new_rows = pa.table({
+    "order_id": [1001, 1002, 1003],
+    "amount":   [ 49.99, 129.00, 12.50],
+})
+table.append(new_rows, branch="audit")
+
+# 2. AUDIT — scan the audit branch and run whatever validation
+#    your data-quality contract requires. Nothing on `main` has
+#    changed yet, so readers of `main` still see the pre-write state.
+audit_snapshot_id = table.refs()["audit"].snapshot_id
+audit_data = table.scan(snapshot_id=audit_snapshot_id).to_arrow()
+
+assert audit_data.num_rows > 0, "audit branch is empty"
+assert pc.all(pc.greater(audit_data["amount"], 0)).as_py(), \
+    "found non-positive amounts"
+
+# 3. PUBLISH — validation passed; fast-forward main to audit.
+#    Because the audit branch was created from main and only appended
+#    to, main's current snapshot is an ancestor of audit's snapshot,
+#    so the fast-forward is valid.
+with table.manage_snapshots() as ms:
+    ms.fast_forward_branch("main", "audit")
+    ms.remove_branch("audit")  # optional: clean up the side branch
+```
+
+If validation fails, callers simply skip the fast-forward step. The
+audit branch (and its data files) can then be inspected, rewritten,
+or removed via `remove_branch` and subsequent snapshot expiration —
+without ever having polluted `main`.
+
 ## Table Maintenance
 
 PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.
