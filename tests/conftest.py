@@ -3149,6 +3149,8 @@ def catalog(request: pytest.FixtureRequest, tmp_path: Path) -> Generator[Catalog
     yield cat
     if hasattr(cat, "destroy_tables"):
         cat.destroy_tables()
+    if hasattr(cat, "close"):
+        cat.close()
 
 
 @pytest.fixture(params=list(_CATALOG_FACTORIES.keys()))
@@ -3161,6 +3163,8 @@ def catalog_with_warehouse(
     yield cat
     if hasattr(cat, "destroy_tables"):
         cat.destroy_tables()
+    if hasattr(cat, "close"):
+        cat.close()
 
 
 @pytest.fixture(name="random_table_identifier")
