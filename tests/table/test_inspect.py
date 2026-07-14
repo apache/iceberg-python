@@ -82,15 +82,13 @@ def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest
     older = Snapshot(snapshot_id=6446744073709551000, timestamp_ms=1000, manifest_list="file:///dev/null")
     newer = Snapshot(snapshot_id=8446744073709551111, timestamp_ms=5000, manifest_list="file:///dev/null")
 
-    def _data_file() -> DataFile:
-        file = DataFile.from_args(content=DataFileContent.DATA, record_count=1, file_size_in_bytes=1, partition=Record("a"))
-        file.spec_id = 0
-        return file
+    data_file = DataFile.from_args(content=DataFileContent.DATA, record_count=1, file_size_in_bytes=1, partition=Record("a"))
+    data_file.spec_id = 0
 
     inspect = InspectTable.__new__(InspectTable)
     partitions_map: dict[tuple[str, Any], Any] = {}
     for snapshot in [newer, older] if newest_first else [older, newer]:
-        inspect._update_partitions_map_from_manifest_entry(partitions_map, _data_file(), {"part": "a"}, snapshot)
+        inspect._update_partitions_map_from_manifest_entry(partitions_map, data_file, {"part": "a"}, snapshot)
 
     (partition_row,) = partitions_map.values()
     assert partition_row["last_updated_at"] == newer.timestamp_ms
