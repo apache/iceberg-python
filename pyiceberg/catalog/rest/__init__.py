@@ -474,15 +474,6 @@ def _coerce_auth_config_values(class_or_name: str, config: dict[str, Any]) -> di
 
 def _load_auth_config_from_properties(properties: Properties) -> AuthConfigEnvelope | dict[str, Any] | None:
     raw_auth = properties.get(AUTH)
-    if isinstance(raw_auth, str):
-        try:
-            decoded_auth = json.loads(raw_auth)
-        except json.JSONDecodeError as e:
-            raise ValueError("Failed to parse auth configuration as JSON") from e
-        if decoded_auth is not None and not isinstance(decoded_auth, dict):
-            raise ValueError("auth configuration must be a dictionary")
-        return decoded_auth
-
     if raw_auth is not None:
         if not isinstance(raw_auth, dict):
             raise ValueError("auth configuration must be a dictionary")
