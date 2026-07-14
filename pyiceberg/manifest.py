@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from copy import copy
 from enum import Enum
 from types import TracebackType
@@ -882,6 +882,40 @@ class ManifestFile(Record):
                 for entry in reader
                 if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
             ]
+
+    def prune_manifest_entry(
+        self, io: FileIO, partition_filter: Callable[[DataFile], bool], metrics_evaluator: Callable[[DataFile], bool]
+    ) -> list[ManifestEntry]:
+        """
+        Read manifest entries, applying partition and metrics evaluator during deserialization.
+
+        Unlike fetch_manifest_entry followed by a separate filer pass, this fuses filtering
+        into the deserialization loop, avoiding the intermediate list allocation for
+        non-matching entries.
+
+        Args:
+            io: The FileIO to fetch the file.
+            partition_filter: Evaluates the entry's partition data.
+            metrics_evaluator: Evaluates the entry's column-level metrics.
+
+        Returns:
+            An Iterator of manifest entries matching both filters.
+        """
+        input_file = io.new_input(self.manifest_path)
+        with AvroFile[ManifestEntry](
+            input_file,
+            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
+            read_types={-1: ManifestEntry, 2: DataFile},
+            read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
+        ) as reader:
+            result = []
+            for entry in reader:
+                if entry.status != ManifestEntryStatus.DELETED:
+                    _inherit_from_manifest(entry, self)
+                    if partition_filter(entry.data_file) and metrics_evaluator(entry.data_file):
+                        result.append(entry)
+
+            return result
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the ManifestFile class."""
