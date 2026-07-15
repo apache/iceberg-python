@@ -15,6 +15,7 @@
 #  specific language governing permissions and limitations
 #  under the License.
 import inspect
+import json
 from _decimal import Decimal
 from datetime import datetime
 from enum import Enum
@@ -85,6 +86,38 @@ def test_missing_schema() -> None:
         header.get_schema()
 
     assert "No schema found in Avro file headers" in str(exc_info.value)
+
+
+def test_get_schema_is_cached_per_schema_string() -> None:
+    avro_schema_string = json.dumps(
+        {
+            "type": "record",
+            "name": "manifest_entry",
+            "fields": [
+                {"name": "status", "type": "int", "field-id": 0},
+                {"name": "snapshot_id", "type": ["null", "long"], "default": None, "field-id": 1},
+            ],
+        }
+    )
+    expected = AvroSchemaConversion().avro_to_iceberg(json.loads(avro_schema_string))
+
+    header = AvroFileHeader(bytes(0), {"avro.schema": avro_schema_string}, bytes(16))
+    other_header = AvroFileHeader(bytes(0), {"avro.schema": avro_schema_string}, bytes(16))
+
+    assert header.get_schema() == expected
+    # Identical schema strings resolve to the same cached object; different strings do not.
+    assert header.get_schema() is other_header.get_schema()
+
+    different_schema_string = json.dumps(
+        {
+            "type": "record",
+            "name": "manifest_entry",
+            "fields": [{"name": "status", "type": "int", "field-id": 0}],
+        }
+    )
+    different_header = AvroFileHeader(bytes(0), {"avro.schema": different_schema_string}, bytes(16))
+    assert different_header.get_schema() is not header.get_schema()
+    assert different_header.get_schema() == AvroSchemaConversion().avro_to_iceberg(json.loads(different_schema_string))
 
 
 # helper function to serialize our objects to dicts to enable
