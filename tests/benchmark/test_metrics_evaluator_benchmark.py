@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Benchmark a single-value metrics predicate through manifest planning.
+"""Benchmark a realistic 15-leaf metrics predicate through manifest planning.
 
 Run with:
     uv run pytest tests/benchmark/test_metrics_evaluator_benchmark.py -v -s -m benchmark
@@ -31,7 +31,7 @@ import pytest
 
 import pyiceberg.table as table_module
 from pyiceberg.conversions import to_bytes
-from pyiceberg.expressions import EqualTo
+from pyiceberg.expressions import And, BooleanExpression, EqualTo, GreaterThanOrEqual, LessThanOrEqual, Or
 from pyiceberg.manifest import DataFile, FileFormat, ManifestContent, ManifestFile
 from pyiceberg.schema import Schema
 from pyiceberg.table import ManifestGroupPlanner, Table
@@ -41,19 +41,38 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 
 
 def _data_file(file_number: int) -> DataFile:
-    value = file_number % 11
-    value_bytes = to_bytes(LongType(), value)
+    event_day = file_number % 11
+    region_id = file_number % 15
+    event_day_bytes = to_bytes(LongType(), event_day)
+    region_id_bytes = to_bytes(LongType(), region_id)
     return DataFile.from_args(
         file_path=f"s3://bucket/data-{file_number}.parquet",
         file_format=FileFormat.PARQUET,
         partition=Record(),
         record_count=100,
         file_size_in_bytes=1,
-        value_counts={1: 100},
-        null_value_counts={1: 0},
-        lower_bounds={1: value_bytes},
-        upper_bounds={1: value_bytes},
+        value_counts={1: 100, 2: 100},
+        null_value_counts={1: 0, 2: 0},
+        lower_bounds={1: event_day_bytes, 2: region_id_bytes},
+        upper_bounds={1: event_day_bytes, 2: region_id_bytes},
     )
+
+
+def _metrics_filter() -> BooleanExpression:
+    """Select five day ranges, each scoped to a region."""
+    windows = ((0, 1, 1), (2, 3, 4), (4, 5, 7), (6, 7, 10), (8, 10, 13))
+    branches = [
+        And(
+            And(GreaterThanOrEqual("event_day", start_day), LessThanOrEqual("event_day", end_day)),
+            EqualTo("region_id", region_id),
+        )
+        for start_day, end_day, region_id in windows
+    ]
+
+    combined = branches[0]
+    for branch in branches[1:]:
+        combined = Or(combined, branch)
+    return combined
 
 
 def _manifest_file(manifest_number: int) -> ManifestFile:
@@ -87,12 +106,13 @@ def test_metrics_evaluator_reuse(
 ) -> None:
     num_files = 1_000
     schema = Schema(
-        NestedField(1, "x", LongType(), required=True),
-        *(NestedField(field_id, f"unused_{field_id}", LongType(), required=False) for field_id in range(2, 102)),
+        NestedField(1, "event_day", LongType(), required=True),
+        NestedField(2, "region_id", LongType(), required=True),
+        *(NestedField(field_id, f"unused_{field_id}", LongType(), required=False) for field_id in range(3, 103)),
         schema_id=table_v2.metadata.current_schema_id,
     )
     metadata = table_v2.metadata.model_copy(update={"schemas": [schema]})
-    planner = ManifestGroupPlanner(table_metadata=metadata, io=table_v2.io, row_filter=EqualTo("x", 5))
+    planner = ManifestGroupPlanner(table_metadata=metadata, io=table_v2.io, row_filter=_metrics_filter())
     data_files = [_data_file(file_number) for file_number in range(num_files)]
     manifests = [_manifest_file(manifest_number) for manifest_number in range(0, num_files, files_per_manifest)]
     files_by_manifest = {
@@ -120,7 +140,7 @@ def test_metrics_evaluator_reuse(
     def evaluate_files() -> int:
         return sum(len(entries) for entries in planner.plan_manifest_entries(manifests))
 
-    assert evaluate_files() == (91 if partition_matches else 0)
+    assert evaluate_files() == (67 if partition_matches else 0)
     number = 1 if partition_matches else (1_000 if files_per_manifest == 1_000 else 10)
     timings_ms = [timing * 1_000 / number for timing in timeit.repeat(evaluate_files, number=number, repeat=5)]
     file_label = "file" if files_per_manifest == 1 else "files"
@@ -128,6 +148,6 @@ def test_metrics_evaluator_reuse(
 
     print(
         f"Evaluated metrics for {num_files} files with {files_per_manifest} {file_label} per manifest, "
-        f"a 102-column schema, and a single-value predicate ({pruning_label}) in "
+        f"a 102-column schema, and a 15-leaf predicate ({pruning_label}) in "
         f"{statistics.mean(timings_ms):.3f}ms (best: {min(timings_ms):.3f}ms)"
     )
