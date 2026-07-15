@@ -467,8 +467,9 @@ class Transaction:
         Shorthand API for appending PyArrow data to a table transaction.
 
         Accepts either a fully materialised ``pa.Table`` or a streaming
-        ``pa.RecordBatchReader``. Streaming is microbatched by
-        ``write.target-file-size-bytes`` so memory stays bounded; the reader is
+        ``pa.RecordBatchReader``. For a reader, batches are written through a
+        rolling ``pq.ParquetWriter`` and a new file is rolled each time the
+        on-disk file size hits ``write.target-file-size-bytes``. The reader is
         consumed once and cannot be reused.
 
         Streaming writes are currently only supported on unpartitioned tables;
@@ -494,13 +495,12 @@ class Transaction:
             in storage that are not referenced by any snapshot. Clean these
             up with expire/orphan-file maintenance jobs.
 
-            ``write.target-file-size-bytes`` is currently interpreted as
-            uncompressed in-memory Arrow bytes (the bin-packing weight) rather
-            than compressed on-disk Parquet bytes. The resulting files are
-            typically 3-10× smaller than the property suggests after
-            compression. This matches the existing ``pa.Table`` write path and
-            will be tightened once the writer is switched to a
-            rolling-``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
+            For streaming inputs (``pa.RecordBatchReader``) each input
+            ``RecordBatch`` becomes one Parquet row group. The
+            ``write.parquet.row-group-limit`` property (rows, default 1M)
+            caps row group size — batches larger than the cap are split,
+            smaller batches are not combined. Caller batch size sets the
+            lower bound; pyiceberg enforces the upper bound.
 
         Args:
             df: An Arrow Table or a RecordBatchReader of records to append.
@@ -615,8 +615,9 @@ class Transaction:
         Shorthand for adding a table overwrite with a PyArrow table or RecordBatchReader to the transaction.
 
         Accepts either a fully materialised ``pa.Table`` or a streaming
-        ``pa.RecordBatchReader``. Streaming is microbatched by
-        ``write.target-file-size-bytes`` so memory stays bounded; the reader is
+        ``pa.RecordBatchReader``. For a reader, batches are written through a
+        rolling ``pq.ParquetWriter`` and a new file is rolled each time the
+        on-disk file size hits ``write.target-file-size-bytes``. The reader is
         consumed once and cannot be reused.
 
         Streaming writes are currently only supported on unpartitioned tables;
@@ -642,13 +643,12 @@ class Transaction:
             in storage that are not referenced by any snapshot. Clean these
             up with expire/orphan-file maintenance jobs.
 
-            ``write.target-file-size-bytes`` is currently interpreted as
-            uncompressed in-memory Arrow bytes (the bin-packing weight) rather
-            than compressed on-disk Parquet bytes. The resulting files are
-            typically 3-10× smaller than the property suggests after
-            compression. This matches the existing ``pa.Table`` write path and
-            will be tightened once the writer is switched to a
-            rolling-``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
+            For streaming inputs (``pa.RecordBatchReader``) each input
+            ``RecordBatch`` becomes one Parquet row group. The
+            ``write.parquet.row-group-limit`` property (rows, default 1M)
+            caps row group size — batches larger than the cap are split,
+            smaller batches are not combined. Caller batch size sets the
+            lower bound; pyiceberg enforces the upper bound.
 
         An overwrite may produce zero or more snapshots based on the operation:
 
@@ -2471,8 +2471,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:

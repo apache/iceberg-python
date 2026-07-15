@@ -2628,7 +2628,7 @@ def test_append_record_batch_reader_multifile(
     spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int
 ) -> None:
     """Forcing a tiny target file size should produce >1 data file in a single
-    snapshot, proving the byte-budget rollover in bin_pack_record_batches fires
+    snapshot, proving the rolling ParquetWriter's tell()-based rollover fires
     end-to-end and the resulting files are valid Iceberg data files (Spark reads
     them all)."""
     identifier = f"default.streaming_append_multifile_v{format_version}"
