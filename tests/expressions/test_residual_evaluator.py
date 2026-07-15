@@ -15,6 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+from typing import Any
+
 import pytest
 
 from pyiceberg.expressions import (
@@ -41,7 +45,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import DoubleType, FloatType, IntegerType, NestedField, StringType, TimestampType
+from pyiceberg.types import DoubleType, FloatType, IntegerType, NestedField, StringType, StructType, TimestampType
 
 
 def test_identity_transform_residual() -> None:
@@ -86,6 +90,92 @@ def test_identity_transform_residual() -> None:
     residual = res_eval.residual_for(Record(20170817))
 
     assert residual == AlwaysFalse()
+
+
+def test_residual_evaluator_does_not_mutate_prepared_state() -> None:
+    schema = Schema(NestedField(1, "a", IntegerType()), NestedField(2, "b", IntegerType()))
+    spec = PartitionSpec(
+        PartitionField(1, 1001, IdentityTransform(), "a_part"),
+        PartitionField(2, 1002, IdentityTransform(), "b_part"),
+    )
+    evaluator = residual_evaluator_of(
+        spec=spec,
+        expr=And(EqualTo("a", 1), EqualTo("b", 1)),
+        case_sensitive=True,
+        schema=schema,
+    )
+    initial_state = vars(evaluator).copy()
+
+    assert evaluator.residual_for(Record(1, 1)) == AlwaysTrue()
+    assert evaluator.residual_for(Record(0, 0)) == AlwaysFalse()
+    assert evaluator.residual_for(Record(1, 1)) == AlwaysTrue()
+
+    assert vars(evaluator) == initial_state
+
+
+def test_residual_evaluator_concurrent_calls_do_not_share_partitions() -> None:
+    class BlockingRecord(Record):
+        def __init__(self, first_read: Event, release_first_read: Event, *values: Any) -> None:
+            super().__init__(*values)
+            self.first_read = first_read
+            self.release_first_read = release_first_read
+
+        def __getitem__(self, pos: int) -> Any:
+            value = super().__getitem__(pos)
+            if pos == 0:
+                self.first_read.set()
+                if not self.release_first_read.wait(timeout=5):
+                    raise TimeoutError("Timed out waiting to interleave residual evaluations")
+            return value
+
+    schema = Schema(NestedField(1, "a", IntegerType()), NestedField(2, "b", IntegerType()))
+    spec = PartitionSpec(
+        PartitionField(1, 1001, IdentityTransform(), "a_part"),
+        PartitionField(2, 1002, IdentityTransform(), "b_part"),
+    )
+    evaluator = residual_evaluator_of(
+        spec=spec,
+        expr=And(EqualTo("a", 1), EqualTo("b", 1)),
+        case_sensitive=True,
+        schema=schema,
+    )
+    first_read = Event()
+    release_first_read = Event()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        matching_result = executor.submit(
+            evaluator.residual_for,
+            BlockingRecord(first_read, release_first_read, 1, 1),
+        )
+        assert first_read.wait(timeout=5)
+
+        try:
+            non_matching_result = executor.submit(evaluator.residual_for, Record(0, 0)).result(timeout=5)
+        finally:
+            release_first_read.set()
+
+        assert matching_result.result(timeout=5) == AlwaysTrue()
+        assert non_matching_result == AlwaysFalse()
+
+
+def test_partition_schema_reused_across_residuals(monkeypatch: pytest.MonkeyPatch) -> None:
+    schema = Schema(NestedField(50, "dateint", IntegerType()))
+    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "dateint_part"))
+    partition_type_calls = 0
+    original_partition_type = PartitionSpec.partition_type
+
+    def counting_partition_type(self: PartitionSpec, schema: Schema) -> StructType:
+        nonlocal partition_type_calls
+        partition_type_calls += 1
+        return original_partition_type(self, schema)
+
+    monkeypatch.setattr(PartitionSpec, "partition_type", counting_partition_type)
+
+    evaluator = residual_evaluator_of(spec=spec, expr=EqualTo("dateint", 20170815), case_sensitive=True, schema=schema)
+
+    assert evaluator.residual_for(Record(20170815)) == AlwaysTrue()
+    assert evaluator.residual_for(Record(20170816)) == AlwaysFalse()
+    assert partition_type_calls == 1
 
 
 def test_case_insensitive_identity_transform_residuals() -> None:
