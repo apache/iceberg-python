@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import re
 from datetime import datetime, time, timezone, tzinfo
 
 import pytest
@@ -124,7 +125,7 @@ def test_timestamp_to_nanos_unexpected_zone_offset() -> None:
 
 
 def test_timestamp_to_nanos_invalid_timestamp() -> None:
-    with pytest.raises(ValueError, match="Invalid timestamp without zone: invalid"):
+    with pytest.raises(ValueError, match=re.escape("Invalid timestamp without zone: invalid (must be ISO-8601)")):
         timestamp_to_nanos("invalid")
 
 
@@ -146,7 +147,7 @@ def test_timestamptz_to_nanos_missing_zone_offset() -> None:
 
 
 def test_timestamptz_to_nanos_invalid_timestamp() -> None:
-    with pytest.raises(ValueError, match="Invalid timestamp with zone: invalid"):
+    with pytest.raises(ValueError, match=re.escape("Invalid timestamp with zone: invalid (must be ISO-8601)")):
         timestamptz_to_nanos("invalid")
 
 
