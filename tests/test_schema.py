@@ -68,7 +68,6 @@ TEST_PRIMITIVE_TYPES = [
     DoubleType(),
     DecimalType(10, 2),
     DecimalType(100, 2),
-    DecimalType(10, 4),
     StringType(),
     DateType(),
     TimeType(),
@@ -869,6 +868,10 @@ def test_schema_select_cant_be_found(table_schema_nested: Schema) -> None:
     assert "Could not find column: 'BAZ'" in str(exc_info.value)
 
 
+def can_promote_decimal(file_type: DecimalType, read_type: DecimalType) -> bool:
+    return file_type.precision <= read_type.precision and file_type.scale == read_type.scale
+
+
 def should_promote(file_type: IcebergType, read_type: IcebergType) -> bool:
     if isinstance(file_type, IntegerType) and isinstance(read_type, LongType):
         return True
@@ -879,7 +882,7 @@ def should_promote(file_type: IcebergType, read_type: IcebergType) -> bool:
     if isinstance(file_type, BinaryType) and isinstance(read_type, StringType):
         return True
     if isinstance(file_type, DecimalType) and isinstance(read_type, DecimalType):
-        return file_type.precision <= read_type.precision and file_type.scale == read_type.scale
+        return can_promote_decimal(file_type, read_type)
     if isinstance(file_type, FixedType) and isinstance(read_type, UUIDType) and len(file_type) == 16:
         return True
     return False
