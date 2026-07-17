@@ -16,58 +16,42 @@
 # under the License.
 from os import path
 
-import pytest
-from pyroaring import BitMap
-
-from pyiceberg.table.puffin import _deserialize_bitmap
+from pyiceberg.table.puffin import PuffinFile
 
 
 def _open_file(file: str) -> bytes:
     cur_dir = path.dirname(path.realpath(__file__))
-    with open(f"{cur_dir}/bitmaps/{file}", "rb") as f:
+    with open(f"{cur_dir}/puffin/{file}", "rb") as f:
         return f.read()
 
 
-def test_map_empty() -> None:
-    puffin = _open_file("64mapempty.bin")
+def test_read_empty_uncompressed() -> None:
+    puffin_bytes = _open_file("v1/empty-puffin-uncompressed.bin")
+    pf = PuffinFile(puffin_bytes)
 
-    expected: list[BitMap] = []
-    actual = _deserialize_bitmap(puffin)
-
-    assert expected == actual
-
-
-def test_map_bitvals() -> None:
-    puffin = _open_file("64map32bitvals.bin")
-
-    expected = [BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])]
-    actual = _deserialize_bitmap(puffin)
-
-    assert expected == actual
+    assert pf.footer.blobs == []
+    assert pf.footer.properties == {}
 
 
-def test_map_spread_vals() -> None:
-    puffin = _open_file("64mapspreadvals.bin")
+def test_read_two_blobs_uncompressed() -> None:
+    puffin_bytes = _open_file("v1/sample-metric-data-uncompressed.bin")
+    pf = PuffinFile(puffin_bytes)
 
-    expected = [
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-    ]
-    actual = _deserialize_bitmap(puffin)
+    assert pf.footer.properties == {"created-by": "Test 1234"}
+    assert len(pf.footer.blobs) == 2
 
-    assert expected == actual
+    blob1 = pf.footer.blobs[0]
+    assert blob1.type == "some-blob"
+    assert blob1.fields == [1]
+    assert blob1.snapshot_id == 2
+    assert blob1.sequence_number == 1
+    assert blob1.compression_codec is None
+    assert pf.get_blob_payload(blob1) == b"abcdefghi"
 
-
-def test_map_high_vals() -> None:
-    puffin = _open_file("64maphighvals.bin")
-
-    with pytest.raises(ValueError, match="Key 4022190063 is too large, max 2147483647 to maintain compatibility with Java impl"):
-        _ = _deserialize_bitmap(puffin)
+    blob2 = pf.footer.blobs[1]
+    assert blob2.type == "some-other-blob"
+    assert blob2.fields == [2]
+    assert blob2.compression_codec is None
+    assert pf.get_blob_payload(blob2) == (
+        b"some blob \x00 binary data \xf0\x9f\xa4\xaf that is not very very very very very very long, is it?"
+    )

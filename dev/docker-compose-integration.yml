@@ -18,7 +18,10 @@
 services:
   spark-iceberg:
     image: pyiceberg-spark:latest
-    build: spark/
+    build:
+      context: spark/
+      args:
+        MAVEN_MIRROR: ${MAVEN_MIRROR:-https://repo.maven.apache.org/maven2}
     container_name: pyiceberg-spark
     networks:
       iceberg_net:
@@ -44,7 +47,7 @@ services:
       retries: 5
       start_period: 90s
   rest:
-    image: apache/iceberg-rest-fixture:1.10.1
+    image: apache/iceberg-rest-fixture
     container_name: pyiceberg-rest
     networks:
       iceberg_net:
@@ -93,7 +96,10 @@ services:
       "
   hive:
     image: pyiceberg-hive:latest
-    build: hive/
+    build:
+      context: hive/
+      args:
+        MAVEN_MIRROR: ${MAVEN_MIRROR:-https://repo1.maven.org/maven2}
     container_name: pyiceberg-hive
     hostname: hive
     networks:

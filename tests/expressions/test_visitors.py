@@ -80,6 +80,7 @@ from pyiceberg.manifest import ManifestFile, PartitionFieldSummary
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
+    BinaryType,
     BooleanType,
     DoubleType,
     FloatType,
@@ -1627,6 +1628,24 @@ def test_expression_evaluator_null() -> None:
     assert expression_evaluator(schema, LessThan("a", 1), case_sensitive=True)(struct) is False
     assert expression_evaluator(schema, StartsWith("a", 1), case_sensitive=True)(struct) is False
     assert expression_evaluator(schema, NotStartsWith("a", 1), case_sensitive=True)(struct) is True
+
+
+def test_expression_evaluator_binary_starts_with() -> None:
+    schema = Schema(NestedField(1, "x", BinaryType(), required=False), schema_id=1)
+    struct = Record(b"aa")
+    assert expression_evaluator(schema, StartsWith("x", b"a"), case_sensitive=True)(struct) is True
+    assert expression_evaluator(schema, StartsWith("x", b"aa"), case_sensitive=True)(struct) is True
+    assert expression_evaluator(schema, StartsWith("x", b"aaa"), case_sensitive=True)(struct) is False
+    assert expression_evaluator(schema, StartsWith("x", b"b"), case_sensitive=True)(struct) is False
+
+
+def test_expression_evaluator_binary_not_starts_with() -> None:
+    schema = Schema(NestedField(1, "x", BinaryType(), required=False), schema_id=1)
+    struct = Record(b"aa")
+    assert expression_evaluator(schema, NotStartsWith("x", b"a"), case_sensitive=True)(struct) is False
+    assert expression_evaluator(schema, NotStartsWith("x", b"aa"), case_sensitive=True)(struct) is False
+    assert expression_evaluator(schema, NotStartsWith("x", b"aaa"), case_sensitive=True)(struct) is True
+    assert expression_evaluator(schema, NotStartsWith("x", b"b"), case_sensitive=True)(struct) is True
 
 
 def test_translate_column_names_simple_case(table_schema_simple: Schema) -> None:

@@ -140,7 +140,7 @@ def timestamptz_to_nanos(timestamptz_str: str) -> int:
         ms_str = match.group(2) if match.group(2) else ""
         timestamptz_str_without_ns_str = match.group(1) + ms_str + match.group(4)
         return datetime_to_nanos(datetime.fromisoformat(timestamptz_str_without_ns_str)) + int(ns_str)
-    if ISO_TIMESTAMPTZ_NANO.fullmatch(timestamptz_str):
+    if ISO_TIMESTAMP_NANO.fullmatch(timestamptz_str):
         # When we can match a timestamp without a zone, we can give a more specific error
         raise ValueError(f"Missing zone offset: {timestamptz_str} (must be ISO-8601)")
     raise ValueError(f"Invalid timestamp with zone: {timestamptz_str} (must be ISO-8601)")

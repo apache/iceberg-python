@@ -73,6 +73,8 @@ from pyiceberg.types import (
     DateType,
     DecimalType,
     FixedType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     LongType,
@@ -717,7 +719,8 @@ class IdentityTransform(Transform[S, S]):
         return lambda v: v
 
     def can_transform(self, source: IcebergType) -> bool:
-        return source.is_primitive
+        # TODO: disallow VariantType when PyIceberg supports it.
+        return source.is_primitive and not isinstance(source, (GeographyType, GeometryType))
 
     def result_type(self, source: IcebergType) -> IcebergType:
         return source
@@ -813,7 +816,16 @@ class TruncateTransform(Transform[S, S]):
                 return _truncate_number(name, pred, self.transform(field_type))
         elif isinstance(field_type, (BinaryType, StringType)):
             if isinstance(pred, BoundLiteralPredicate):
-                return _truncate_array(name, pred, self.transform(field_type))
+                if isinstance(pred, BoundNotStartsWith):
+                    literal_width = len(pred.literal.value)
+                    if literal_width < self.width:
+                        return pred.as_unbound(name, pred.literal.value)
+                    elif literal_width == self.width:
+                        return NotEqualTo(name, pred.literal.value)
+                    else:
+                        return None
+                else:
+                    return _truncate_array(name, pred, self.transform(field_type))
 
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         field_type = pred.term.ref().field.field_type

@@ -147,6 +147,7 @@ class Endpoints:
     create_table: str = "namespaces/{namespace}/tables"
     register_table: str = "namespaces/{namespace}/register"
     load_table: str = "namespaces/{namespace}/tables/{table}"
+    load_credentials: str = "namespaces/{namespace}/tables/{table}/credentials"
     update_table: str = "namespaces/{namespace}/tables/{table}"
     drop_table: str = "namespaces/{namespace}/tables/{table}"
     table_exists: str = "namespaces/{namespace}/tables/{table}"
@@ -181,6 +182,7 @@ class Capability:
     V1_DELETE_TABLE = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_table}")
     V1_RENAME_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.rename_table}")
     V1_REGISTER_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_table}")
+    V1_LOAD_CREDENTIALS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_credentials}")
 
     V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_views}")
     V1_LOAD_VIEW = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_view}")
@@ -291,6 +293,10 @@ class TableResponse(IcebergBaseModel):
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
     storage_credentials: list[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
+
+
+class LoadCredentialsResponse(IcebergBaseModel):
+    storage_credentials: list[StorageCredential] = Field(alias="storage-credentials")
 
 
 class ViewResponse(IcebergBaseModel):
@@ -1093,6 +1099,32 @@ class RestCatalog(Catalog):
 
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
+
+    @retry(**_RETRY_ARGS)
+    def _load_credentials(
+        self,
+        identifier: str | Identifier,
+    ) -> LoadCredentialsResponse:
+        """Load raw vended storage credentials for a table."""
+        self._check_endpoint(Capability.V1_LOAD_CREDENTIALS)
+        response = self._session.get(
+            self.url(Endpoints.load_credentials, prefixed=True, **self._split_identifier_for_path(identifier)),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchTableError})
+
+        return LoadCredentialsResponse.model_validate_json(response.text)
+
+    def load_credentials(
+        self,
+        identifier: str | Identifier,
+        location: str,
+    ) -> Properties:
+        """Load vended storage credentials and return the best match for a location."""
+        credentials_response = self._load_credentials(identifier)
+        return self._resolve_storage_credentials(credentials_response.storage_credentials, location)
 
     @retry(**_RETRY_ARGS)
     @override

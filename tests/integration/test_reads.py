@@ -51,6 +51,7 @@ from pyiceberg.io.pyarrow import (
 )
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.table.snapshots import Operation
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -1272,3 +1273,212 @@ def test_scan_source_field_missing_in_spec(catalog: Catalog, spark: SparkSession
 
     table = catalog.load_table(identifier)
     assert len(list(table.scan().plan_files())) == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_append_only(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+
+    # snapshots[1] adds 1 file (letter=b); snapshots[2] adds 2 files (letter=b, letter=c).
+    assert len(list(scan.plan_files())) == 3
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+    # All read paths return the same rows.
+    assert len(scan.to_arrow_batch_reader().read_all()) == 3
+    assert len(scan.to_pandas()) == 3
+    assert len(scan.to_polars()) == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_ignores_non_append_snapshots(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[3] compacts and snapshots[4] deletes number=2 -- both non-append, both ignored.
+    # number=2 was appended in snapshots[1], so it still appears despite the later delete.
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[4].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 3
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_does_not_double_count_compacted_files(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[1] and [2] append the two letter='b' files (number=2 and number=4); snapshots[3]
+    # compacts them into a single rewritten file. A scan spanning the compaction must read each
+    # appended row exactly once -- the rewritten file (added by the compaction, not by an append)
+    # must not be picked up on top of the originals.
+    assert test_table.snapshots()[3].summary.operation == Operation.REPLACE  # type: ignore[union-attr]
+
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[3].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 3
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_empty_range(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[3] is the only snapshot in the range and is a compaction (non-append); the scan
+    # must return empty.
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[2].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[3].snapshot_id,
+    )
+    assert list(scan.plan_files()) == []
+    result = scan.to_arrow()
+    assert len(result) == 0
+    # An empty result still carries the projected (current) schema.
+    assert result.schema.names == ["number", "letter", "extra"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_schema_evolution_within_range(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[1..2] are on the original schema (number, letter); snapshots[5] is on the evolved
+    # schema (number, letter, extra) after ALTER TABLE ADD COLUMN. The scan must project the older
+    # rows onto the current schema (extra -> null) and pick up the new value for the newer row.
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[5].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 4
+
+    expected_schema = pa.schema([pa.field("number", pa.int32()), pa.field("letter", pa.string()), pa.field("extra", pa.int32())])
+    result_table = scan.to_arrow()
+    assert result_table.schema.equals(expected_schema)
+    rows = zip(
+        result_table["number"].to_pylist(),
+        result_table["letter"].to_pylist(),
+        result_table["extra"].to_pylist(),
+        strict=True,
+    )
+    assert sorted(rows, key=lambda r: r[0]) == [(2, "b", None), (3, "c", None), (4, "b", None), (5, "d", 100)]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_partition_pruning(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # `letter=c` only appears in snapshots[2]. The manifest evaluator rejects snapshots[1]'s
+    # manifest (letter=b only); the partition evaluator rejects the letter=b entry in
+    # snapshots[2]'s manifest. One file remains.
+    scan = test_table.incremental_append_scan(
+        row_filter=EqualTo("letter", "c"),
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 1
+    assert scan.to_arrow()["number"].to_pylist() == [3]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_metrics_pruning(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # Non-partition predicate: the manifest/partition evaluators degenerate, leaving the per-file
+    # metrics evaluator to prune. `number=99` matches no file's [min, max] stats for `number`.
+    scan = test_table.incremental_append_scan(
+        row_filter=EqualTo("number", 99),
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 0
+    assert len(scan.to_arrow()) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_selected_fields(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    scan = test_table.incremental_append_scan(
+        selected_fields=("number",),
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+    result_table = scan.to_arrow()
+    assert result_table.schema.equals(pa.schema([pa.field("number", pa.int32())]))
+    assert sorted(result_table["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_limit(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    scan = test_table.incremental_append_scan(
+        limit=2,
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+    assert len(scan.to_arrow()) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_throws_on_disconnected_snapshots(catalog: Catalog) -> None:
+    # snapshots[6] is the REPLACE TABLE result, with no lineage back to snapshots[0].
+    test_table = catalog.load_table("default.test_incremental_read")
+    from_id = test_table.snapshots()[0].snapshot_id
+    to_id = test_table.snapshots()[6].snapshot_id
+
+    with pytest.raises(ValueError, match=f"Starting snapshot .exclusive. {from_id} is not a parent ancestor"):
+        list(test_table.incremental_append_scan(from_snapshot_id_exclusive=from_id, to_snapshot_id_inclusive=to_id).plan_files())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_unset_from_scans_from_oldest_ancestor(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # With `from` unset, the scan starts from the oldest ancestor of `to` (inclusive), so it also
+    # picks up snapshots[0]'s append (number=1) that an exclusive from=snapshots[0] would skip.
+    scan = test_table.incremental_append_scan(to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id)
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [1, 2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_inclusive_from(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # Inclusive from=snapshots[1] includes snapshots[1]'s append (number=2), unlike the exclusive
+    # form which would start strictly after it (numbers [3, 4]).
+    scan = test_table.incremental_append_scan(
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    ).from_snapshot_id_inclusive(test_table.snapshots()[1].snapshot_id)
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_builder_chain(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # The builder chain is equivalent to setting the range at construction.
+    scan = (
+        test_table.incremental_append_scan()
+        .from_snapshot_id_exclusive(test_table.snapshots()[0].snapshot_id)
+        .to_snapshot_id_inclusive(test_table.snapshots()[2].snapshot_id)
+    )
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]

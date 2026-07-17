@@ -40,6 +40,7 @@ from pyiceberg.expressions.literals import (
     IntBelowMin,
     Literal,
     LongAboveMax,
+    LongBelowMin,
     LongLiteral,
     StringLiteral,
     TimeLiteral,
@@ -159,6 +160,16 @@ def test_integer_to_date_conversion() -> None:
     assert date_lit.value == date_delta
 
 
+def test_long_to_date_outside_bound() -> None:
+    big_lit = literal(IntegerType.max + 1).to(LongType())
+    above_max_lit = big_lit.to(DateType())
+    assert above_max_lit == IntAboveMax()
+
+    small_lit = literal(IntegerType.min - 1).to(LongType())
+    below_min_lit = small_lit.to(DateType())
+    assert below_min_lit == IntBelowMin()
+
+
 def test_long_to_integer_within_bound() -> None:
     lit = literal(34).to(LongType())
     int_lit = lit.to(IntegerType())
@@ -181,6 +192,16 @@ def test_long_to_float_conversion() -> None:
     float_lit = lit.to(FloatType())
 
     assert lit.value == float_lit.value
+
+
+def test_long_to_float_outside_bound() -> None:
+    big_lit = literal(10**39)
+    above_max_lit = big_lit.to(FloatType())
+    assert above_max_lit == FloatAboveMax()
+
+    small_lit = literal(-(10**39))
+    below_min_lit = small_lit.to(FloatType())
+    assert below_min_lit == FloatBelowMin()
 
 
 def test_long_to_double_conversion() -> None:
@@ -878,6 +899,14 @@ def test_string_to_long_large_scientific_notation_above_max() -> None:
     assert isinstance(literal("1e1000000").to(LongType()), LongAboveMax)
 
 
+def test_decimal_to_long_above_max() -> None:
+    assert isinstance(DecimalLiteral(Decimal(LongType.max + 1)).to(LongType()), LongAboveMax)
+
+
+def test_decimal_to_long_below_min() -> None:
+    assert isinstance(DecimalLiteral(Decimal(LongType.min - 1)).to(LongType()), LongBelowMin)
+
+
 def test_string_to_integer_type_invalid_value() -> None:
     with pytest.raises(ValueError) as e:
         _ = literal("abc").to(IntegerType())
@@ -917,7 +946,7 @@ def test_decimal_literal_increment() -> None:
     assert dec.increment().value.as_tuple() == Decimal("10.124").as_tuple()
 
 
-def test_decimal_literal_dencrement() -> None:
+def test_decimal_literal_decrement() -> None:
     dec = DecimalLiteral(Decimal("10.123"))
     # Twice to check that we don't mutate the value
     assert dec.decrement() == DecimalLiteral(Decimal("10.122"))

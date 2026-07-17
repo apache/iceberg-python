@@ -3320,7 +3320,7 @@ def does_support_slash_in_identifier(catalog: Catalog) -> bool:
     from pyiceberg.catalog.sql import SqlCatalog
 
     if isinstance(catalog, RestCatalog):
-        return property_as_bool(catalog.properties, "supports_slash_in_identifier", True)
+        return property_as_bool(catalog.properties, "supports_slash_in_identifier", False)
     from pyiceberg.catalog.hive import HiveCatalog
 
     if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):
