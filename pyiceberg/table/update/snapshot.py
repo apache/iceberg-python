@@ -486,7 +486,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         if isolation_level == IsolationLevel.SERIALIZABLE:
             _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
 
-        if conflict_detection_filter is not None:
+        if self._predicate != AlwaysFalse():
             _validate_no_new_delete_files(table, catalog_head, conflict_detection_filter, None, starting_snapshot)
             _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
 
