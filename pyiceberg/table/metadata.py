@@ -66,7 +66,10 @@ INITIAL_SEQUENCE_NUMBER = 0
 INITIAL_SPEC_ID = 0
 DEFAULT_SCHEMA_ID = 0
 
-SUPPORTED_TABLE_FORMAT_VERSION = 2
+SUPPORTED_TABLE_FORMAT_VERSION = 3
+
+INITIAL_ROW_ID = 0
+"""The initial value of `next-row-id` for newly upgraded V3 tables."""
 
 
 def cleanup_snapshot_id(data: dict[str, Any]) -> dict[str, Any]:

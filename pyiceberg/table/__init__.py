@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from pydantic import Field
 
@@ -48,7 +48,7 @@ from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
+from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, SUPPORTED_TABLE_FORMAT_VERSION, TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
@@ -300,7 +300,7 @@ class Transaction:
         Returns:
             The alter table builder.
         """
-        if format_version not in {1, 2}:
+        if not 1 <= format_version <= SUPPORTED_TABLE_FORMAT_VERSION:
             raise ValueError(f"Unsupported table format version: {format_version}")
 
         if format_version < self.table_metadata.format_version:
@@ -316,6 +316,9 @@ class Transaction:
 
         When a property is already set, it will be overwritten.
 
+        Setting the `format-version` property upgrades the table to that format
+        version instead of storing it as a property.
+
         Args:
             properties: The properties set on the table.
             kwargs: properties can also be pass as kwargs.
@@ -325,8 +328,14 @@ class Transaction:
         """
         if properties and kwargs:
             raise ValueError("Cannot pass both properties and kwargs")
-        updates = properties or kwargs
-        return self._apply((SetPropertiesUpdate(updates=updates),))
+        updates = dict(properties or kwargs)
+        if (new_format_version := updates.pop(TableProperties.FORMAT_VERSION, None)) is not None:
+            if isinstance(new_format_version, bool) or not str(new_format_version).isdigit():
+                raise ValueError(f"Invalid format-version: {new_format_version}")
+            self.upgrade_table_version(format_version=cast(TableVersion, int(new_format_version)))
+        if updates:
+            return self._apply((SetPropertiesUpdate(updates=updates),))
+        return self
 
     def _set_ref_snapshot(
         self,
