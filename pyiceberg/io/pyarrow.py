@@ -185,6 +185,7 @@ from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.decimal import unscaled_to_decimal
+from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
 from pyiceberg.utils.singleton import Singleton
 from pyiceberg.utils.truncate import truncate_upper_bound_binary_string, truncate_upper_bound_text_string
@@ -1763,6 +1764,11 @@ class ArrowScan:
         *,
         dictionary_columns: tuple[str, ...] = (),
     ) -> None:
+        deprecation_message(
+            deprecated_in="0.11.0",
+            removed_in="0.12.0",
+            help_message="ArrowScan is deprecated. Use table.scan().to_arrow() which routes through pyiceberg.execution backends",
+        )
         self._table_metadata = table_metadata
         self._io = io
         self._projected_schema = projected_schema
@@ -2707,7 +2713,13 @@ class ParquetFormatModel(FileFormatModel):
 FileFormatFactory.register(ParquetFormatModel())
 
 
-def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+def write_file(
+    io: FileIO,
+    table_metadata: TableMetadata,
+    tasks: Iterator[WriteTask],
+    write_backend: Any = None,
+    sort_order_id: int | None = None,
+) -> Iterator[DataFile]:
     from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 
     file_format = FileFormat(
@@ -2744,10 +2756,23 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             partition_key=task.partition_key,
         )
         fo = io.new_output(file_path)
-        writer = format_model.create_writer(fo, file_schema, table_metadata.properties)
-        with writer:
-            writer.write(arrow_table)
-        statistics = writer.result()
+
+        # Compose WriteBackend with FileFormatModel: backend controls HOW (engine),
+        # format model controls WHAT (file format). When no backend is provided,
+        # use the format model directly (default path, backward compatible).
+        if write_backend is not None:
+            statistics = write_backend.write_data_file(
+                output_file=fo,
+                file_schema=file_schema,
+                properties=table_metadata.properties,
+                arrow_table=arrow_table,
+                format_model=format_model,
+            )
+        else:
+            writer = format_model.create_writer(fo, file_schema, table_metadata.properties)
+            with writer:
+                writer.write(arrow_table)
+            statistics = writer.result()
 
         return DataFile.from_args(
             content=DataFileContent.DATA,
@@ -2755,10 +2780,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             file_format=file_format,
             partition=task.partition_key.partition if task.partition_key else Record(),
             file_size_in_bytes=len(fo),
-            # After this has been fixed:
-            # https://github.com/apache/iceberg-python/issues/271
-            # sort_order_id=task.sort_order_id,
-            sort_order_id=None,
+            sort_order_id=sort_order_id,
             # Just copy these from the table for now
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
@@ -2958,6 +2980,8 @@ def _dataframe_to_data_files(
     io: FileIO,
     write_uuid: uuid.UUID | None = None,
     counter: itertools.count[int] | None = None,
+    write_backend: Any = None,
+    sort_order_id: int | None = None,
 ) -> Iterable[DataFile]:
     """Convert a PyArrow Table or RecordBatchReader into DataFiles.
 
@@ -3005,6 +3029,8 @@ def _dataframe_to_data_files(
                 WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
                 for batches in bin_pack_record_batches(df, target_file_size)
             ),
+            write_backend=write_backend,
+            sort_order_id=sort_order_id,
         )
         return
 
@@ -3016,6 +3042,8 @@ def _dataframe_to_data_files(
                 WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
                 for batches in bin_pack_arrow_table(df, target_file_size)
             ),
+            write_backend=write_backend,
+            sort_order_id=sort_order_id,
         )
     else:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
@@ -3033,6 +3061,8 @@ def _dataframe_to_data_files(
                 for partition in partitions
                 for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
             ),
+            write_backend=write_backend,
+            sort_order_id=sort_order_id,
         )
 
 
