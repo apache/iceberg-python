@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import os
 import random
 import time
@@ -111,6 +112,8 @@ if TYPE_CHECKING:
     from pyiceberg.catalog import Catalog
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
     from pyiceberg.table.update.snapshot import _SnapshotProducer
+
+logger = logging.getLogger(__name__)
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -1106,6 +1109,12 @@ class Transaction:
 
                         wait = min(min_wait_ms * (2**attempt), max_wait_ms)
                         jitter = random.uniform(0, 0.1 * wait)
+                        logger.warning(
+                            "Commit failed due to a concurrent update, retrying (%s/%s) in %s ms",
+                            attempt + 1,
+                            num_retries,
+                            round(wait + jitter),
+                        )
                         time.sleep((wait + jitter) / 1000.0)
 
                         self._table.refresh()
