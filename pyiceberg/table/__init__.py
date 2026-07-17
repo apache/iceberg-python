@@ -54,7 +54,7 @@ from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
-from pyiceberg.table.snapshots import Snapshot, SnapshotLogEntry
+from pyiceberg.table.snapshots import Operation, Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
@@ -618,7 +618,7 @@ class Transaction:
             delete_filter=delete_filter,
             snapshot_properties=snapshot_properties,
             branch=branch,
-            _isolation_level_property=TableProperties.WRITE_UPDATE_ISOLATION_LEVEL,
+            _isolation_operation=Operation.OVERWRITE,
         )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
@@ -712,7 +712,7 @@ class Transaction:
                 case_sensitive=case_sensitive,
                 snapshot_properties=snapshot_properties,
                 branch=branch,
-                _isolation_level_property=TableProperties.WRITE_UPDATE_ISOLATION_LEVEL,
+                _isolation_operation=Operation.OVERWRITE,
             )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
@@ -730,7 +730,7 @@ class Transaction:
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
-        _isolation_level_property: str | None = None,
+        _isolation_operation: Operation | None = None,
     ) -> None:
         """
         Shorthand for deleting record from a table.
@@ -758,8 +758,8 @@ class Transaction:
             delete_filter = _parse_row_filter(delete_filter)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).delete() as delete_snapshot:
-            if _isolation_level_property is not None:
-                delete_snapshot._isolation_level_property = _isolation_level_property
+            if _isolation_operation is not None:
+                delete_snapshot._isolation_operation = _isolation_operation
             delete_snapshot.delete_by_predicate(delete_filter, case_sensitive)
 
         # Check if there are any files that require an actual rewrite of a data file
@@ -815,8 +815,8 @@ class Transaction:
                 with self.update_snapshot(
                     snapshot_properties=snapshot_properties, branch=branch
                 ).overwrite() as overwrite_snapshot:
-                    if _isolation_level_property is not None:
-                        overwrite_snapshot._isolation_level_property = _isolation_level_property
+                    if _isolation_operation is not None:
+                        overwrite_snapshot._isolation_operation = _isolation_operation
                     overwrite_snapshot._starting_snapshot_id = delete_snapshot._starting_snapshot_id
                     overwrite_snapshot.commit_uuid = commit_uuid
                     overwrite_snapshot.delete_by_predicate(delete_filter, case_sensitive)

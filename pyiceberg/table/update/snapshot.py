@@ -140,7 +140,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _written_manifests: list[str]
     _uncommitted_manifests: list[str]
     _written_manifest_lists: list[str]
-    _isolation_level_property: str
+    _isolation_operation: Operation
 
     def __init__(
         self,
@@ -174,7 +174,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._predicate = AlwaysFalse()
         self._case_sensitive = True
         self._commit_window = None
-        self._isolation_level_property: str = TableProperties.WRITE_DELETE_ISOLATION_LEVEL
+        self._isolation_operation: Operation = Operation.DELETE
 
     def _validate_target_branch(self, branch: str | None) -> str | None:
         # if branch is none, write will be written into a staging snapshot
@@ -462,7 +462,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         Subclasses that do not require validation (e.g. fast append) should override
         with a no-op.
         """
-        from pyiceberg.table import TableProperties
         from pyiceberg.table.snapshots import IsolationLevel
         from pyiceberg.table.update.validate import (
             _validate_added_data_files,
@@ -481,10 +480,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             return
 
         table = self._transaction._table
-        isolation_level_str = table.metadata.properties.get(
-            self._isolation_level_property, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT
-        )
-        isolation_level = IsolationLevel(isolation_level_str)
+        isolation_level = table.metadata.isolation_level(self._isolation_operation)
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
 
         if isolation_level == IsolationLevel.SERIALIZABLE:
