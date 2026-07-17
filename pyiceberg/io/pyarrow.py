@@ -2657,8 +2657,12 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
                 fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
             ) as writer:
                 writer.write(arrow_table, row_group_size=row_group_size)
+
+        with io.new_input(file_path).open() as input_stream:
+            parquet_metadata = pq.read_metadata(input_stream)
+
         statistics = data_file_statistics_from_parquet_metadata(
-            parquet_metadata=writer.writer.metadata,
+            parquet_metadata=parquet_metadata,
             stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
             parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
         )

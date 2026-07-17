@@ -3045,6 +3045,35 @@ def test_write_file_rejects_timestamptz_to_timestamp(tmp_path: Path) -> None:
         list(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task])))
 
 
+def test_write_file_reads_parquet_metadata(tmp_path: Path) -> None:
+    from pyiceberg.table import WriteTask
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    arrow_data = pa.table({"id": pa.array([1, 2, 3], type=pa.int32())})
+
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}",
+        last_column_id=1,
+        format_version=2,
+        schemas=[table_schema],
+        partition_specs=[PartitionSpec()],
+    )
+
+    task = WriteTask(
+        write_uuid=uuid.uuid4(),
+        task_id=0,
+        record_batches=arrow_data.to_batches(),
+        schema=table_schema,
+    )
+
+    with patch("pyiceberg.io.pyarrow.pq.read_metadata", wraps=pq.read_metadata) as mock_read_metadata:
+        data_files = list(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task])))
+
+    assert mock_read_metadata.called
+    assert len(data_files) == 1
+    assert data_files[0].record_count == 3
+
+
 def test__to_requested_schema_timestamps(
     arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
     arrow_table_with_all_timestamp_precisions: pa.Table,
