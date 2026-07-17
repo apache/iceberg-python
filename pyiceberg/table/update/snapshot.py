@@ -169,9 +169,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             TableProperties.WRITE_AVRO_COMPRESSION, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT
         )
         self._target_branch = self._validate_target_branch(branch=branch)
-        self._parent_snapshot_id = (
-            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
-        )
+        self._parent_snapshot_id = self._current_branch_head_id()
         self._starting_snapshot_id = self._parent_snapshot_id
         self._predicate = AlwaysFalse()
         self._case_sensitive = True
@@ -186,6 +184,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
                     raise ValueError(f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots")
         return branch
+
+    def _current_branch_head_id(self) -> int | None:
+        """Return the snapshot id at the head of the target branch, or None if the branch has no snapshot."""
+        snapshot = self._transaction.table_metadata.snapshot_by_name(self._target_branch)
+        return snapshot.snapshot_id if snapshot else None
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
         self._added_data_files.append(data_file)
@@ -444,9 +447,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         """Reset state for a retry attempt with refreshed metadata."""
         self._uncommitted_manifests.extend(self._written_manifests)
         self._written_manifests.clear()
-        self._parent_snapshot_id = (
-            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
-        )
+        self._parent_snapshot_id = self._current_branch_head_id()
         self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
         self._manifest_num_counter = itertools.count(0)
         self.commit_uuid = uuid.uuid4()
