@@ -495,15 +495,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
             )
 
-    def _resolve_parent_snapshot(self) -> Snapshot | None:
-        """Resolve parent snapshot, raising ValidationException if ID is set but snapshot is missing."""
-        if self._parent_snapshot_id is None:
-            return None
-        snapshot = self._transaction._table.metadata.snapshot_by_id(self._parent_snapshot_id)
-        if snapshot is None:
-            raise ValidationException(f"Cannot find parent snapshot {self._parent_snapshot_id} in table metadata")
-        return snapshot
-
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.schema(), self.spec(spec_id), self._case_sensitive)
         return project(self._predicate)
