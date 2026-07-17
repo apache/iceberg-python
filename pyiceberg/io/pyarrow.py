@@ -1806,8 +1806,8 @@ class ArrowScan:
             arrays = []
             has_dictionary = False
 
-            for array in batch.columns:
-                if pa.types.is_dictionary(array.type):
+            for name, array in zip(batch.schema.names, batch.columns, strict=True):
+                if pa.types.is_dictionary(array.type) and name not in self._dictionary_columns:
                     arrays.append(array.dictionary_decode())
                     has_dictionary = True
                 else:
