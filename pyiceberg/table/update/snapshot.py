@@ -118,8 +118,13 @@ class CommitWindow:
         return cls(base=base, head=head)
 
     def is_empty(self) -> bool:
-        """Return True if no concurrent commits occurred (validation can be skipped)."""
-        return self.head is None or self.base is None or self.base.snapshot_id == self.head.snapshot_id
+        """Return True if no concurrent commits occurred (validation can be skipped).
+
+        A None base means the operation started on a table with no snapshots. If a head
+        exists, another writer landed the first snapshot concurrently, so the window is not
+        empty and validation must run against the whole history.
+        """
+        return self.head is None or (self.base is not None and self.base.snapshot_id == self.head.snapshot_id)
 
 
 class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
@@ -476,7 +481,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         catalog_head = self._commit_window.head
         starting_snapshot = self._commit_window.base
 
-        if catalog_head is None or starting_snapshot is None:
+        if catalog_head is None:
             return
 
         table = self._transaction._table

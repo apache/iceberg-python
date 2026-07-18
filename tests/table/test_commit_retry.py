@@ -902,3 +902,35 @@ def test_negative_num_retries_still_commits(catalog: Catalog) -> None:
     table.append(pa.table({"x": [1]}))
 
     assert catalog.load_table("default.negative_retries_test").scan().to_arrow().to_pylist() == [{"x": 1}]
+
+
+def test_writer_that_started_on_an_empty_table_still_validates(catalog: Catalog) -> None:
+    """A writer that started on an empty table must still validate against a concurrently-landed first snapshot.
+
+    When the starting snapshot is None (empty table), the commit window must not be treated as empty
+    if a head exists. Otherwise a concurrent first snapshot bypasses validation and its rows can be
+    deleted with no error.
+    """
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    catalog.create_table(
+        "default.empty_start_validate",
+        schema=schema,
+        properties={
+            TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+            TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
+        },
+    )
+
+    stale = catalog.load_table("default.empty_start_validate")
+    tx = stale.transaction()
+    with pytest.warns(UserWarning):  # the delete matches nothing on an empty table
+        tx.overwrite(pa.table({"x": [2]}), overwrite_filter="x == 1")
+
+    # The first ever snapshot lands concurrently, with a row matching the filter.
+    catalog.load_table("default.empty_start_validate").append(pa.table({"x": [1]}))
+
+    with pytest.raises(ValidationException):
+        tx.commit_transaction()

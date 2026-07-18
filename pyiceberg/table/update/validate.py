@@ -40,7 +40,7 @@ VALIDATE_ADDED_DELETE_FILES_OPERATIONS: set[Operation] = {Operation.DELETE, Oper
 
 def _validation_history(
     table: Table,
-    from_snapshot: Snapshot,
+    from_snapshot: Snapshot | None,
     to_snapshot: Snapshot,
     matching_operations: set[Operation],
     manifest_content_filter: ManifestContent,
@@ -48,11 +48,12 @@ def _validation_history(
     """Return newly added manifests and snapshot IDs between the starting snapshot and parent snapshot.
 
     Walks from to_snapshot backwards towards from_snapshot, collecting manifests from
-    snapshots whose operations match. from_snapshot is excluded from results.
+    snapshots whose operations match. from_snapshot is excluded from results. A None
+    from_snapshot walks the entire history of to_snapshot down to the root.
 
     Args:
         table: Table to get the history from
-        from_snapshot: Snapshot where the walk stops (exclusive)
+        from_snapshot: Snapshot where the walk stops (exclusive), or None to walk the whole history
         to_snapshot: Snapshot where the walk starts
         matching_operations: Operations to match on
         manifest_content_filter: Manifest content type to filter
@@ -63,7 +64,7 @@ def _validation_history(
     Returns:
         List of manifest files and set of snapshots ID's matching conditions
     """
-    if from_snapshot.snapshot_id == to_snapshot.snapshot_id:
+    if from_snapshot is not None and from_snapshot.snapshot_id == to_snapshot.snapshot_id:
         return [], set()
 
     manifests_files: list[ManifestFile] = []
@@ -71,7 +72,7 @@ def _validation_history(
 
     last_snapshot = None
     for snapshot in ancestors_between(from_snapshot, to_snapshot, table.metadata):
-        if snapshot.snapshot_id == from_snapshot.snapshot_id:
+        if from_snapshot is not None and snapshot.snapshot_id == from_snapshot.snapshot_id:
             last_snapshot = snapshot
             break
         last_snapshot = snapshot
@@ -90,7 +91,7 @@ def _validation_history(
             ]
         )
 
-    if last_snapshot is None or last_snapshot.snapshot_id != from_snapshot.snapshot_id:
+    if from_snapshot is not None and (last_snapshot is None or last_snapshot.snapshot_id != from_snapshot.snapshot_id):
         raise ValidationException("No matching snapshot found.")
 
     return manifests_files, snapshots
@@ -216,9 +217,6 @@ def _added_data_files(
     Returns:
         Iterator of manifest entries for added data files matching the conditions
     """
-    if parent_snapshot is None:
-        return
-
     manifests, snapshot_ids = _validation_history(
         table,
         parent_snapshot,
@@ -252,7 +250,7 @@ def _added_delete_files(
     Returns:
         DeleteFileIndex
     """
-    if parent_snapshot is None or table.format_version < 2:
+    if table.format_version < 2:
         return DeleteFileIndex()
 
     manifests, snapshot_ids = _validation_history(
@@ -352,7 +350,7 @@ def _validate_no_new_deletes_for_data_files(
         parent_snapshot: Ending snapshot on the branch being validated
     """
     # If there is no current state, or no files has been added
-    if parent_snapshot is None or table.format_version < 2:
+    if table.format_version < 2:
         return
 
     deletes = _added_delete_files(table, starting_snapshot, data_filter, None, parent_snapshot)
