@@ -880,3 +880,25 @@ def test_commit_retry_delete_on_non_main_branch(catalog: Catalog) -> None:
     result = refreshed.scan(snapshot_id=branch_snapshot_id).to_arrow()
     # Original: 1,2,3,4,5,6 + append 7,8,9 - delete x==1 = 2,3,4,5,6,7,8,9
     assert sorted(result.column("x").to_pylist()) == [2, 3, 4, 5, 6, 7, 8, 9]
+
+
+def test_negative_num_retries_still_commits(catalog: Catalog) -> None:
+    """A negative commit.retry.num-retries is clamped to 0, so one attempt still runs (matches Java).
+
+    Without the clamp, range(num_retries + 1) becomes range(0), the commit is never attempted,
+    the staged updates are cleared, and the call returns as a silent no-op.
+    """
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    catalog.create_table(
+        "default.negative_retries_test",
+        schema=schema,
+        properties={TableProperties.COMMIT_NUM_RETRIES: "-1"},
+    )
+
+    table = catalog.load_table("default.negative_retries_test")
+    table.append(pa.table({"x": [1]}))
+
+    assert catalog.load_table("default.negative_retries_test").scan().to_arrow().to_pylist() == [{"x": 1}]

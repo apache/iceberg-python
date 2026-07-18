@@ -1085,8 +1085,11 @@ class Transaction:
         """
         if len(self._updates) > 0:
             properties = self._table.metadata.properties
-            num_retries: int = property_as_int(  # type: ignore  # The default is set with non-None value.
-                properties, TableProperties.COMMIT_NUM_RETRIES, TableProperties.COMMIT_NUM_RETRIES_DEFAULT
+            num_retries: int = max(
+                0,
+                property_as_int(  # type: ignore  # The default is set with non-None value.
+                    properties, TableProperties.COMMIT_NUM_RETRIES, TableProperties.COMMIT_NUM_RETRIES_DEFAULT
+                ),
             )
             min_wait_ms: int = property_as_int(  # type: ignore  # The default is set with non-None value.
                 properties, TableProperties.COMMIT_MIN_RETRY_WAIT_MS, TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT
