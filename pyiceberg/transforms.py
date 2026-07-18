@@ -897,11 +897,7 @@ class TruncateTransform(Transform[S, S]):
     def satisfies_order_of(self, other: Transform[S, T]) -> bool:
         if self == other:
             return True
-        elif (
-            isinstance(self.source_type, StringType)
-            and isinstance(other, TruncateTransform)
-            and isinstance(other.source_type, StringType)
-        ):
+        elif isinstance(other, TruncateTransform):
             return self.width >= other.width
 
         return False
