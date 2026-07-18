@@ -158,9 +158,6 @@ def _deleted_data_files(
         List of conflicting manifest-entries
     """
     # if there is no current table state, no files have been deleted
-    if parent_snapshot is None:
-        return
-
     manifests, snapshot_ids = _validation_history(
         table,
         parent_snapshot,
@@ -181,7 +178,7 @@ def _validate_deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
     data_filter: BooleanExpression | None,
-    parent_snapshot: Snapshot,
+    parent_snapshot: Snapshot | None,
 ) -> None:
     """Validate that no files matching a filter have been deleted from the table since a starting snapshot.
 
