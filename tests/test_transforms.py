@@ -512,6 +512,11 @@ def test_truncate_method(type_var: PrimitiveType, value: Any, expected_human_str
     assert truncate_transform.satisfies_order_of(truncate_transform)
 
 
+def test_truncate_satisfies_order_of() -> None:
+    assert TruncateTransform(5).satisfies_order_of(TruncateTransform(3))
+    assert not TruncateTransform(3).satisfies_order_of(TruncateTransform(5))
+
+
 def test_unknown_transform() -> None:
     unknown_transform = UnknownTransform("unknown")  # type: ignore
     assert str(unknown_transform) == str(eval(repr(unknown_transform)))
