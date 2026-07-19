@@ -1131,3 +1131,90 @@ def test_commit_that_landed_but_was_reported_failed_is_not_committed_twice(catal
         table.append(pa.table({"x": [1]}))
 
     assert catalog.load_table("default.landed_but_reported_failed").scan().to_arrow().to_pylist() == [{"x": 1}]
+
+
+def test_delete_that_matched_nothing_at_staging_still_validates(catalog: Catalog) -> None:
+    """A delete whose plan was empty at staging must still validate at commit time.
+
+    An empty-plan delete stages no updates, so commit_transaction would return before the
+    retry loop and validation. If a row matching the writer's own predicate lands between
+    staging and commit, serializable isolation requires a ValidationException rather than
+    a silent success that leaves the matching row in place.
+    """
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table(
+        "default.empty_plan_delete_test",
+        schema=schema,
+        properties={
+            TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+            TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
+        },
+    )
+
+    tx = catalog.load_table("default.empty_plan_delete_test").transaction()
+    with pytest.warns(UserWarning):  # the delete matches nothing at staging time
+        tx.delete("x > 45")
+
+    # A row matching the writer's own predicate lands concurrently.
+    catalog.load_table("default.empty_plan_delete_test").append(pa.table({"x": [50]}))
+
+    with pytest.raises(ValidationException):
+        tx.commit_transaction()
+
+    # The concurrent row is intact.
+    result = catalog.load_table("default.empty_plan_delete_test").scan().to_arrow()
+    assert result["x"].to_pylist() == [50]
+
+
+def test_delete_that_matched_nothing_without_concurrent_commit_succeeds(catalog: Catalog) -> None:
+    """An empty-plan delete with no concurrent activity commits cleanly as a no-op."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table("default.empty_plan_noop_test", schema=schema)
+
+    table = catalog.load_table("default.empty_plan_noop_test")
+    table.append(pa.table({"x": [1]}))
+
+    tx = catalog.load_table("default.empty_plan_noop_test").transaction()
+    with pytest.warns(UserWarning):  # the delete matches nothing
+        tx.delete("x > 45")
+    tx.commit_transaction()
+
+    result = catalog.load_table("default.empty_plan_noop_test").scan().to_arrow()
+    assert result["x"].to_pylist() == [1]
+
+
+def test_negative_wait_properties_do_not_mask_commit_failure(catalog: Catalog) -> None:
+    """Negative wait properties are clamped so a retry does not die in time.sleep.
+
+    Without the clamp, a negative min-wait raises ValueError from time.sleep mid-retry,
+    masking the original CommitFailedException.
+    """
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table(
+        "default.negative_wait_test",
+        schema=schema,
+        properties={
+            TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "-100",
+            TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "-1",
+        },
+    )
+
+    df = pa.table({"x": [1, 2, 3]})
+    tbl1 = catalog.load_table("default.negative_wait_test")
+    tbl2 = catalog.load_table("default.negative_wait_test")
+
+    tbl1.append(df)
+    # Succeeds via retry; a negative wait would raise ValueError from time.sleep instead.
+    tbl2.append(df)
+
+    result = catalog.load_table("default.negative_wait_test").scan().to_arrow()
+    assert len(result) == 6

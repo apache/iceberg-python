@@ -494,6 +494,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
 
         if self._predicate != AlwaysFalse():
+            # partition_set is None, so any concurrently committed delete file counts as
+            # a conflict even in unrelated partitions. Scope this via partition projection
+            # (as Java does) when delete-file write support lands.
             _validate_no_new_delete_files(table, catalog_head, conflict_detection_filter, None, starting_snapshot)
             _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
 

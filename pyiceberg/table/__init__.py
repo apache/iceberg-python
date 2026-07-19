@@ -1094,14 +1094,26 @@ class Transaction:
                     properties, TableProperties.COMMIT_NUM_RETRIES, TableProperties.COMMIT_NUM_RETRIES_DEFAULT
                 ),
             )
-            min_wait_ms: int = property_as_int(  # type: ignore  # The default is set with non-None value.
-                properties, TableProperties.COMMIT_MIN_RETRY_WAIT_MS, TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT
+            # All retry properties are clamped to non-negative values: a negative wait
+            # would raise ValueError from time.sleep mid-retry and mask the original
+            # CommitFailedException.
+            min_wait_ms: int = max(
+                0,
+                property_as_int(  # type: ignore  # The default is set with non-None value.
+                    properties, TableProperties.COMMIT_MIN_RETRY_WAIT_MS, TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT
+                ),
             )
-            max_wait_ms: int = property_as_int(  # type: ignore  # The default is set with non-None value.
-                properties, TableProperties.COMMIT_MAX_RETRY_WAIT_MS, TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT
+            max_wait_ms: int = max(
+                0,
+                property_as_int(  # type: ignore  # The default is set with non-None value.
+                    properties, TableProperties.COMMIT_MAX_RETRY_WAIT_MS, TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT
+                ),
             )
-            total_timeout_ms: int = property_as_int(  # type: ignore  # The default is set with non-None value.
-                properties, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT
+            total_timeout_ms: int = max(
+                0,
+                property_as_int(  # type: ignore  # The default is set with non-None value.
+                    properties, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT
+                ),
             )
             start_time = time.monotonic()
             self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
@@ -1155,6 +1167,29 @@ class Transaction:
             except Exception:
                 # Any failure leaves the transaction in an indeterminate state (files deleted, or the
                 # commit outcome unknown), so mark it as failed to refuse reuse.
+                self._failed = True
+                raise
+
+            self._snapshot_producers = []
+
+        elif self._snapshot_producers:
+            # An empty staged output (e.g. a delete whose plan matched nothing) skips the
+            # commit loop above, so run concurrency validation explicitly before reporting success.
+            from pyiceberg.table.update.snapshot import CommitWindow
+
+            try:
+                self._table.refresh()
+                commit_window = CommitWindow.resolve(
+                    self._table.metadata,
+                    self._snapshot_producers[0]._starting_snapshot_id,
+                    self._snapshot_producers[0]._target_branch,
+                )
+                for producer in self._snapshot_producers:
+                    producer._commit_window = commit_window
+                    producer._validate_concurrency()
+            except Exception:
+                for producer in self._snapshot_producers:
+                    producer._clean_all_uncommitted()
                 self._failed = True
                 raise
 
