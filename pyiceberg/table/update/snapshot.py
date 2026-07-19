@@ -453,7 +453,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._uncommitted_manifests.extend(self._written_manifests)
         self._written_manifests.clear()
         self._parent_snapshot_id = self._current_branch_head_id()
-        self._snapshot_id = self._transaction.table_metadata.new_snapshot_id()
+        # The snapshot id is kept stable across attempts so it acts as an idempotency key: if a
+        # previous attempt actually landed but its response was lost, the id can be found in the
+        # refreshed metadata and the commit is not repeated.
         self._manifest_num_counter = itertools.count(0)
         self.commit_uuid = uuid.uuid4()
 

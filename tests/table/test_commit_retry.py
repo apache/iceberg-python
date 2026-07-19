@@ -155,7 +155,8 @@ def test_refresh_for_retry_resets_producer_state(catalog: Catalog) -> None:
 
     producer._refresh_for_retry()
 
-    assert producer._snapshot_id != original_snapshot_id
+    # The snapshot id is kept stable across retries so it acts as an idempotency key.
+    assert producer._snapshot_id == original_snapshot_id
     assert producer.commit_uuid != original_uuid
     # parent stays None for empty table
     assert producer._parent_snapshot_id is None
@@ -1093,3 +1094,40 @@ def test_retried_delete_treats_a_concurrent_commit_atomically(catalog: Catalog) 
     final = sorted(catalog.load_table("default.retried_delete_atomic").scan().to_arrow()["x"].to_pylist())
     # The concurrent commit is atomic, so the delete may apply to all of it or none of it.
     assert final in ([0, 1, 1, 5], [0, 5]), f"half of the concurrent commit was deleted: {final}"
+
+
+def test_commit_that_landed_but_was_reported_failed_is_not_committed_twice(catalog: Catalog) -> None:
+    """A commit that landed but was reported as failed must not be committed a second time.
+
+    The snapshot id is stable across attempts, so a landed commit can be found in the refreshed
+    metadata on retry and is not repeated. Without this, the data would be committed twice and the
+    post-success cleanup would delete manifests the first committed snapshot references.
+    """
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    catalog.create_table(
+        "default.landed_but_reported_failed",
+        schema=schema,
+        properties={
+            TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+            TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
+        },
+    )
+
+    table = catalog.load_table("default.landed_but_reported_failed")
+    real_commit = catalog.commit_table
+    calls: list[int] = []
+
+    def commit_then_report_conflict(*args: Any, **kwargs: Any) -> Any:
+        result = real_commit(*args, **kwargs)
+        calls.append(1)
+        if len(calls) == 1:
+            raise CommitFailedException("transport layer retried; first response was lost")
+        return result
+
+    with patch.object(catalog, "commit_table", side_effect=commit_then_report_conflict):
+        table.append(pa.table({"x": [1]}))
+
+    assert catalog.load_table("default.landed_but_reported_failed").scan().to_arrow().to_pylist() == [{"x": 1}]

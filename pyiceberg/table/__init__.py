@@ -1132,6 +1132,17 @@ class Transaction:
                             time.sleep((wait + jitter) / 1000.0)
 
                             self._table.refresh()
+                            if all(
+                                self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None
+                                for producer in self._snapshot_producers
+                            ):
+                                # A previous attempt actually landed even though it was reported as
+                                # failed (for example a lost response that the transport layer retried).
+                                # The snapshot id is stable across attempts, so finding it in the
+                                # refreshed metadata means the commit is already applied. Stop here
+                                # instead of committing the same data again.
+                                self._cleanup_uncommitted_manifests()
+                                break
                             self._rebuild_snapshot_updates()
                 except (CommitFailedException, ValidationException):
                     # These exceptions guarantee the commit did not land, so it is safe to delete the
