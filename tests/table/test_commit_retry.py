@@ -526,8 +526,10 @@ def test_overwrite_uses_update_isolation_level(catalog: Catalog) -> None:
 
     refreshed = catalog.load_table("default.update_iso_test")
     result = refreshed.scan().to_arrow()
-    # overwrite with x > 0 deletes all rows (including tbl1's append), then adds 3 new rows
-    assert len(result) == 3
+    # overwrite() uses write.update.isolation-level=snapshot, so it does not raise on the concurrent
+    # append. Under snapshot isolation that concurrent append (tbl1's rows) is preserved: the overwrite
+    # only replaces the rows it saw and then adds 3 new rows, leaving 6 in total.
+    assert len(result) == 6
 
 
 def test_overwrite_with_serializable_update_isolation_raises(catalog: Catalog) -> None:
@@ -1016,3 +1018,78 @@ def test_reusing_a_committed_transaction_does_not_damage_the_first_commit(catalo
 
     rows = sorted(catalog.load_table("default.reuse_committed").scan().to_arrow()["x"].to_pylist())
     assert rows == [1, 2, 3, 10, 20, 100]
+
+
+def test_snapshot_isolation_delete_does_not_remove_rows_it_never_saw(catalog: Catalog) -> None:
+    """Under snapshot isolation, a retried delete must not drop concurrently added rows it never saw.
+
+    The delete's planned file set is frozen at plan time, so replanning against a newer head on retry
+    does not turn a concurrently added, matching file into a delete target.
+    """
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    table = catalog.create_table(
+        "default.snap_iso_delete",
+        schema=schema,
+        properties={
+            TableProperties.WRITE_DELETE_ISOLATION_LEVEL: "snapshot",
+            TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+            TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
+        },
+    )
+    table.append(pa.table({"x": [0, 1]}))
+
+    stale = catalog.load_table("default.snap_iso_delete")
+    tx = stale.transaction()
+    tx.delete("x == 1")
+
+    # Lands after the delete was planned. The stale writer never saw this row.
+    catalog.load_table("default.snap_iso_delete").append(pa.table({"x": [1]}))
+
+    tx.commit_transaction()
+
+    rows = sorted(catalog.load_table("default.snap_iso_delete").scan().to_arrow()["x"].to_pylist())
+    assert rows == [0, 1]
+
+
+def test_retried_delete_treats_a_concurrent_commit_atomically(catalog: Catalog) -> None:
+    """A retried delete under snapshot isolation must treat a concurrent commit atomically."""
+    import uuid
+
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import _dataframe_to_data_files
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    table = catalog.create_table(
+        "default.retried_delete_atomic",
+        schema=schema,
+        properties={
+            TableProperties.WRITE_DELETE_ISOLATION_LEVEL: "snapshot",
+            TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+            TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
+        },
+    )
+    table.append(pa.table({"x": [0, 1]}))
+
+    stale = catalog.load_table("default.retried_delete_atomic")
+    tx = stale.transaction()
+    tx.delete("x == 1")
+
+    # One concurrent commit carrying two files: [1] wholly matches, [1, 5] partially.
+    b = catalog.load_table("default.retried_delete_atomic")
+    btx = b.transaction()
+    with btx.update_snapshot().fast_append() as append:
+        for df in (pa.table({"x": [1]}), pa.table({"x": [1, 5]})):
+            for f in _dataframe_to_data_files(table_metadata=btx.table_metadata, io=b.io, write_uuid=uuid.uuid4(), df=df):
+                append.append_data_file(f)
+    btx.commit_transaction()
+
+    tx.commit_transaction()
+
+    final = sorted(catalog.load_table("default.retried_delete_atomic").scan().to_arrow()["x"].to_pylist())
+    # The concurrent commit is atomic, so the delete may apply to all of it or none of it.
+    assert final in ([0, 1, 1, 5], [0, 5]), f"half of the concurrent commit was deleted: {final}"

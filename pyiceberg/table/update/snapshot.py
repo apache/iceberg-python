@@ -541,6 +541,10 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
     From the specification
     """
 
+    # The set of data files this delete was planned to drop, frozen at first plan.
+    # Reused across retries so the delete is not replanned against a newer head.
+    _planned_delete_files: set[DataFile] | None = None
+
     def _commit(self) -> UpdatesAndRequirements:
         # Only produce a commit when there is something to delete
         if self.files_affected:
@@ -600,14 +604,27 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                             deleted_entries = []
                             existing_entries = []
                             for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
-                                if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
+                                # On the first plan the predicate decides which files are dropped. On a
+                                # retry the planned set is frozen, so a file is dropped only if it was
+                                # planned for deletion originally. This keeps concurrently added files
+                                # (which the writer never saw) from being dropped when the delete is
+                                # replanned against a newer head under snapshot isolation.
+                                if self._planned_delete_files is not None:
+                                    should_delete = entry.data_file in self._planned_delete_files
+                                else:
+                                    should_delete = strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH
+
+                                if should_delete:
                                     # Based on the metadata, it can be dropped right away
                                     deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
                                     self._deleted_data_files.add(entry.data_file)
                                 else:
                                     # Based on the metadata, we cannot determine if it can be deleted
                                     existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
-                                    if inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH:
+                                    if (
+                                        self._planned_delete_files is None
+                                        and inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH
+                                    ):
                                         partial_rewrites_needed = True
 
                             if len(deleted_entries) > 0:
@@ -623,6 +640,10 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                                 existing_manifests.append(manifest_file)
                     else:
                         existing_manifests.append(manifest_file)
+
+        if self._planned_delete_files is None:
+            # Freeze the set of files this delete operates on so retries reuse it instead of replanning.
+            self._planned_delete_files = set(self._deleted_data_files)
 
         return existing_manifests, total_deleted_entries, partial_rewrites_needed
 
