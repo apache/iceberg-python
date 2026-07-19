@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from pydantic import Field
 
 import pyiceberg.expressions.parser as parser
-from pyiceberg.exceptions import CommitFailedException
+from pyiceberg.exceptions import CommitFailedException, ValidationException
 from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
@@ -1129,7 +1129,11 @@ class Transaction:
 
                         self._table.refresh()
                         self._rebuild_snapshot_updates()
-            except Exception:
+            except (CommitFailedException, ValidationException):
+                # These exceptions guarantee the commit did not land, so it is safe to delete the
+                # files written for it. Any other exception (unknown outcome, or a commit that already
+                # succeeded) is re-raised without deleting, since those files may be referenced by the
+                # catalog's current snapshot and deleting them would corrupt the table for all readers.
                 for producer in self._snapshot_producers:
                     producer._clean_all_uncommitted()
                 raise

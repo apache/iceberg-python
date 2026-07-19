@@ -20,7 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from pyiceberg.catalog import Catalog
-from pyiceberg.exceptions import CommitFailedException, ValidationException
+from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties, Transaction
 from pyiceberg.table.snapshots import IsolationLevel, Operation
@@ -934,3 +934,31 @@ def test_writer_that_started_on_an_empty_table_still_validates(catalog: Catalog)
 
     with pytest.raises(ValidationException):
         tx.commit_transaction()
+
+
+def test_unknown_commit_outcome_keeps_the_committed_files(catalog: Catalog) -> None:
+    """An exception with an unknown outcome must not delete files the committed snapshot may reference.
+
+    The cleanup on the retry loop should only run for exceptions that guarantee the commit did not
+    happen. A CommitStateUnknownException (e.g. a lost response after the catalog already committed)
+    is re-raised without deleting, so the live snapshot's manifests stay intact.
+    """
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    catalog.create_table("default.unknown_outcome", schema=schema)
+
+    table = catalog.load_table("default.unknown_outcome")
+    real_commit = catalog.commit_table
+
+    def commit_then_lose_response(*args: Any, **kwargs: Any) -> Any:
+        real_commit(*args, **kwargs)
+        raise CommitStateUnknownException("response lost after the commit landed")
+
+    with patch.object(catalog, "commit_table", side_effect=commit_then_lose_response):
+        with pytest.raises(CommitStateUnknownException):
+            table.append(pa.table({"x": [1]}))
+
+    # The commit landed, so the table must still be readable.
+    assert catalog.load_table("default.unknown_outcome").scan().to_arrow().to_pylist() == [{"x": 1}]
