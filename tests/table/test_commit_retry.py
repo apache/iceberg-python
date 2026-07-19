@@ -962,3 +962,57 @@ def test_unknown_commit_outcome_keeps_the_committed_files(catalog: Catalog) -> N
 
     # The commit landed, so the table must still be readable.
     assert catalog.load_table("default.unknown_outcome").scan().to_arrow().to_pylist() == [{"x": 1}]
+
+
+def test_reusing_a_failed_transaction_cannot_publish_deleted_files(catalog: Catalog) -> None:
+    """A transaction whose commit failed is invalidated, so reusing it cannot publish deleted files.
+
+    On failure the retry loop deletes the written manifests. Reusing the transaction would otherwise
+    re-stage updates that point at those deleted files, so the transaction refuses reuse instead.
+    """
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    table = catalog.create_table("default.reuse_failed", schema=schema, properties={TableProperties.COMMIT_NUM_RETRIES: "0"})
+    table.append(pa.table({"x": [1]}))
+
+    tx = table.transaction()
+    tx.append(pa.table({"x": [2]}))
+
+    with patch.object(catalog, "commit_table", side_effect=CommitFailedException("transient")):
+        with pytest.raises(CommitFailedException):
+            tx.commit_transaction()
+
+    # Reusing the failed transaction must not corrupt the table.
+    with pytest.raises(RuntimeError):
+        tx.commit_transaction()
+    assert catalog.load_table("default.reuse_failed").scan().to_arrow().to_pylist() == [{"x": 1}]
+
+
+def test_reusing_a_committed_transaction_does_not_damage_the_first_commit(catalog: Catalog) -> None:
+    """Reusing a transaction after a successful commit must not replay the first commit's producers."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    table = catalog.create_table(
+        "default.reuse_committed",
+        schema=schema,
+        properties={
+            TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+            TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
+        },
+    )
+
+    tx = table.transaction()
+    tx.append(pa.table({"x": [1, 2, 3]}))
+    tx.commit_transaction()
+
+    tx.append(pa.table({"x": [10, 20]}))
+    catalog.load_table("default.reuse_committed").append(pa.table({"x": [100]}))  # forces a retry
+
+    tx.commit_transaction()
+
+    rows = sorted(catalog.load_table("default.reuse_committed").scan().to_arrow()["x"].to_pylist())
+    assert rows == [1, 2, 3, 10, 20, 100]

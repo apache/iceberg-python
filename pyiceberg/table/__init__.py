@@ -254,6 +254,7 @@ class Transaction:
         self._updates = ()
         self._requirements = ()
         self._snapshot_producers: list[_SnapshotProducer[Any]] = []
+        self._failed = False
 
     @property
     def table_metadata(self) -> TableMetadata:
@@ -1083,6 +1084,8 @@ class Transaction:
         Returns:
             The table with the updates applied.
         """
+        if self._failed:
+            raise RuntimeError("This transaction failed to commit and cannot be reused; create a new transaction.")
         if len(self._updates) > 0:
             properties = self._table.metadata.properties
             num_retries: int = max(
@@ -1104,39 +1107,47 @@ class Transaction:
             self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
 
             try:
-                for attempt in range(num_retries + 1):
-                    try:
-                        self._table._do_commit(  # pylint: disable=W0212
-                            updates=self._updates,
-                            requirements=self._requirements,
-                        )
-                        self._cleanup_uncommitted_manifests()
-                        break
-                    except CommitFailedException:
-                        elapsed_ms = (time.monotonic() - start_time) * 1000
-                        if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
-                            raise
+                try:
+                    for attempt in range(num_retries + 1):
+                        try:
+                            self._table._do_commit(  # pylint: disable=W0212
+                                updates=self._updates,
+                                requirements=self._requirements,
+                            )
+                            self._cleanup_uncommitted_manifests()
+                            break
+                        except CommitFailedException:
+                            elapsed_ms = (time.monotonic() - start_time) * 1000
+                            if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
+                                raise
 
-                        wait = min(min_wait_ms * (2**attempt), max_wait_ms)
-                        jitter = random.uniform(0, 0.1 * wait)
-                        logger.warning(
-                            "Commit failed due to a concurrent update, retrying (%s/%s) in %s ms",
-                            attempt + 1,
-                            num_retries,
-                            round(wait + jitter),
-                        )
-                        time.sleep((wait + jitter) / 1000.0)
+                            wait = min(min_wait_ms * (2**attempt), max_wait_ms)
+                            jitter = random.uniform(0, 0.1 * wait)
+                            logger.warning(
+                                "Commit failed due to a concurrent update, retrying (%s/%s) in %s ms",
+                                attempt + 1,
+                                num_retries,
+                                round(wait + jitter),
+                            )
+                            time.sleep((wait + jitter) / 1000.0)
 
-                        self._table.refresh()
-                        self._rebuild_snapshot_updates()
-            except (CommitFailedException, ValidationException):
-                # These exceptions guarantee the commit did not land, so it is safe to delete the
-                # files written for it. Any other exception (unknown outcome, or a commit that already
-                # succeeded) is re-raised without deleting, since those files may be referenced by the
-                # catalog's current snapshot and deleting them would corrupt the table for all readers.
-                for producer in self._snapshot_producers:
-                    producer._clean_all_uncommitted()
+                            self._table.refresh()
+                            self._rebuild_snapshot_updates()
+                except (CommitFailedException, ValidationException):
+                    # These exceptions guarantee the commit did not land, so it is safe to delete the
+                    # files written for it. Any other exception (unknown outcome, or a commit that already
+                    # succeeded) is re-raised without deleting, since those files may be referenced by the
+                    # catalog's current snapshot and deleting them would corrupt the table for all readers.
+                    for producer in self._snapshot_producers:
+                        producer._clean_all_uncommitted()
+                    raise
+            except Exception:
+                # Any failure leaves the transaction in an indeterminate state (files deleted, or the
+                # commit outcome unknown), so mark it as failed to refuse reuse.
+                self._failed = True
                 raise
+
+            self._snapshot_producers = []
 
         self._updates = ()
         self._requirements = ()
