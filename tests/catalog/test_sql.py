@@ -281,4 +281,22 @@ class TestSqlCatalogClose:
         catalog_sqlite.close()
 
         # Second close should not raise an exception
-        catalog_sqlite.close()
+        catalog_sqlite.close( )
+    def test_catalog_fixture_closes_connections(self, warehouse: Path) -> None:
+        """Regression test: verify SqlCatalog properly closes all SQLAlchemy
+        connections to prevent Python 3.13 ResourceWarning about unclosed
+        database connections. See: apache/iceberg-python#2530"""
+        import gc
+        import warnings
+
+        props = {
+            "uri": f"sqlite:////{warehouse}/test-regression-2530",
+            "warehouse": f"file://{warehouse}",
+        }
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ResourceWarning)
+            catalog = SqlCatalog("regression_test", **props)
+            catalog.create_tables()
+            catalog.destroy_tables()
+            catalog.close()
+            gc.collect()  # Force GC to catch any unclosed connections
