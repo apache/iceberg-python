@@ -291,7 +291,8 @@ class TestSqlCatalogClose:
         catalog_sqlite.close()
 
         # Second close should not raise an exception
-        catalog_sqlite.close( )
+        catalog_sqlite.close()
+
     def test_catalog_fixture_closes_connections(self, warehouse: Path) -> None:
         """Regression test: verify SqlCatalog properly closes all SQLAlchemy
         connections to prevent Python 3.13 ResourceWarning about unclosed

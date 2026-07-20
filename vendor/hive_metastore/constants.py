@@ -23,8 +23,6 @@
 #
 
 
-
-
 DDL_TIME = "transient_lastDdlTime"
 ACCESSTYPE_NONE = 1
 ACCESSTYPE_READONLY = 2
