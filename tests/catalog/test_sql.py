@@ -48,6 +48,11 @@ def catalog_name() -> str:
 
 @pytest.fixture(scope="module")
 def catalog_memory(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    """In-memory SQLite catalog fixture.
+
+    Calls catalog.close() during teardown to properly dispose SQLAlchemy
+    connection pools and prevent Python 3.13 ResourceWarning. See #2530.
+    """
     props = {
         "uri": "sqlite:///:memory:",
         "warehouse": f"file://{warehouse}",
@@ -61,6 +66,11 @@ def catalog_memory(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
 
 @pytest.fixture(scope="module")
 def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    """File-based SQLite catalog fixture.
+
+    Calls catalog.close() during teardown to properly dispose SQLAlchemy
+    connection pools and prevent Python 3.13 ResourceWarning. See #2530.
+    """
     props = {
         "uri": f"sqlite:////{warehouse}/sql-catalog",
         "warehouse": f"file://{warehouse}",
