@@ -171,7 +171,10 @@ filterwarnings = [
   "error",
   # Ignore Python version deprecation warning from google.api_core while we still support 3.10
   "ignore:You are using a Python version.*which Google will stop supporting:FutureWarning:google.api_core",
-  # Ignore Ray subprocess cleanup warnings
+  # Ray subprocess cleanup warnings are suppressed because ray is not installed in local test environments
+  # and requires a CI environment with proper isolation to test subprocess lifecycle and cleanup behavior.
+  # See issue #2530: the SQLAlchemy connection pool warning (sqlite) has been fixed by properly closing
+  # connections in test fixtures, but ray subprocess warnings still require CI-level testing.
   "ignore:unclosed file:ResourceWarning",
   "ignore:subprocess.*is still running:ResourceWarning",
   # Ignore google-crc32c C extension missing warning (common on Python 3.14+)
