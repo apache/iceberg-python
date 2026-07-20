@@ -778,9 +778,17 @@ class SqlCatalog(MetastoreCatalog):
         """Close the catalog and release database connections.
 
         This method closes the SQLAlchemy engine and disposes of all connection pools.
-        This ensures that any cached connections are properly closed, which is especially
-        important for blobfuse scenarios where file handles need to be closed for
-        data to be flushed to persistent storage.
+        This is crucial for proper resource cleanup and must be called in test fixture
+        teardowns to prevent Python 3.13+ ResourceWarnings about unclosed connections.
+
+        The connection pool lifecycle is managed by SQLAlchemy's engine. When dispose()
+        is called, it closes all idle connections and invalidates active ones. This is
+        especially important in test environments where fixtures create catalogs that
+        otherwise may not be explicitly closed, and in production scenarios with
+        blobfuse where file handles need to be closed for data to be flushed to
+        persistent storage.
+
+        See: Issue #2530 (https://github.com/apache/iceberg-python/issues/2530)
         """
         if hasattr(self, "engine"):
             self.engine.dispose()
