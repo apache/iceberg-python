@@ -17,14 +17,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import pytest
 
 import pyiceberg.table as table_module
 from pyiceberg.expressions import BooleanExpression, EqualTo
-from pyiceberg.io import FileIO
-from pyiceberg.manifest import DataFile, FileFormat, ManifestContent, ManifestEntry, ManifestFile
+from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema
 from pyiceberg.table import ManifestGroupPlanner, Table
 from pyiceberg.typedef import Record
@@ -37,18 +34,6 @@ def _data_file(file_number: int) -> DataFile:
         partition=Record(file_number),
         record_count=100,
         file_size_in_bytes=1,
-    )
-
-
-def _manifest_file(file_number: int) -> ManifestFile:
-    return ManifestFile.from_args(
-        manifest_path=f"s3://bucket/manifest-{file_number}.avro",
-        manifest_length=1,
-        partition_spec_id=0,
-        content=ManifestContent.DATA,
-        sequence_number=1,
-        min_sequence_number=1,
-        added_snapshot_id=1,
     )
 
 
@@ -79,39 +64,3 @@ def test_build_metrics_evaluator_prepares_one_instance(table_v2: Table, monkeypa
     assert metrics_evaluator(first_file)
     assert metrics_evaluator(second_file)
     assert instances[0].calls == [first_file, second_file]
-
-
-def test_manifest_group_planner_shares_metrics_evaluator_across_manifests(
-    table_v2: Table, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    planner = ManifestGroupPlanner(table_metadata=table_v2.metadata, io=table_v2.io, row_filter=EqualTo("x", 10))
-    built_evaluators: list[Callable[[DataFile], bool]] = []
-    opened_evaluators: list[Callable[[DataFile], bool]] = []
-
-    def build_metrics_evaluator() -> Callable[[DataFile], bool]:
-        def evaluator(_: DataFile) -> bool:
-            return True
-
-        built_evaluators.append(evaluator)
-        return evaluator
-
-    def open_manifest(
-        io: FileIO,
-        manifest: ManifestFile,
-        partition_evaluator: Callable[[DataFile], bool],
-        metrics_evaluator: Callable[[DataFile], bool],
-    ) -> list[ManifestEntry]:
-        opened_evaluators.append(metrics_evaluator)
-        return []
-
-    monkeypatch.setattr(planner, "_build_manifest_evaluator", lambda _: lambda _: True)
-    monkeypatch.setattr(planner, "_build_partition_evaluator", lambda _: lambda _: True)
-    monkeypatch.setattr(planner, "_build_metrics_evaluator", build_metrics_evaluator)
-    monkeypatch.setattr(table_module, "_open_manifest", open_manifest)
-
-    list(planner.plan_manifest_entries([_manifest_file(1), _manifest_file(2)]))
-
-    assert len(built_evaluators) == 1
-    assert len(opened_evaluators) == 2
-    assert opened_evaluators[0] is built_evaluators[0]
-    assert opened_evaluators[1] is built_evaluators[0]

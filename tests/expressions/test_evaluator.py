@@ -84,6 +84,8 @@ STRING_MAX = _to_byte_buffer(StringType(), "z")
 
 
 class BlockingBounds(Mapping[int, bytes]):
+    """Pause one metrics evaluation while another runs to detect shared state between calls."""
+
     def __init__(self, value: bytes, first_read: Event, release_first_read: Event) -> None:
         self.value = value
         self.first_read = first_read
