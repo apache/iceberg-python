@@ -56,7 +56,7 @@ from pyiceberg.utils.config import Config
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
 DEFAULT_READ_VERSION: Literal[2] = 2
-_LATEST_MANIFEST_VERSION: Literal[3] = 3
+_LATEST_MANIFEST_READ_VERSION: Literal[3] = 3
 
 INITIAL_SEQUENCE_NUMBER = 0
 
@@ -894,7 +894,7 @@ class ManifestFile(Record):
         input_file = io.new_input(self.manifest_path)
         with AvroFile[ManifestEntry](
             input_file,
-            MANIFEST_ENTRY_SCHEMAS[_LATEST_MANIFEST_VERSION],
+            MANIFEST_ENTRY_SCHEMAS[_LATEST_MANIFEST_READ_VERSION],
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
@@ -1017,7 +1017,7 @@ def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     with AvroFile[ManifestFile](
         input_file,
-        MANIFEST_LIST_FILE_SCHEMAS[_LATEST_MANIFEST_VERSION],
+        MANIFEST_LIST_FILE_SCHEMAS[_LATEST_MANIFEST_READ_VERSION],
         read_types={-1: ManifestFile, 508: PartitionFieldSummary},
         read_enums={517: ManifestContent},
     ) as reader:
