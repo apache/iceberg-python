@@ -40,7 +40,7 @@ from pyiceberg.expressions import (
     StartsWith,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.expressions.visitors import residual_evaluator_of
+from pyiceberg.expressions.visitors import ResidualVisitor, residual_evaluator_of
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import DayTransform, IdentityTransform
@@ -110,7 +110,19 @@ def test_residual_evaluator_does_not_mutate_prepared_state() -> None:
     assert evaluator.residual_for(Record(0, 0)) == AlwaysFalse()
     assert evaluator.residual_for(Record(1, 1)) == AlwaysTrue()
 
+    assert isinstance(evaluator, ResidualVisitor)
     assert vars(evaluator) == initial_state
+
+
+def test_residual_visitor_preserves_public_eval_api() -> None:
+    schema = Schema(NestedField(1, "a", IntegerType()))
+    spec = PartitionSpec(PartitionField(1, 1001, IdentityTransform(), "a_part"))
+    visitor = ResidualVisitor(schema=schema, spec=spec, case_sensitive=True, expr=EqualTo("a", 1))
+    initial_state = vars(visitor).copy()
+
+    assert visitor.eval(Record(1)) == AlwaysTrue()
+    assert visitor.eval(Record(0)) == AlwaysFalse()
+    assert vars(visitor) == initial_state
 
 
 def test_residual_evaluator_concurrent_calls_do_not_share_partitions() -> None:

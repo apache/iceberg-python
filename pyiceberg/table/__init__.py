@@ -132,9 +132,6 @@ logger = logging.getLogger(__name__)
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
-# Retain a small working set for repeated relevant partition values without adding
-# unbounded key storage when scans contain a distinct value for every data file.
-_RESIDUAL_CACHE_MAX_SIZE = 128
 
 
 @dataclass()
@@ -146,6 +143,9 @@ class UpsertResult:
 
 
 class TableProperties:
+    RESIDUAL_CACHE_MAX_SIZE = "read.residual-cache.max-size"
+    RESIDUAL_CACHE_MAX_SIZE_DEFAULT = 128
+
     PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
     PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
 
@@ -2860,7 +2860,14 @@ class ManifestGroupPlanner:
         )
         # A residual can only depend on partition fields derived from source columns
         # referenced by the scan filter. Keep the cache local and bounded.
-        residual_cache: LRUCache[tuple[int, tuple[Any, ...]], BooleanExpression] = LRUCache(maxsize=_RESIDUAL_CACHE_MAX_SIZE)
+        residual_cache_max_size = property_as_int(
+            self.options,
+            TableProperties.RESIDUAL_CACHE_MAX_SIZE,
+            TableProperties.RESIDUAL_CACHE_MAX_SIZE_DEFAULT,
+        )
+        if residual_cache_max_size is None or residual_cache_max_size <= 0:
+            raise ValueError(f"{TableProperties.RESIDUAL_CACHE_MAX_SIZE} must be a positive integer")
+        residual_cache: LRUCache[tuple[int, tuple[Any, ...]], BooleanExpression] = LRUCache(maxsize=residual_cache_max_size)
 
         def residual_for(data_file: DataFile) -> BooleanExpression:
             partition = data_file.partition

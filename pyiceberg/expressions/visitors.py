@@ -1822,20 +1822,7 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
 
 
 class _ResidualEvaluationVisitor(BoundBooleanExpressionVisitor[BooleanExpression]):
-    """Finds the residuals for an Expression the partitions in the given PartitionSpec.
-
-    A residual expression is made by partially evaluating an expression using partition values.
-    For example, if a table is partitioned by day(utc_timestamp) and is read with a filter expression
-    utc_timestamp > a and utc_timestamp < b, then there are 4 possible residuals expressions
-    for the partition data, d:
-
-
-    1. If d > day(a) and d &lt; day(b), the residual is always true
-    2. If d == day(a) and d != day(b), the residual is utc_timestamp > a
-    3. if d == day(b) and d != day(a), the residual is utc_timestamp < b
-    4. If d == day(a) == day(b), the residual is utc_timestamp > a and utc_timestamp < b
-    Partition data is passed using StructLike. Residuals are returned by residualFor(StructLike).
-    """
+    """Evaluate a residual expression for one partition."""
 
     schema: Schema
     spec: PartitionSpec
@@ -2019,8 +2006,19 @@ class _ResidualEvaluationVisitor(BoundBooleanExpressionVisitor[BooleanExpression
         return bound
 
 
-class ResidualEvaluator:
-    """Prepare residual evaluation once while keeping partition state local to each call."""
+class ResidualVisitor:
+    """Find residuals for an expression using partition values.
+
+    A residual expression is made by partially evaluating an expression using partition values.
+    For example, if a table is partitioned by day(utc_timestamp) and is read with a filter expression
+    utc_timestamp > a and utc_timestamp < b, then there are 4 possible residual expressions
+    for the partition data, d:
+
+    1. If d > day(a) and d < day(b), the residual is always true
+    2. If d == day(a) and d != day(b), the residual is utc_timestamp > a
+    3. If d == day(b) and d != day(a), the residual is utc_timestamp < b
+    4. If d == day(a) == day(b), the residual is utc_timestamp > a and utc_timestamp < b
+    """
 
     schema: Schema
     spec: PartitionSpec
@@ -2035,7 +2033,7 @@ class ResidualEvaluator:
         self.expr = expr
         self.partition_schema = Schema(*spec.partition_type(schema).fields)
 
-    def residual_for(self, partition_data: Record) -> BooleanExpression:
+    def eval(self, partition_data: Record) -> BooleanExpression:
         return visit(
             self.expr,
             visitor=_ResidualEvaluationVisitor(
@@ -2046,6 +2044,11 @@ class ResidualEvaluator:
                 partition_data=partition_data,
             ),
         )
+
+
+class ResidualEvaluator(ResidualVisitor):
+    def residual_for(self, partition_data: Record) -> BooleanExpression:
+        return self.eval(partition_data)
 
 
 class UnpartitionedResidualEvaluator(ResidualEvaluator):
