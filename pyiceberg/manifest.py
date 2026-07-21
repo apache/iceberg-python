@@ -56,6 +56,7 @@ from pyiceberg.utils.config import Config
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
 DEFAULT_READ_VERSION: Literal[2] = 2
+_LATEST_MANIFEST_VERSION: Literal[3] = 3
 
 INITIAL_SEQUENCE_NUMBER = 0
 
@@ -532,6 +533,22 @@ class DataFile(Record):
     def sort_order_id(self) -> int | None:
         return self._data[15]
 
+    @property
+    def first_row_id(self) -> int | None:
+        return self._data[16] if len(self._data) > 16 else None
+
+    @property
+    def referenced_data_file(self) -> str | None:
+        return self._data[17] if len(self._data) > 17 else None
+
+    @property
+    def content_offset(self) -> int | None:
+        return self._data[18] if len(self._data) > 18 else None
+
+    @property
+    def content_size_in_bytes(self) -> int | None:
+        return self._data[19] if len(self._data) > 19 else None
+
     # Spec ID should not be stored in the file
     _spec_id: int
 
@@ -853,6 +870,10 @@ class ManifestFile(Record):
     def key_metadata(self) -> bytes | None:
         return self._data[14]
 
+    @property
+    def first_row_id(self) -> int | None:
+        return self._data[15] if len(self._data) > 15 else None
+
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
 
@@ -873,7 +894,7 @@ class ManifestFile(Record):
         input_file = io.new_input(self.manifest_path)
         with AvroFile[ManifestEntry](
             input_file,
-            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
+            MANIFEST_ENTRY_SCHEMAS[_LATEST_MANIFEST_VERSION],
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
@@ -996,7 +1017,7 @@ def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     with AvroFile[ManifestFile](
         input_file,
-        MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION],
+        MANIFEST_LIST_FILE_SCHEMAS[_LATEST_MANIFEST_VERSION],
         read_types={-1: ManifestFile, 508: PartitionFieldSummary},
         read_enums={517: ManifestContent},
     ) as reader:
