@@ -2151,7 +2151,9 @@ def _open_manifest(
     Returns:
         A list of ManifestEntry that matches the provided filters.
     """
-    return manifest.prune_manifest_entry(io, partition_filter, metrics_evaluator)
+    return manifest.fetch_manifest_entry(
+        io, discard_deleted=True, entry_filter=lambda e: partition_filter(e.data_file) and metrics_evaluator(e.data_file)
+    )
 
 
 def _min_sequence_number(manifests: list[ManifestFile]) -> int:

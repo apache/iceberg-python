@@ -859,13 +859,19 @@ class ManifestFile(Record):
     def has_existing_files(self) -> bool:
         return self.existing_files_count is None or self.existing_files_count > 0
 
-    def fetch_manifest_entry(self, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+    def fetch_manifest_entry(
+        self,
+        io: FileIO,
+        discard_deleted: bool = True,
+        entry_filter: Callable[[ManifestEntry], bool] | None = None,
+    ) -> list[ManifestEntry]:
         """
         Read the manifest entries from the manifest file.
 
         Args:
             io: The FileIO to fetch the file.
             discard_deleted: Filter on live entries.
+            entry_filter: Optional predicate to filter manifest entries.
 
         Returns:
             An Iterator of manifest entries.
@@ -877,43 +883,15 @@ class ManifestFile(Record):
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
-            return [
-                _inherit_from_manifest(entry, self)
-                for entry in reader
-                if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
-            ]
-
-    def prune_manifest_entry(
-        self, io: FileIO, partition_filter: Callable[[DataFile], bool], metrics_evaluator: Callable[[DataFile], bool]
-    ) -> list[ManifestEntry]:
-        """
-        Read manifest entries, applying partition and metrics evaluator during deserialization.
-
-        Unlike fetch_manifest_entry followed by a separate filer pass, this fuses filtering
-        into the deserialization loop, avoiding the intermediate list allocation for
-        non-matching entries.
-
-        Args:
-            io: The FileIO to fetch the file.
-            partition_filter: Evaluates the entry's partition data.
-            metrics_evaluator: Evaluates the entry's column-level metrics.
-
-        Returns:
-            An Iterator of manifest entries matching both filters.
-        """
-        input_file = io.new_input(self.manifest_path)
-        with AvroFile[ManifestEntry](
-            input_file,
-            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
-            read_types={-1: ManifestEntry, 2: DataFile},
-            read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
-        ) as reader:
             result = []
+
             for entry in reader:
-                if entry.status != ManifestEntryStatus.DELETED:
-                    _inherit_from_manifest(entry, self)
-                    if partition_filter(entry.data_file) and metrics_evaluator(entry.data_file):
-                        result.append(entry)
+                if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
+                    continue
+                _inherit_from_manifest(entry, self)
+
+                if entry_filter is None or entry_filter(entry):
+                    result.append(entry)
 
             return result
 
