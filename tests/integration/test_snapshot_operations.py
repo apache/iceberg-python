@@ -316,6 +316,47 @@ def test_fast_forward_branch(catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_fast_forward_branch_preserves_retention_intra_chain(catalog: Catalog) -> None:
+    identifier = "default.test_table_snapshot_operations"
+    tbl = catalog.load_table(identifier)
+    assert len(tbl.history()) > 2
+
+    # Pick an older snapshot as the branch's starting point so the subsequent
+    # fast-forward to main is a real advance, not a no-op.
+    older_snapshot_id = tbl.history()[-3].snapshot_id
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot is not None
+    main_snapshot_id = current_snapshot.snapshot_id
+
+    branch_name = "retention_intra_chain"
+    max_ref = 3_600_000  # 1h — distinct value per field so a swap would be caught
+    max_snap = 7_200_000  # 2h
+    min_keep = 5
+
+    # Chain create_branch (with retention) + fast_forward_branch in one commit.
+    # _effective_refs lets the fast-forward observe the same-chain create and
+    # carry the retention fields onto the second staged SetSnapshotRefUpdate.
+    tbl.manage_snapshots().create_branch(
+        snapshot_id=older_snapshot_id,
+        branch_name=branch_name,
+        max_ref_age_ms=max_ref,
+        max_snapshot_age_ms=max_snap,
+        min_snapshots_to_keep=min_keep,
+    ).fast_forward_branch(
+        from_branch=branch_name,
+        to_ref="main",
+    ).commit()
+
+    tbl = catalog.load_table(identifier)
+    ref = tbl.refs()[branch_name]
+    assert ref.snapshot_id == main_snapshot_id
+    assert ref.max_ref_age_ms == max_ref
+    assert ref.max_snapshot_age_ms == max_snap
+    assert ref.min_snapshots_to_keep == min_keep
+
+
+@pytest.mark.integration
 def test_rollback_to_timestamp(table_with_snapshots: Table) -> None:
     current_snapshot = table_with_snapshots.current_snapshot()
     assert current_snapshot is not None
