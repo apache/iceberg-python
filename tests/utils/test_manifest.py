@@ -37,6 +37,7 @@ from pyiceberg.manifest import (
     ManifestFile,
     PartitionFieldSummary,
     _inherit_from_manifest,
+    _layout_version_from_field_count,
     _manifests,
     clear_manifest_cache,
     read_manifest_list,
@@ -1257,6 +1258,114 @@ def test_write_manifest_v3(compression: AvroCompressionCodec) -> None:
         assert read_entries[0].data_file.value_counts == {1: 100}
         assert read_entries[0].data_file.sort_order_id == 1
         assert read_entries[1].data_file.file_path == "/data/file-v2.parquet"
+        # the reader must expose the V3-only data file fields rather than dropping them, otherwise a
+        # V3 manifest cannot round-trip through the reader
+        assert read_entries[0].data_file.first_row_id == 1000
+        assert read_entries[1].data_file.first_row_id is None
+        for read_entry in read_entries:
+            for v3_field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
+                assert hasattr(read_entry.data_file, v3_field)
+
+
+def test_write_manifest_v3_round_trips_deletion_vector_fields() -> None:
+    """The V3-only referenced_data_file/content_offset/content_size_in_bytes fields must survive a
+    write/read round trip with their actual values, not just be present-but-empty on the reader.
+    """
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+
+    dv_data_file = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path="/data/dv-1.puffin",
+        file_format=FileFormat.PUFFIN,
+        partition=Record(),
+        record_count=5,
+        file_size_in_bytes=256,
+        referenced_data_file="/data/file-v3.parquet",
+        content_offset=128,
+        content_size_in_bytes=64,
+    )
+
+    with TemporaryDirectory() as tmp_dir:
+        path = tmp_dir + "/manifest-v3-dv.avro"
+        with write_manifest(
+            format_version=3,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=test_schema,
+            output_file=io.new_output(path),
+            snapshot_id=25,
+            avro_compression="null",
+        ) as writer:
+            writer.add(ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, snapshot_id=25, data_file=dv_data_file))
+
+        read_entries = writer.to_manifest_file().fetch_manifest_entry(io, discard_deleted=False)
+        assert len(read_entries) == 1
+        read_data_file = read_entries[0].data_file
+        assert read_data_file.referenced_data_file == "/data/file-v3.parquet"
+        assert read_data_file.content_offset == 128
+        assert read_data_file.content_size_in_bytes == 64
+
+
+def test_layout_version_from_field_count() -> None:
+    layouts = {
+        1: Schema(NestedField(1, "a", IntegerType(), False)),
+        2: Schema(NestedField(1, "a", IntegerType(), False), NestedField(2, "b", IntegerType(), False)),
+    }
+    assert _layout_version_from_field_count(layouts, 1) == 1
+    assert _layout_version_from_field_count(layouts, 2) == 2
+
+    with pytest.raises(ValueError, match="Cannot determine layout version"):
+        _layout_version_from_field_count(layouts, 3)
+
+
+def test_layout_version_from_field_count_rejects_ambiguous_layouts() -> None:
+    # two versions with the same field count cannot be told apart by field count alone
+    layouts = {
+        1: Schema(NestedField(1, "a", IntegerType(), False)),
+        2: Schema(NestedField(1, "a", IntegerType(), False)),
+    }
+    with pytest.raises(ValueError, match="Ambiguous layout"):
+        _layout_version_from_field_count(layouts, 1)
+
+
+def test_write_manifest_v3_rebinds_v1_data_file() -> None:
+    """A V1-bound data file (fewer fields than V2) must be rebindable to the V3 layout.
+
+    The re-wrap logic recovers the source layout from the field count, so a V1 data file is zipped
+    against the V1 fields rather than a fixed V2 layout, which would raise a confusing strict-zip
+    length mismatch.
+    """
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+
+    v1_data_file = DataFile.from_args(
+        _table_format_version=1,
+        file_path="/data/file-v1.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=10,
+        file_size_in_bytes=128,
+    )
+
+    with TemporaryDirectory() as tmp_dir:
+        path = tmp_dir + "/manifest-v3-from-v1.avro"
+        with write_manifest(
+            format_version=3,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=test_schema,
+            output_file=io.new_output(path),
+            snapshot_id=25,
+            avro_compression="null",
+        ) as writer:
+            writer.add(ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, snapshot_id=25, data_file=v1_data_file))
+
+        read_entries = writer.to_manifest_file().fetch_manifest_entry(io, discard_deleted=False)
+        assert len(read_entries) == 1
+        assert read_entries[0].data_file.file_path == "/data/file-v1.parquet"
+        assert read_entries[0].data_file.record_count == 10
+        # V3-only field is filled with its default when rebinding a V1 data file
+        assert read_entries[0].data_file.first_row_id is None
 
 
 @pytest.mark.parametrize("compression", ["null", "deflate"])
@@ -1327,6 +1436,27 @@ def test_write_manifest_list_v3_assigns_first_row_id(compression: AvroCompressio
         assert read_back[0].added_rows_count == 100
         assert read_back[0].existing_rows_count == 25
         assert read_back[2].content == ManifestContent.DELETES
+        # the reader must expose the assigned first_row_id values rather than dropping them, otherwise a
+        # V3 manifest list cannot round-trip through the reader
+        assert [m.first_row_id for m in read_back] == [1000, 77, None, 1125]
+
+        # re-writing the manifests read back from the V3 list must preserve their already-assigned
+        # first_row_id values instead of reassigning them
+        rewritten_path = tmp_dir + "/manifest-list-v3-rewritten.avro"
+        with write_manifest_list(
+            format_version=3,
+            output_file=io.new_output(rewritten_path),
+            snapshot_id=25,
+            parent_snapshot_id=19,
+            sequence_number=2,
+            avro_compression=compression,
+            first_row_id=2000,
+        ) as rewriter:
+            rewriter.add_manifests(read_back)
+
+        rewritten = list(read_manifest_list(io.new_input(rewritten_path)))
+        # data manifests keep their prior first_row_id; the delete manifest stays None
+        assert [m.first_row_id for m in rewritten] == [1000, 77, None, 1125]
 
 
 def test_write_manifest_list_v3_requires_first_row_id() -> None:
