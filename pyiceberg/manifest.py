@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from copy import copy
 from enum import Enum
 from types import TracebackType
@@ -532,6 +532,26 @@ class DataFile(Record):
     def sort_order_id(self) -> int | None:
         return self._data[15]
 
+    @property
+    def first_row_id(self) -> int | None:
+        # V3-only field; absent on records bound to an older layout
+        return self._data[16] if len(self._data) > 16 else None
+
+    @property
+    def referenced_data_file(self) -> str | None:
+        # V3-only field; absent on records bound to an older layout
+        return self._data[17] if len(self._data) > 17 else None
+
+    @property
+    def content_offset(self) -> int | None:
+        # V3-only field; absent on records bound to an older layout
+        return self._data[18] if len(self._data) > 18 else None
+
+    @property
+    def content_size_in_bytes(self) -> int | None:
+        # V3-only field; absent on records bound to an older layout
+        return self._data[19] if len(self._data) > 19 else None
+
     # Spec ID should not be stored in the file
     _spec_id: int
 
@@ -774,6 +794,37 @@ MANIFEST_LIST_FILE_SCHEMAS: dict[int, Schema] = {
 
 MANIFEST_LIST_FILE_STRUCTS = {format_version: schema.as_struct() for format_version, schema in MANIFEST_LIST_FILE_SCHEMAS.items()}
 
+# Manifests and manifest lists are read with the schema of the latest known format version so that
+# fields added in newer versions (e.g. `first_row_id`) survive a read/write round trip. Reading an
+# older file with this schema is safe: the added fields are all optional and are filled with their
+# defaults (None) by Avro schema resolution. Deriving these from the schema dicts keeps them in sync
+# as new format versions are added. Manifest entries and manifest lists are versioned by separate
+# schema dicts, so each has its own latest-version constant rather than sharing one. Note these are
+# intentionally separate from DEFAULT_READ_VERSION, which remains the default layout for constructing
+# and writing records.
+LATEST_MANIFEST_ENTRY_READ_VERSION: TableVersion = max(MANIFEST_ENTRY_SCHEMAS)
+LATEST_MANIFEST_LIST_READ_VERSION: TableVersion = max(MANIFEST_LIST_FILE_SCHEMAS)
+
+
+def _layout_version_from_field_count(layouts: Mapping[int, Schema | StructType], field_count: int) -> TableVersion:
+    """Return the format version whose layout has exactly `field_count` fields.
+
+    A positional record (`DataFile`, `ManifestFile`, ...) does not carry the format version it was
+    bound to, but each version's layout has a distinct number of fields, so the field count uniquely
+    identifies it. This is used when rebinding a record to a newer layout to zip its `_data` against
+    the fields of the version it was originally bound to, rather than assuming a fixed version.
+
+    Identifying the version by field count is only valid while each version's layout has a distinct
+    field count, so this fails loudly if two versions share one rather than silently binding to the
+    wrong layout.
+    """
+    matches = [version for version, layout in layouts.items() if len(layout.fields) == field_count]
+    if len(matches) > 1:
+        raise ValueError(f"Ambiguous layout: versions {matches} all have {field_count} fields")
+    if not matches:
+        raise ValueError(f"Cannot determine layout version for record with {field_count} fields")
+    return matches[0]
+
 
 POSITIONAL_DELETE_SCHEMA = Schema(
     NestedField(2147483546, "file_path", StringType()), NestedField(2147483545, "pos", IntegerType())
@@ -884,7 +935,7 @@ class ManifestFile(Record):
         input_file = io.new_input(self.manifest_path)
         with AvroFile[ManifestEntry](
             input_file,
-            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
+            MANIFEST_ENTRY_SCHEMAS[LATEST_MANIFEST_ENTRY_READ_VERSION],
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
@@ -1007,7 +1058,7 @@ def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     with AvroFile[ManifestFile](
         input_file,
-        MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION],
+        MANIFEST_LIST_FILE_SCHEMAS[LATEST_MANIFEST_LIST_READ_VERSION],
         read_types={-1: ManifestFile, 508: PartitionFieldSummary},
         read_enums={517: ManifestContent},
     ) as reader:
@@ -1349,9 +1400,8 @@ class ManifestWriterV3(ManifestWriterV2):
         """Rebind a data file to the V3 record layout."""
         if len(data_file._data) >= len(DATA_FILE_TYPE[3].fields):
             return data_file
-        args = {
-            field.name: value for field, value in zip(DATA_FILE_TYPE[DEFAULT_READ_VERSION].fields, data_file._data, strict=True)
-        }
+        source_version = _layout_version_from_field_count(DATA_FILE_TYPE, len(data_file._data))
+        args = {field.name: value for field, value in zip(DATA_FILE_TYPE[source_version].fields, data_file._data, strict=True)}
         return DataFile.from_args(_table_format_version=3, **args)
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
@@ -1557,15 +1607,15 @@ class ManifestListWriterV3(ManifestListWriterV2):
     def _wrap(self, manifest_file: ManifestFile) -> ManifestFile:
         """Rebind a manifest file to the V3 record layout.
 
-        Records not created with an explicit layout are bound to
-        MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION] (the from_args default),
-        so that is the layout to zip the positional data against.
+        The manifest file's original layout version is recovered from its field count (each version's
+        layout has a distinct number of fields) so its positional data is zipped against the fields it
+        was actually bound to. Rebinding always produces a fresh record, so mutating the returned
+        manifest file (e.g. assigning `first_row_id`) never leaks back to the caller's record.
         """
-        if len(manifest_file._data) >= len(MANIFEST_LIST_FILE_SCHEMAS[3].fields):
-            return copy(manifest_file)
+        source_version = _layout_version_from_field_count(MANIFEST_LIST_FILE_SCHEMAS, len(manifest_file._data))
         args = {
             field.name: value
-            for field, value in zip(MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION].fields, manifest_file._data, strict=True)
+            for field, value in zip(MANIFEST_LIST_FILE_SCHEMAS[source_version].fields, manifest_file._data, strict=True)
         }
         return ManifestFile.from_args(_table_format_version=3, **args)
 

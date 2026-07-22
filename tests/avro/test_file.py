@@ -32,11 +32,14 @@ from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
     DEFAULT_BLOCK_SIZE,
     MANIFEST_ENTRY_SCHEMAS,
+    MANIFEST_LIST_FILE_SCHEMAS,
     DataFile,
     DataFileContent,
     FileFormat,
+    ManifestContent,
     ManifestEntry,
     ManifestEntryStatus,
+    ManifestFile,
 )
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record, TableVersion
@@ -87,6 +90,23 @@ def test_missing_schema() -> None:
     assert "No schema found in Avro file headers" in str(exc_info.value)
 
 
+# DataFile and ManifestFile expose properties for fields added in newer format versions (e.g. the
+# V3-only first_row_id). A record bound to an older layout does not carry those fields in its
+# positional data, so they are excluded from the serialized dict to match the fields fastavro writes
+# for that layout, keyed by the _data length beyond which each field is absent.
+_VERSION_DEPENDENT_FIELDS_BY_MIN_DATA_LEN: dict[type[Record], dict[str, int]] = {
+    DataFile: {
+        "first_row_id": 17,
+        "referenced_data_file": 18,
+        "content_offset": 19,
+        "content_size_in_bytes": 20,
+    },
+    ManifestFile: {
+        "first_row_id": 16,
+    },
+}
+
+
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
 def todict(obj: Any) -> Any:
@@ -100,7 +120,16 @@ def todict(obj: Any) -> Any:
     elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
         return [todict(v) for v in obj]
     elif isinstance(obj, Record):
-        return {key: todict(value) for key, value in inspect.getmembers(obj) if not callable(value) and not key.startswith("_")}
+        min_data_len = next(
+            (fields for record_type, fields in _VERSION_DEPENDENT_FIELDS_BY_MIN_DATA_LEN.items() if isinstance(obj, record_type)),
+            {},
+        )
+        data_len = len(obj._data)
+        return {
+            key: todict(value)
+            for key, value in inspect.getmembers(obj)
+            if not callable(value) and not key.startswith("_") and data_len >= min_data_len.get(key, 0)
+        }
     else:
         return obj
 
@@ -223,6 +252,46 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
             fa_entry = next(it)
 
         assert todict(entry) == fa_entry
+
+
+def test_todict_manifest_file_v2_layout_matches_fastavro() -> None:
+    """todict must exclude ManifestFile's V3-only first_row_id for a record bound to the V2 layout,
+
+    the same way it does for DataFile, otherwise the exclusion added for DataFile would be
+    inconsistent for other record types with version-dependent trailing fields.
+    """
+    manifest_file = ManifestFile.from_args(
+        manifest_path="/manifests/m1.avro",
+        manifest_length=100,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=1,
+        min_sequence_number=1,
+        added_snapshot_id=25,
+        added_files_count=1,
+        existing_files_count=0,
+        deleted_files_count=0,
+        added_rows_count=10,
+        existing_rows_count=0,
+        deleted_rows_count=0,
+        partitions=None,
+        key_metadata=None,
+    )
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/manifest-list.avro"
+
+        with avro.AvroOutputFile[ManifestFile](
+            output_file=PyArrowFileIO().new_output(tmp_avro_file),
+            file_schema=MANIFEST_LIST_FILE_SCHEMAS[2],
+            schema_name="manifest_file",
+        ) as out:
+            out.write_block([manifest_file])
+
+        with open(tmp_avro_file, "rb") as fo:
+            fa_manifest_file = next(iter(reader(fo=fo)))
+
+        assert todict(manifest_file) == fa_manifest_file
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
