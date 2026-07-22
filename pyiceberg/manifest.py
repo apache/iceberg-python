@@ -26,6 +26,7 @@ from types import TracebackType
 from typing import (
     Any,
     Literal,
+    cast,
 )
 
 from cachetools import LRUCache
@@ -802,8 +803,8 @@ MANIFEST_LIST_FILE_STRUCTS = {format_version: schema.as_struct() for format_vers
 # schema dicts, so each has its own latest-version constant rather than sharing one. Note these are
 # intentionally separate from DEFAULT_READ_VERSION, which remains the default layout for constructing
 # and writing records.
-LATEST_MANIFEST_ENTRY_READ_VERSION: TableVersion = max(MANIFEST_ENTRY_SCHEMAS)
-LATEST_MANIFEST_LIST_READ_VERSION: TableVersion = max(MANIFEST_LIST_FILE_SCHEMAS)
+LATEST_MANIFEST_ENTRY_READ_VERSION: TableVersion = cast(TableVersion, max(MANIFEST_ENTRY_SCHEMAS))
+LATEST_MANIFEST_LIST_READ_VERSION: TableVersion = cast(TableVersion, max(MANIFEST_LIST_FILE_SCHEMAS))
 
 
 def _layout_version_from_field_count(layouts: Mapping[int, Schema | StructType], field_count: int) -> TableVersion:
@@ -823,7 +824,7 @@ def _layout_version_from_field_count(layouts: Mapping[int, Schema | StructType],
         raise ValueError(f"Ambiguous layout: versions {matches} all have {field_count} fields")
     if not matches:
         raise ValueError(f"Cannot determine layout version for record with {field_count} fields")
-    return matches[0]
+    return cast(TableVersion, matches[0])
 
 
 POSITIONAL_DELETE_SCHEMA = Schema(
