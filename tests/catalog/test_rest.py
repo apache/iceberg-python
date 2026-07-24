@@ -110,6 +110,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_VIEW_EXISTS,
     Capability.V1_REGISTER_VIEW,
     Capability.V1_DELETE_VIEW,
+    Capability.V1_RENAME_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
     Capability.V1_TABLE_SCAN_PLAN_TASKS,
 ]
@@ -2635,6 +2636,121 @@ def test_drop_view_204(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "some_view"))
+
+
+def test_rename_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "source": {"namespace": ("pdames",), "name": "source"},
+            "destination": {"namespace": ("pdames",), "name": "destination"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/pdames/views/destination",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("pdames", "source")
+    to_identifier = ("pdames", "destination")
+    actual = catalog.rename_view(from_identifier, to_identifier)
+    expected = View(
+        identifier=("pdames", "destination"),
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+    )
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected
+
+
+def test_rename_view_from_self_identifier_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/pdames/views/source",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("pdames", "source")
+    to_identifier = ("pdames", "destination")
+    table = catalog.load_view(from_identifier)
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "source": {"namespace": ("pdames",), "name": "source"},
+            "destination": {"namespace": ("pdames",), "name": "destination"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/pdames/views/destination",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    actual = catalog.rename_view(table.name(), to_identifier)
+    expected = View(
+        identifier=("pdames", "destination"),
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+    )
+    assert actual.metadata.model_dump() == expected.metadata.model_dump()
+    assert actual == expected
+
+
+def test_rename_view_source_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("invalid", "source")
+    to_identifier = ("pdames", "destination")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/invalid",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError) as e:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "Source namespace does not exist" in str(e.value)
+
+
+def test_rename_view_destination_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    from_identifier = ("pdames", "source")
+    to_identifier = ("invalid", "destination")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/pdames",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/invalid",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError) as e:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "Destination namespace does not exist" in str(e.value)
 
 
 @mock.patch("google.auth.transport.requests.Request")

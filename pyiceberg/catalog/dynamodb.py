@@ -581,6 +581,10 @@ class DynamoDbCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     @override
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> View:
+        raise NotImplementedError
+
+    @override
     def load_view(self, identifier: str | Identifier) -> View:
         raise NotImplementedError
 

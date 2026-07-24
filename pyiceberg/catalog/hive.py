@@ -874,6 +874,10 @@ class HiveCatalog(MetastoreCatalog):
     def drop_view(self, identifier: str | Identifier) -> None:
         raise NotImplementedError
 
+    @override
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> View:
+        raise NotImplementedError
+
     def _get_default_warehouse_location(self, database_name: str, table_name: str) -> str:
         """Override the default warehouse location to follow Hive-style conventions."""
         return self._get_hive_style_warehouse_location(database_name, table_name)
