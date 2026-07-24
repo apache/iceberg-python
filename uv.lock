@@ -1186,7 +1186,7 @@ wheels = [
 
 [[package]]
 name = "daft"
-version = "0.7.19"
+version = "0.7.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fsspec" },
@@ -1196,11 +1196,11 @@ dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.12'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d4/cb/4165cee0dcb8110c37064abfe67d14bf503eb3378ad3b98e059a4e920fa6/daft-0.7.19-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:7862b017a33c7d7259ece90daf4b2f16e46677774c974bf3c491477476783aab", size = 55673370, upload-time = "2026-07-10T02:35:42.985Z" },
-    { url = "https://files.pythonhosted.org/packages/0d/64/6699fceee675e292ba7a3e3be18ec7dd6e813623660011082e486e586b6a/daft-0.7.19-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:3b928b7af90b02fd460d96e3b524fe8bee3aaafa53c8ad0c54706f20808819c0", size = 51508723, upload-time = "2026-07-10T02:35:46.999Z" },
-    { url = "https://files.pythonhosted.org/packages/d0/7e/d2723e52fee17d7ad73af3ebda9867aa5fd89e5f2ebf422d53523752ada1/daft-0.7.19-cp310-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:0e5af435aca282c6a54a2ff9f3ac452be219a9abd2572888f595aa5eb4dcccaa", size = 53833418, upload-time = "2026-07-10T02:35:50.659Z" },
-    { url = "https://files.pythonhosted.org/packages/7a/0e/ce9d740e25fe592a7ac87f4704499229e7356e1bdaa4597ac28d5caab75a/daft-0.7.19-cp310-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:6f1d343b231814158061ab108546513c3314fcdb2a3d4530289ea1b781822d0a", size = 56020515, upload-time = "2026-07-10T02:35:54.353Z" },
-    { url = "https://files.pythonhosted.org/packages/3f/ce/f22368e38de6fa757e9598a63838723f28bd1ceaada7a5661268df8319da/daft-0.7.19-cp310-abi3-win_amd64.whl", hash = "sha256:d3e5267bf437321f36858ab30ebf2e86974b1ee1cdb4506fbc783e171119e09f", size = 55181842, upload-time = "2026-07-10T02:35:58.308Z" },
+    { url = "https://files.pythonhosted.org/packages/12/8a/015e9461493aa47652348881480a9e311aa52aff955501ef1a3f5833e429/daft-0.7.21-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:e399b7f680d31c6d8b3e7cbfefc6d0a78410b565b46ab64970e54536e7246c12", size = 55709805, upload-time = "2026-07-17T20:35:45.494Z" },
+    { url = "https://files.pythonhosted.org/packages/88/c1/876bcfb45dc64640f956e9322e4b195cf816679fbb0ea75e149c199768c0/daft-0.7.21-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:8c58be1665e19339f2748e7bc03c7fb3667a5e2ef5735696eefc31e85661fb7f", size = 51558429, upload-time = "2026-07-17T20:35:48.959Z" },
+    { url = "https://files.pythonhosted.org/packages/61/26/e7820790b286aa7711846a40408aab09692b72ada10a9481e92ca14ee2f0/daft-0.7.21-cp310-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:bad1a622db5ad592a84409171b8555b0020e46af6a1480286bb545355f570b75", size = 53880723, upload-time = "2026-07-17T20:35:51.869Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/8b/152f56f6da4315f6f09067368c8838c414dd1410e034c70c80e2d71b032e/daft-0.7.21-cp310-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:12f4dc2df39a1849d350112a5088e12af5223ef45b558b355e3b874d473733c3", size = 56083959, upload-time = "2026-07-17T20:35:55.47Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/41/6a0814ebb930c21c6ad9b600d3778b7bb44ce72d60b3ccbeec131626a989/daft-0.7.21-cp310-abi3-win_amd64.whl", hash = "sha256:3295dedaf132e1e4fc04a1e0b1c2577546f24c6289d32cd60566af357a1b5cc3", size = 55190558, upload-time = "2026-07-17T20:35:58.435Z" },
 ]
 
 [[package]]
