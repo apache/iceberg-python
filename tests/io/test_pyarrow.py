@@ -5230,14 +5230,11 @@ def test_partition_column_projection_with_schema_evolution(catalog: InMemoryCata
 
 
 def test_to_arrow_batch_reader_preserves_dictionary_columns(tmpdir: str) -> None:
-    """_to_arrow_batch_reader_via_file_scan_tasks must not strip dictionary encoding.
-
-    Regression test for https://github.com/apache/iceberg-python/issues/3540.
-    Before the fix, RecordBatchReader.cast(target_schema) was called with a
-    plain schema, silently converting dictionary arrays back to their value
-    type so to_arrow_batch_reader(dictionary_columns=...).read_all() returned
-    plain strings instead of dictionary-encoded arrays.
-    """
+    """_to_arrow_batch_reader_via_file_scan_tasks must not strip dictionary encoding."""
+    # Regression test for https://github.com/apache/iceberg-python/issues/3540. Before the fix,
+    # RecordBatchReader.cast(target_schema) was called with a plain schema, silently converting
+    # dictionary arrays back to their value type so to_arrow_batch_reader(dictionary_columns=...)
+    # .read_all() returned plain strings instead of dictionary-encoded arrays.
     from pyiceberg.expressions import AlwaysTrue
     from pyiceberg.io.pyarrow import PyArrowFileIO
     from pyiceberg.partitioning import PartitionSpec
