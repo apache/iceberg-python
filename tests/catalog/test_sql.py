@@ -33,6 +33,7 @@ from pyiceberg.catalog.sql import (
 )
 from pyiceberg.exceptions import (
     NoSuchPropertyException,
+    NoSuchTableError,
     TableAlreadyExistsError,
 )
 from pyiceberg.schema import Schema
@@ -331,6 +332,60 @@ def test_list_tables_filters_by_iceberg_type(warehouse: Path) -> None:
     assert "table_V1" in tables
     assert "table_V0" in tables
     assert "some_view" not in tables
+
+
+def _insert_view_row(catalog: SqlCatalog, namespace: str, table_name: str) -> None:
+    # Simulates a view row written by iceberg-java or iceberg-rust, which SqlCatalog table
+    # operations must not treat as a table (issue #3337).
+    with catalog.engine.connect() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO iceberg_tables "
+                "(catalog_name, table_namespace, table_name, metadata_location, previous_metadata_location, iceberg_type) "
+                "VALUES ('test', :namespace, :table_name, 's3://fake/metadata.json', NULL, 'VIEW')"
+            ),
+            {"namespace": namespace, "table_name": table_name},
+        )
+        conn.commit()
+
+
+def test_load_table_ignores_view_rows(warehouse: Path) -> None:
+    catalog = SqlCatalog(name="test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+    catalog.create_namespace("ns")
+    _insert_view_row(catalog, "ns", "a_view")
+
+    with pytest.raises(NoSuchTableError):
+        catalog.load_table(("ns", "a_view"))
+
+
+def test_drop_table_ignores_view_rows(warehouse: Path) -> None:
+    catalog = SqlCatalog(name="test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+    catalog.create_namespace("ns")
+    _insert_view_row(catalog, "ns", "a_view")
+
+    with pytest.raises(NoSuchTableError):
+        catalog.drop_table(("ns", "a_view"))
+
+    # The view row must not have been deleted.
+    with catalog.engine.connect() as conn:
+        row = conn.execute(text("SELECT iceberg_type FROM iceberg_tables WHERE table_name = 'a_view'")).fetchone()
+    assert row is not None
+    assert row[0] == "VIEW"
+
+
+def test_rename_table_ignores_view_rows(warehouse: Path) -> None:
+    catalog = SqlCatalog(name="test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+    catalog.create_namespace("ns")
+    _insert_view_row(catalog, "ns", "a_view")
+
+    with pytest.raises(NoSuchTableError):
+        catalog.rename_table(("ns", "a_view"), ("ns", "renamed_view"))
+
+    # The view row must not have been renamed.
+    with catalog.engine.connect() as conn:
+        row = conn.execute(text("SELECT iceberg_type FROM iceberg_tables WHERE table_name = 'a_view'")).fetchone()
+    assert row is not None
+    assert row[0] == "VIEW"
 
 
 def test_migration_to_v1_with_property_set(warehouse: Path) -> None:
