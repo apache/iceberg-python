@@ -21,8 +21,10 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.conversions import to_bytes
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import _readable_bound
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog
 
@@ -68,3 +70,14 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
     files_metrics = tbl.inspect.files().to_pydict()["readable_metrics"][0]["s"]
     assert files_metrics["lower_bound"] is None
     assert files_metrics["upper_bound"] is None
+
+
+def test_inspect_manifests_preserves_empty_string_bounds(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "s", StringType()))
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "s"))
+    tbl = catalog.create_table("default.empty_string_partition", schema, partition_spec=spec)
+    tbl.append(pa.table({"s": [""]}, schema=pa.schema([pa.field("s", pa.large_string())])))
+
+    partition_summary = tbl.inspect.manifests().to_pydict()["partition_summaries"][0][0]
+    assert partition_summary["lower_bound"] == ""
+    assert partition_summary["upper_bound"] == ""
