@@ -458,7 +458,7 @@ class PyArrowComputeBackend:
 
     @property
     def supports_bounded_memory(self) -> bool:
-        """PyArrow cannot spill to disk."""
+        """Return False because this backend cannot spill to disk."""
         return False
 
     def sort(

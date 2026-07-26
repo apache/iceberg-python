@@ -135,6 +135,7 @@ class BoundedMemoryPlanner:
     """
 
     def __init__(self, memory_limit: int | None = None) -> None:
+        """Initialize the bounded-memory planner with optional memory limit."""
         from pyiceberg.execution.engine import get_memory_limit
 
         self._memory_limit = memory_limit if memory_limit is not None else get_memory_limit()

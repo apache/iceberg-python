@@ -127,7 +127,7 @@ class DataFusionComputeBackend:
 
     @property
     def supports_bounded_memory(self) -> bool:
-        """DataFusion supports spill-to-disk for all operations."""
+        """Return True because this backend supports spill-to-disk for all operations."""
         return True
 
     def sort(

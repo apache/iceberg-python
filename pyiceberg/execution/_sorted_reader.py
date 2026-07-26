@@ -91,7 +91,10 @@ class _CleanupGuard:
         self._ref = weakref.finalize(self, _CleanupGuard._invoke_finalizer, ctx_manager)
 
     def cleanup(self, *exc_info: Any) -> None:
-        """Explicitly clean up (called from generator's normal/exception path)."""
+        """Release resources held by the context manager.
+
+        Called from the generator's normal or exception path.
+        """
         if not self._cleaned_up:
             self._cleaned_up = True
             self._ref.detach()

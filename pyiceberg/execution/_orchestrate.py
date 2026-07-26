@@ -176,7 +176,6 @@ def orchestrate_scan(
 
     def _execute_task(task: FileScanTask) -> list[pa.RecordBatch]:
         """Execute a single scan task: read, resolve deletes, filter, reconcile schema."""
-
         eq_deletes = [d for d in task.delete_files if d.content == DataFileContent.EQUALITY_DELETES]
         pos_deletes = [d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES]
 

@@ -165,7 +165,7 @@ PyArrow is always available and handles all three axes by default. DataFusion is
 auto-promoted for compute when installed. The protocol-based architecture supports
 additional backends in the future -- see [Implementing a Custom Backend](#implementing-a-custom-backend).
 
-### Configuration
+### Execution Configuration
 
 The full execution configuration in `.pyiceberg.yaml`:
 
@@ -411,7 +411,7 @@ class MyCustomReadBackend:
 backend controls HOW to execute the write (which engine), while the format model
 controls WHAT format to write (Parquet, ORC, etc.). The composition is:
 
-```
+```text
 WriteBackend.write_data_file(output_file, file_schema, properties, arrow_table, format_model)
     +-- format_model.create_writer(output_file, file_schema, properties) -> FileFormatWriter
             +-- writer.write(arrow_table) -> DataFileStatistics

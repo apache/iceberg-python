@@ -250,7 +250,7 @@ class TestBoundedMemoryPlannerCorruptInput:
 
         # Error message should mention parquet/arrow/file corruption
         error_msg = str(exc_info.value).lower()
-        assert any(keyword in error_msg for keyword in ("parquet", "arrow", "eof", "magic", "invalid", "corrupt", "truncat")), (
+        assert any(keyword in error_msg for keyword in ("parquet", "arrow", "eof", "magic", "invalid", "corrupt", "truncate")), (
             f"Error should mention file corruption, got: {exc_info.value}"
         )
 
