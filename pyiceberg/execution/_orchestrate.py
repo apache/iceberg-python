@@ -284,8 +284,14 @@ def orchestrate_scan(
             )
 
         # Post-filter guarantees correctness; read_parquet pushdown is best-effort only.
+        # The residual from ManifestGroupPlanner may contain unbound predicates
+        # (e.g., for unpartitioned tables or predicates not involving partition columns).
+        # We must bind to the projected schema before converting to PyArrow expression.
         if not isinstance(task.residual, AlwaysTrue):
-            batches = backends.compute.filter(batches, task.residual)
+            from pyiceberg.expressions.visitors import bind
+
+            bound_residual = bind(projected_schema, task.residual, case_sensitive)
+            batches = backends.compute.filter(batches, bound_residual)
 
         result_batches: list[pa.RecordBatch] = []
         reconcile_fn: Callable[[pa.RecordBatch], pa.RecordBatch] | object | None = None

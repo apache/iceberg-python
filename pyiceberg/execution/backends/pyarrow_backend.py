@@ -162,7 +162,9 @@ def _resolve_filesystem(location: str, io_properties: Mapping[str, Any]) -> tupl
 
     # Local filesystem: "file" scheme, or single-char scheme on Windows (drive letter, e.g., "c").
     if scheme == "file" or (len(scheme) == 1 and scheme.isalpha()):
-        return LocalFileSystem(), os.path.abspath(location)
+        # Use the parsed path (not location) to strip the "file:" scheme prefix.
+        # For Windows drive letters (e.g., "c:/path"), path is already absolute.
+        return LocalFileSystem(), os.path.abspath(path)
 
     # Cloud or remote filesystem — use PyArrowFileIO's credential resolution.
     file_io = PyArrowFileIO(properties=props_dict)
