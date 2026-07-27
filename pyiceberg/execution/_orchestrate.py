@@ -37,7 +37,7 @@ from concurrent.futures import Executor
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from pyiceberg.expressions import AlwaysTrue
-from pyiceberg.manifest import DataFileContent
+from pyiceberg.manifest import DataFileContent, FileFormat
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER_ID
 
@@ -178,7 +178,32 @@ def orchestrate_scan(
     def _execute_task(task: FileScanTask) -> list[pa.RecordBatch]:
         """Execute a single scan task: read, resolve deletes, filter, reconcile schema."""
         eq_deletes = [d for d in task.delete_files if d.content == DataFileContent.EQUALITY_DELETES]
-        pos_deletes = [d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES]
+        # Only include Parquet position delete files. Puffin files (delete vectors in v3)
+        # require different handling that's not yet implemented - they will be silently
+        # skipped, which may return a superset of correct results.
+        pos_deletes = [
+            d
+            for d in task.delete_files
+            if d.content == DataFileContent.POSITION_DELETES and d.file_format == FileFormat.PARQUET
+        ]
+
+        # Warn if there are unsupported delete file formats (e.g., Puffin DVs)
+        unsupported_deletes = [
+            d
+            for d in task.delete_files
+            if d.content == DataFileContent.POSITION_DELETES and d.file_format != FileFormat.PARQUET
+        ]
+        if unsupported_deletes:
+            import warnings
+
+            formats = {d.file_format.name for d in unsupported_deletes}
+            warnings.warn(
+                f"Skipping {len(unsupported_deletes)} position delete file(s) with unsupported format(s): {formats}. "
+                f"Delete vectors (Puffin files) in Iceberg v3 are not yet supported. "
+                f"Results may include rows that should have been deleted.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         if pos_deletes and eq_deletes:
             batches: Iterator[pa.RecordBatch] = _apply_positional_deletes(
