@@ -2679,11 +2679,11 @@ class ManifestGroupPlanner:
         partition_type = spec.partition_type(self.table_metadata.schema())
         partition_schema = Schema(*partition_type.fields)
         partition_expr = self.partition_filters[spec_id]
+        evaluator = expression_evaluator(partition_schema, partition_expr, self.case_sensitive)
 
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _EvaluatorExpression methods bound to a single
-        # shared instance across multiple threads.
-        return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
+        # Expression evaluators keep input-specific state local to each call, so the
+        # prepared evaluator can be shared by every manifest using this spec.
+        return lambda data_file: evaluator(data_file.partition)
 
     def _build_metrics_evaluator(self) -> Callable[[DataFile], bool]:
         schema = self.table_metadata.schema()
