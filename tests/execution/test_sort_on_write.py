@@ -30,6 +30,7 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.schema import Schema
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType, NestedField, StringType
 
 if TYPE_CHECKING:
@@ -116,7 +117,9 @@ class TestApplySortOrderWithRecordBatchReader:
         assert result_table.column("id").to_pylist() == [1, 2, 3, 4, 5]
         assert result_table.column("name").to_pylist() == ["a", "b", "c", "d", "e"]
 
-    def test_table_input_produces_sorted_output(self, transaction_with_sort_order) -> None:
+    def test_table_input_produces_sorted_output(
+        self, transaction_with_sort_order: Transaction
+    ) -> None:
         """pa.Table input to _apply_sort_order also produces correctly sorted output."""
         pytest.importorskip("datafusion")
 
@@ -201,7 +204,9 @@ class TestApplySortOrderWithRecordBatchReader:
 
         assert result is input_table
 
-    def test_sorted_reader_cleans_up_temp_file(self, transaction_with_sort_order) -> None:
+    def test_sorted_reader_cleans_up_temp_file(
+        self, transaction_with_sort_order: Transaction
+    ) -> None:
         """Temp file created by _apply_sort_order is cleaned up after reader is consumed."""
         pytest.importorskip("datafusion")
 
@@ -263,6 +268,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
 
     def test_create_returns_record_batch_reader(self) -> None:
         """create() must return a pa.RecordBatchReader when called with valid args."""
+        from collections.abc import Generator
         from contextlib import contextmanager
 
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
@@ -270,7 +276,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
         schema = pa.schema([pa.field("x", pa.int32())])
 
         @contextmanager
-        def fake_materialize() -> None:
+        def fake_materialize() -> Generator[str, None, None]:
             yield "/tmp/fake.parquet"
 
         def fake_sort(path: str) -> Iterator[pa.RecordBatch]:
@@ -286,6 +292,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
 
     def test_create_streams_sorted_batches(self) -> None:
         """Reader must stream all batches from sort_fn."""
+        from collections.abc import Generator
         from contextlib import contextmanager
 
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
@@ -293,7 +300,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
         schema = pa.schema([pa.field("val", pa.int64())])
 
         @contextmanager
-        def fake_materialize() -> None:
+        def fake_materialize() -> Generator[str, None, None]:
             yield "/tmp/fake.parquet"
 
         def fake_sort(path: str) -> Iterator[pa.RecordBatch]:
@@ -316,15 +323,16 @@ class TestSortedRecordBatchReaderCleanup:
 
     def test_cleanup_on_normal_exhaustion(self, tmp_path: Path) -> None:
         """Context manager __exit__ called when reader is fully consumed."""
+        from collections.abc import Generator
         from contextlib import contextmanager
 
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
 
-        cleanup_called = []
+        cleanup_called: list[bool] = []
         schema = pa.schema([pa.field("x", pa.int32())])
 
         @contextmanager
-        def tracked_materialize() -> None:
+        def tracked_materialize() -> Generator[str, None, None]:
             yield str(tmp_path / "data.parquet")
             cleanup_called.append(True)
 
@@ -342,15 +350,16 @@ class TestSortedRecordBatchReaderCleanup:
 
     def test_cleanup_on_exception_in_sort(self, tmp_path: Path) -> None:
         """Context manager __exit__ called even when sort_fn raises."""
+        from collections.abc import Generator
         from contextlib import contextmanager
 
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
 
-        cleanup_called = []
+        cleanup_called: list[bool] = []
         schema = pa.schema([pa.field("x", pa.int32())])
 
         @contextmanager
-        def tracked_materialize() -> None:
+        def tracked_materialize() -> Generator[str, None, None]:
             try:
                 yield str(tmp_path / "data.parquet")
             finally:
@@ -358,7 +367,7 @@ class TestSortedRecordBatchReaderCleanup:
 
         def failing_sort(path: str) -> Iterator[pa.RecordBatch]:
             raise RuntimeError("sort failed")
-            yield
+            yield pa.record_batch({"x": [1]}, schema=schema)  # type: ignore[unreachable]  # needed for type
 
         reader = _SortedRecordBatchReader.create(
             materialize_fn=tracked_materialize,
@@ -465,7 +474,7 @@ class TestSortOrderIdOnDataFiles:
         tx._table = mock_table
 
         schema = Schema(NestedField(1, "id", IntegerType(), required=True))
-        sort_order = SortOrder(order_id=7, fields=[SortField(source_id=1, transform="identity")])
+        sort_order = SortOrder(order_id=7, fields=[SortField(source_id=1, transform=IdentityTransform())])
 
         mock_metadata = MagicMock()
         mock_metadata.schema.return_value = schema
@@ -500,7 +509,7 @@ class TestSortOrderIdOnDataFiles:
         tx._table = mock_table
 
         schema = Schema(NestedField(1, "id", IntegerType(), required=True))
-        sort_order = SortOrder(order_id=7, fields=[SortField(source_id=1, transform="identity")])
+        sort_order = SortOrder(order_id=7, fields=[SortField(source_id=1, transform=IdentityTransform())])
 
         mock_metadata = MagicMock()
         mock_metadata.schema.return_value = schema
@@ -575,7 +584,7 @@ class TestSortOrderIdOnDataFiles:
             NestedField(2, "category", StringType(), required=True),
         )
         # Sort by id (but partition is on category — sort doesn't align)
-        sort_order = SortOrder(order_id=3, fields=[SortField(source_id=1, transform="identity")])
+        sort_order = SortOrder(order_id=3, fields=[SortField(source_id=1, transform=IdentityTransform())])
 
         mock_metadata = MagicMock()
         mock_metadata.schema.return_value = schema

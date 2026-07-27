@@ -79,12 +79,18 @@ class TestFastPathSkipsLock:
         real_lock = obj_store._ENV_LOCK
 
         class TrackingLock:
-            def __enter__(self) -> None:
+            def __enter__(self) -> TrackingLock:
                 lock_acquired_count[0] += 1
-                return real_lock.__enter__()
+                real_lock.__enter__()
+                return self
 
-            def __exit__(self, *args) -> None:
-                return real_lock.__exit__(*args)
+            def __exit__(
+                self,
+                exc_type: type[BaseException] | None,
+                exc_val: BaseException | None,
+                exc_tb: object,
+            ) -> None:
+                real_lock.__exit__(exc_type, exc_val, exc_tb)  # type: ignore[arg-type]
 
         monkeypatch.setattr(obj_store, "_ENV_LOCK", TrackingLock())
 
@@ -106,12 +112,18 @@ class TestFastPathSkipsLock:
         real_lock = obj_store._ENV_LOCK
 
         class TrackingLock:
-            def __enter__(self) -> None:
+            def __enter__(self) -> TrackingLock:
                 lock_acquired_count[0] += 1
-                return real_lock.__enter__()
+                real_lock.__enter__()
+                return self
 
-            def __exit__(self, *args) -> None:
-                return real_lock.__exit__(*args)
+            def __exit__(
+                self,
+                exc_type: type[BaseException] | None,
+                exc_val: BaseException | None,
+                exc_tb: object,
+            ) -> None:
+                real_lock.__exit__(exc_type, exc_val, exc_tb)  # type: ignore[arg-type]
 
         monkeypatch.setattr(obj_store, "_ENV_LOCK", TrackingLock())
 
@@ -142,7 +154,7 @@ class TestFastPathSkipsLock:
                 assert os.environ["__PYICEBERG_EXC_TEST"] == "during"
                 raise ValueError("boom")
 
-        assert os.environ["__PYICEBERG_EXC_TEST"] == "before"
+        assert os.environ["__PYICEBERG_EXC_TEST"] == "before"  # type: ignore[unreachable]
 
 
 class TestParallelTasksWithSameCredentials:
@@ -189,7 +201,7 @@ class TestParallelTasksWithSameCredentials:
         monkeypatch.delenv("__PYICEBERG_CRED_TEST", raising=False)
 
         timings: dict[str, list[float]] = {"t1": [], "t2": []}
-        observations: dict[str, list[str]] = {"t1": [], "t2": []}
+        observations: dict[str, list[str | None]] = {"t1": [], "t2": []}
         barrier = threading.Barrier(2, timeout=5)
 
         def task(name: str, value: str) -> None:
@@ -318,7 +330,7 @@ class TestIoPropertiesIsImmutable:
         backends = build_backends(props)
 
         with pytest.raises(TypeError):
-            backends.io_properties["s3.access-key-id"] = "CORRUPTED"
+            backends.io_properties["s3.access-key-id"] = "CORRUPTED"  # type: ignore[index]
 
     def test_io_properties_deletion_raises_type_error(self) -> None:
         """Attempting to delete a key from io_properties must raise TypeError."""
@@ -328,7 +340,7 @@ class TestIoPropertiesIsImmutable:
         backends = build_backends(props)
 
         with pytest.raises(TypeError):
-            del backends.io_properties["s3.access-key-id"]
+            del backends.io_properties["s3.access-key-id"]  # type: ignore[attr-defined]
 
     def test_io_properties_preserves_original_values(self) -> None:
         """io_properties must reflect the original dict values at construction time."""
@@ -372,7 +384,7 @@ class TestIoPropertiesIsImmutable:
 
         assert isinstance(backends.io_properties, types.MappingProxyType)
         with pytest.raises(TypeError):
-            backends.io_properties["new_key"] = "value"
+            backends.io_properties["new_key"] = "value"  # type: ignore[index]
 
     def test_backends_dataclass_field_accepts_mapping_proxy(self) -> None:
         """The Backends dataclass must accept MappingProxyType for io_properties."""

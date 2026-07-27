@@ -289,7 +289,7 @@ class TestDeleteCoWTwoPassStreaming:
         alive_batches = 0
         peak_alive = 0
 
-        def tracked_filter(batches_iter) -> None:
+        def tracked_filter(batches_iter: Iterator[pa.RecordBatch]) -> Iterator[pa.RecordBatch]:
             nonlocal alive_batches, peak_alive
             for batch in batches_iter:
                 alive_batches += 1
@@ -1059,7 +1059,7 @@ class TestCowMemoryErrorPropagation:
         call_count = [0]
 
         class OomOnSecondRead:
-            def read_parquet(self, *args, **kwargs) -> None:
+            def read_parquet(self, *args: object, **kwargs: object) -> Iterator[pa.RecordBatch]:
                 call_count[0] += 1
                 if call_count[0] == 2:
                     raise MemoryError("Simulated OOM during pass 2 read")
@@ -1098,7 +1098,7 @@ class TestCowDeleteRespectsExistingDeletes:
     """
 
     @pytest.fixture
-    def cow_table_with_pos_deletes(self, tmp_path: Path) -> None:
+    def cow_table_with_pos_deletes(self, tmp_path: Path) -> tuple[str, str]:
         """Create a table state with a data file that has an associated position delete."""
         # Write a data file with 5 rows: id=[1,2,3,4,5]
         data_path = str(tmp_path / "data.parquet")
@@ -1117,7 +1117,9 @@ class TestCowDeleteRespectsExistingDeletes:
 
         return data_path, pos_delete_path
 
-    def test_cow_small_file_excludes_position_deleted_rows(self, cow_table_with_pos_deletes, tmp_path: Path) -> None:
+    def test_cow_small_file_excludes_position_deleted_rows(
+        self, cow_table_with_pos_deletes: tuple[str, str], tmp_path: Path
+    ) -> None:
         """Small file CoW path must not include position-deleted rows in rewrite."""
         from pyiceberg.execution.backends.pyarrow_backend import (
             PyArrowComputeBackend,
@@ -1161,7 +1163,9 @@ class TestCowDeleteRespectsExistingDeletes:
         # Both pos-deleted (id=2) and CoW-deleted (id=4) rows should be gone
         assert final_ids == [1, 3, 5], f"Expected [1,3,5] but got {final_ids}"
 
-    def test_cow_large_file_streaming_excludes_position_deleted_rows(self, cow_table_with_pos_deletes, tmp_path: Path) -> None:
+    def test_cow_large_file_streaming_excludes_position_deleted_rows(
+        self, cow_table_with_pos_deletes: tuple[str, str], tmp_path: Path
+    ) -> None:
         """Large file two-pass streaming CoW must also exclude position-deleted rows."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
         from pyiceberg.execution.backends.pyarrow_backend import (

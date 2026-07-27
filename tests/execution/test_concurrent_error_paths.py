@@ -27,6 +27,7 @@ Covers:
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -57,7 +58,7 @@ class TestConcurrentAntiJoinSemanticCorrectness:
         backend = PyArrowComputeBackend()
 
         # Each task has unique data/delete sets — results must not bleed across tasks.
-        tasks = [
+        tasks: list[tuple[dict[str, list[int]], dict[str, list[int]], set[int]]] = [
             # (left_data, right_deletes, expected_surviving_ids)
             ({"id": [1, 2, 3, 4, 5]}, {"id": [2, 4]}, {1, 3, 5}),
             ({"id": [10, 20, 30, 40]}, {"id": [10, 30]}, {20, 40}),
@@ -68,7 +69,9 @@ class TestConcurrentAntiJoinSemanticCorrectness:
 
         errors: list[str] = []
 
-        def run_anti_join(left_data, right_data, expected) -> None:
+        def run_anti_join(
+            left_data: dict[str, list[int]], right_data: dict[str, list[int]], expected: set[int]
+        ) -> None:
             left = [pa.record_batch(left_data)]
             right = [pa.record_batch(right_data)] if right_data["id"] else []
             result_batches = list(backend.anti_join(iter(left), iter(right), ["id"]))
@@ -95,7 +98,7 @@ class TestConcurrentAntiJoinSemanticCorrectness:
         """Concurrent anti-joins with NULL values maintain IS NOT DISTINCT FROM semantics."""
         backend = PyArrowComputeBackend()
 
-        results: list[set] = []
+        results: list[set[int | None]] = []
         lock = threading.Lock()
 
         def anti_join_with_nulls(thread_id: int) -> None:
@@ -204,6 +207,7 @@ class TestEqualityDeletesWithRenamedColumns:
         result = _get_equality_field_names([delete_file], table_metadata)
 
         # Both should resolve to current names
+        assert result is not None
         assert sorted(result) == ["contact_email", "full_name"]
 
 
@@ -351,7 +355,7 @@ class TestCowDeleteTwoPassFailSafe:
 
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
-        def failing_iterator() -> None:
+        def failing_iterator() -> Iterator[pa.RecordBatch]:
             yield pa.record_batch({"id": [1, 2]})
             raise FileNotFoundError("File was removed by concurrent compaction")
 
@@ -359,4 +363,4 @@ class TestCowDeleteTwoPassFailSafe:
 
         # _cow_filter_batches must propagate the FileNotFoundError, not swallow it
         with pytest.raises(FileNotFoundError, match="concurrent compaction"):
-            list(_cow_filter_batches(failing_iterator(), pa_filter))
+            list(_cow_filter_batches(iter(failing_iterator()), pa_filter))

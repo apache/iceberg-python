@@ -57,7 +57,7 @@ class TestConcurrentCredentialIsolation:
 
         # Save original value
         original_key = os.environ.get("AWS_ACCESS_KEY_ID")
-        observations: dict[str, list[str]] = {"thread_a": [], "thread_b": []}
+        observations: dict[str, list[str | None]] = {"thread_a": [], "thread_b": []}
 
         def thread_work(thread_name: str, key_value: str, iterations: int = 50) -> None:
             for _ in range(iterations):
@@ -95,7 +95,7 @@ class TestConcurrentCredentialIsolation:
                 assert os.environ.get("AWS_ACCESS_KEY_ID") == "TEMP_KEY_EXCEPTION"
                 raise ValueError("intentional")
 
-        assert os.environ.get("AWS_ACCESS_KEY_ID") == original_key
+        assert os.environ.get("AWS_ACCESS_KEY_ID") == original_key  # type: ignore[unreachable]
 
     def test_scoped_env_vars_empty_map_is_noop(self) -> None:
         """Empty env_map should not acquire the lock or modify environment."""
@@ -243,7 +243,7 @@ class TestScopedEnvVarsThreadSafety:
                 raise ValueError("intentional")
 
         # Must be cleaned up
-        assert os.environ.get(env_key) is None, "Credential was not cleaned up after exception."
+        assert os.environ.get(env_key) is None, "Credential was not cleaned up after exception."  # type: ignore[unreachable]
 
     def test_scoped_env_vars_empty_map_does_not_acquire_lock(self) -> None:
         """Empty env_map yields immediately without locking (optimization)."""
@@ -364,7 +364,7 @@ class TestConcurrentCredentialScoping:
         """Two threads with different S3 creds don't see each other's values."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
-        results = {"thread_a": [], "thread_b": []}
+        results: dict[str, list[str | None]] = {"thread_a": [], "thread_b": []}
         barrier = threading.Barrier(2, timeout=5)
 
         def thread_a() -> None:

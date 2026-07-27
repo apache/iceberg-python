@@ -70,7 +70,7 @@ class TestExpressionToSqlInWithNull:
         mock_term.ref.return_value = MagicMock(field=mock_field)
 
         # Call visit_in directly with a set containing None
-        sql = visitor.visit_in(mock_term, {1, 2, None})
+        sql = visitor.visit_in(mock_term, frozenset({1, 2, None}))  # type: ignore[arg-type]
 
         # Must contain IS NULL (for the NULL in the set)
         assert "IS NULL" in sql, f"IN with NULL should produce 'OR col IS NULL' clause, got: {sql}"
@@ -110,7 +110,7 @@ class TestExpressionToSqlInWithNull:
         mock_term.ref.return_value = MagicMock(field=mock_field)
 
         # Call visit_in directly with only None
-        sql = visitor.visit_in(mock_term, {None})
+        sql = visitor.visit_in(mock_term, frozenset({None}))  # type: ignore[arg-type]
 
         # Should produce IS NULL without an IN clause
         assert "IS NULL" in sql, f"IN with only NULL should produce IS NULL, got: {sql}"
@@ -128,7 +128,7 @@ class TestExpressionToSqlInWithNull:
         mock_field.name = "id"
         mock_term.ref.return_value = MagicMock(field=mock_field)
 
-        sql = visitor.visit_not_in(mock_term, {2, None})
+        sql = visitor.visit_not_in(mock_term, frozenset({2, None}))  # type: ignore[arg-type]
 
         # Must contain IS NOT NULL (for the NULL in the exclusion set)
         assert "IS NOT NULL" in sql, f"NOT IN with NULL should produce 'AND col IS NOT NULL' clause, got: {sql}"

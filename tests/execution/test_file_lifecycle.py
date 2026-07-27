@@ -24,6 +24,7 @@ import glob
 import inspect
 import tempfile
 import warnings
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -112,7 +113,7 @@ class TestExpressionToSqlBoundPredicates:
     """Verify expression_to_sql works with real bound expressions (not just AlwaysTrue)."""
 
     @pytest.fixture
-    def schema(self) -> None:
+    def schema(self) -> Schema:
         """Schema for binding expressions."""
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField
@@ -122,7 +123,7 @@ class TestExpressionToSqlBoundPredicates:
             NestedField(field_id=2, name="name", field_type=StringType(), required=False),
         )
 
-    def test_bound_equal_to(self, schema) -> None:
+    def test_bound_equal_to(self, schema: Schema) -> None:
         """BoundEqualTo produces correct SQL: 'col = value'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import EqualTo
@@ -134,7 +135,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"id" = 42' in sql
 
-    def test_bound_greater_than(self, schema) -> None:
+    def test_bound_greater_than(self, schema: Schema) -> None:
         """BoundGreaterThan produces correct SQL: 'col > value'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import GreaterThan
@@ -146,7 +147,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"id" > 10' in sql
 
-    def test_bound_less_than_or_equal(self, schema) -> None:
+    def test_bound_less_than_or_equal(self, schema: Schema) -> None:
         """BoundLessThanOrEqual produces correct SQL: 'col <= value'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import LessThanOrEqual
@@ -158,7 +159,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"id" <= 99' in sql
 
-    def test_bound_is_null(self, schema) -> None:
+    def test_bound_is_null(self, schema: Schema) -> None:
         """BoundIsNull produces correct SQL: 'col IS NULL'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import IsNull
@@ -170,7 +171,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"name" IS NULL' in sql
 
-    def test_bound_not_null(self, schema) -> None:
+    def test_bound_not_null(self, schema: Schema) -> None:
         """BoundNotNull produces correct SQL: 'col IS NOT NULL'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import NotNull
@@ -182,7 +183,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"id" IS NOT NULL' in sql
 
-    def test_bound_in_set(self, schema) -> None:
+    def test_bound_in_set(self, schema: Schema) -> None:
         """BoundIn produces correct SQL: 'col IN (values)'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import In
@@ -197,7 +198,7 @@ class TestExpressionToSqlBoundPredicates:
         assert "2" in sql
         assert "3" in sql
 
-    def test_bound_starts_with(self, schema) -> None:
+    def test_bound_starts_with(self, schema: Schema) -> None:
         """BoundStartsWith produces correct SQL with LIKE and ESCAPE."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import StartsWith
@@ -211,7 +212,7 @@ class TestExpressionToSqlBoundPredicates:
         assert "pre" in sql
         assert "ESCAPE" in sql
 
-    def test_bound_and_or_compound(self, schema) -> None:
+    def test_bound_and_or_compound(self, schema: Schema) -> None:
         """Compound AND/OR expressions produce correct SQL."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import And, EqualTo, GreaterThan, Or
@@ -227,7 +228,7 @@ class TestExpressionToSqlBoundPredicates:
         assert "'alice'" in sql
         assert "'bob'" in sql
 
-    def test_string_with_special_chars(self, schema) -> None:
+    def test_string_with_special_chars(self, schema: Schema) -> None:
         """String literals with quotes are properly escaped."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import EqualTo
@@ -653,9 +654,9 @@ class TestBatchReaderUsesStreaming:
         captured_kwargs = {}
         original_fn = orchestrate_scan
 
-        def spy_orchestrate_scan(*args, **kwargs) -> None:
+        def spy_orchestrate_scan(*args: object, **kwargs: object) -> Iterator[pa.RecordBatch]:
             captured_kwargs.update(kwargs)
-            return original_fn(*args, **kwargs)
+            return original_fn(*args, **kwargs)  # type: ignore[arg-type]
 
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()

@@ -28,7 +28,11 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
+
+if TYPE_CHECKING:
+    from pyiceberg.execution.planning import BoundedMemoryPlanner
 
 import pyarrow as pa
 import pytest
@@ -202,14 +206,14 @@ class TestBoundedMemoryPlannerEmptyManifests:
     """Verify BoundedMemoryPlanner handles edge cases with empty or delete-only manifests."""
 
     @pytest.fixture
-    def planner(self) -> None:
+    def planner(self) -> Any:
         """Create a BoundedMemoryPlanner instance (requires DataFusion)."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         return BoundedMemoryPlanner(memory_limit=64 * 1024 * 1024)
 
-    def test_no_data_entries_yields_zero_tasks(self, planner) -> None:
+    def test_no_data_entries_yields_zero_tasks(self, planner: BoundedMemoryPlanner) -> None:
         """When all manifests contain only delete entries (no data files), yield nothing."""
         from pyiceberg.execution.planning import InMemoryPlanner
 
@@ -235,7 +239,7 @@ class TestBoundedMemoryPlannerEmptyManifests:
 
         assert tasks == []
 
-    def test_stream_entries_to_parquet_handles_empty_input(self, planner) -> None:
+    def test_stream_entries_to_parquet_handles_empty_input(self, planner: BoundedMemoryPlanner) -> None:
         """_stream_entries_to_parquet with zero entries produces valid (empty) Parquet files."""
         import tempfile
         from pathlib import Path
@@ -332,10 +336,11 @@ class TestSortOnWriteTempFileCleanupOnException:
         paths_created: list[str] = []
 
         # Wrap materialize_to_parquet to capture the temp path
+        from collections.abc import Generator
         from contextlib import contextmanager
 
         @contextmanager
-        def _tracking_materialize() -> None:
+        def _tracking_materialize() -> Generator[str, None, None]:
             with materialize_to_parquet(table) as path:
                 paths_created.append(path)
                 yield path

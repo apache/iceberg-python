@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import json
 import warnings
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -330,7 +331,7 @@ class TestSerializePartitionKeyFallback:
             def __getitem__(self, idx: int) -> Any:
                 return self._data[idx]
 
-        key = _serialize_partition_key(0, FakeRecord())
+        key = _serialize_partition_key(0, FakeRecord())  # type: ignore[arg-type]
         assert isinstance(key, str)
         assert len(key) > 0
         # Should be valid JSON
@@ -350,7 +351,7 @@ class TestSerializePartitionKeyFallback:
             def __repr__(self) -> str:
                 return "OpaqueRecord(a=1, b='x')"
 
-        key = _serialize_partition_key(0, OpaqueRecord())
+        key = _serialize_partition_key(0, OpaqueRecord())  # type: ignore[arg-type]
         assert isinstance(key, str)
         assert len(key) > 0
         # Should not raise -- the fallback path handled it
@@ -377,8 +378,8 @@ class TestSerializePartitionKeyFallback:
             def __getitem__(self, idx: int) -> Any:
                 return self._data[idx]
 
-        key_a = _serialize_partition_key(0, RecordA())
-        key_b = _serialize_partition_key(0, RecordB())
+        key_a = _serialize_partition_key(0, RecordA())  # type: ignore[arg-type]
+        key_b = _serialize_partition_key(0, RecordB())  # type: ignore[arg-type]
         assert key_a != key_b, f"Different partition values must produce different keys: '{key_a}' == '{key_b}'"
 
     def test_different_spec_ids_produce_different_keys(self) -> None:
@@ -394,8 +395,8 @@ class TestSerializePartitionKeyFallback:
             def __getitem__(self, idx: int) -> Any:
                 return self._data[idx]
 
-        key_spec0 = _serialize_partition_key(0, RecordA())
-        key_spec1 = _serialize_partition_key(1, RecordA())
+        key_spec0 = _serialize_partition_key(0, RecordA())  # type: ignore[arg-type]
+        key_spec1 = _serialize_partition_key(1, RecordA())  # type: ignore[arg-type]
         assert key_spec0 != key_spec1, f"Different spec_ids must produce different keys: '{key_spec0}' == '{key_spec1}'"
 
     def test_none_partition_produces_valid_key(self) -> None:
@@ -417,8 +418,8 @@ class TestSerializePartitionKeyFallback:
             def __repr__(self) -> str:
                 return "OpaqueRecord(a=2, b='y')"
 
-        key_a = _serialize_partition_key(0, OpaqueRecordA())
-        key_b = _serialize_partition_key(0, OpaqueRecordB())
+        key_a = _serialize_partition_key(0, OpaqueRecordA())  # type: ignore[arg-type]
+        key_b = _serialize_partition_key(0, OpaqueRecordB())  # type: ignore[arg-type]
         assert key_a != key_b, f"Different opaque records must produce different keys: '{key_a}' == '{key_b}'"
 
     def test_partition_with_string_containing_pipes(self) -> None:
@@ -434,7 +435,7 @@ class TestSerializePartitionKeyFallback:
             def __getitem__(self, idx: int) -> Any:
                 return self._data[idx]
 
-        key = _serialize_partition_key(0, RecordWithPipes())
+        key = _serialize_partition_key(0, RecordWithPipes())  # type: ignore[arg-type]
         # Should be valid JSON -- pipes are just characters in strings
         parsed = json.loads(key)
         assert parsed[1] == "us|east|1"
@@ -1023,7 +1024,7 @@ class TestOrchestrateErrorHandling:
         assert first_batch.num_rows > 0
 
         # Force cleanup by closing the generator (simulates abandonment)
-        gen.close()
+        gen.close()  # type: ignore[attr-defined]
 
     def test_materialize_batches_cleans_up_on_exception(self) -> None:
         """materialize_batches_to_parquet must clean temp file on exception."""
@@ -1156,18 +1157,6 @@ class TestSpillAndStreamThresholdBoundary:
 # =============================================================================
 # OOM warning threshold
 # =============================================================================
-
-
-def _make_task(file_size_bytes: int) -> FileScanTask:
-    """Create a FileScanTask with a specific file size."""
-    data_file = DataFile.from_args(
-        content=DataFileContent.DATA,
-        file_path="s3://bucket/table/data/file.parquet",
-        file_format=FileFormat.PARQUET,
-        record_count=1000,
-        file_size_in_bytes=file_size_bytes,
-    )
-    return FileScanTask(data_file=data_file, delete_files=set())
 
 
 class TestOomWarningThresholdConfigurable:
@@ -1458,7 +1447,7 @@ class TestCowDeleteConcurrentFileRemoval:
         call_count = [0]
         original_read = backend.read_parquet
 
-        def _read_that_fails_on_second_call(*args, **kwargs) -> None:
+        def _read_that_fails_on_second_call(*args: Any, **kwargs: Any) -> Iterator[pa.RecordBatch]:
             call_count[0] += 1
             if call_count[0] == 2:
                 raise FileNotFoundError(f"File not found: {data_path}")

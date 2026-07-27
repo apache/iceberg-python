@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+from collections.abc import Generator
 
 import pyarrow as pa
 import pytest
@@ -50,7 +51,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def catalog() -> InMemoryCatalog:
+def catalog() -> Generator[InMemoryCatalog, None, None]:
     """Create an InMemoryCatalog with a temp warehouse."""
     from pyiceberg.catalog.memory import InMemoryCatalog
 
@@ -61,7 +62,7 @@ def catalog() -> InMemoryCatalog:
 
 
 @pytest.fixture
-def simple_schema() -> None:
+def simple_schema() -> Schema:
     """Schema with id (int) and name (string)."""
     return Schema(
         NestedField(1, "id", IntegerType(), required=True),

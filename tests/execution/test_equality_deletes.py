@@ -88,7 +88,7 @@ def _make_data_file_mock(
     return mock
 
 
-def _make_file_scan_task(data_path: str, delete_files: list, record_count: int = 10) -> MagicMock:
+def _make_file_scan_task(data_path: str, delete_files: list[MagicMock], record_count: int = 10) -> MagicMock:
     """Create a mock FileScanTask with data file and delete files."""
     from pyiceberg.expressions import AlwaysTrue
 
