@@ -30,17 +30,17 @@ import pytest
 
 datafusion = pytest.importorskip("datafusion")
 
-from pyiceberg.execution.backends.datafusion_backend import (
+from pyiceberg.execution.backends.datafusion_backend import (  # noqa: E402
     DataFusionComputeBackend,
     DataFusionReadBackend,
 )
-from pyiceberg.expressions import (
+from pyiceberg.expressions import (  # noqa: E402
     AlwaysTrue,
     GreaterThan,
     Reference,
 )
-from pyiceberg.schema import Schema
-from pyiceberg.types import IntegerType, NestedField, StringType
+from pyiceberg.schema import Schema  # noqa: E402
+from pyiceberg.types import IntegerType, NestedField, StringType  # noqa: E402
 
 
 @pytest.fixture

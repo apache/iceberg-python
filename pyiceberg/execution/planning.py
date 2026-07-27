@@ -210,7 +210,7 @@ class BoundedMemoryPlanner:
         from pyiceberg.manifest import DataFileContent
 
         data_schema = pa.schema(
-            [  # type: ignore[arg-type]
+            [
                 pa.field("file_path", pa.string()),
                 pa.field("partition_key", pa.string()),
                 pa.field("sequence_number", pa.int64()),
@@ -220,7 +220,7 @@ class BoundedMemoryPlanner:
             ]
         )
         delete_schema = pa.schema(
-            [  # type: ignore[arg-type]
+            [
                 pa.field("file_path", pa.string()),
                 pa.field("partition_key", pa.string()),
                 pa.field("sequence_number", pa.int64()),

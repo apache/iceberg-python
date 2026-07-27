@@ -204,8 +204,8 @@ def _extract_parquet_statistics(
                 column_sizes[idx] = column_sizes.get(idx, 0) + col.total_compressed_size
                 value_counts[idx] = value_counts.get(idx, 0) + col.num_values
                 # pyarrow-stubs doesn't have has_null_count yet; it exists in pyarrow
-                if col.statistics and col.statistics.has_null_count:  # type: ignore[attr-defined]
-                    null_value_counts[idx] = null_value_counts.get(idx, 0) + col.statistics.null_count  # type: ignore[operator]
+                if col.statistics and col.statistics.has_null_count:
+                    null_value_counts[idx] = null_value_counts.get(idx, 0) + col.statistics.null_count
                 if col.statistics and col.statistics.has_min_max:
                     try:
                         min_val = col.statistics.min_raw
@@ -329,7 +329,7 @@ class PyArrowWriteBackend:
             output_stream,
             schema=schema,
             store_decimal_as_integer=True,
-            compression=config.compression,  # type: ignore[arg-type]  # pyarrow accepts any valid codec
+            compression=config.compression,
             compression_level=config.compression_level,
             data_page_size=config.data_page_size,
             dictionary_pagesize_limit=config.dictionary_pagesize_limit,

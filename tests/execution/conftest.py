@@ -20,12 +20,14 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
-def clear_engine_detection_cache() -> None:
+def clear_engine_detection_cache() -> Generator[None, None, None]:
     """Clear the engine detection and config caches before and after each test.
 
     _detect_available_engines and _read_execution_section_from_file are decorated
@@ -45,7 +47,7 @@ def clear_engine_detection_cache() -> None:
 
 
 @pytest.fixture(autouse=True)
-def isolate_from_filesystem_config(monkeypatch, tmp_path) -> None:
+def isolate_from_filesystem_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Generator[None, None, None]:
     """Isolate tests from user's .pyiceberg.yaml configuration.
 
     Without this fixture, a developer who has execution.compute-backend set in
