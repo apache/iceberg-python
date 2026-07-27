@@ -2494,6 +2494,27 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
         streaming=True,
     )
 
+    # Apply limit if specified
+    if scan.limit is not None:
+        limit = scan.limit
+
+        def _limited_batches() -> Iterator[pa.RecordBatch]:
+            rows_yielded = 0
+            for batch in batches:
+                if rows_yielded >= limit:
+                    break
+                remaining = limit - rows_yielded
+                if batch.num_rows <= remaining:
+                    yield batch
+                    rows_yielded += batch.num_rows
+                else:
+                    # Slice the batch to return only the remaining rows needed
+                    yield batch.slice(0, remaining)
+                    rows_yielded += remaining
+                    break
+
+        return pa.RecordBatchReader.from_batches(target_schema, _limited_batches()).cast(target_schema)
+
     return pa.RecordBatchReader.from_batches(target_schema, batches).cast(target_schema)
 
 
