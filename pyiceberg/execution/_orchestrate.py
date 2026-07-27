@@ -185,20 +185,18 @@ def orchestrate_scan(
             d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES and d.file_format == FileFormat.PARQUET
         ]
 
-        # Warn if there are unsupported delete file formats (e.g., Puffin DVs)
+        # Log if there are unsupported delete file formats (e.g., Puffin DVs)
         unsupported_deletes = [
             d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES and d.file_format != FileFormat.PARQUET
         ]
         if unsupported_deletes:
-            import warnings
-
             formats = {d.file_format.name for d in unsupported_deletes}
-            warnings.warn(
-                f"Skipping {len(unsupported_deletes)} position delete file(s) with unsupported format(s): {formats}. "
-                f"Delete vectors (Puffin files) in Iceberg v3 are not yet supported. "
-                f"Results may include rows that should have been deleted.",
-                UserWarning,
-                stacklevel=2,
+            logger.warning(
+                "Skipping %d position delete file(s) with unsupported format(s): %s. "
+                "Delete vectors (Puffin files) in Iceberg v3 are not yet supported. "
+                "Results may include rows that should have been deleted.",
+                len(unsupported_deletes),
+                formats,
             )
 
         if pos_deletes and eq_deletes:
