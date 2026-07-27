@@ -343,18 +343,23 @@ def orchestrate_scan(
         if puffin_positions:
             result_batches = _apply_puffin_positions(result_batches, puffin_positions)
 
-        # Post-filter applies the row_filter if it can be bound to the projected schema.
-        # This serves as a correctness guarantee since pushdown is best-effort only.
+        # Post-filter is only needed if pushdown didn't handle the filter.
+        # Pushdown happens via task.residual in read_parquet. If residual is not AlwaysTrue,
+        # it means the filter was pushed down to the scanner, so post-filter is redundant.
         #
-        # The filter binding may fail if:
-        # 1. row_filter is already bound (from test or REST scan) - use it directly
-        # 2. row_filter references columns not in projected schema (e.g., filter on 'ts'
-        #    but only select 'number') - skip post-filter, trust partition pruning + pushdown
+        # We SKIP post-filter when:
+        # 1. row_filter is AlwaysTrue (no filter to apply)
+        # 2. task.residual is not AlwaysTrue (pushdown handled the filter)
+        # 3. row_filter references columns not in projected schema (partition pruning handled it)
         #
-        # Post-filter happens AFTER reconciliation so that:
-        # - Projected partition columns are available for filtering
-        # - Renamed columns use their current names (for schema evolution)
-        if not isinstance(row_filter, AlwaysTrue):
+        # We APPLY post-filter only when residual is AlwaysTrue AND row_filter is non-trivial
+        # AND the filter can be bound to the projected schema. This handles cases where
+        # partition pruning eliminated the filter from residual but we still need to verify.
+        #
+        # NOTE: Using batch.filter() with PyArrow expressions doesn't support all types
+        # (e.g., extension types like UUID). By skipping post-filter when pushdown worked,
+        # we avoid these issues since the dataset scanner handles extension types properly.
+        if not isinstance(row_filter, AlwaysTrue) and isinstance(task.residual, AlwaysTrue):
             from pyiceberg.expressions.visitors import bind
 
             try:
@@ -365,7 +370,7 @@ def orchestrate_scan(
             except ValueError:
                 # Filter references columns not in projected schema.
                 # This happens when filtering on partition columns that aren't selected.
-                # Partition pruning + pushdown already handled it, so we skip post-filter.
+                # Partition pruning already handled it, so we skip post-filter.
                 bound_filter = None
 
             if bound_filter is not None:
