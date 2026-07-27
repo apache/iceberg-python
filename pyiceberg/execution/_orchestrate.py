@@ -435,6 +435,45 @@ def _read_equality_delete_batches(
         yield from backends.read.read_parquet(df.file_path, equality_schema, AlwaysTrue(), io_properties)
 
 
+def _is_widening_promotion(file_type: Any, projected_type: Any) -> bool:
+    """Check if file_type can be promoted to projected_type (widening conversion).
+
+    Widening conversions are safe and supported by Iceberg's schema evolution:
+    - int → long
+    - float → double
+    - decimal(P1, S) → decimal(P2, S) where P2 > P1
+
+    This function also handles nested types (lists, maps) by recursively checking
+    their element/value types for widening promotions.
+
+    Returns True if file_type is narrower than projected_type (needs promotion).
+    Returns False if types are equal, or if conversion would be narrowing/unsupported.
+    """
+    from pyiceberg.types import DecimalType, DoubleType, FloatType, IntegerType, ListType, LongType, MapType
+
+    # int → long
+    if isinstance(file_type, IntegerType) and isinstance(projected_type, LongType):
+        return True
+    # float → double
+    if isinstance(file_type, FloatType) and isinstance(projected_type, DoubleType):
+        return True
+    # decimal precision widening (same scale)
+    if isinstance(file_type, DecimalType) and isinstance(projected_type, DecimalType):
+        if file_type.scale == projected_type.scale and file_type.precision < projected_type.precision:
+            return True
+
+    # list<T1> → list<T2> where T1 can be promoted to T2
+    if isinstance(file_type, ListType) and isinstance(projected_type, ListType):
+        return _is_widening_promotion(file_type.element_type, projected_type.element_type)
+
+    # map<K, V1> → map<K, V2> where V1 can be promoted to V2
+    # Note: key types cannot be promoted in Iceberg schema evolution
+    if isinstance(file_type, MapType) and isinstance(projected_type, MapType):
+        return _is_widening_promotion(file_type.value_type, projected_type.value_type)
+
+    return False
+
+
 def _infer_file_schema_from_batch(batch: pa.RecordBatch, table_metadata: TableMetadata, downcast_ns: bool) -> Schema | None:
     """Infer the file's Iceberg schema from a batch's Arrow schema."""
     from pyiceberg.io.pyarrow import pyarrow_to_schema
@@ -495,22 +534,27 @@ def _build_reconcile_fn(
         # Check if reconciliation is actually needed:
         # 1. Field IDs differ (schema evolution - columns added/removed)
         # 2. File field is required but projected field is optional (need to widen nullability)
+        # 3. File type needs widening promotion (e.g., int32 → int64)
         #
-        # We do NOT reconcile when file is nullable but projected is required - the file
-        # schema being more permissive is fine (readers handle this via coercion).
-        # We also skip type-only differences because inferred Arrow types may not match
-        # Iceberg types exactly (e.g., int64 vs int32), and attempting promotion can fail.
+        # We do NOT reconcile for narrowing type conversions (e.g., int64 → int32) because:
+        # - These would fail in _to_requested_schema's promote() call
+        # - This typically indicates the inferred file schema doesn't match actual Iceberg types
+        #   (e.g., PyArrow infers int64 from Python ints but Iceberg schema says int32)
         needs_reconciliation = file_schema.field_ids != projected_schema.field_ids
 
         if not needs_reconciliation:
-            # Check if any file field is stricter (required) than projected (optional)
             for proj_field in projected_schema.fields:
                 file_field = file_schema.find_field(proj_field.field_id)
-                # Only reconcile if file is required but projected allows nulls
-                # (file has required=True, projected has required=False)
-                if file_field is not None and file_field.required and not proj_field.required:
-                    needs_reconciliation = True
-                    break
+                if file_field is not None:
+                    # Check nullability: file required but projected optional → need to widen
+                    if file_field.required and not proj_field.required:
+                        needs_reconciliation = True
+                        break
+                    # Check type promotion: only reconcile for widening conversions
+                    if file_field.field_type != proj_field.field_type:
+                        if _is_widening_promotion(file_field.field_type, proj_field.field_type):
+                            needs_reconciliation = True
+                            break
 
         if needs_reconciliation:
             partition_spec = table_metadata.specs().get(table_metadata.default_spec_id)
@@ -539,7 +583,7 @@ def _build_reconcile_fn(
 
             return _reconcile
 
-        # Schemas are compatible (same field IDs, same nullability) - no reconciliation needed
+        # Schemas are compatible (same field IDs, compatible nullability/types) - no reconciliation needed
         return _NO_RECONCILIATION
 
     # file_schema is None -- schema inference failed
