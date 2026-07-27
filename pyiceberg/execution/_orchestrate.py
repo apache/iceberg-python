@@ -343,30 +343,29 @@ def orchestrate_scan(
         if puffin_positions:
             result_batches = _apply_puffin_positions(result_batches, puffin_positions)
 
-        # Post-filter uses the task's residual, NOT the original row_filter.
-        # The residual is what remains after partition pruning - it only references
-        # columns that are either:
-        # 1. In the projected schema (user selected them)
-        # 2. Partition columns projected via identity transform
+        # Post-filter applies the row_filter if it can be bound to the projected schema.
+        # This serves as a correctness guarantee since pushdown is best-effort only.
         #
-        # If residual is AlwaysTrue, partition pruning handled the entire filter
-        # and no row-level filtering is needed. If the original row_filter references
-        # columns not in the projection, the residual should be AlwaysTrue (because
-        # partition pruning eliminated all non-matching files) or the filter should
-        # have been pushed down during read_parquet.
+        # The filter binding may fail if:
+        # 1. row_filter is already bound (from test or REST scan) - use it directly
+        # 2. row_filter references columns not in projected schema (e.g., filter on 'ts'
+        #    but only select 'number') - skip post-filter, trust partition pruning + pushdown
         #
         # Post-filter happens AFTER reconciliation so that:
         # - Projected partition columns are available for filtering
         # - Renamed columns use their current names (for schema evolution)
-        if not isinstance(task.residual, AlwaysTrue):
+        if not isinstance(row_filter, AlwaysTrue):
             from pyiceberg.expressions.visitors import bind
 
             try:
-                bound_filter = bind(projected_schema, task.residual, case_sensitive)
-            except (TypeError, ValueError):
-                # Predicate is already bound, or references columns not in projected schema.
-                # The latter can happen if the filter references non-partition columns that
-                # weren't selected - in this case we skip post-filter and rely on pushdown.
+                bound_filter = bind(projected_schema, row_filter, case_sensitive)
+            except TypeError:
+                # Filter is already bound - use it directly
+                bound_filter = row_filter
+            except ValueError:
+                # Filter references columns not in projected schema.
+                # This happens when filtering on partition columns that aren't selected.
+                # Partition pruning + pushdown already handled it, so we skip post-filter.
                 bound_filter = None
 
             if bound_filter is not None:
