@@ -250,6 +250,7 @@ Tencent Cloud Object Storage (COS) is S3-compatible and can be used with PyIcebe
 | ----------- | ------------------------ | --------------------------------------------------------- |
 | hf.endpoint | <https://huggingface.co> | Configure the endpoint for Hugging Face                   |
 | hf.token    | hf_xxx                   | The Hugging Face token to access HF Datasets repositories |
+| hf.revision | main                     | Pin reads to a specific branch, tag, or commit. Writes always target the repository's default branch. |
 
 <!-- markdown-link-check-enable-->
 

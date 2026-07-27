@@ -68,6 +68,7 @@ from pyiceberg.io import (
     GCS_TOKEN,
     GCS_VERSION_AWARE,
     HF_ENDPOINT,
+    HF_REVISION,
     HF_TOKEN,
     S3_ACCESS_KEY_ID,
     S3_ANONYMOUS,
@@ -319,6 +320,7 @@ SCHEME_TO_FS: dict[str, Callable[..., AbstractFileSystem]] = {
 }
 
 _ADLS_SCHEMES = frozenset({"abfs", "abfss", "wasb", "wasbs"})
+_HF_SCHEMES = frozenset({"hf"})
 
 
 class FsspecInputFile(InputFile):
@@ -327,16 +329,19 @@ class FsspecInputFile(InputFile):
     Args:
         location (str): A URI to a file location.
         fs (AbstractFileSystem): An fsspec filesystem instance.
+        fs_kwargs (Properties): Extra keyword arguments forwarded to the underlying filesystem read calls,
+            e.g. a pinned `revision` for the HuggingFace Hub filesystem.
     """
 
-    def __init__(self, location: str, fs: AbstractFileSystem):
+    def __init__(self, location: str, fs: AbstractFileSystem, fs_kwargs: Properties | None = None):
         self._fs = fs
+        self._fs_kwargs = fs_kwargs or {}
         super().__init__(location=location)
 
     @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
-        object_info = self._fs.info(self.location)
+        object_info = self._fs.info(self.location, **self._fs_kwargs)
         if "Size" in object_info:
             return object_info["Size"]
         elif "size" in object_info:
@@ -346,6 +351,12 @@ class FsspecInputFile(InputFile):
     @override
     def exists(self) -> bool:
         """Check whether the location exists."""
+        if self._fs_kwargs:
+            # fsspec's AbstractFileSystem.lexists() doesn't forward **kwargs to exists()/info(), so
+            # honoring fs_kwargs (e.g. a pinned HuggingFace Hub revision) requires calling exists()
+            # directly -- it does forward kwargs to info(), with the same broad exception handling
+            # lexists() would otherwise provide.
+            return self._fs.exists(self.location, **self._fs_kwargs)
         return self._fs.lexists(self.location)
 
     @override
@@ -362,7 +373,7 @@ class FsspecInputFile(InputFile):
             FileNotFoundError: If the file does not exist.
         """
         try:
-            return self._fs.open(self.location, "rb")
+            return self._fs.open(self.location, "rb", **self._fs_kwargs)
         except FileNotFoundError as e:
             # To have a consistent error handling experience, make sure exception contains missing file location.
             raise e if e.filename else FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.location) from e
@@ -444,7 +455,7 @@ class FsspecFileIO(FileIO):
         """
         uri = urlparse(location)
         fs = self._get_fs_from_uri(uri)
-        return FsspecInputFile(location=location, fs=fs)
+        return FsspecInputFile(location=location, fs=fs, fs_kwargs=self._get_fs_kwargs(uri.scheme))
 
     @override
     def new_output(self, location: str) -> FsspecOutputFile:
@@ -483,6 +494,17 @@ class FsspecFileIO(FileIO):
         if uri.scheme in _ADLS_SCHEMES:
             return self.get_fs(uri.scheme, uri.hostname)
         return self.get_fs(uri.scheme)
+
+    def _get_fs_kwargs(self, scheme: str) -> Properties:
+        """Get extra keyword arguments to forward to filesystem read calls for a given scheme.
+
+        Only applies to reads (new_input): a pinned HuggingFace Hub revision may be a tag or
+        commit, neither of which is a valid write target, so writes/deletes always target the
+        repository's default (writable) branch.
+        """
+        if scheme in _HF_SCHEMES and (revision := self.properties.get(HF_REVISION)):
+            return {"revision": revision}
+        return {}
 
     def get_fs(self, scheme: str, hostname: str | None = None) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme, cached per thread."""
