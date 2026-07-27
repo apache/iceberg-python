@@ -55,11 +55,11 @@ from typing_extensions import override
 from pyiceberg.catalog import (
     EXTERNAL_TABLE,
     ICEBERG,
+    ICEBERG_VIEW,
     LOCATION,
     METADATA_LOCATION,
     TABLE_TYPE,
     URI,
-    ICEBERG_VIEW,
     MetastoreCatalog,
     PropertiesUpdateSummary,
 )
