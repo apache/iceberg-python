@@ -48,6 +48,11 @@ def catalog_name() -> str:
 
 @pytest.fixture(scope="module")
 def catalog_memory(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    """In-memory SQLite catalog fixture.
+
+    Calls catalog.close() during teardown to properly dispose SQLAlchemy
+    connection pools and prevent Python 3.13 ResourceWarning. See #2530.
+    """
     props = {
         "uri": "sqlite:///:memory:",
         "warehouse": f"file://{warehouse}",
@@ -56,10 +61,16 @@ def catalog_memory(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
     catalog.create_tables()
     yield catalog
     catalog.destroy_tables()
+    catalog.close()
 
 
 @pytest.fixture(scope="module")
 def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
+    """File-based SQLite catalog fixture.
+
+    Calls catalog.close() during teardown to properly dispose SQLAlchemy
+    connection pools and prevent Python 3.13 ResourceWarning. See #2530.
+    """
     props = {
         "uri": f"sqlite:////{warehouse}/sql-catalog",
         "warehouse": f"file://{warehouse}",
@@ -68,6 +79,7 @@ def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
     catalog.create_tables()
     yield catalog
     catalog.destroy_tables()
+    catalog.close()
 
 
 @pytest.fixture(scope="module")
@@ -76,8 +88,10 @@ def catalog_uri(warehouse: Path) -> str:
 
 
 @pytest.fixture(scope="module")
-def alchemy_engine(catalog_uri: str) -> Engine:
-    return create_engine(catalog_uri)
+def alchemy_engine(catalog_uri: str) -> Generator[Engine, None, None]:
+    engine = create_engine(catalog_uri)
+    yield engine
+    engine.dispose()
 
 
 def test_creation_with_no_uri(catalog_name: str) -> None:
@@ -103,10 +117,13 @@ def test_creation_with_echo_parameter(catalog_name: str, warehouse: Path) -> Non
         if echo_param is not None:
             props["echo"] = echo_param
         catalog = SqlCatalog(catalog_name, **props)
-        assert catalog.engine._echo == expected_echo_value, (
-            f"Assertion failed: expected echo value {expected_echo_value}, "
-            f"but got {catalog.engine._echo}. For echo_param={echo_param}"
-        )
+        try:
+            assert catalog.engine._echo == expected_echo_value, (
+                f"Assertion failed: expected echo value {expected_echo_value}, "
+                f"but got {catalog.engine._echo}. For echo_param={echo_param}"
+            )
+        finally:
+            catalog.close()
 
 
 def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Path) -> None:
@@ -127,24 +144,29 @@ def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Pat
             props["pool_pre_ping"] = pool_pre_ping_param
 
         catalog = SqlCatalog(catalog_name, **props)
-        assert catalog.engine.pool._pre_ping == expected_pool_pre_ping_value, (
-            f"Assertion failed: expected pool_pre_ping value {expected_pool_pre_ping_value}, "
-            f"but got {catalog.engine.pool._pre_ping}. For pool_pre_ping_param={pool_pre_ping_param}"
-        )
+        try:
+            assert catalog.engine.pool._pre_ping == expected_pool_pre_ping_value, (
+                f"Assertion failed: expected pool_pre_ping value {expected_pool_pre_ping_value}, "
+                f"but got {catalog.engine.pool._pre_ping}. For pool_pre_ping_param={pool_pre_ping_param}"
+            )
+        finally:
+            catalog.close()
 
 
 def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
-    assert isinstance(
-        load_catalog(
-            catalog_name,
-            **{
-                "py-catalog-impl": "pyiceberg.catalog.sql.SqlCatalog",
-                "uri": f"sqlite:////{warehouse}/sql-catalog",
-                "warehouse": f"file://{warehouse}",
-            },
-        ),
-        SqlCatalog,
+    catalog = load_catalog(
+        catalog_name,
+        **{
+            "py-catalog-impl": "pyiceberg.catalog.sql.SqlCatalog",
+            "uri": f"sqlite:////{warehouse}/sql-catalog",
+            "warehouse": f"file://{warehouse}",
+        },
     )
+    try:
+        assert isinstance(catalog, SqlCatalog)
+    finally:
+        if isinstance(catalog, SqlCatalog):
+            catalog.close()
 
 
 def confirm_no_tables_exist(alchemy_engine: Engine) -> None:
@@ -182,7 +204,10 @@ def load_catalog_for_catalog_table_creation(catalog_name: str, catalog_uri: str)
 def test_creation_when_no_tables_exist(alchemy_engine: Engine, catalog_name: str, catalog_uri: str) -> None:
     confirm_no_tables_exist(alchemy_engine)
     catalog = load_catalog_for_catalog_table_creation(catalog_name=catalog_name, catalog_uri=catalog_uri)
-    confirm_all_tables_exist(catalog)
+    try:
+        confirm_all_tables_exist(catalog)
+    finally:
+        catalog.close()
 
 
 def test_creation_when_one_tables_exists(alchemy_engine: Engine, catalog_name: str, catalog_uri: str) -> None:
@@ -194,7 +219,10 @@ def test_creation_when_one_tables_exists(alchemy_engine: Engine, catalog_name: s
     assert IcebergTables.__tablename__ in [t for t in inspector.get_table_names() if t in CATALOG_TABLES]
 
     catalog = load_catalog_for_catalog_table_creation(catalog_name=catalog_name, catalog_uri=catalog_uri)
-    confirm_all_tables_exist(catalog)
+    try:
+        confirm_all_tables_exist(catalog)
+    finally:
+        catalog.close()
 
 
 def test_creation_when_all_tables_exists(alchemy_engine: Engine, catalog_name: str, catalog_uri: str) -> None:
@@ -207,7 +235,10 @@ def test_creation_when_all_tables_exists(alchemy_engine: Engine, catalog_name: s
         assert c in [t for t in inspector.get_table_names() if t in CATALOG_TABLES]
 
     catalog = load_catalog_for_catalog_table_creation(catalog_name=catalog_name, catalog_uri=catalog_uri)
-    confirm_all_tables_exist(catalog)
+    try:
+        confirm_all_tables_exist(catalog)
+    finally:
+        catalog.close()
 
 
 class TestSqlCatalogClose:
@@ -261,3 +292,22 @@ class TestSqlCatalogClose:
 
         # Second close should not raise an exception
         catalog_sqlite.close()
+
+    def test_catalog_fixture_closes_connections(self, warehouse: Path) -> None:
+        """Regression test: verify SqlCatalog properly closes all SQLAlchemy
+        connections to prevent Python 3.13 ResourceWarning about unclosed
+        database connections. See: apache/iceberg-python#2530"""
+        import gc
+        import warnings
+
+        props = {
+            "uri": f"sqlite:////{warehouse}/test-regression-2530",
+            "warehouse": f"file://{warehouse}",
+        }
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ResourceWarning)
+            catalog = SqlCatalog("regression_test", **props)
+            catalog.create_tables()
+            catalog.destroy_tables()
+            catalog.close()
+            gc.collect()  # Force GC to catch any unclosed connections

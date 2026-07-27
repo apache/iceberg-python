@@ -2471,8 +2471,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:

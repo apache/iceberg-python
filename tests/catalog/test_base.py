@@ -37,7 +37,11 @@ def catalog(tmp_path: PosixPath) -> Generator[Catalog, None, None]:
 
 
 def test_load_catalog_in_memory() -> None:
-    assert load_catalog("catalog", type="in-memory")
+    catalog = load_catalog("catalog", type="in-memory")
+    try:
+        assert catalog
+    finally:
+        catalog.close()
 
 
 def test_load_catalog_impl_not_full_path() -> None:

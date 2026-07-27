@@ -12201,9 +12201,9 @@ class Processor(fb303.FacebookService.Processor, Iface, TProcessor):
         self._processMap["truncate_table_req"] = Processor.process_truncate_table_req
         self._processMap["get_tables"] = Processor.process_get_tables
         self._processMap["get_tables_by_type"] = Processor.process_get_tables_by_type
-        self._processMap[
-            "get_all_materialized_view_objects_for_rewriting"
-        ] = Processor.process_get_all_materialized_view_objects_for_rewriting
+        self._processMap["get_all_materialized_view_objects_for_rewriting"] = (
+            Processor.process_get_all_materialized_view_objects_for_rewriting
+        )
         self._processMap["get_materialized_views_for_rewriting"] = Processor.process_get_materialized_views_for_rewriting
         self._processMap["get_table_meta"] = Processor.process_get_table_meta
         self._processMap["get_all_tables"] = Processor.process_get_all_tables
@@ -12225,19 +12225,19 @@ class Processor(fb303.FacebookService.Processor, Iface, TProcessor):
         self._processMap["add_partitions_pspec"] = Processor.process_add_partitions_pspec
         self._processMap["append_partition"] = Processor.process_append_partition
         self._processMap["add_partitions_req"] = Processor.process_add_partitions_req
-        self._processMap[
-            "append_partition_with_environment_context"
-        ] = Processor.process_append_partition_with_environment_context
+        self._processMap["append_partition_with_environment_context"] = (
+            Processor.process_append_partition_with_environment_context
+        )
         self._processMap["append_partition_by_name"] = Processor.process_append_partition_by_name
-        self._processMap[
-            "append_partition_by_name_with_environment_context"
-        ] = Processor.process_append_partition_by_name_with_environment_context
+        self._processMap["append_partition_by_name_with_environment_context"] = (
+            Processor.process_append_partition_by_name_with_environment_context
+        )
         self._processMap["drop_partition"] = Processor.process_drop_partition
         self._processMap["drop_partition_with_environment_context"] = Processor.process_drop_partition_with_environment_context
         self._processMap["drop_partition_by_name"] = Processor.process_drop_partition_by_name
-        self._processMap[
-            "drop_partition_by_name_with_environment_context"
-        ] = Processor.process_drop_partition_by_name_with_environment_context
+        self._processMap["drop_partition_by_name_with_environment_context"] = (
+            Processor.process_drop_partition_by_name_with_environment_context
+        )
         self._processMap["drop_partitions_req"] = Processor.process_drop_partitions_req
         self._processMap["get_partition"] = Processor.process_get_partition
         self._processMap["get_partition_req"] = Processor.process_get_partition_req
@@ -12266,9 +12266,9 @@ class Processor(fb303.FacebookService.Processor, Iface, TProcessor):
         self._processMap["get_partitions_by_names_req"] = Processor.process_get_partitions_by_names_req
         self._processMap["alter_partition"] = Processor.process_alter_partition
         self._processMap["alter_partitions"] = Processor.process_alter_partitions
-        self._processMap[
-            "alter_partitions_with_environment_context"
-        ] = Processor.process_alter_partitions_with_environment_context
+        self._processMap["alter_partitions_with_environment_context"] = (
+            Processor.process_alter_partitions_with_environment_context
+        )
         self._processMap["alter_partitions_req"] = Processor.process_alter_partitions_req
         self._processMap["alter_partition_with_environment_context"] = Processor.process_alter_partition_with_environment_context
         self._processMap["rename_partition"] = Processor.process_rename_partition
@@ -12397,9 +12397,9 @@ class Processor(fb303.FacebookService.Processor, Iface, TProcessor):
         self._processMap["drop_wm_pool"] = Processor.process_drop_wm_pool
         self._processMap["create_or_update_wm_mapping"] = Processor.process_create_or_update_wm_mapping
         self._processMap["drop_wm_mapping"] = Processor.process_drop_wm_mapping
-        self._processMap[
-            "create_or_drop_wm_trigger_to_pool_mapping"
-        ] = Processor.process_create_or_drop_wm_trigger_to_pool_mapping
+        self._processMap["create_or_drop_wm_trigger_to_pool_mapping"] = (
+            Processor.process_create_or_drop_wm_trigger_to_pool_mapping
+        )
         self._processMap["create_ischema"] = Processor.process_create_ischema
         self._processMap["alter_ischema"] = Processor.process_alter_ischema
         self._processMap["get_ischema"] = Processor.process_get_ischema

@@ -1507,8 +1507,10 @@ field_3: [[3]]"""
 
 
 @pytest.fixture
-def catalog() -> InMemoryCatalog:
-    return InMemoryCatalog("test.in_memory.catalog", **{"test.key": "test.value"})
+def catalog() -> Iterator[InMemoryCatalog]:
+    cat = InMemoryCatalog("test.in_memory.catalog", **{"test.key": "test.value"})
+    yield cat
+    cat.close()
 
 
 def test_projection_filter(schema_int: Schema, file_int: str) -> None:

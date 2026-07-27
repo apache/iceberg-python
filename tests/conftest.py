@@ -3163,6 +3163,12 @@ def catalog(request: pytest.FixtureRequest, tmp_path: Path) -> Generator[Catalog
     yield cat
     if hasattr(cat, "destroy_tables"):
         cat.destroy_tables()
+    # Use duck typing to safely call close() only if available.
+    # Not all catalog implementations (e.g., REST, Glue) have close(), but SQLCatalog does.
+    # This pattern prevents AttributeError while supporting proper resource cleanup for
+    # catalogs that manage connections. See issue #2530 for Python 3.13 ResourceWarning fix.
+    if hasattr(cat, "close"):
+        cat.close()
 
 
 @pytest.fixture(params=list(_CATALOG_FACTORIES.keys()))
@@ -3175,6 +3181,12 @@ def catalog_with_warehouse(
     yield cat
     if hasattr(cat, "destroy_tables"):
         cat.destroy_tables()
+    # Use duck typing to safely call close() only if available.
+    # Not all catalog implementations (e.g., REST, Glue) have close(), but SQLCatalog does.
+    # This pattern prevents AttributeError while supporting proper resource cleanup for
+    # catalogs that manage connections. See issue #2530 for Python 3.13 ResourceWarning fix.
+    if hasattr(cat, "close"):
+        cat.close()
 
 
 @pytest.fixture(name="random_table_identifier")
