@@ -47,7 +47,7 @@ class TestFilterAlwaysFalse:
     """Verify filter() with AlwaysFalse produces empty output across all backends."""
 
     @pytest.fixture(params=["pyarrow", "datafusion"])
-    def backend(self, request) -> None:
+    def backend(self, request: pytest.FixtureRequest) -> ComputeBackend:
         """Parametrized compute backend."""
         if request.param == "pyarrow":
             return PyArrowComputeBackend()
@@ -58,8 +58,9 @@ class TestFilterAlwaysFalse:
             )
 
             return DataFusionComputeBackend()
+        raise ValueError(f"Unknown backend: {request.param}")
 
-    def test_filter_always_false_produces_empty(self, backend) -> None:
+    def test_filter_always_false_produces_empty(self, backend: ComputeBackend) -> None:
         """AlwaysFalse filter should yield zero rows from any input."""
         data = pa.table({"id": [1, 2, 3, 4, 5], "val": ["a", "b", "c", "d", "e"]})
         batches = data.to_batches()
@@ -68,7 +69,7 @@ class TestFilterAlwaysFalse:
         total_rows = sum(b.num_rows for b in result)
         assert total_rows == 0, f"AlwaysFalse filter should produce 0 rows, got {total_rows}"
 
-    def test_filter_always_false_empty_input(self, backend) -> None:
+    def test_filter_always_false_empty_input(self, backend: ComputeBackend) -> None:
         """AlwaysFalse on empty input produces empty output without error."""
         result = list(backend.filter(iter([]), AlwaysFalse()))
         assert result == []
@@ -89,7 +90,7 @@ class TestAntiJoinFromFilesEmptyLeft:
     """
 
     @pytest.fixture(params=["pyarrow", "datafusion"])
-    def compute_backend(self, request) -> None:
+    def compute_backend(self, request: pytest.FixtureRequest) -> ComputeBackend:
         """Parametrized compute backend."""
         if request.param == "pyarrow":
             return PyArrowComputeBackend()
@@ -100,6 +101,7 @@ class TestAntiJoinFromFilesEmptyLeft:
             )
 
             return DataFusionComputeBackend()
+        raise ValueError(f"Unknown backend: {request.param}")
 
     def test_anti_join_from_files_empty_left_returns_empty(self, tmp_path: Path, compute_backend: ComputeBackend) -> None:
         """anti_join_from_files with zero-row left Parquet produces zero output rows."""

@@ -454,7 +454,7 @@ class TestDataFusionPositionalDeleteBasic:
         # Create a wide data file with 20 columns
         num_cols = 20
         num_rows = 50
-        data = {"id": list(range(num_rows))}
+        data: dict[str, list[int] | list[str]] = {"id": list(range(num_rows))}
         for i in range(1, num_cols):
             data[f"col_{i}"] = [f"val_{i}_{row}" for row in range(num_rows)]
         data_path = str(tmp_path / "wide_data.parquet")
@@ -660,7 +660,7 @@ class TestPositionalDeleteMultiFileScoping:
 
 
 @pytest.fixture
-def data_file_path(tmp_path: Path, table_schema: Schema) -> None:
+def data_file_path(tmp_path: Path, table_schema: Schema) -> str:
     """Write a 5-row data file: id=[1,2,3,4,5], name=["a","b","c","d","e"]."""
     path = str(tmp_path / "data.parquet")
     table = pa.table({"id": [1, 2, 3, 4, 5], "name": ["a", "b", "c", "d", "e"]})
@@ -669,7 +669,7 @@ def data_file_path(tmp_path: Path, table_schema: Schema) -> None:
 
 
 @pytest.fixture
-def pos_delete_path(tmp_path: Path, data_file_path) -> None:
+def pos_delete_path(tmp_path: Path, data_file_path: str) -> str:
     """Position delete file: removes rows at positions 1 and 3 (id=2, id=4)."""
     path = str(tmp_path / "pos_delete.parquet")
     table = pa.table(
@@ -683,7 +683,7 @@ def pos_delete_path(tmp_path: Path, data_file_path) -> None:
 
 
 @pytest.fixture
-def eq_delete_path(tmp_path: Path) -> None:
+def eq_delete_path(tmp_path: Path) -> str:
     """Equality delete file: removes rows where id=3."""
     path = str(tmp_path / "eq_delete.parquet")
     table = pa.table({"id": [3]})
@@ -692,7 +692,7 @@ def eq_delete_path(tmp_path: Path) -> None:
 
 
 @pytest.fixture
-def backends() -> None:
+def backends() -> Backends:
     """PyArrow-only backends for deterministic testing."""
     return Backends(
         read=PyArrowReadBackend(),
@@ -703,7 +703,7 @@ def backends() -> None:
 
 
 @pytest.fixture
-def table_metadata(table_schema: Schema) -> None:
+def table_metadata(table_schema: Schema) -> MagicMock:
     """Minimal table metadata mock with schema and specs."""
     metadata = MagicMock()
     metadata.schema.return_value = table_schema
@@ -713,7 +713,7 @@ def table_metadata(table_schema: Schema) -> None:
     return metadata
 
 
-def _make_file_scan_task(data_path, pos_del_path, eq_del_path) -> None:
+def _make_file_scan_task(data_path: str, pos_del_path: str | None, eq_del_path: str | None) -> FileScanTask:
     """Construct a FileScanTask with both positional and equality delete files."""
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
@@ -755,7 +755,13 @@ class TestCombinedPositionalAndEqualityDeletes:
     """
 
     def test_both_delete_types_produce_correct_survivors(
-        self, data_file_path, pos_delete_path, eq_delete_path, backends, table_metadata, table_schema
+        self,
+        data_file_path: str,
+        pos_delete_path: str,
+        eq_delete_path: str,
+        backends: Backends,
+        table_metadata: MagicMock,
+        table_schema: Schema,
     ) -> None:
         """Combined pos+eq deletes yield exactly the correct surviving rows."""
         task = _make_file_scan_task(data_file_path, pos_delete_path, eq_delete_path)
@@ -782,7 +788,7 @@ class TestCombinedPositionalAndEqualityDeletes:
         )
 
     def test_positional_deletes_applied_before_equality(
-        self, tmp_path: Path, backends, table_metadata, table_schema: Schema
+        self, tmp_path: Path, backends: Backends, table_metadata: MagicMock, table_schema: Schema
     ) -> None:
         """Positional deletes reference ORIGINAL positions, not post-equality positions.
 
@@ -833,7 +839,7 @@ class TestCombinedPositionalAndEqualityDeletes:
         assert surviving_ids == [20, 40, 50]
 
     def test_combined_deletes_with_null_equality_values(
-        self, tmp_path: Path, backends, table_metadata, table_schema: Schema
+        self, tmp_path: Path, backends: Backends, table_metadata: MagicMock, table_schema: Schema
     ) -> None:
         """NULL in equality delete file matches NULL in data via IS NOT DISTINCT FROM."""
         # Data: id=[1, None, 3, None, 5]
@@ -886,7 +892,9 @@ class TestCombinedPositionalAndEqualityDeletes:
         # Verify no NULLs remain
         assert None not in result_table.column("id").to_pylist()
 
-    def test_combined_deletes_empty_positional_file(self, tmp_path: Path, backends, table_metadata, table_schema: Schema) -> None:
+    def test_combined_deletes_empty_positional_file(
+        self, tmp_path: Path, backends: Backends, table_metadata: MagicMock, table_schema: Schema
+    ) -> None:
         """If positional delete file has no matching positions, all rows pass to equality phase."""
         # Data: id=[1, 2, 3]
         data_path = str(tmp_path / "data_empty_pos.parquet")
@@ -927,7 +935,9 @@ class TestCombinedPositionalAndEqualityDeletes:
         # No positional deletes applied. Equality removes id=2. Survivors: [1, 3]
         assert surviving_ids == [1, 3]
 
-    def test_combined_deletes_equality_schema_differs_from_projected(self, tmp_path: Path, backends, table_metadata) -> None:
+    def test_combined_deletes_equality_schema_differs_from_projected(
+        self, tmp_path: Path, backends: Backends, table_metadata: MagicMock
+    ) -> None:
         """Equality delete file is read with its OWN schema, not the projected schema.
 
         This regression test verifies the fix for _chain_read_batches → _read_equality_delete_batches:
@@ -994,7 +1004,7 @@ class TestCombinedPositionalAndEqualityDeletes:
         assert surviving_ids == [1, 3, 4]
 
     def test_combined_deletes_multiple_equality_delete_files(
-        self, tmp_path: Path, backends, table_metadata, table_schema: Schema
+        self, tmp_path: Path, backends: Backends, table_metadata: MagicMock, table_schema: Schema
     ) -> None:
         """Multiple equality delete files are chained correctly."""
         # Data: id=[1, 2, 3, 4, 5, 6]
@@ -1074,7 +1084,7 @@ class TestCombinedPositionalAndEqualityDeletes:
         assert surviving_ids == [2, 4, 6]
 
     def test_combined_deletes_multi_file_position_delete(
-        self, tmp_path: Path, backends, table_metadata, table_schema: Schema
+        self, tmp_path: Path, backends: Backends, table_metadata: MagicMock, table_schema: Schema
     ) -> None:
         """Position delete file referencing MULTIPLE data files, combined with equality.
 
@@ -1162,7 +1172,7 @@ class TestCombinedPositionalAndEqualityDeletes:
 class TestEqualityDeleteSchemaEvolution:
     """Regression: equality deletes with field IDs dropped via schema evolution."""
 
-    def test_equality_delete_with_evolved_away_field_warns(self, tmp_path: Path, backends) -> None:
+    def test_equality_delete_with_evolved_away_field_warns(self, tmp_path: Path, backends: Backends) -> None:
         """equality_ids referencing dropped fields emit a warning and skip anti-join."""
         # Current schema: only has "id" (field_id=1). Field 2 ("name") was dropped.
         current_schema = Schema(
@@ -1225,7 +1235,7 @@ class TestEqualityDeleteSchemaEvolution:
         result_table = pa.Table.from_batches(results)
         assert sorted(result_table.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_equality_delete_with_null_values_is_not_distinct_from(self, tmp_path: Path, backends) -> None:
+    def test_equality_delete_with_null_values_is_not_distinct_from(self, tmp_path: Path, backends: Backends) -> None:
         """NULL in equality delete file correctly matches NULL in data file."""
         schema = Schema(
             NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),

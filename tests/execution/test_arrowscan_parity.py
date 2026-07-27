@@ -46,7 +46,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from pyiceberg.expressions import AlwaysTrue, And, EqualTo, GreaterThan, LessThan
+from pyiceberg.expressions import AlwaysTrue, And, BooleanExpression, EqualTo, GreaterThan, LessThan
+from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
@@ -70,7 +71,7 @@ def parity_schema() -> Schema:
 
 
 @pytest.fixture
-def parity_table_metadata(parity_schema, tmp_path: Path) -> TableMetadataV2:
+def parity_table_metadata(parity_schema: Schema, tmp_path: Path) -> TableMetadataV2:
     """Minimal TableMetadata for parity tests."""
     return TableMetadataV2(
         location=str(tmp_path),
@@ -88,7 +89,7 @@ def parity_table_metadata(parity_schema, tmp_path: Path) -> TableMetadataV2:
 
 
 @pytest.fixture
-def parity_data_file(tmp_path: Path, parity_schema) -> tuple[str, DataFile]:
+def parity_data_file(tmp_path: Path, parity_schema: Schema) -> tuple[str, DataFile]:
     """Write a test Parquet file and return (path, DataFile)."""
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -116,7 +117,14 @@ def parity_data_file(tmp_path: Path, parity_schema) -> tuple[str, DataFile]:
     return file_path, data_file
 
 
-def _arrowscan_to_table(table_metadata, io, projected_schema, row_filter, tasks, limit=None) -> None:
+def _arrowscan_to_table(
+    table_metadata: TableMetadataV2,
+    io: FileIO,
+    projected_schema: Schema,
+    row_filter: BooleanExpression,
+    tasks: list[FileScanTask],
+    limit: int | None = None,
+) -> pa.Table:
     """Call deprecated ArrowScan and return result, suppressing deprecation warning."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
@@ -132,7 +140,14 @@ def _arrowscan_to_table(table_metadata, io, projected_schema, row_filter, tasks,
         return scan.to_table(tasks)
 
 
-def _orchestrate_to_table(table_metadata, io, projected_schema, row_filter, tasks, limit=None) -> None:
+def _orchestrate_to_table(
+    table_metadata: TableMetadataV2,
+    io: FileIO,
+    projected_schema: Schema,
+    row_filter: BooleanExpression,
+    tasks: list[FileScanTask],
+    limit: int | None = None,
+) -> pa.Table:
     """Call orchestrate_scan via the new backend path and return result."""
     from pyiceberg.execution._orchestrate import orchestrate_scan
     from pyiceberg.execution.protocol import Backends
@@ -177,7 +192,12 @@ def _orchestrate_to_table(table_metadata, io, projected_schema, row_filter, task
 class TestArrowScanParityBasicScan:
     """Verify basic scan (no filter, no deletes) produces identical output."""
 
-    def test_full_scan_same_result(self, parity_schema, parity_table_metadata, parity_data_file) -> None:
+    def test_full_scan_same_result(
+        self,
+        parity_schema: Schema,
+        parity_table_metadata: TableMetadataV2,
+        parity_data_file: tuple[str, DataFile],
+    ) -> None:
         """ArrowScan and orchestrate_scan must produce the same table for a full scan."""
         from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -193,7 +213,12 @@ class TestArrowScanParityBasicScan:
         assert old_result.column("id").to_pylist() == new_result.column("id").to_pylist()
         assert old_result.column("name").to_pylist() == new_result.column("name").to_pylist()
 
-    def test_column_projection_same_result(self, parity_schema, parity_table_metadata, parity_data_file) -> None:
+    def test_column_projection_same_result(
+        self,
+        parity_schema: Schema,
+        parity_table_metadata: TableMetadataV2,
+        parity_data_file: tuple[str, DataFile],
+    ) -> None:
         """Column projection produces same output from both paths."""
         from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -215,7 +240,11 @@ class TestArrowScanParityBasicScan:
 class TestArrowScanParityWithFilter:
     """Verify scans with row filters produce identical output."""
 
-    def test_equality_filter_same_result(self, parity_schema, parity_table_metadata, parity_data_file) -> None:
+    def test_equality_filter_same_result(self,
+        parity_schema: Schema,
+        parity_table_metadata: TableMetadataV2,
+        parity_data_file: tuple[str, DataFile],
+    ) -> None:
         """Equality filter produces same survivors from both paths."""
         from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -231,7 +260,11 @@ class TestArrowScanParityWithFilter:
         assert old_result.num_rows == new_result.num_rows
         assert old_result.column("id").to_pylist() == new_result.column("id").to_pylist()
 
-    def test_range_filter_same_result(self, parity_schema, parity_table_metadata, parity_data_file) -> None:
+    def test_range_filter_same_result(self,
+        parity_schema: Schema,
+        parity_table_metadata: TableMetadataV2,
+        parity_data_file: tuple[str, DataFile],
+    ) -> None:
         """Range filter produces same survivors from both paths."""
         from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -251,7 +284,11 @@ class TestArrowScanParityWithFilter:
 class TestArrowScanParityWithLimit:
     """Verify scans with limit produce identical output."""
 
-    def test_limit_same_result(self, parity_schema, parity_table_metadata, parity_data_file) -> None:
+    def test_limit_same_result(self,
+        parity_schema: Schema,
+        parity_table_metadata: TableMetadataV2,
+        parity_data_file: tuple[str, DataFile],
+    ) -> None:
         """Limit produces same number of rows from both paths."""
         from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -269,7 +306,10 @@ class TestArrowScanParityWithLimit:
 class TestArrowScanParityEmptyScan:
     """Verify empty scans produce identical output."""
 
-    def test_empty_tasks_same_result(self, parity_schema, parity_table_metadata) -> None:
+    def test_empty_tasks_same_result(self,
+        parity_schema: Schema,
+        parity_table_metadata: TableMetadataV2,
+    ) -> None:
         """Empty task list produces empty table from both paths."""
         from pyiceberg.io.pyarrow import PyArrowFileIO
 
@@ -286,7 +326,12 @@ class TestArrowScanParityEmptyScan:
 class TestArrowScanParityWithPositionalDeletes:
     """Verify scans with positional deletes produce identical output."""
 
-    def test_positional_deletes_same_survivors(self, tmp_path: Path, parity_schema, parity_table_metadata) -> None:
+    def test_positional_deletes_same_survivors(
+        self,
+        tmp_path: Path,
+        parity_schema: Schema,
+        parity_table_metadata: TableMetadataV2,
+    ) -> None:
         """Positional deletes produce same surviving rows from both paths."""
         from pyiceberg.io.pyarrow import PyArrowFileIO, schema_to_pyarrow
 

@@ -327,7 +327,7 @@ class TestSerializePartitionKeyFallback:
             def __len__(self) -> int:
                 return len(self._data)
 
-            def __getitem__(self, idx) -> Any:
+            def __getitem__(self, idx: int) -> Any:
                 return self._data[idx]
 
         key = _serialize_partition_key(0, FakeRecord())
@@ -365,7 +365,7 @@ class TestSerializePartitionKeyFallback:
             def __len__(self) -> int:
                 return len(self._data)
 
-            def __getitem__(self, idx) -> Any:
+            def __getitem__(self, idx: int) -> Any:
                 return self._data[idx]
 
         class RecordB:
@@ -374,7 +374,7 @@ class TestSerializePartitionKeyFallback:
             def __len__(self) -> int:
                 return len(self._data)
 
-            def __getitem__(self, idx) -> Any:
+            def __getitem__(self, idx: int) -> Any:
                 return self._data[idx]
 
         key_a = _serialize_partition_key(0, RecordA())
@@ -391,7 +391,7 @@ class TestSerializePartitionKeyFallback:
             def __len__(self) -> int:
                 return len(self._data)
 
-            def __getitem__(self, idx) -> Any:
+            def __getitem__(self, idx: int) -> Any:
                 return self._data[idx]
 
         key_spec0 = _serialize_partition_key(0, RecordA())
@@ -431,7 +431,7 @@ class TestSerializePartitionKeyFallback:
             def __len__(self) -> int:
                 return len(self._data)
 
-            def __getitem__(self, idx) -> Any:
+            def __getitem__(self, idx: int) -> Any:
                 return self._data[idx]
 
         key = _serialize_partition_key(0, RecordWithPipes())

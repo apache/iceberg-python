@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
@@ -43,7 +43,7 @@ from pyiceberg.execution.backends.pyarrow_backend import (
     PyArrowComputeBackend,
     PyArrowReadBackend,
 )
-from pyiceberg.execution.protocol import Backends
+from pyiceberg.execution.protocol import Backends, ComputeBackend, ReadBackend, SortKeyList
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, EqualTo
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.schema import Schema
@@ -53,6 +53,9 @@ from pyiceberg.table import (
     _to_arrow_via_file_scan_tasks,
 )
 from pyiceberg.types import IntegerType, NestedField, StringType
+
+if TYPE_CHECKING:
+    pass
 
 # =============================================================================
 # From test_behavioral_wiring.py
@@ -109,7 +112,7 @@ class ObservableComputeBackend:
     def sort(
         self,
         data: Iterator[pa.RecordBatch],
-        sort_keys: list[tuple[str, str]],
+        sort_keys: SortKeyList,
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         self.calls.append({"method": "sort", "sort_keys": sort_keys})
@@ -118,7 +121,7 @@ class ObservableComputeBackend:
     def sort_from_files(
         self,
         file_paths: list[str],
-        sort_keys: list[tuple[str, str]],
+        sort_keys: SortKeyList,
         io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
@@ -181,7 +184,24 @@ def observable_backends() -> Backends:
     """Create backends with observable read and compute."""
     read = ObservableReadBackend()
     compute = ObservableComputeBackend()
-    return Backends(read=read, write=MagicMock(), compute=compute, io_properties={})
+    # ObservableReadBackend and ObservableComputeBackend match the protocol signatures
+    # but are not structurally recognized by mypy. We cast to satisfy the Backends constructor.
+    return Backends(
+        read=cast(ReadBackend, read),
+        write=MagicMock(),
+        compute=cast(ComputeBackend, compute),
+        io_properties={},
+    )
+
+
+def _get_observable_read(backends: Backends) -> ObservableReadBackend:
+    """Extract the ObservableReadBackend from Backends for test assertions."""
+    return cast(ObservableReadBackend, backends.read)
+
+
+def _get_observable_compute(backends: Backends) -> ObservableComputeBackend:
+    """Extract the ObservableComputeBackend from Backends for test assertions."""
+    return cast(ObservableComputeBackend, backends.compute)
 
 
 class TestScanDispatchesThroughPluggableBackend:
@@ -227,7 +247,8 @@ class TestScanDispatchesThroughPluggableBackend:
         )
 
         # BEHAVIORAL PROOF: ReadBackend.read_parquet was called
-        read_calls = [c for c in observable_backends.read.calls if c["method"] == "read_parquet"]
+        read_backend = _get_observable_read(observable_backends)
+        read_calls = [c for c in read_backend.calls if c["method"] == "read_parquet"]
         assert len(read_calls) == 1, f"Expected 1 read_parquet call, got {len(read_calls)}"
         assert read_calls[0]["location"] == data_path
 
@@ -334,7 +355,8 @@ class TestScanDispatchesThroughPluggableBackend:
         )
 
         # BEHAVIORAL PROOF: anti_join_from_files was called
-        aj_calls = [c for c in observable_backends.compute.calls if c["method"] == "anti_join_from_files"]
+        compute_backend = _get_observable_compute(observable_backends)
+        aj_calls = [c for c in compute_backend.calls if c["method"] == "anti_join_from_files"]
         assert len(aj_calls) == 1
         assert aj_calls[0]["on"] == ["id"]
 
@@ -444,7 +466,8 @@ class TestScanDispatchesThroughPluggableBackend:
         )
 
         # BEHAVIORAL PROOF: filter was called with the residual
-        filter_calls = [c for c in observable_backends.compute.calls if c["method"] == "filter"]
+        compute_backend = _get_observable_compute(observable_backends)
+        filter_calls = [c for c in compute_backend.calls if c["method"] == "filter"]
         assert len(filter_calls) == 1
 
         # Verify correct result
@@ -476,7 +499,7 @@ class TestToArrowDispatchesThroughBackends:
 
         resolve_called_with = {}
 
-        def tracking_resolve(cls_or_props, **kwargs) -> None:
+        def tracking_resolve(cls_or_props: Any, **kwargs: Any) -> MagicMock:
             # Backends.resolve is called as classmethod
             if isinstance(cls_or_props, dict):
                 props = cls_or_props

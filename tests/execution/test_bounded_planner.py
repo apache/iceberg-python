@@ -52,7 +52,7 @@ class TestBoundedMemoryPlannerWithRealData:
     """Behavioral tests for BoundedMemoryPlanner using real Parquet files."""
 
     @pytest.fixture
-    def planner(self) -> None:
+    def planner(self) -> Any:
         """Create a BoundedMemoryPlanner with default memory limit."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
@@ -240,19 +240,11 @@ class TestBoundedMemoryPlannerWithRealData:
     def test_serialize_partition_key_deterministic(self) -> None:
         """_serialize_partition_key produces deterministic output for same input."""
         from pyiceberg.execution.planning import _serialize_partition_key
+        from pyiceberg.typedef import Record
 
         assert _serialize_partition_key(0, None) == "0"
 
-        class FakePartition:
-            _data = ["us-east-1", 2024, None]
-
-            def __len__(self) -> int:
-                return len(self._data)
-
-            def __getitem__(self, idx) -> Any:
-                return self._data[idx]
-
-        mock_partition = FakePartition()
+        mock_partition = Record("us-east-1", 2024, None)
         key1 = _serialize_partition_key(1, mock_partition)
         key2 = _serialize_partition_key(1, mock_partition)
         assert key1 == key2
@@ -263,17 +255,9 @@ class TestBoundedMemoryPlannerWithRealData:
     def test_serialize_partition_key_handles_special_chars(self) -> None:
         """_serialize_partition_key handles strings with pipes, quotes, and NULLs."""
         from pyiceberg.execution.planning import _serialize_partition_key
+        from pyiceberg.typedef import Record
 
-        class FakePartition:
-            _data = ["value|with|pipes", None, "normal"]
-
-            def __len__(self) -> int:
-                return len(self._data)
-
-            def __getitem__(self, idx) -> Any:
-                return self._data[idx]
-
-        mock_partition = FakePartition()
+        mock_partition = Record("value|with|pipes", None, "normal")
         key = _serialize_partition_key(0, mock_partition)
         assert "|" in key
         assert "null" in key
@@ -878,7 +862,7 @@ def _make_data_file(
     record_count: int = 50000,
     file_size: int = 67108864,
     content: DataFileContent = DataFileContent.DATA,
-    partition_values: list | None = None,
+    partition_values: list[Any] | None = None,
     column_sizes: dict[int, int] | None = None,
     value_counts: dict[int, int] | None = None,
     null_value_counts: dict[int, int] | None = None,
@@ -1143,7 +1127,7 @@ class TestDataFileSerializationStructuralGuard:
 
     #: The set of DataFile property names that _serialize_data_file must handle.
     #: If a new property is added to DataFile, add it here AND update the serialization.
-    _EXPECTED_DATAFILE_PROPERTIES: frozenset = frozenset(
+    _EXPECTED_DATAFILE_PROPERTIES: frozenset[str] = frozenset(
         {
             "content",
             "file_path",
@@ -1592,7 +1576,7 @@ class TestSerializePartitionKeyFallback:
             def __repr__(self) -> str:
                 return "OpaquePartition(x=1, y=2)"
 
-        result = _serialize_partition_key(5, OpaquePartition())
+        result = _serialize_partition_key(5, OpaquePartition())  # type: ignore[arg-type]
         parsed = json.loads(result)
         assert 5 in parsed or "5" in result
         assert "OpaquePartition" in result
@@ -1606,7 +1590,7 @@ class TestSerializePartitionKeyFallback:
 
         obj1 = StableRepr()
         obj2 = StableRepr()
-        assert _serialize_partition_key(0, obj1) == _serialize_partition_key(0, obj2)
+        assert _serialize_partition_key(0, obj1) == _serialize_partition_key(0, obj2)  # type: ignore[arg-type]
 
 
 # =============================================================================
@@ -1657,7 +1641,7 @@ class TestBoundedMemoryPlannerImportFallback:
         # Block the BoundedMemoryPlanner import
         original_import = builtins.__import__
 
-        def mock_import(name, *args, **kwargs) -> None:
+        def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
             if name == "pyiceberg.execution.planning":
                 raise ImportError("Mocked: datafusion not installed")
             return original_import(name, *args, **kwargs)
@@ -1698,8 +1682,9 @@ class TestBoundedMemoryPlannerRealDataFusion:
     @pytest.fixture
     def _skip_without_datafusion(self) -> None:
         pytest.importorskip("datafusion")
+        return None
 
-    def _make_manifest_entry(self, data_file: str, sequence_number) -> None:
+    def _make_manifest_entry(self, data_file: DataFile, sequence_number: int) -> MagicMock:
         """Create a minimal ManifestEntry-like object for the planner."""
         entry = MagicMock()
         entry.data_file = data_file

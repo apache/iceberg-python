@@ -62,7 +62,7 @@ def simple_schema() -> None:
 
 
 @pytest.fixture
-def many_batches(simple_schema) -> None:
+def many_batches(simple_schema: Schema) -> None:
     """100 batches of 100 rows each = 10,000 rows total."""
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -84,7 +84,7 @@ def many_batches(simple_schema) -> None:
 class TestLimitDoesNotMaterializeFullScan:
     """Verify that scan.limit(N).to_arrow() only reads N rows, not the full table."""
 
-    def test_limit_stops_consuming_generator_early(self, simple_schema, many_batches) -> None:
+    def test_limit_stops_consuming_generator_early(self, simple_schema: Schema, many_batches) -> None:
         """With limit=10, orchestrate_scan's generator should NOT be fully consumed."""
         consumed_count = 0
 
@@ -117,7 +117,7 @@ class TestLimitDoesNotMaterializeFullScan:
             f"should only need 1 batch. The implementation is materializing the full scan."
         )
 
-    def test_limit_returns_exact_row_count(self, simple_schema, many_batches) -> None:
+    def test_limit_returns_exact_row_count(self, simple_schema: Schema, many_batches) -> None:
         """Result table must have exactly `limit` rows."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()
@@ -138,7 +138,7 @@ class TestLimitDoesNotMaterializeFullScan:
 
         assert len(result) == 250
 
-    def test_no_limit_returns_all_rows(self, simple_schema, many_batches) -> None:
+    def test_no_limit_returns_all_rows(self, simple_schema: Schema, many_batches) -> None:
         """Without limit, all rows are returned (full materialization is expected)."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()
@@ -159,7 +159,7 @@ class TestLimitDoesNotMaterializeFullScan:
 
         assert len(result) == 10_000
 
-    def test_limit_larger_than_data_returns_all(self, simple_schema, many_batches) -> None:
+    def test_limit_larger_than_data_returns_all(self, simple_schema: Schema, many_batches) -> None:
         """Limit larger than available data returns all rows without error."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()
@@ -184,7 +184,7 @@ class TestLimitDoesNotMaterializeFullScan:
 class TestDeleteCoWStreamingWrite:
     """Verify Transaction.delete CoW streaming filter produces correct results."""
 
-    def test_streaming_filter_preserves_row_count(self, simple_schema) -> None:
+    def test_streaming_filter_preserves_row_count(self, simple_schema: Schema) -> None:
         """Filtering batches one-at-a-time produces same result as filtering a Table."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -231,7 +231,7 @@ class TestDeleteCoWStreamingWrite:
 class TestDeleteCoWTwoPassStreaming:
     """Verify two-pass streaming approach produces correct results with O(batch_size) memory."""
 
-    def test_streaming_two_pass_produces_correct_counts(self, simple_schema) -> None:
+    def test_streaming_two_pass_produces_correct_counts(self, simple_schema: Schema) -> None:
         """Two-pass counting produces same result as single-pass with materialization."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -270,7 +270,7 @@ class TestDeleteCoWTwoPassStreaming:
         assert streamed_rows == 300
         assert kept_count == streamed_rows
 
-    def test_peak_memory_bounded_by_batch_size(self, simple_schema) -> None:
+    def test_peak_memory_bounded_by_batch_size(self, simple_schema: Schema) -> None:
         """Peak memory during CoW should not exceed ~2 batches worth."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 

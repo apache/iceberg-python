@@ -72,7 +72,7 @@ def simple_schema() -> None:
 class TestCoWDeleteIntegration:
     """End-to-end CoW delete through the pluggable backend."""
 
-    def test_delete_removes_matching_rows(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_delete_removes_matching_rows(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """Basic CoW delete: filter removes matching rows, keeps others."""
         table = catalog.create_table("default.cow_basic", simple_schema)
 
@@ -91,7 +91,7 @@ class TestCoWDeleteIntegration:
         assert result.num_rows == 3
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_delete_all_rows_drops_file(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_delete_all_rows_drops_file(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """Deleting all rows results in an empty table."""
         table = catalog.create_table("default.cow_drop", simple_schema)
 
@@ -109,7 +109,7 @@ class TestCoWDeleteIntegration:
         result = table.scan().to_arrow()
         assert result.num_rows == 0
 
-    def test_delete_no_matching_rows_is_noop(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_delete_no_matching_rows_is_noop(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """Delete with a filter matching no rows produces a warning and no change."""
         import warnings
 
@@ -165,7 +165,7 @@ class TestCoWDeleteIntegration:
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3]
         assert sorted(result.column("value").to_pylist()) == [10, 20, 30]
 
-    def test_delete_partial_file_rewrites_correctly(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_delete_partial_file_rewrites_correctly(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """Partial delete rewrites file with only surviving rows."""
         table = catalog.create_table("default.cow_partial", simple_schema)
 
@@ -188,7 +188,7 @@ class TestCoWDeleteIntegration:
 class TestScanIntegration:
     """End-to-end scan through the pluggable backend."""
 
-    def test_scan_with_filter(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_scan_with_filter(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """Scan with row filter returns only matching rows."""
         table = catalog.create_table("default.scan_filter", simple_schema)
 
@@ -206,7 +206,7 @@ class TestScanIntegration:
         assert result.num_rows == 11  # 90..100 inclusive
         assert min(result.column("id").to_pylist()) == 90
 
-    def test_scan_with_column_projection(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_scan_with_column_projection(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """Scan with select returns only requested columns."""
         table = catalog.create_table("default.scan_project", simple_schema)
 
@@ -222,7 +222,7 @@ class TestScanIntegration:
         assert result.column_names == ["id"]
         assert result.num_rows == 3
 
-    def test_scan_count(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_scan_count(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """scan().count() returns correct row count."""
         table = catalog.create_table("default.scan_count", simple_schema)
 
@@ -236,7 +236,7 @@ class TestScanIntegration:
 
         assert table.scan().count() == 50
 
-    def test_scan_to_batch_reader(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_scan_to_batch_reader(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """to_arrow_batch_reader() streams batches correctly."""
         table = catalog.create_table("default.scan_stream", simple_schema)
 
@@ -252,7 +252,7 @@ class TestScanIntegration:
         total_rows = sum(batch.num_rows for batch in reader)
         assert total_rows == 20
 
-    def test_multiple_appends_scan_all(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_multiple_appends_scan_all(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """Multiple appends produce multiple files; scan reads all."""
         table = catalog.create_table("default.multi_append", simple_schema)
 
@@ -336,7 +336,7 @@ class TestSortOnWriteIntegration:
 class TestAppendOverwriteIntegration:
     """Append and overwrite operations through the pluggable backend."""
 
-    def test_overwrite_replaces_data(self, catalog: InMemoryCatalog, simple_schema) -> None:
+    def test_overwrite_replaces_data(self, catalog: InMemoryCatalog, simple_schema: Schema) -> None:
         """Overwrite with a filter replaces matching data."""
         from pyiceberg.expressions import GreaterThan
 

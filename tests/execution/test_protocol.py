@@ -269,10 +269,10 @@ class TestSortOnWriteIsBestEffort:
 
         # Create a backends instance with supports_bounded_memory=False
         mock_compute = MagicMock()
-        type(mock_compute).supports_bounded_memory = PropertyMock(return_value=False)
+        type(mock_compute).supports_bounded_memory = PropertyMock(return_value=False)  # type: ignore[method-assign]
 
         mock_backends = MagicMock(spec=Backends)
-        type(mock_backends).supports_bounded_memory = PropertyMock(return_value=False)
+        type(mock_backends).supports_bounded_memory = PropertyMock(return_value=False)  # type: ignore[method-assign]
 
         # The key assertion: when sort order exists but no bounded memory,
         # the input df should be returned unchanged.

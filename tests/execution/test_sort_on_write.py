@@ -23,6 +23,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pyarrow as pa
@@ -31,12 +32,15 @@ import pytest
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType, NestedField, StringType
 
+if TYPE_CHECKING:
+    from pyiceberg.table import Transaction
+
 
 class TestApplySortOrderWithRecordBatchReader:
     """Behavioral tests for _apply_sort_order when df is a pa.RecordBatchReader."""
 
     @pytest.fixture
-    def transaction_with_sort_order(self) -> None:
+    def transaction_with_sort_order(self) -> Transaction:
         """Create a minimal Transaction-like object with a sort order configured."""
         from pyiceberg.table import Transaction
         from pyiceberg.table.sorting import (
@@ -72,11 +76,13 @@ class TestApplySortOrderWithRecordBatchReader:
         mock_metadata.sort_orders = [sort_order]
         mock_metadata.default_sort_order_id = 1
 
-        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)
+        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)  # type: ignore[method-assign]
 
         return tx
 
-    def test_record_batch_reader_input_produces_sorted_output(self, transaction_with_sort_order) -> None:
+    def test_record_batch_reader_input_produces_sorted_output(
+        self, transaction_with_sort_order: Transaction
+    ) -> None:
         """RecordBatchReader input to _apply_sort_order produces correctly sorted output."""
         pytest.importorskip("datafusion")
 
@@ -150,7 +156,7 @@ class TestApplySortOrderWithRecordBatchReader:
 
         mock_metadata = MagicMock()
         mock_metadata.default_sort_order_id = UNSORTED_SORT_ORDER_ID
-        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)
+        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)  # type: ignore[method-assign]
 
         mock_backends = MagicMock()
         input_table = pa.table({"id": [3, 1, 2]})
@@ -185,7 +191,7 @@ class TestApplySortOrderWithRecordBatchReader:
         mock_metadata.schema.return_value = schema
         mock_metadata.sort_orders = [sort_order]
         mock_metadata.default_sort_order_id = 1
-        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)
+        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)  # type: ignore[method-assign]
 
         mock_backends = MagicMock()
         mock_backends.supports_bounded_memory = False
@@ -465,7 +471,7 @@ class TestSortOrderIdOnDataFiles:
         mock_metadata.schema.return_value = schema
         mock_metadata.sort_orders = [sort_order]
         mock_metadata.default_sort_order_id = 7
-        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)
+        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)  # type: ignore[method-assign]
 
         # Mock a bounded-memory backend
 
@@ -500,7 +506,7 @@ class TestSortOrderIdOnDataFiles:
         mock_metadata.schema.return_value = schema
         mock_metadata.sort_orders = [sort_order]
         mock_metadata.default_sort_order_id = 7
-        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)
+        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)  # type: ignore[method-assign]
 
         # Mock a non-bounded backend (PyArrow only)
 
@@ -533,7 +539,7 @@ class TestSortOrderIdOnDataFiles:
         mock_metadata.schema.return_value = schema
         mock_metadata.sort_orders = []
         mock_metadata.default_sort_order_id = UNSORTED_SORT_ORDER_ID
-        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)
+        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)  # type: ignore[method-assign]
 
         mock_backends = MagicMock()
         mock_backends.supports_bounded_memory = True
@@ -575,7 +581,7 @@ class TestSortOrderIdOnDataFiles:
         mock_metadata.schema.return_value = schema
         mock_metadata.sort_orders = [sort_order]
         mock_metadata.default_sort_order_id = 3
-        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)
+        type(tx).table_metadata = PropertyMock(return_value=mock_metadata)  # type: ignore[method-assign]
 
         mock_backends = MagicMock()
         mock_backends.supports_bounded_memory = True
