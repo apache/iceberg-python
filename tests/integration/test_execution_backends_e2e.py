@@ -152,10 +152,10 @@ class TestPluggableBackendCowDeleteRoundTrip:
         )
 
         try:
-            # Write 10 rows
+            # Write 10 rows - explicitly use int32 to match IntegerType schema
             data = pa.table(
                 {
-                    "id": list(range(1, 11)),
+                    "id": pa.array(list(range(1, 11)), type=pa.int32()),
                     "name": [f"row_{i}" for i in range(1, 11)],
                 }
             )
@@ -205,9 +205,10 @@ class TestPluggableBackendCowDeleteRoundTrip:
         )
 
         try:
+            # Explicitly use int32 to match IntegerType schema
             data = pa.table(
                 {
-                    "id": [1, 2, 3, 4, 5, 6],
+                    "id": pa.array([1, 2, 3, 4, 5, 6], type=pa.int32()),
                     "category": ["a", "b", "a", "b", "a", "b"],
                 }
             )
