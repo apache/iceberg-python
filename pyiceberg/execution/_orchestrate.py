@@ -178,32 +178,34 @@ def orchestrate_scan(
     def _execute_task(task: FileScanTask) -> list[pa.RecordBatch]:
         """Execute a single scan task: read, resolve deletes, filter, reconcile schema."""
         eq_deletes = [d for d in task.delete_files if d.content == DataFileContent.EQUALITY_DELETES]
-        # Only include Parquet position delete files. Puffin files (delete vectors in v3)
-        # require different handling that's not yet implemented - they will be silently
-        # skipped, which may return a superset of correct results.
-        pos_deletes = [
-            d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES and d.file_format == FileFormat.PARQUET
-        ]
+        # All position delete files (Parquet and Puffin DVs)
+        all_pos_deletes = [d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES]
+        # Parquet position delete files can be processed by _apply_positional_deletes
+        parquet_pos_deletes = [d for d in all_pos_deletes if d.file_format == FileFormat.PARQUET]
+        # Puffin DVs need to be read separately using _read_deletes
+        puffin_pos_deletes = [d for d in all_pos_deletes if d.file_format == FileFormat.PUFFIN]
 
-        # Log if there are unsupported delete file formats (e.g., Puffin DVs)
-        unsupported_deletes = [
-            d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES and d.file_format != FileFormat.PARQUET
-        ]
-        if unsupported_deletes:
-            formats = {d.file_format.name for d in unsupported_deletes}
-            logger.warning(
-                "Skipping %d position delete file(s) with unsupported format(s): %s. "
-                "Delete vectors (Puffin files) in Iceberg v3 are not yet supported. "
-                "Results may include rows that should have been deleted.",
-                len(unsupported_deletes),
-                formats,
-            )
+        # Read positions from Puffin DVs for this data file
+        puffin_positions: set[int] = set()
+        if puffin_pos_deletes:
+            from pyiceberg.io import load_file_io
+            from pyiceberg.io.pyarrow import _read_deletes
 
-        if pos_deletes and eq_deletes:
+            io = load_file_io(dict(io_properties), None)
+            for dv_file in puffin_pos_deletes:
+                dv_positions = _read_deletes(io, dv_file)
+                # DVs are keyed by the data file they reference
+                if task.file.file_path in dv_positions:
+                    pos_array = dv_positions[task.file.file_path]
+                    # Convert ChunkedArray to set of positions
+                    for chunk in pos_array.chunks:
+                        puffin_positions.update(chunk.to_pylist())
+
+        if parquet_pos_deletes and eq_deletes:
             batches: Iterator[pa.RecordBatch] = _apply_positional_deletes(
                 backends,
                 task,
-                pos_deletes,
+                parquet_pos_deletes,
                 projected_schema,
                 io_properties,
             )
@@ -289,11 +291,11 @@ def orchestrate_scan(
                     on=eq_cols,
                     io_properties=io_properties,
                 )
-        elif pos_deletes:
+        elif parquet_pos_deletes:
             batches = _apply_positional_deletes(
                 backends,
                 task,
-                pos_deletes,
+                parquet_pos_deletes,
                 projected_schema,
                 io_properties,
             )
@@ -335,6 +337,11 @@ def orchestrate_scan(
                 result_batches.append(reconcile_fn(batch))
             else:
                 result_batches.append(batch)
+
+        # Apply Puffin delete vector positions (filter out deleted rows by row index)
+        # This must happen after reconciliation but before post-filter.
+        if puffin_positions:
+            result_batches = _apply_puffin_positions(result_batches, puffin_positions)
 
         # Post-filter guarantees correctness; read_parquet pushdown is best-effort only.
         # Use the row_filter parameter (not task.residual) for post-filtering.
@@ -425,6 +432,47 @@ def _spill_and_stream(batches: list[pa.RecordBatch]) -> Iterator[pa.RecordBatch]
         with _temp_files_lock:
             _active_temp_files.discard(tmp_path)
         Path(tmp_path).unlink(missing_ok=True)
+
+
+def _apply_puffin_positions(batches: list[pa.RecordBatch], positions: set[int]) -> list[pa.RecordBatch]:
+    """Filter out rows at the specified positions from a list of batches.
+
+    Used to apply Puffin delete vectors (DVs) which store row positions to delete.
+    Positions are global (0-based from the start of the data file), so we track
+    the cumulative row offset as we process batches.
+
+    Args:
+        batches: List of RecordBatches from the data file.
+        positions: Set of global row positions to delete.
+
+    Returns:
+        List of RecordBatches with deleted rows filtered out.
+    """
+    import pyarrow as pa
+
+    if not positions:
+        return batches
+
+    result: list[pa.RecordBatch] = []
+    row_offset = 0
+
+    for batch in batches:
+        num_rows = batch.num_rows
+        # Find positions to delete within this batch
+        batch_positions = {pos - row_offset for pos in positions if row_offset <= pos < row_offset + num_rows}
+
+        if batch_positions:
+            # Create a boolean mask: True for rows to keep, False for rows to delete
+            keep_mask = pa.array([i not in batch_positions for i in range(num_rows)], type=pa.bool_())
+            filtered_batch = batch.filter(keep_mask)
+            if filtered_batch.num_rows > 0:
+                result.append(filtered_batch)
+        else:
+            result.append(batch)
+
+        row_offset += num_rows
+
+    return result
 
 
 def _apply_positional_deletes(
