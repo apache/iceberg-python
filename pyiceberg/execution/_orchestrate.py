@@ -479,7 +479,12 @@ def _infer_file_schema_from_batch(batch: pa.RecordBatch, table_metadata: TableMe
     from pyiceberg.io.pyarrow import pyarrow_to_schema
 
     try:
-        name_mapping = table_metadata.schema().name_mapping
+        # Use table_metadata.name_mapping() which returns the stored name mapping
+        # from table properties (schema.name-mapping.default). This mapping
+        # includes aliases for old column names after renames, enabling schema
+        # reconciliation for files written before schema evolution.
+        # Fallback to schema-derived mapping if no stored mapping exists.
+        name_mapping = table_metadata.name_mapping() or table_metadata.schema().name_mapping
         return pyarrow_to_schema(
             batch.schema,
             name_mapping=name_mapping,

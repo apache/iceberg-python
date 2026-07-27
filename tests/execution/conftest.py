@@ -67,3 +67,31 @@ def isolate_from_filesystem_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     # Point PYICEBERG_HOME to a temp dir so Config() won't find any .pyiceberg.yaml
     monkeypatch.setenv("PYICEBERG_HOME", str(tmp_path))
     yield
+
+
+@pytest.fixture(autouse=True)
+def restore_transaction_class_properties() -> Generator[None, None, None]:
+    """Restore Transaction class properties modified by tests using PropertyMock.
+
+    Some tests use `type(tx).table_metadata = PropertyMock(...)` to mock the
+    table_metadata property. This modifies the Transaction CLASS, not just the
+    instance, which can leak into subsequent tests and cause failures like
+    `max() iterable argument is empty` when table_metadata.schemas is accessed.
+
+    This fixture saves the original property descriptor before each test and
+    restores it afterwards, ensuring test isolation.
+    """
+    from pyiceberg.table import Transaction
+
+    # Save the original table_metadata property descriptor from the class
+    original_table_metadata = Transaction.__dict__.get("table_metadata")
+
+    yield
+
+    # Restore the original property after the test
+    if original_table_metadata is not None:
+        Transaction.table_metadata = original_table_metadata  # type: ignore[method-assign]
+    elif hasattr(Transaction, "table_metadata"):
+        # If it was added by the test but didn't exist before, remove it
+        # This shouldn't happen in practice since table_metadata is defined in the class
+        pass
