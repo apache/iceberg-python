@@ -117,6 +117,8 @@ def run(
         )
         ctx.exit(1)
 
+    ctx.call_on_close(lambda: ctx.obj["catalog"].close())
+
 
 def _catalog_and_output(ctx: Context) -> tuple[Catalog, Output]:
     """Small helper to set the types."""

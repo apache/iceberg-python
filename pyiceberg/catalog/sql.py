@@ -788,7 +788,15 @@ class SqlCatalog(MetastoreCatalog):
         blobfuse where file handles need to be closed for data to be flushed to
         persistent storage.
 
+        For Python 3.14+, explicit garbage collection is needed to ensure all
+        sqlite3 connections are immediately released, as deferred GC can cause
+        ResourceWarnings during test teardown.
+
         See: Issue #2530 (https://github.com/apache/iceberg-python/issues/2530)
         """
         if hasattr(self, "engine"):
             self.engine.dispose()
+            # Force immediate garbage collection to release sqlite3 connections on Python 3.14+
+            import gc
+
+            gc.collect()
