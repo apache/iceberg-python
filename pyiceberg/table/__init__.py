@@ -833,12 +833,6 @@ class Transaction:
         if delete_snapshot.rewrites_needed is True:
             import pyarrow as pa
 
-            from pyiceberg.execution._orchestrate import (
-                _apply_positional_deletes,
-                _build_equality_schema,
-                _get_equality_field_names,
-                _read_equality_delete_batches,
-            )
             from pyiceberg.execution.engine import COW_THRESHOLD_DEFAULT, get_execution_config_int
             from pyiceberg.execution.protocol import Backends
             from pyiceberg.expressions.visitors import (
@@ -848,7 +842,6 @@ class Transaction:
                 _StrictMetricsEvaluator,
             )
             from pyiceberg.io.pyarrow import schema_to_pyarrow
-            from pyiceberg.manifest import DataFileContent
 
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
@@ -874,97 +867,21 @@ class Transaction:
             cow_threshold = get_execution_config_int("cow-threshold", COW_THRESHOLD_DEFAULT)
 
             def _read_live_rows(task: FileScanTask) -> Iterator[pa.RecordBatch]:
-                """Read a data file with existing deletes (pos + eq) applied."""
-                pos_deletes = [d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES]
-                eq_deletes = [d for d in task.delete_files if d.content == DataFileContent.EQUALITY_DELETES]
+                """Read a data file with existing deletes (pos + eq) applied and schema reconciled."""
+                from pyiceberg.execution._orchestrate import orchestrate_scan
 
-                if not pos_deletes and not eq_deletes:
-                    return backends.read.read_parquet(
-                        task.file.file_path,
-                        projected_schema,
-                        AlwaysTrue(),
-                        self._table.io.properties,
-                    )
-
-                if pos_deletes and eq_deletes:
-                    eq_cols = _get_equality_field_names(eq_deletes, self.table_metadata)
-                    if not eq_cols:
-                        return _apply_positional_deletes(
-                            backends,
-                            task,
-                            pos_deletes,
-                            projected_schema,
-                            self._table.io.properties,
-                        )
-
-                    if backends.supports_bounded_memory:
-                        # Pos deletes → temp Parquet → anti_join_from_files (both spill).
-                        from pyiceberg.execution.materialize import materialize_batches_to_parquet
-                        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
-                        pos_batches = _apply_positional_deletes(
-                            backends,
-                            task,
-                            pos_deletes,
-                            projected_schema,
-                            self._table.io.properties,
-                        )
-                        arrow_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
-                        with materialize_batches_to_parquet(pos_batches, arrow_schema) as tmp_path:
-                            result_batches = list(
-                                backends.compute.anti_join_from_files(
-                                    left_paths=[tmp_path],
-                                    right_paths=[d.file_path for d in eq_deletes],
-                                    on=eq_cols,
-                                    io_properties=self._table.io.properties,
-                                )
-                            )
-                        return iter(result_batches)
-                    else:
-                        pos_batches = _apply_positional_deletes(
-                            backends,
-                            task,
-                            pos_deletes,
-                            projected_schema,
-                            self._table.io.properties,
-                        )
-                        eq_schema = _build_equality_schema(eq_deletes, self.table_metadata)
-                        eq_batches = _read_equality_delete_batches(
-                            eq_deletes,
-                            eq_schema,
-                            self._table.io.properties,
-                            backends,
-                        )
-                        return backends.compute.anti_join(
-                            left=pos_batches,
-                            right=eq_batches,
-                            on=eq_cols,
-                        )
-
-                elif pos_deletes:
-                    return _apply_positional_deletes(
-                        backends,
-                        task,
-                        pos_deletes,
-                        projected_schema,
-                        self._table.io.properties,
-                    )
-
-                else:  # eq_deletes only
-                    eq_cols = _get_equality_field_names(eq_deletes, self.table_metadata)
-                    if eq_cols:
-                        return backends.compute.anti_join_from_files(
-                            left_paths=[task.file.file_path],
-                            right_paths=[d.file_path for d in eq_deletes],
-                            on=eq_cols,
-                            io_properties=self._table.io.properties,
-                        )
-                    return backends.read.read_parquet(
-                        task.file.file_path,
-                        projected_schema,
-                        AlwaysTrue(),
-                        self._table.io.properties,
-                    )
+                # Use orchestrate_scan to properly handle:
+                # 1. Schema reconciliation (column renames, type promotions)
+                # 2. Positional deletes
+                # 3. Equality deletes
+                return orchestrate_scan(
+                    backends=backends,
+                    tasks=iter([task]),
+                    table_metadata=self.table_metadata,
+                    projected_schema=projected_schema,
+                    row_filter=AlwaysTrue(),
+                    case_sensitive=case_sensitive,
+                )
 
             for original_file in files:
                 if strict_metrics_eval(original_file.file) == ROWS_MUST_MATCH:
