@@ -50,8 +50,8 @@ from __future__ import annotations
 __all__ = ["DataFusionComputeBackend", "DataFusionReadBackend"]
 
 import logging
-from collections.abc import Iterator
-from typing import TYPE_CHECKING
+from collections.abc import Iterator, Mapping
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 
@@ -59,7 +59,6 @@ if TYPE_CHECKING:
     from pyiceberg.execution.protocol import SortKeyList
     from pyiceberg.expressions import BooleanExpression
     from pyiceberg.schema import Schema
-    from pyiceberg.typedef import Properties
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +112,7 @@ def _warn_if_large_materialization(table: pa.Table) -> None:
         )
 
 
-def _create_session(memory_limit: int | None = None):
+def _create_session(memory_limit: int | None = None) -> Any:
     """Create a DataFusion SessionContext with bounded memory and spill-to-disk."""
     from datafusion import RuntimeEnvBuilder, SessionContext
 
@@ -155,14 +154,17 @@ class DataFusionComputeBackend:
         self,
         file_paths: list[str],
         sort_keys: SortKeyList,
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """Sort from Parquet files with bounded memory via DataFusion spill-to-disk."""
         if not file_paths:
             return iter(())
 
-        from pyiceberg.execution.object_store import _scoped_env_vars, datafusion_env_vars_from_properties
+        from pyiceberg.execution.object_store import (
+            _scoped_env_vars,
+            datafusion_env_vars_from_properties,
+        )
 
         ctx = _create_session(memory_limit)
         env_vars = datafusion_env_vars_from_properties(io_properties)
@@ -218,11 +220,14 @@ class DataFusionComputeBackend:
         left_paths: list[str],
         right_paths: list[str],
         on: list[str],
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """LEFT ANTI JOIN from Parquet files with bounded memory via DataFusion spill-to-disk."""
-        from pyiceberg.execution.object_store import _scoped_env_vars, datafusion_env_vars_from_properties
+        from pyiceberg.execution.object_store import (
+            _scoped_env_vars,
+            datafusion_env_vars_from_properties,
+        )
 
         ctx = _create_session(memory_limit)
         env_vars = datafusion_env_vars_from_properties(io_properties)
@@ -271,7 +276,7 @@ class DataFusionComputeBackend:
         data_path: str,
         position_delete_paths: list[str],
         projected_schema: Schema,
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """Apply positional deletes via DataFusion LEFT ANTI JOIN with bounded memory."""
@@ -281,14 +286,20 @@ class DataFusionComputeBackend:
         import pyarrow.dataset as ds
         import pyarrow.parquet as pq
 
-        from pyiceberg.execution.object_store import _scoped_env_vars, datafusion_env_vars_from_properties
+        from pyiceberg.execution.object_store import (
+            _scoped_env_vars,
+            datafusion_env_vars_from_properties,
+        )
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         ctx = _create_session(memory_limit)
         env_vars = datafusion_env_vars_from_properties(io_properties)
 
         # Phase 1: Stream data file to temp Parquet with _pyiceberg_pos column.
-        tmp_file = tempfile.NamedTemporaryFile(suffix=".parquet", prefix="pyiceberg_posdelete_", delete=False)
+        # Use NamedTemporaryFile for cross-platform temp path, then close immediately.
+        # Pattern is intentional: we need the path for parquet writer, and manually
+        # control cleanup via try/finally.
+        tmp_file = tempfile.NamedTemporaryFile(suffix=".parquet", prefix="pyiceberg_posdelete_", delete=False)  # noqa: SIM115
         tmp_path = tmp_file.name
         tmp_file.close()
 
@@ -373,12 +384,15 @@ class DataFusionReadBackend:
         location: str,
         projected_schema: Schema,
         row_filter: BooleanExpression,
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         dictionary_columns: tuple[str, ...] = (),
     ) -> Iterator[pa.RecordBatch]:
         """Read Parquet via DataFusion register_parquet + SQL."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
-        from pyiceberg.execution.object_store import _scoped_env_vars, datafusion_env_vars_from_properties
+        from pyiceberg.execution.object_store import (
+            _scoped_env_vars,
+            datafusion_env_vars_from_properties,
+        )
         from pyiceberg.expressions import AlwaysTrue
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 

@@ -25,7 +25,12 @@ to handle each axis while PyIceberg retains ownership of spec logic.
 
 from __future__ import annotations
 
-from pyiceberg.execution.engine import ExecutionEngine, build_backends, clear_config_cache, resolve_backends
+from pyiceberg.execution.engine import (
+    ExecutionEngine,
+    build_backends,
+    clear_config_cache,
+    resolve_backends,
+)
 from pyiceberg.execution.protocol import (
     Backends,
     ComputeBackend,

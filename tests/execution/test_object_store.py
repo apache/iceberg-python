@@ -36,7 +36,7 @@ import pytest
 class TestFastPathSkipsLock:
     """When env vars already have correct values, _scoped_env_vars skips mutation."""
 
-    def test_fast_path_no_mutation_when_values_present(self, monkeypatch):
+    def test_fast_path_no_mutation_when_values_present(self, monkeypatch) -> None:
         """If env vars are already set correctly, _scoped_env_vars performs no mutation."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
@@ -48,7 +48,7 @@ class TestFastPathSkipsLock:
         class MutationTracker:
             """Track whether os.environ is actually mutated (the meaningful fast-path check)."""
 
-            def __init__(self):
+            def __init__(self) -> None:
                 self.mutations = 0
 
         MutationTracker()
@@ -66,7 +66,7 @@ class TestFastPathSkipsLock:
         # Fast path: no changes before, during, or after
         assert before_snapshot == during_snapshot == after_snapshot
 
-    def test_slow_path_acquires_lock_when_values_differ(self, monkeypatch):
+    def test_slow_path_acquires_lock_when_values_differ(self, monkeypatch) -> None:
         """If env vars differ from desired, the lock IS acquired."""
         import pyiceberg.execution.object_store as obj_store
         from pyiceberg.execution.object_store import _scoped_env_vars
@@ -79,11 +79,11 @@ class TestFastPathSkipsLock:
         real_lock = obj_store._ENV_LOCK
 
         class TrackingLock:
-            def __enter__(self):
+            def __enter__(self) -> None:
                 lock_acquired_count[0] += 1
                 return real_lock.__enter__()
 
-            def __exit__(self, *args):
+            def __exit__(self, *args) -> None:
                 return real_lock.__exit__(*args)
 
         monkeypatch.setattr(obj_store, "_ENV_LOCK", TrackingLock())
@@ -93,7 +93,7 @@ class TestFastPathSkipsLock:
 
         assert lock_acquired_count[0] > 0
 
-    def test_slow_path_when_key_not_present(self, monkeypatch):
+    def test_slow_path_when_key_not_present(self, monkeypatch) -> None:
         """If env var is not set at all, the lock IS acquired."""
         import pyiceberg.execution.object_store as obj_store
         from pyiceberg.execution.object_store import _scoped_env_vars
@@ -106,11 +106,11 @@ class TestFastPathSkipsLock:
         real_lock = obj_store._ENV_LOCK
 
         class TrackingLock:
-            def __enter__(self):
+            def __enter__(self) -> None:
                 lock_acquired_count[0] += 1
                 return real_lock.__enter__()
 
-            def __exit__(self, *args):
+            def __exit__(self, *args) -> None:
                 return real_lock.__exit__(*args)
 
         monkeypatch.setattr(obj_store, "_ENV_LOCK", TrackingLock())
@@ -120,7 +120,7 @@ class TestFastPathSkipsLock:
 
         assert lock_acquired_count[0] > 0
 
-    def test_slow_path_restores_original_values(self, monkeypatch):
+    def test_slow_path_restores_original_values(self, monkeypatch) -> None:
         """After the slow path exits, original env vars are restored."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
@@ -131,7 +131,7 @@ class TestFastPathSkipsLock:
 
         assert os.environ["__PYICEBERG_RESTORE_TEST"] == "original"
 
-    def test_slow_path_restores_on_exception(self, monkeypatch):
+    def test_slow_path_restores_on_exception(self, monkeypatch) -> None:
         """Env vars are restored even when the scoped block raises."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
@@ -148,7 +148,7 @@ class TestFastPathSkipsLock:
 class TestParallelTasksWithSameCredentials:
     """Concurrent tasks with identical credentials should not block each other."""
 
-    def test_concurrent_tasks_same_creds_run_in_parallel(self, monkeypatch):
+    def test_concurrent_tasks_same_creds_run_in_parallel(self, monkeypatch) -> None:
         """Multiple threads with same env vars should NOT serialize."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
@@ -160,7 +160,7 @@ class TestParallelTasksWithSameCredentials:
         timings: dict[str, list[float]] = {"t1": [], "t2": []}
         barrier = threading.Barrier(2, timeout=5)
 
-        def task(name: str):
+        def task(name: str) -> None:
             barrier.wait()
             with _scoped_env_vars(env_map):
                 timings[name].append(time.monotonic())
@@ -182,7 +182,7 @@ class TestParallelTasksWithSameCredentials:
         overlaps = (t2_start < t1_end) or (t1_start < t2_end)
         assert overlaps
 
-    def test_concurrent_tasks_different_creds_serialize(self, monkeypatch):
+    def test_concurrent_tasks_different_creds_serialize(self, monkeypatch) -> None:
         """Threads with DIFFERENT credentials must NOT overlap (serialized)."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
@@ -192,7 +192,7 @@ class TestParallelTasksWithSameCredentials:
         observations: dict[str, list[str]] = {"t1": [], "t2": []}
         barrier = threading.Barrier(2, timeout=5)
 
-        def task(name: str, value: str):
+        def task(name: str, value: str) -> None:
             barrier.wait()
             with _scoped_env_vars({"__PYICEBERG_CRED_TEST": value}):
                 timings[name].append(time.monotonic())
@@ -220,7 +220,7 @@ class TestParallelTasksWithSameCredentials:
 class TestGcsCredentialRouting:
     """datafusion_env_vars_from_properties must route GCS credentials correctly."""
 
-    def test_file_path_maps_to_google_application_credentials(self):
+    def test_file_path_maps_to_google_application_credentials(self) -> None:
         """A file path value sets GOOGLE_APPLICATION_CREDENTIALS."""
         from pyiceberg.execution.object_store import datafusion_env_vars_from_properties
 
@@ -231,7 +231,7 @@ class TestGcsCredentialRouting:
         assert env_vars["GOOGLE_APPLICATION_CREDENTIALS"] == "/home/user/.config/gcloud/sa-key.json"
         assert "GOOGLE_SERVICE_ACCOUNT" not in env_vars
 
-    def test_json_content_maps_to_google_service_account(self):
+    def test_json_content_maps_to_google_service_account(self) -> None:
         """Inline JSON content sets GOOGLE_SERVICE_ACCOUNT."""
         from pyiceberg.execution.object_store import datafusion_env_vars_from_properties
 
@@ -251,7 +251,7 @@ class TestGcsCredentialRouting:
         assert env_vars["GOOGLE_SERVICE_ACCOUNT"] == sa_json
         assert "GOOGLE_APPLICATION_CREDENTIALS" not in env_vars
 
-    def test_json_with_leading_whitespace_detected_as_json(self):
+    def test_json_with_leading_whitespace_detected_as_json(self) -> None:
         """JSON content with leading whitespace is still detected as JSON."""
         from pyiceberg.execution.object_store import datafusion_env_vars_from_properties
 
@@ -262,7 +262,7 @@ class TestGcsCredentialRouting:
         assert "GOOGLE_SERVICE_ACCOUNT" in env_vars
         assert "GOOGLE_APPLICATION_CREDENTIALS" not in env_vars
 
-    def test_windows_file_path_not_mistaken_for_json(self):
+    def test_windows_file_path_not_mistaken_for_json(self) -> None:
         """Windows path (C:\\Users\\...) is correctly routed as file path."""
         from pyiceberg.execution.object_store import datafusion_env_vars_from_properties
 
@@ -272,7 +272,7 @@ class TestGcsCredentialRouting:
         assert "GOOGLE_APPLICATION_CREDENTIALS" in env_vars
         assert "GOOGLE_SERVICE_ACCOUNT" not in env_vars
 
-    def test_relative_path_routed_as_file_path(self):
+    def test_relative_path_routed_as_file_path(self) -> None:
         """Relative path (./credentials.json) routed as file path."""
         from pyiceberg.execution.object_store import datafusion_env_vars_from_properties
 
@@ -282,7 +282,7 @@ class TestGcsCredentialRouting:
         assert "GOOGLE_APPLICATION_CREDENTIALS" in env_vars
         assert "GOOGLE_SERVICE_ACCOUNT" not in env_vars
 
-    def test_no_gcs_credentials_produces_no_gcs_env_vars(self):
+    def test_no_gcs_credentials_produces_no_gcs_env_vars(self) -> None:
         """Without gcs.credentials-json, no GCS env vars are set."""
         from pyiceberg.execution.object_store import datafusion_env_vars_from_properties
 
@@ -301,7 +301,7 @@ class TestGcsCredentialRouting:
 class TestIoPropertiesIsImmutable:
     """Backends.io_properties must be read-only after construction."""
 
-    def test_io_properties_is_mapping_proxy(self):
+    def test_io_properties_is_mapping_proxy(self) -> None:
         """build_backends() must wrap io_properties in MappingProxyType."""
         from pyiceberg.execution.engine import build_backends
 
@@ -310,7 +310,7 @@ class TestIoPropertiesIsImmutable:
 
         assert isinstance(backends.io_properties, types.MappingProxyType)
 
-    def test_io_properties_mutation_raises_type_error(self):
+    def test_io_properties_mutation_raises_type_error(self) -> None:
         """Attempting to mutate io_properties must raise TypeError."""
         from pyiceberg.execution.engine import build_backends
 
@@ -320,7 +320,7 @@ class TestIoPropertiesIsImmutable:
         with pytest.raises(TypeError):
             backends.io_properties["s3.access-key-id"] = "CORRUPTED"
 
-    def test_io_properties_deletion_raises_type_error(self):
+    def test_io_properties_deletion_raises_type_error(self) -> None:
         """Attempting to delete a key from io_properties must raise TypeError."""
         from pyiceberg.execution.engine import build_backends
 
@@ -330,7 +330,7 @@ class TestIoPropertiesIsImmutable:
         with pytest.raises(TypeError):
             del backends.io_properties["s3.access-key-id"]
 
-    def test_io_properties_preserves_original_values(self):
+    def test_io_properties_preserves_original_values(self) -> None:
         """io_properties must reflect the original dict values at construction time."""
         from pyiceberg.execution.engine import build_backends
 
@@ -340,7 +340,7 @@ class TestIoPropertiesIsImmutable:
         assert backends.io_properties["s3.access-key-id"] == "AKIA_ORIGINAL"
         assert backends.io_properties["s3.region"] == "us-west-2"
 
-    def test_io_properties_immune_to_external_mutation(self):
+    def test_io_properties_immune_to_external_mutation(self) -> None:
         """Mutating the original dict after construction must NOT affect backends."""
         from pyiceberg.execution.engine import build_backends
 
@@ -351,7 +351,7 @@ class TestIoPropertiesIsImmutable:
 
         assert backends.io_properties["s3.access-key-id"] == "AKIA_ORIGINAL"
 
-    def test_io_properties_is_a_mapping(self):
+    def test_io_properties_is_a_mapping(self) -> None:
         """io_properties must satisfy the Mapping protocol."""
         from pyiceberg.execution.engine import build_backends
 
@@ -363,7 +363,7 @@ class TestIoPropertiesIsImmutable:
         assert list(backends.io_properties.keys()) == ["s3.access-key-id", "s3.region"]
         assert dict(backends.io_properties) == props
 
-    def test_resolve_also_produces_immutable_io_properties(self):
+    def test_resolve_also_produces_immutable_io_properties(self) -> None:
         """Backends.resolve() must also produce immutable io_properties."""
         from pyiceberg.execution.protocol import Backends
 
@@ -374,7 +374,7 @@ class TestIoPropertiesIsImmutable:
         with pytest.raises(TypeError):
             backends.io_properties["new_key"] = "value"
 
-    def test_backends_dataclass_field_accepts_mapping_proxy(self):
+    def test_backends_dataclass_field_accepts_mapping_proxy(self) -> None:
         """The Backends dataclass must accept MappingProxyType for io_properties."""
         from pyiceberg.execution.protocol import Backends
 

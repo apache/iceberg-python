@@ -45,17 +45,19 @@ class TestFilterAlwaysFalse:
     """Verify filter() with AlwaysFalse produces empty output across all backends."""
 
     @pytest.fixture(params=["pyarrow", "datafusion"])
-    def backend(self, request):
+    def backend(self, request) -> None:
         """Parametrized compute backend."""
         if request.param == "pyarrow":
             return PyArrowComputeBackend()
         elif request.param == "datafusion":
             pytest.importorskip("datafusion")
-            from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+            from pyiceberg.execution.backends.datafusion_backend import (
+                DataFusionComputeBackend,
+            )
 
             return DataFusionComputeBackend()
 
-    def test_filter_always_false_produces_empty(self, backend):
+    def test_filter_always_false_produces_empty(self, backend) -> None:
         """AlwaysFalse filter should yield zero rows from any input."""
         data = pa.table({"id": [1, 2, 3, 4, 5], "val": ["a", "b", "c", "d", "e"]})
         batches = data.to_batches()
@@ -64,7 +66,7 @@ class TestFilterAlwaysFalse:
         total_rows = sum(b.num_rows for b in result)
         assert total_rows == 0, f"AlwaysFalse filter should produce 0 rows, got {total_rows}"
 
-    def test_filter_always_false_empty_input(self, backend):
+    def test_filter_always_false_empty_input(self, backend) -> None:
         """AlwaysFalse on empty input produces empty output without error."""
         result = list(backend.filter(iter([]), AlwaysFalse()))
         assert result == []
@@ -85,17 +87,19 @@ class TestAntiJoinFromFilesEmptyLeft:
     """
 
     @pytest.fixture(params=["pyarrow", "datafusion"])
-    def compute_backend(self, request):
+    def compute_backend(self, request) -> None:
         """Parametrized compute backend."""
         if request.param == "pyarrow":
             return PyArrowComputeBackend()
         elif request.param == "datafusion":
             pytest.importorskip("datafusion")
-            from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+            from pyiceberg.execution.backends.datafusion_backend import (
+                DataFusionComputeBackend,
+            )
 
             return DataFusionComputeBackend()
 
-    def test_anti_join_from_files_empty_left_returns_empty(self, tmp_path, compute_backend):
+    def test_anti_join_from_files_empty_left_returns_empty(self, tmp_path, compute_backend) -> None:
         """anti_join_from_files with zero-row left Parquet produces zero output rows."""
         left_path = str(tmp_path / "empty_left.parquet")
         pq.write_table(pa.table({"id": pa.array([], type=pa.int64())}), left_path)
@@ -107,7 +111,7 @@ class TestAntiJoinFromFilesEmptyLeft:
         total_rows = sum(b.num_rows for b in result)
         assert total_rows == 0, f"anti_join_from_files with empty left file should return 0 rows, got {total_rows}"
 
-    def test_anti_join_from_files_empty_right_returns_all_left(self, tmp_path, compute_backend):
+    def test_anti_join_from_files_empty_right_returns_all_left(self, tmp_path, compute_backend) -> None:
         """anti_join_from_files with zero-row right Parquet returns all left rows."""
         left_path = str(tmp_path / "left.parquet")
         pq.write_table(pa.table({"id": [1, 2, 3, 4, 5]}), left_path)
@@ -119,7 +123,7 @@ class TestAntiJoinFromFilesEmptyLeft:
         total_rows = sum(b.num_rows for b in result)
         assert total_rows == 5, f"anti_join_from_files with empty right file should return all 5 left rows, got {total_rows}"
 
-    def test_anti_join_from_files_both_empty_returns_empty(self, tmp_path, compute_backend):
+    def test_anti_join_from_files_both_empty_returns_empty(self, tmp_path, compute_backend) -> None:
         """anti_join_from_files with both files empty returns zero rows."""
         left_path = str(tmp_path / "empty_left.parquet")
         pq.write_table(pa.table({"id": pa.array([], type=pa.int64())}), left_path)
@@ -145,7 +149,7 @@ class TestPyArrowAntiJoinFromFilesNullSemantics:
     DataFusion/DuckDB are not installed.
     """
 
-    def test_pyarrow_anti_join_from_files_null_matches_null(self, tmp_path):
+    def test_pyarrow_anti_join_from_files_null_matches_null(self, tmp_path) -> None:
         """NULL in delete file should match NULL in data file for PyArrow backend."""
         # Data: id=[1, 2, None, 3, None]
         data_path = str(tmp_path / "data.parquet")
@@ -164,7 +168,7 @@ class TestPyArrowAntiJoinFromFilesNullSemantics:
         # No NULLs should remain
         assert None not in result.column("id").to_pylist()
 
-    def test_pyarrow_anti_join_in_memory_null_matches_null(self, tmp_path):
+    def test_pyarrow_anti_join_in_memory_null_matches_null(self, tmp_path) -> None:
         """NULL matching also works for the in-memory anti_join path."""
         backend = PyArrowComputeBackend()
 
@@ -178,7 +182,7 @@ class TestPyArrowAntiJoinFromFilesNullSemantics:
         assert result_ids == [1, 3]
         assert None not in result.column("id").to_pylist()
 
-    def test_pyarrow_anti_join_multi_column_null_handling(self, tmp_path):
+    def test_pyarrow_anti_join_multi_column_null_handling(self, tmp_path) -> None:
         """Multi-column anti-join with NULLs in composite key.
 
         Tests the per-row matching algorithm that handles multi-column joins
@@ -232,7 +236,7 @@ class TestAntiJoinNullSemanticsStructural:
     removes null_equals_null=True from the callers, these tests catch it.
     """
 
-    def test_anti_join_passes_null_equals_null_true(self):
+    def test_anti_join_passes_null_equals_null_true(self) -> None:
         """PyArrowComputeBackend.anti_join must call _anti_join_tables with null_equals_null=True."""
         source = inspect.getsource(PyArrowComputeBackend.anti_join)
         assert "null_equals_null=True" in source, (
@@ -240,7 +244,7 @@ class TestAntiJoinNullSemanticsStructural:
             "Iceberg equality deletes require IS NOT DISTINCT FROM semantics."
         )
 
-    def test_anti_join_from_files_passes_null_equals_null_true(self):
+    def test_anti_join_from_files_passes_null_equals_null_true(self) -> None:
         """PyArrowComputeBackend.anti_join_from_files must call _anti_join_tables with null_equals_null=True."""
         source = inspect.getsource(PyArrowComputeBackend.anti_join_from_files)
         assert "null_equals_null=True" in source, (
@@ -248,7 +252,7 @@ class TestAntiJoinNullSemanticsStructural:
             "Iceberg equality deletes require IS NOT DISTINCT FROM semantics."
         )
 
-    def test_apply_positional_deletes_uses_shared_impl(self):
+    def test_apply_positional_deletes_uses_shared_impl(self) -> None:
         """All backends delegate positional deletes to _apply_positional_deletes_impl."""
         source = inspect.getsource(PyArrowComputeBackend.apply_positional_deletes)
         assert "_apply_positional_deletes_impl" in source, (
@@ -264,7 +268,7 @@ class TestMultiColumnAntiJoinMixedNulls:
     These tests verify correctness for complex NULL patterns across 3+ columns.
     """
 
-    def test_three_column_anti_join_basic(self, tmp_path):
+    def test_three_column_anti_join_basic(self, tmp_path) -> None:
         """Anti-join on 3 columns correctly excludes matching rows."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -303,7 +307,7 @@ class TestMultiColumnAntiJoinMixedNulls:
         assert ("eu", 2024, 1) in list(zip(surviving["region"], surviving["year"], surviving["month"], strict=False))
         assert ("ap", 2024, 1) in list(zip(surviving["region"], surviving["year"], surviving["month"], strict=False))
 
-    def test_three_column_anti_join_null_matches_null(self, tmp_path):
+    def test_three_column_anti_join_null_matches_null(self, tmp_path) -> None:
         """NULL in any join column matches NULL in the other side (IS NOT DISTINCT FROM)."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -343,7 +347,7 @@ class TestMultiColumnAntiJoinMixedNulls:
         assert 4 in result.column("a").to_pylist()
         assert 50 in result.column("c").to_pylist()
 
-    def test_three_column_anti_join_partial_null_no_match(self, tmp_path):
+    def test_three_column_anti_join_partial_null_no_match(self, tmp_path) -> None:
         """NULL in one column but different values in others → no match."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -382,9 +386,11 @@ class TestMultiColumnAntiJoinMixedNulls:
         not _try_import_datafusion(),
         reason="DataFusion not installed",
     )
-    def test_three_column_anti_join_datafusion_matches_pyarrow(self, tmp_path):
+    def test_three_column_anti_join_datafusion_matches_pyarrow(self, tmp_path) -> None:
         """DataFusion and PyArrow produce identical results for 3-column mixed-NULL join."""
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
         left_path = str(tmp_path / "data.parquet")
@@ -441,7 +447,7 @@ class TestAntiJoinAllNulls:
     excluded when right contains NULL.
     """
 
-    def test_all_nulls_single_column(self):
+    def test_all_nulls_single_column(self) -> None:
         """All-NULL left anti-joined against NULL right produces empty result."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -456,7 +462,7 @@ class TestAntiJoinAllNulls:
             result = pa.table({"key": pa.array([], type=pa.int64()), "val": pa.array([], type=pa.int64())})
         assert result.num_rows == 0
 
-    def test_all_nulls_multi_column(self):
+    def test_all_nulls_multi_column(self) -> None:
         """Multi-column all-NULL anti-join also produces empty result."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -482,7 +488,7 @@ class TestAntiJoinAllNulls:
             result = left.schema.empty_table()
         assert result.num_rows == 0
 
-    def test_mixed_nulls_partial_match(self):
+    def test_mixed_nulls_partial_match(self) -> None:
         """Only rows whose join key matches right (including NULL=NULL) are excluded."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -498,7 +504,7 @@ class TestAntiJoinAllNulls:
 class TestSortFromFilesEmptyInput:
     """sort_from_files with an empty file list should return empty, not raise."""
 
-    def test_pyarrow_sort_from_files_empty_list(self):
+    def test_pyarrow_sort_from_files_empty_list(self) -> None:
         """PyArrow backend handles empty file list gracefully."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -506,7 +512,7 @@ class TestSortFromFilesEmptyInput:
         result = list(backend.sort_from_files([], [("id", "ascending")], {}))
         assert result == []
 
-    def test_pyarrow_anti_join_from_files_empty_left(self, tmp_path):
+    def test_pyarrow_anti_join_from_files_empty_left(self, tmp_path) -> None:
         """Anti-join with empty left produces empty result."""
         import pyarrow.parquet as pq
 
@@ -537,9 +543,12 @@ class TestDataFileSerializationRoundTrip:
     and deserialized back. All field types must survive the round-trip.
     """
 
-    def test_basic_fields_survive_round_trip(self):
+    def test_basic_fields_survive_round_trip(self) -> None:
         """Core fields (path, format, content, counts) survive serialize/deserialize."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         original = DataFile.from_args(
@@ -560,9 +569,12 @@ class TestDataFileSerializationRoundTrip:
         assert restored.record_count == 10000
         assert restored.file_size_in_bytes == 1048576
 
-    def test_binary_bounds_survive_round_trip(self):
+    def test_binary_bounds_survive_round_trip(self) -> None:
         """lower_bounds and upper_bounds (bytes values) survive hex encode/decode."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         lower = {1: b"\x00\x00\x00\x01", 2: b"\x41\x42\x43"}
@@ -588,9 +600,12 @@ class TestDataFileSerializationRoundTrip:
         for k, v in restored.lower_bounds.items():
             assert isinstance(v, bytes), f"lower_bounds[{k}] should be bytes, got {type(v)}"
 
-    def test_column_statistics_survive_round_trip(self):
+    def test_column_statistics_survive_round_trip(self) -> None:
         """column_sizes, value_counts, null_value_counts survive int-key reconstruction."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         original = DataFile.from_args(
@@ -614,9 +629,12 @@ class TestDataFileSerializationRoundTrip:
         assert restored.null_value_counts == {1: 0, 2: 10, 3: 50}
         assert restored.nan_value_counts == {1: 0, 2: 0, 3: 5}
 
-    def test_equality_delete_fields_survive_round_trip(self):
+    def test_equality_delete_fields_survive_round_trip(self) -> None:
         """Equality delete files with equality_ids and sort_order_id are preserved."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         original = DataFile.from_args(
@@ -637,9 +655,12 @@ class TestDataFileSerializationRoundTrip:
         assert restored.equality_ids == [1, 3, 5]
         assert restored.sort_order_id == 2
 
-    def test_partition_values_survive_round_trip(self):
+    def test_partition_values_survive_round_trip(self) -> None:
         """Partition Record values are preserved through JSON serialization."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         # Multi-field partition: string + int + None
@@ -659,9 +680,12 @@ class TestDataFileSerializationRoundTrip:
         assert restored.partition[1] == 2024
         assert restored.partition[2] is None
 
-    def test_key_metadata_bytes_survive_round_trip(self):
+    def test_key_metadata_bytes_survive_round_trip(self) -> None:
         """key_metadata (optional bytes field) survives hex encode/decode."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         original = DataFile.from_args(
@@ -680,9 +704,12 @@ class TestDataFileSerializationRoundTrip:
         assert restored.key_metadata == b"\xde\xad\xbe\xef\x00\x01\x02\x03"
         assert isinstance(restored.key_metadata, bytes)
 
-    def test_spec_id_survives_round_trip(self):
+    def test_spec_id_survives_round_trip(self) -> None:
         """spec_id attribute (set post-construction) survives serialization."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         original = DataFile.from_args(
@@ -700,9 +727,12 @@ class TestDataFileSerializationRoundTrip:
 
         assert restored.spec_id == 3
 
-    def test_position_delete_file_survives_round_trip(self):
+    def test_position_delete_file_survives_round_trip(self) -> None:
         """Position delete DataFiles (content=POSITION_DELETES) are preserved."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         original = DataFile.from_args(
@@ -721,9 +751,12 @@ class TestDataFileSerializationRoundTrip:
         assert restored.file_path == "s3://bucket/table/data/pos-delete-00001.parquet"
         assert restored.record_count == 25000
 
-    def test_split_offsets_survive_round_trip(self):
+    def test_split_offsets_survive_round_trip(self) -> None:
         """split_offsets (list[int]) field is preserved through serialization."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         original = DataFile.from_args(
@@ -741,9 +774,12 @@ class TestDataFileSerializationRoundTrip:
 
         assert restored.split_offsets == [0, 16777216, 33554432, 50331648]
 
-    def test_full_datafile_all_fields_round_trip(self):
+    def test_full_datafile_all_fields_round_trip(self) -> None:
         """Comprehensive round-trip: all optional fields populated simultaneously."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.typedef import Record
 
         original = DataFile.from_args(

@@ -45,7 +45,7 @@ from pyiceberg.types import IntegerType, LongType, NestedField, StringType
 class TestMultiColumnAntiJoinCorrectness:
     """_anti_join_tables multi-column path uses struct-array is_in for O(n+m) performance."""
 
-    def test_basic_multi_column_anti_join(self):
+    def test_basic_multi_column_anti_join(self) -> None:
         """Multi-column anti-join correctly excludes matching rows."""
         from pyiceberg.execution.backends.pyarrow_backend import _anti_join_tables
 
@@ -56,7 +56,7 @@ class TestMultiColumnAntiJoinCorrectness:
         assert result.column("a").to_pylist() == [1, 3]
         assert result.column("b").to_pylist() == ["x", "z"]
 
-    def test_multi_column_null_matches_null(self):
+    def test_multi_column_null_matches_null(self) -> None:
         """IS NOT DISTINCT FROM semantics: NULL == NULL in join keys."""
         from pyiceberg.execution.backends.pyarrow_backend import _anti_join_tables
 
@@ -68,7 +68,7 @@ class TestMultiColumnAntiJoinCorrectness:
         assert result.num_rows == 2
         assert result.column("a").to_pylist() == [1, 3]
 
-    def test_multi_column_no_nulls_fast_path(self):
+    def test_multi_column_no_nulls_fast_path(self) -> None:
         """When no NULLs exist, the fast path (direct struct is_in) is used."""
         from pyiceberg.execution.backends.pyarrow_backend import _anti_join_tables
 
@@ -78,7 +78,7 @@ class TestMultiColumnAntiJoinCorrectness:
         result = _anti_join_tables(left, right, on=["a", "b"], null_equals_null=True)
         assert result.column("a").to_pylist() == [1, 3, 5]
 
-    def test_multi_column_empty_right(self):
+    def test_multi_column_empty_right(self) -> None:
         """Empty right table means no rows are excluded."""
         from pyiceberg.execution.backends.pyarrow_backend import _anti_join_tables
 
@@ -90,7 +90,7 @@ class TestMultiColumnAntiJoinCorrectness:
         result = _anti_join_tables(left, right, on=["a", "b"], null_equals_null=True)
         assert result.num_rows == 3
 
-    def test_multi_column_all_excluded(self):
+    def test_multi_column_all_excluded(self) -> None:
         """All left rows match right rows — empty result."""
         from pyiceberg.execution.backends.pyarrow_backend import _anti_join_tables
 
@@ -100,7 +100,7 @@ class TestMultiColumnAntiJoinCorrectness:
         result = _anti_join_tables(left, right, on=["a", "b"], null_equals_null=True)
         assert result.num_rows == 0
 
-    def test_no_warning_emitted_for_large_multi_column(self):
+    def test_no_warning_emitted_for_large_multi_column(self) -> None:
         """O(n+m) struct approach does not emit performance warnings regardless of size."""
         from pyiceberg.execution.backends.pyarrow_backend import _anti_join_tables
 
@@ -124,7 +124,7 @@ _skip_win32 = pytest.mark.skipif(sys.platform == "win32", reason="InMemoryCatalo
 
 
 @pytest.fixture
-def catalog(tmp_path):
+def catalog(tmp_path) -> None:
     """Create an InMemoryCatalog with local filesystem warehouse."""
     return InMemoryCatalog(
         "test_catalog",
@@ -133,7 +133,7 @@ def catalog(tmp_path):
 
 
 @pytest.fixture
-def table_schema():
+def table_schema() -> None:
     """Simple schema for round-trip testing."""
     return Schema(
         NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
@@ -146,7 +146,7 @@ def table_schema():
 class TestInMemoryCatalogRoundTrip:
     """Full round-trip: create table → write → scan → verify correctness."""
 
-    def test_write_and_scan_returns_correct_data(self, catalog, table_schema):
+    def test_write_and_scan_returns_correct_data(self, catalog, table_schema) -> None:
         """Write rows via append, scan back, verify content matches."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.roundtrip", schema=table_schema)
@@ -168,7 +168,7 @@ class TestInMemoryCatalogRoundTrip:
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3, 4, 5]
         assert sorted(result.column("value").to_pylist()) == [100, 200, 300, 400, 500]
 
-    def test_filtered_scan_returns_subset(self, catalog, table_schema):
+    def test_filtered_scan_returns_subset(self, catalog, table_schema) -> None:
         """Scan with row_filter returns only matching rows."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.filtered", schema=table_schema)
@@ -192,7 +192,7 @@ class TestInMemoryCatalogRoundTrip:
         assert len(filtered) == 3
         assert sorted(filtered.column("value").to_pylist()) == [30, 40, 50]
 
-    def test_scan_with_projection(self, catalog, table_schema):
+    def test_scan_with_projection(self, catalog, table_schema) -> None:
         """Scan with column selection returns only requested columns."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.projected", schema=table_schema)
@@ -212,7 +212,7 @@ class TestInMemoryCatalogRoundTrip:
         assert result.schema.names == ["id", "name"]
         assert "value" not in result.schema.names
 
-    def test_scan_empty_table(self, catalog, table_schema):
+    def test_scan_empty_table(self, catalog, table_schema) -> None:
         """Scan on empty table returns zero rows with correct schema."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.empty", schema=table_schema)
@@ -221,7 +221,7 @@ class TestInMemoryCatalogRoundTrip:
 
         assert len(result) == 0
 
-    def test_multiple_appends_scan_all(self, catalog, table_schema):
+    def test_multiple_appends_scan_all(self, catalog, table_schema) -> None:
         """Multiple appends are visible in a single scan."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.multi_append", schema=table_schema)
@@ -251,7 +251,7 @@ class TestInMemoryCatalogRoundTrip:
         assert len(result) == 4
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3, 4]
 
-    def test_to_arrow_batch_reader_streams_correctly(self, catalog, table_schema):
+    def test_to_arrow_batch_reader_streams_correctly(self, catalog, table_schema) -> None:
         """to_arrow_batch_reader returns a working RecordBatchReader."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.stream", schema=table_schema)
@@ -271,7 +271,7 @@ class TestInMemoryCatalogRoundTrip:
         result = reader.read_all()
         assert len(result) == 3
 
-    def test_count_matches_scan_length(self, catalog, table_schema):
+    def test_count_matches_scan_length(self, catalog, table_schema) -> None:
         """table.scan().count() matches len(table.scan().to_arrow())."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.count_check", schema=table_schema)
@@ -290,7 +290,7 @@ class TestInMemoryCatalogRoundTrip:
 
         assert count == arrow_len == 5
 
-    def test_delete_removes_rows(self, catalog, table_schema):
+    def test_delete_removes_rows(self, catalog, table_schema) -> None:
         """table.delete via CoW rewrites correctly removes filtered rows."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.delete_test", schema=table_schema)
@@ -325,7 +325,7 @@ class TestResolveFilesystemFromIoProperties:
     REST catalog credential vending (temporary STS tokens) would get 403 errors.
     """
 
-    def test_local_path_returns_local_filesystem(self, tmp_path):
+    def test_local_path_returns_local_filesystem(self, tmp_path) -> None:
         """Local paths resolve to LocalFileSystem without using io_properties."""
         from pyarrow.fs import LocalFileSystem
 
@@ -385,7 +385,7 @@ class TestResolveFilesystemFromIoProperties:
         fs, path = _resolve_filesystem("s3://bucket/key.parquet", {})
         assert isinstance(fs, S3FileSystem)
 
-    def test_read_parquet_passes_io_properties_to_filesystem(self, tmp_path):
+    def test_read_parquet_passes_io_properties_to_filesystem(self, tmp_path) -> None:
         """PyArrowReadBackend.read_parquet uses io_properties for filesystem resolution."""
         import pyarrow.parquet as pq
 
@@ -415,11 +415,13 @@ class TestResolveFilesystemFromIoProperties:
         total_rows = sum(b.num_rows for b in batches)
         assert total_rows == 3
 
-    def test_positional_deletes_impl_uses_io_properties(self, tmp_path):
+    def test_positional_deletes_impl_uses_io_properties(self, tmp_path) -> None:
         """_apply_positional_deletes_impl passes io_properties to filesystem resolution."""
         import pyarrow.parquet as pq
 
-        from pyiceberg.execution.backends.pyarrow_backend import _apply_positional_deletes_impl
+        from pyiceberg.execution.backends.pyarrow_backend import (
+            _apply_positional_deletes_impl,
+        )
 
         # Write a data file
         data_path = str(tmp_path / "data.parquet")

@@ -33,7 +33,13 @@ import pytest
 
 from pyiceberg.execution.engine import BOUNDED_PLANNER_THRESHOLD
 from pyiceberg.expressions import AlwaysTrue, EqualTo
-from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestContent, ManifestEntry
+from pyiceberg.manifest import (
+    DataFile,
+    DataFileContent,
+    FileFormat,
+    ManifestContent,
+    ManifestEntry,
+)
 from pyiceberg.schema import Schema
 from pyiceberg.table import FileScanTask, ManifestGroupPlanner
 from pyiceberg.typedef import Record
@@ -44,14 +50,14 @@ class TestBoundedMemoryPlannerWithRealData:
     """Behavioral tests for BoundedMemoryPlanner using real Parquet files."""
 
     @pytest.fixture
-    def planner(self):
+    def planner(self) -> None:
         """Create a BoundedMemoryPlanner with default memory limit."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         return BoundedMemoryPlanner()
 
-    def test_stream_entries_to_parquet_produces_valid_files(self, tmp_path):
+    def test_stream_entries_to_parquet_produces_valid_files(self, tmp_path) -> None:
         """Phase 1: _stream_entries_to_parquet creates valid Parquet files."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
@@ -110,7 +116,7 @@ class TestBoundedMemoryPlannerWithRealData:
         assert "file_path" in delete_table.schema.names
         assert "content" in delete_table.schema.names
 
-    def test_execute_assignment_join_produces_correct_assignments(self, tmp_path):
+    def test_execute_assignment_join_produces_correct_assignments(self, tmp_path) -> None:
         """Phase 2: SQL join assigns delete files to data files by partition + sequence."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
@@ -190,7 +196,7 @@ class TestBoundedMemoryPlannerWithRealData:
         # data_3 (seq=3): delete at seq=2 does NOT apply (2 < 3)
         assert assignments["data_3.parquet"] is None or assignments["data_3.parquet"] == [None]
 
-    def test_yield_scan_tasks_produces_file_scan_tasks(self, tmp_path):
+    def test_yield_scan_tasks_produces_file_scan_tasks(self, tmp_path) -> None:
         """Phase 3: _yield_scan_tasks converts join output to FileScanTasks."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
@@ -229,7 +235,7 @@ class TestBoundedMemoryPlannerWithRealData:
         assert "data_path" in result.schema.names
         assert "delete_blobs" in result.schema.names
 
-    def test_serialize_partition_key_deterministic(self):
+    def test_serialize_partition_key_deterministic(self) -> None:
         """_serialize_partition_key produces deterministic output for same input."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -238,10 +244,10 @@ class TestBoundedMemoryPlannerWithRealData:
         class FakePartition:
             _data = ["us-east-1", 2024, None]
 
-            def __len__(self):
+            def __len__(self) -> None:
                 return len(self._data)
 
-            def __getitem__(self, idx):
+            def __getitem__(self, idx) -> None:
                 return self._data[idx]
 
         mock_partition = FakePartition()
@@ -252,17 +258,17 @@ class TestBoundedMemoryPlannerWithRealData:
         key3 = _serialize_partition_key(2, mock_partition)
         assert key1 != key3
 
-    def test_serialize_partition_key_handles_special_chars(self):
+    def test_serialize_partition_key_handles_special_chars(self) -> None:
         """_serialize_partition_key handles strings with pipes, quotes, and NULLs."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class FakePartition:
             _data = ["value|with|pipes", None, "normal"]
 
-            def __len__(self):
+            def __len__(self) -> None:
                 return len(self._data)
 
-            def __getitem__(self, idx):
+            def __getitem__(self, idx) -> None:
                 return self._data[idx]
 
         mock_partition = FakePartition()
@@ -270,7 +276,7 @@ class TestBoundedMemoryPlannerWithRealData:
         assert "|" in key
         assert "null" in key
 
-    def test_full_pipeline_end_to_end(self, tmp_path):
+    def test_full_pipeline_end_to_end(self, tmp_path) -> None:
         """End-to-end: planner reads mock entries, executes join, yields FileScanTasks."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
@@ -349,14 +355,14 @@ class TestBoundedMemoryPlannerWithRealData:
 class TestPlanningBackendWiring:
     """Verify DataScan._plan_files_local uses auto-switch for bounded planning."""
 
-    def test_plan_files_local_uses_manifest_group_planner_by_default(self):
+    def test_plan_files_local_uses_manifest_group_planner_by_default(self) -> None:
         """Default path uses ManifestGroupPlanner directly."""
         from pyiceberg.table import DataScan
 
         source = inspect.getsource(DataScan._plan_files_local)
         assert "_manifest_planner" in source
 
-    def test_plan_files_local_auto_switches_to_bounded(self):
+    def test_plan_files_local_auto_switches_to_bounded(self) -> None:
         """When delete entries exceed threshold, switches to BoundedMemoryPlanner."""
         from pyiceberg.table import DataScan
 
@@ -368,12 +374,12 @@ class TestPlanningBackendWiring:
 class TestEqualityDeletesInPlanning:
     """Verify equality deletes handling in the planner."""
 
-    def test_plan_files_has_unknown_content_handling(self):
+    def test_plan_files_has_unknown_content_handling(self) -> None:
         """ManifestGroupPlanner.plan_files MUST raise ValueError on unknown content types."""
         source = inspect.getsource(ManifestGroupPlanner.plan_files)
         assert "raise ValueError" in source
 
-    def test_equality_deletes_reference_exists_in_source(self):
+    def test_equality_deletes_reference_exists_in_source(self) -> None:
         """EQUALITY_DELETES must be referenced."""
         source = inspect.getsource(ManifestGroupPlanner.plan_files)
         assert "EQUALITY_DELETES" in source
@@ -382,7 +388,7 @@ class TestEqualityDeletesInPlanning:
 class TestBoundedMemoryPlannerPartitionScoping:
     """Verify BoundedMemoryPlanner correctly scopes delete files by partition values."""
 
-    def test_serialize_partition_key_deterministic(self):
+    def test_serialize_partition_key_deterministic(self) -> None:
         """Same partition values always produce the same serialized key."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -391,7 +397,7 @@ class TestBoundedMemoryPlannerPartitionScoping:
         key2 = _serialize_partition_key(0, partition)
         assert key1 == key2
 
-    def test_serialize_partition_key_different_values_produce_different_keys(self):
+    def test_serialize_partition_key_different_values_produce_different_keys(self) -> None:
         """Different partition values produce different serialized keys."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -401,7 +407,7 @@ class TestBoundedMemoryPlannerPartitionScoping:
         key_b = _serialize_partition_key(0, partition_b)
         assert key_a != key_b
 
-    def test_serialize_partition_key_includes_spec_id(self):
+    def test_serialize_partition_key_includes_spec_id(self) -> None:
         """Different spec_ids produce different keys even with same partition values."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -410,7 +416,7 @@ class TestBoundedMemoryPlannerPartitionScoping:
         key_spec1 = _serialize_partition_key(1, partition)
         assert key_spec0 != key_spec1
 
-    def test_serialize_partition_key_handles_none_values(self):
+    def test_serialize_partition_key_handles_none_values(self) -> None:
         """Null partition values are serialized distinctly from other values."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -420,7 +426,7 @@ class TestBoundedMemoryPlannerPartitionScoping:
         key_empty = _serialize_partition_key(0, partition_without_null)
         assert key_null != key_empty
 
-    def test_serialize_partition_key_unpartitioned(self):
+    def test_serialize_partition_key_unpartitioned(self) -> None:
         """Unpartitioned tables (None partition) produce a consistent key."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -429,7 +435,7 @@ class TestBoundedMemoryPlannerPartitionScoping:
         assert key1 == key2
         assert key1 == "0"
 
-    def test_bounded_planner_sql_joins_on_partition_key(self):
+    def test_bounded_planner_sql_joins_on_partition_key(self) -> None:
         """BoundedMemoryPlanner's SQL must join on partition_key."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
@@ -437,14 +443,14 @@ class TestBoundedMemoryPlannerPartitionScoping:
         assert "partition_key" in source
         assert "d.spec_id = del.spec_id" not in source
 
-    def test_bounded_planner_schema_includes_partition_key_column(self):
+    def test_bounded_planner_schema_includes_partition_key_column(self) -> None:
         """The temp Parquet schema must include a partition_key column."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         source = inspect.getsource(BoundedMemoryPlanner._stream_entries_to_parquet)
         assert '"partition_key"' in source or "'partition_key'" in source
 
-    def test_bounded_planner_calls_serialize_partition_key(self):
+    def test_bounded_planner_calls_serialize_partition_key(self) -> None:
         """BoundedMemoryPlanner must call _serialize_partition_key for each entry."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
@@ -455,7 +461,7 @@ class TestBoundedMemoryPlannerPartitionScoping:
 class TestInMemoryPlannerBehavioral:
     """Behavioral tests for InMemoryPlanner."""
 
-    def test_in_memory_planner_produces_file_scan_tasks(self, tmp_path):
+    def test_in_memory_planner_produces_file_scan_tasks(self, tmp_path) -> None:
         """InMemoryPlanner wraps ManifestGroupPlanner and yields FileScanTasks."""
         from pyiceberg.execution.planning import InMemoryPlanner
 
@@ -481,7 +487,7 @@ class TestInMemoryPlannerBehavioral:
         assert len(tasks) == 1
         assert tasks[0] is mock_task
 
-    def test_in_memory_planner_passes_parameters_correctly(self):
+    def test_in_memory_planner_passes_parameters_correctly(self) -> None:
         """InMemoryPlanner passes all parameters to ManifestGroupPlanner."""
         from pyiceberg.execution.planning import InMemoryPlanner
 
@@ -517,14 +523,14 @@ class TestInMemoryPlannerBehavioral:
 class TestBoundedMemoryPlannerBehavioral:
     """Behavioral tests for BoundedMemoryPlanner."""
 
-    def test_bounded_planner_requires_datafusion(self):
+    def test_bounded_planner_requires_datafusion(self) -> None:
         """BoundedMemoryPlanner imports fail gracefully without datafusion."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         planner = BoundedMemoryPlanner(memory_limit=64 * 1024 * 1024)
         assert planner._memory_limit == 64 * 1024 * 1024
 
-    def test_bounded_planner_default_memory_limit(self):
+    def test_bounded_planner_default_memory_limit(self) -> None:
         """BoundedMemoryPlanner uses DEFAULT_MEMORY_LIMIT when None is passed."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
         from pyiceberg.execution.protocol import DEFAULT_MEMORY_LIMIT
@@ -532,7 +538,7 @@ class TestBoundedMemoryPlannerBehavioral:
         planner = BoundedMemoryPlanner(memory_limit=None)
         assert planner._memory_limit == DEFAULT_MEMORY_LIMIT
 
-    def test_assignment_sql_contains_required_clauses(self):
+    def test_assignment_sql_contains_required_clauses(self) -> None:
         """The assignment SQL must GROUP BY data_path and aggregate delete paths."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
@@ -547,12 +553,12 @@ class TestBoundedMemoryPlannerBehavioral:
 class TestPlanFilesLocalAutoSwitch:
     """Behavioral tests for the auto-switch logic in DataScan._plan_files_local."""
 
-    def test_auto_switch_threshold_constant_exists(self):
+    def test_auto_switch_threshold_constant_exists(self) -> None:
         """The BOUNDED_PLANNER_THRESHOLD constant must be defined."""
         assert isinstance(BOUNDED_PLANNER_THRESHOLD, int)
         assert BOUNDED_PLANNER_THRESHOLD == 100_000
 
-    def test_auto_switch_falls_back_on_import_error(self):
+    def test_auto_switch_falls_back_on_import_error(self) -> None:
         """If DataFusion is unavailable, auto-switch emits warning and falls back."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
@@ -564,7 +570,7 @@ class TestPlanFilesLocalAutoSwitch:
 class TestBoundedMemoryPlannerArrayAggNull:
     """Verify BoundedMemoryPlanner SQL produces clean arrays (no spurious NULLs)."""
 
-    def test_assignment_sql_uses_filter_clause(self):
+    def test_assignment_sql_uses_filter_clause(self) -> None:
         """_ASSIGNMENT_SQL must use FILTER (WHERE ...) to exclude NULLs from ARRAY_AGG."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
@@ -572,10 +578,13 @@ class TestBoundedMemoryPlannerArrayAggNull:
         assert "FILTER" in sql.upper()
         assert "IS NOT NULL" in sql.upper()
 
-    def test_data_file_with_no_deletes_yields_empty_delete_set(self):
+    def test_data_file_with_no_deletes_yields_empty_delete_set(self) -> None:
         """A data file with no matching deletes must yield FileScanTask with no delete_files."""
         pytest.importorskip("datafusion")
-        from pyiceberg.execution.planning import BoundedMemoryPlanner, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            BoundedMemoryPlanner,
+            _serialize_data_file,
+        )
 
         planner = BoundedMemoryPlanner()
 
@@ -667,10 +676,13 @@ class TestBoundedMemoryPlannerArrayAggNull:
         for task in tasks:
             assert task.delete_files is None or len(task.delete_files) == 0
 
-    def test_data_file_with_deletes_yields_correct_delete_set(self):
+    def test_data_file_with_deletes_yields_correct_delete_set(self) -> None:
         """A data file WITH matching deletes yields FileScanTask with the correct delete files."""
         pytest.importorskip("datafusion")
-        from pyiceberg.execution.planning import BoundedMemoryPlanner, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            BoundedMemoryPlanner,
+            _serialize_data_file,
+        )
 
         planner = BoundedMemoryPlanner()
 
@@ -778,7 +790,7 @@ class TestBoundedMemoryPlannerArrayAggNull:
 class TestEqualityDeletesSupported:
     """Verify equality deletes ARE supported through the pluggable backend's anti_join path."""
 
-    def test_equality_deletes_accepted_by_planner(self):
+    def test_equality_deletes_accepted_by_planner(self) -> None:
         """ManifestGroupPlanner must NOT raise ValueError for equality delete entries."""
         planner = ManifestGroupPlanner(
             table_metadata=MagicMock(),
@@ -802,7 +814,7 @@ class TestEqualityDeletesSupported:
                     pytest.fail(f"ManifestGroupPlanner still rejects equality deletes: {e}")
                 raise
 
-    def test_delete_file_index_sequence_gating_is_gte(self):
+    def test_delete_file_index_sequence_gating_is_gte(self) -> None:
         """Confirm DeleteFileIndex uses >= gating."""
         from pyiceberg.table.delete_file_index import PositionDeletes
 
@@ -817,7 +829,7 @@ class TestEqualityDeletesSupported:
         result = pd.filter_by_seq(5)
         assert len(result) == 2
 
-    def test_orchestrate_scan_handles_equality_deletes_correctly_if_assigned(self):
+    def test_orchestrate_scan_handles_equality_deletes_correctly_if_assigned(self) -> None:
         """The orchestrate_scan equality delete path uses anti_join correctly."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -835,7 +847,7 @@ class TestEqualityDeletesSupported:
 class TestBoundedPlannerDeleteFilesType:
     """Verify FileScanTask.delete_files is always a set, never None."""
 
-    def test_delete_files_is_never_none_for_downstream_len_calls(self):
+    def test_delete_files_is_never_none_for_downstream_len_calls(self) -> None:
         """Verify that len(task.delete_files) never raises TypeError."""
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
@@ -903,36 +915,45 @@ def _make_data_file(
 class TestSerializeDataFile:
     """Serialization must encode DataFile to bytes and deserialize losslessly."""
 
-    def test_serialize_returns_bytes(self):
+    def test_serialize_returns_bytes(self) -> None:
         from pyiceberg.execution.planning import _serialize_data_file
 
         df = _make_data_file()
         result = _serialize_data_file(df)
         assert isinstance(result, bytes)
 
-    def test_serialize_produces_non_empty_bytes(self):
+    def test_serialize_produces_non_empty_bytes(self) -> None:
         from pyiceberg.execution.planning import _serialize_data_file
 
         df = _make_data_file()
         blob = _serialize_data_file(df)
         assert len(blob) > 0
 
-    def test_serialize_preserves_file_path(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_serialize_preserves_file_path(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         df = _make_data_file(file_path="s3://my-bucket/my-table/data/file.parquet")
         restored = _deserialize_data_file(_serialize_data_file(df))
         assert restored.file_path == "s3://my-bucket/my-table/data/file.parquet"
 
-    def test_serialize_preserves_record_count(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_serialize_preserves_record_count(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         df = _make_data_file(record_count=123456)
         restored = _deserialize_data_file(_serialize_data_file(df))
         assert restored.record_count == 123456
 
-    def test_serialize_preserves_lower_upper_bounds(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_serialize_preserves_lower_upper_bounds(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         df = _make_data_file(
             lower_bounds={1: b"\x00\x01\x02\x03"},
@@ -942,8 +963,11 @@ class TestSerializeDataFile:
         assert restored.lower_bounds == {1: b"\x00\x01\x02\x03"}
         assert restored.upper_bounds == {1: b"\xff\xfe\xfd\xfc"}
 
-    def test_serialize_preserves_none_fields(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_serialize_preserves_none_fields(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         df = _make_data_file(key_metadata=None, split_offsets=None, equality_ids=None, sort_order_id=None)
         restored = _deserialize_data_file(_serialize_data_file(df))
@@ -952,29 +976,41 @@ class TestSerializeDataFile:
         assert restored.equality_ids is None
         assert restored.sort_order_id is None
 
-    def test_serialize_preserves_partition_values(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_serialize_preserves_partition_values(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         df = _make_data_file(partition_values=[2024, 6, "US"])
         restored = _deserialize_data_file(_serialize_data_file(df))
         assert list(restored.partition._data) == [2024, 6, "US"]
 
-    def test_serialize_preserves_key_metadata_bytes(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_serialize_preserves_key_metadata_bytes(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         df = _make_data_file(key_metadata=b"\xde\xad\xbe\xef")
         restored = _deserialize_data_file(_serialize_data_file(df))
         assert restored.key_metadata == b"\xde\xad\xbe\xef"
 
-    def test_serialize_preserves_equality_ids(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_serialize_preserves_equality_ids(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         df = _make_data_file(equality_ids=[1, 3, 5])
         restored = _deserialize_data_file(_serialize_data_file(df))
         assert restored.equality_ids == [1, 3, 5]
 
-    def test_serialize_preserves_content_type(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_serialize_preserves_content_type(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         df = _make_data_file(content=DataFileContent.POSITION_DELETES)
         restored = _deserialize_data_file(_serialize_data_file(df))
@@ -984,30 +1020,42 @@ class TestSerializeDataFile:
 class TestDeserializeDataFile:
     """Deserialization must reconstruct a DataFile from JSON bytes."""
 
-    def test_deserialize_returns_data_file(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_deserialize_returns_data_file(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         df = _make_data_file()
         blob = _serialize_data_file(df)
         result = _deserialize_data_file(blob)
         assert isinstance(result, DataFile)
 
-    def test_roundtrip_preserves_file_path(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_roundtrip_preserves_file_path(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(file_path="s3://bucket/prefix/file-00042.parquet")
         restored = _deserialize_data_file(_serialize_data_file(original))
         assert restored.file_path == original.file_path
 
-    def test_roundtrip_preserves_record_count(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_roundtrip_preserves_record_count(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(record_count=999999)
         restored = _deserialize_data_file(_serialize_data_file(original))
         assert restored.record_count == original.record_count
 
-    def test_roundtrip_preserves_bounds(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_roundtrip_preserves_bounds(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(
             lower_bounds={1: b"\x01\x02", 5: b"\xab\xcd"},
@@ -1017,43 +1065,61 @@ class TestDeserializeDataFile:
         assert restored.lower_bounds == {1: b"\x01\x02", 5: b"\xab\xcd"}
         assert restored.upper_bounds == {1: b"\x03\x04", 5: b"\xef\x01"}
 
-    def test_roundtrip_preserves_content_type(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_roundtrip_preserves_content_type(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(content=DataFileContent.EQUALITY_DELETES)
         restored = _deserialize_data_file(_serialize_data_file(original))
         assert restored.content == DataFileContent.EQUALITY_DELETES
 
-    def test_roundtrip_preserves_partition(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_roundtrip_preserves_partition(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(partition_values=[2024, 6])
         restored = _deserialize_data_file(_serialize_data_file(original))
         assert list(restored.partition._data) == [2024, 6]
 
-    def test_roundtrip_preserves_key_metadata(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_roundtrip_preserves_key_metadata(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(key_metadata=b"\xca\xfe\xba\xbe")
         restored = _deserialize_data_file(_serialize_data_file(original))
         assert restored.key_metadata == b"\xca\xfe\xba\xbe"
 
-    def test_roundtrip_preserves_spec_id(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_roundtrip_preserves_spec_id(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(spec_id=7)
         restored = _deserialize_data_file(_serialize_data_file(original))
         assert restored.spec_id == 7
 
-    def test_roundtrip_preserves_column_sizes(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_roundtrip_preserves_column_sizes(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(column_sizes={1: 1024, 2: 2048, 3: 512})
         restored = _deserialize_data_file(_serialize_data_file(original))
         assert restored.column_sizes == {1: 1024, 2: 2048, 3: 512}
 
-    def test_roundtrip_preserves_split_offsets(self):
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+    def test_roundtrip_preserves_split_offsets(self) -> None:
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(split_offsets=[0, 65536, 131072])
         restored = _deserialize_data_file(_serialize_data_file(original))
@@ -1097,7 +1163,7 @@ class TestDataFileSerializationStructuralGuard:
         }
     )
 
-    def test_datafile_property_count_matches_serialization(self):
+    def test_datafile_property_count_matches_serialization(self) -> None:
         """If DataFile gains a new @property, this test fails to alert the developer."""
         from pyiceberg.manifest import DataFile
 
@@ -1114,13 +1180,13 @@ class TestDataFileSerializationStructuralGuard:
             f"pyiceberg/execution/planning.py, then update this test."
         )
 
-    def test_spec_id_setter_works(self):
+    def test_spec_id_setter_works(self) -> None:
         """spec_id must remain settable (not frozen). planning.py depends on this."""
         df = _make_data_file()
         df.spec_id = 42
         assert df.spec_id == 42
 
-    def test_from_args_accepts_all_required_fields(self):
+    def test_from_args_accepts_all_required_fields(self) -> None:
         """DataFile.from_args() must accept the fields used by _deserialize_data_file."""
         from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
         from pyiceberg.typedef import Record
@@ -1147,9 +1213,12 @@ class TestDataFileSerializationStructuralGuard:
         assert result.file_path == "s3://bucket/file.parquet"
         result.spec_id = 0  # Must not raise
 
-    def test_full_roundtrip_all_fields_populated(self):
+    def test_full_roundtrip_all_fields_populated(self) -> None:
         """Full round-trip with ALL fields populated verifies no data loss."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
 
         original = _make_data_file(
             file_path="s3://prod/warehouse/table/data/00042.parquet",
@@ -1190,7 +1259,7 @@ class TestDataFileSerializationStructuralGuard:
         assert restored.sort_order_id == original.sort_order_id
         assert restored.spec_id == original.spec_id
 
-    def test_serialization_uses_pickle_for_zero_maintenance(self):
+    def test_serialization_uses_pickle_for_zero_maintenance(self) -> None:
         """Serialization uses pickle -- automatically stays in sync with DataFile changes."""
         import pickle
 
@@ -1199,10 +1268,10 @@ class TestDataFileSerializationStructuralGuard:
         df = _make_data_file()
         blob = _serialize_data_file(df)
         # Verify it's valid pickle (not JSON or custom format)
-        restored = pickle.loads(blob)  # noqa: S301
+        restored = pickle.loads(blob)
         assert restored.file_path == df.file_path
 
-    def test_deserialize_handles_corrupted_blob(self):
+    def test_deserialize_handles_corrupted_blob(self) -> None:
         """_deserialize_data_file raises on corrupted (non-pickle) data."""
         from pyiceberg.execution.planning import _deserialize_data_file
 
@@ -1213,13 +1282,13 @@ class TestDataFileSerializationStructuralGuard:
 class TestBoundedPlannerNoLookupDicts:
     """After the fix, BoundedMemoryPlanner must NOT hold O(n) lookup dicts."""
 
-    def test_stream_entries_does_not_return_lookup_dicts(self):
+    def test_stream_entries_does_not_return_lookup_dicts(self) -> None:
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         source = inspect.getsource(BoundedMemoryPlanner._stream_entries_to_parquet)
         assert "data_file_lookup" not in source
 
-    def test_parquet_schema_includes_blob_column(self):
+    def test_parquet_schema_includes_blob_column(self) -> None:
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         source = inspect.getsource(BoundedMemoryPlanner._stream_entries_to_parquet)
@@ -1229,19 +1298,19 @@ class TestBoundedPlannerNoLookupDicts:
 class TestPhase3FullyBounded:
     """Phase 3 (_yield_scan_tasks) must be O(batch_size) -- no lookup dicts."""
 
-    def test_yield_scan_tasks_has_no_delete_blob_lookup(self):
+    def test_yield_scan_tasks_has_no_delete_blob_lookup(self) -> None:
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         source = inspect.getsource(BoundedMemoryPlanner._yield_scan_tasks)
         assert "delete_blob_lookup" not in source
 
-    def test_yield_scan_tasks_does_not_read_delete_temp_parquet(self):
+    def test_yield_scan_tasks_does_not_read_delete_temp_parquet(self) -> None:
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         source = inspect.getsource(BoundedMemoryPlanner._yield_scan_tasks)
         assert "delete_dataset" not in source
 
-    def test_assignment_sql_aggregates_delete_blobs(self):
+    def test_assignment_sql_aggregates_delete_blobs(self) -> None:
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         sql = BoundedMemoryPlanner._ASSIGNMENT_SQL
@@ -1257,7 +1326,7 @@ class TestPhase3FullyBounded:
 class TestSerializePartitionKeyNoBareDefaultStr:
     """_serialize_partition_key must NOT use json.dumps(default=str)."""
 
-    def test_no_default_str_in_json_dumps(self):
+    def test_no_default_str_in_json_dumps(self) -> None:
         """Source must not use default=str in actual code (not comments)."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1284,37 +1353,37 @@ class TestSerializePartitionKeyNoBareDefaultStr:
 class TestPartitionKeyDeterministicForIcebergTypes:
     """Partition keys must be deterministic for all Iceberg partition value types."""
 
-    def test_int_value(self):
+    def test_int_value(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         result = _serialize_partition_key(0, Record(42))
         assert json.loads(result) == [0, 42]
 
-    def test_string_value(self):
+    def test_string_value(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         result = _serialize_partition_key(0, Record("us-east-1"))
         assert json.loads(result) == [0, "us-east-1"]
 
-    def test_none_value(self):
+    def test_none_value(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         result = _serialize_partition_key(0, Record(None))
         assert json.loads(result) == [0, None]
 
-    def test_bool_value(self):
+    def test_bool_value(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         result = _serialize_partition_key(0, Record(True))
         assert json.loads(result) == [0, True]
 
-    def test_float_value(self):
+    def test_float_value(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         result = _serialize_partition_key(0, Record(3.14))
         assert json.loads(result) == [0, 3.14]
 
-    def test_bytes_value_is_deterministic(self):
+    def test_bytes_value_is_deterministic(self) -> None:
         """bytes must serialize to a stable hex string."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1322,7 +1391,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         parsed = json.loads(result)
         assert parsed[1] == "010203"
 
-    def test_decimal_value_is_deterministic(self):
+    def test_decimal_value_is_deterministic(self) -> None:
         """Decimal must serialize to a fixed-format string."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1330,7 +1399,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         parsed = json.loads(result)
         assert parsed[1] == "123.45"
 
-    def test_date_value_is_deterministic(self):
+    def test_date_value_is_deterministic(self) -> None:
         """datetime.date must serialize to ISO format string."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1338,7 +1407,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         parsed = json.loads(result)
         assert parsed[1] == "2024-01-15"
 
-    def test_datetime_value_is_deterministic(self):
+    def test_datetime_value_is_deterministic(self) -> None:
         """datetime.datetime must serialize to ISO format string."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1347,7 +1416,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         parsed = json.loads(result)
         assert parsed[1] == "2024-01-15T10:30:00+00:00"
 
-    def test_uuid_value_is_deterministic(self):
+    def test_uuid_value_is_deterministic(self) -> None:
         """UUID must serialize to its standard string form."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1356,7 +1425,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         parsed = json.loads(result)
         assert parsed[1] == "12345678-1234-5678-1234-567812345678"
 
-    def test_unsupported_type_raises_not_silently_converts(self):
+    def test_unsupported_type_raises_not_silently_converts(self) -> None:
         """Unsupported types must raise TypeError."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1366,7 +1435,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         with pytest.raises(TypeError, match="[Ss]erializ|[Uu]nsupported|[Uu]nexpected"):
             _serialize_partition_key(0, Record(UnsupportedType()))
 
-    def test_float_nan_produces_valid_json(self):
+    def test_float_nan_produces_valid_json(self) -> None:
         """float('nan') partition value must produce valid RFC 8259 JSON."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1376,7 +1445,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         assert parsed[0] == 0
         assert parsed[1] == "NaN"  # Stringified, not a bare literal
 
-    def test_float_inf_produces_valid_json(self):
+    def test_float_inf_produces_valid_json(self) -> None:
         """float('inf') partition value must produce valid RFC 8259 JSON."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1385,7 +1454,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         assert parsed[0] == 0
         assert parsed[1] == "Infinity"
 
-    def test_float_neg_inf_produces_valid_json(self):
+    def test_float_neg_inf_produces_valid_json(self) -> None:
         """float('-inf') partition value must produce valid RFC 8259 JSON."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1394,7 +1463,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         assert parsed[0] == 0
         assert parsed[1] == "-Infinity"
 
-    def test_float_nan_is_deterministic(self):
+    def test_float_nan_is_deterministic(self) -> None:
         """Two NaN partition values must produce identical keys (for SQL join equality)."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1402,7 +1471,7 @@ class TestPartitionKeyDeterministicForIcebergTypes:
         key2 = _serialize_partition_key(0, Record(float("nan")))
         assert key1 == key2
 
-    def test_float_nan_distinct_from_string_nan(self):
+    def test_float_nan_distinct_from_string_nan(self) -> None:
         """float('nan') and the string 'NaN' must produce different partition keys."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -1425,13 +1494,13 @@ class TestPartitionKeyDeterministicForIcebergTypes:
 class TestSerializePartitionKeyNoPrivateAccess:
     """_serialize_partition_key must not access partition._data directly."""
 
-    def test_source_does_not_access_underscore_data(self):
+    def test_source_does_not_access_underscore_data(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         source = inspect.getsource(_serialize_partition_key)
         assert "._data" not in source
 
-    def test_uses_public_protocol(self):
+    def test_uses_public_protocol(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         source = inspect.getsource(_serialize_partition_key)
@@ -1444,13 +1513,13 @@ class TestSerializePartitionKeyNoPrivateAccess:
 class TestSerializePartitionKeyCorrectness:
     """_serialize_partition_key produces deterministic, correct keys."""
 
-    def test_none_partition_returns_spec_id_only(self):
+    def test_none_partition_returns_spec_id_only(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         result = _serialize_partition_key(0, None)
         assert result == "0"
 
-    def test_single_field_partition(self):
+    def test_single_field_partition(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         partition = Record(42)
@@ -1458,7 +1527,7 @@ class TestSerializePartitionKeyCorrectness:
         parsed = json.loads(result)
         assert parsed == [1, 42]
 
-    def test_multi_field_partition(self):
+    def test_multi_field_partition(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         partition = Record("us-east-1", "2024-01-15", 7)
@@ -1466,7 +1535,7 @@ class TestSerializePartitionKeyCorrectness:
         parsed = json.loads(result)
         assert parsed == [2, "us-east-1", "2024-01-15", 7]
 
-    def test_null_values_preserved(self):
+    def test_null_values_preserved(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         partition = Record("value", None, 99)
@@ -1474,27 +1543,27 @@ class TestSerializePartitionKeyCorrectness:
         parsed = json.loads(result)
         assert parsed == [0, "value", None, 99]
 
-    def test_deterministic_same_input_same_output(self):
+    def test_deterministic_same_input_same_output(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         partition1 = Record("a", 1)
         partition2 = Record("a", 1)
         assert _serialize_partition_key(0, partition1) == _serialize_partition_key(0, partition2)
 
-    def test_different_partitions_produce_different_keys(self):
+    def test_different_partitions_produce_different_keys(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         p1 = Record("a", 1)
         p2 = Record("b", 1)
         assert _serialize_partition_key(0, p1) != _serialize_partition_key(0, p2)
 
-    def test_different_spec_ids_produce_different_keys(self):
+    def test_different_spec_ids_produce_different_keys(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         partition = Record("x")
         assert _serialize_partition_key(0, partition) != _serialize_partition_key(1, partition)
 
-    def test_string_with_special_chars(self):
+    def test_string_with_special_chars(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         partition = Record("value|with|pipes", "quote'test", "null")
@@ -1502,7 +1571,7 @@ class TestSerializePartitionKeyCorrectness:
         parsed = json.loads(result)
         assert parsed == [0, "value|with|pipes", "quote'test", "null"]
 
-    def test_empty_record(self):
+    def test_empty_record(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         partition = Record()
@@ -1514,11 +1583,11 @@ class TestSerializePartitionKeyCorrectness:
 class TestSerializePartitionKeyFallback:
     """The fallback path (for non-Record partition objects) still produces valid keys."""
 
-    def test_non_record_object_uses_fallback(self):
+    def test_non_record_object_uses_fallback(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class OpaquePartition:
-            def __repr__(self):
+            def __repr__(self) -> None:
                 return "OpaquePartition(x=1, y=2)"
 
         result = _serialize_partition_key(5, OpaquePartition())
@@ -1526,11 +1595,11 @@ class TestSerializePartitionKeyFallback:
         assert 5 in parsed or "5" in result
         assert "OpaquePartition" in result
 
-    def test_fallback_is_still_deterministic(self):
+    def test_fallback_is_still_deterministic(self) -> None:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class StableRepr:
-            def __repr__(self):
+            def __repr__(self) -> None:
                 return "StableRepr(42)"
 
         obj1 = StableRepr()
@@ -1552,7 +1621,7 @@ class TestBoundedMemoryPlannerImportFallback:
     2. Fall back to the in-memory ManifestGroupPlanner (no crash)
     """
 
-    def test_import_error_emits_warning_and_falls_back(self):
+    def test_import_error_emits_warning_and_falls_back(self) -> None:
         """When BoundedMemoryPlanner import fails, warning is emitted and default planner used."""
         import builtins
         import warnings
@@ -1586,7 +1655,7 @@ class TestBoundedMemoryPlannerImportFallback:
         # Block the BoundedMemoryPlanner import
         original_import = builtins.__import__
 
-        def mock_import(name, *args, **kwargs):
+        def mock_import(name, *args, **kwargs) -> None:
             if name == "pyiceberg.execution.planning":
                 raise ImportError("Mocked: datafusion not installed")
             return original_import(name, *args, **kwargs)
@@ -1625,10 +1694,10 @@ class TestBoundedMemoryPlannerRealDataFusion:
     """
 
     @pytest.fixture
-    def _skip_without_datafusion(self):
+    def _skip_without_datafusion(self) -> None:
         pytest.importorskip("datafusion")
 
-    def _make_manifest_entry(self, data_file, sequence_number):
+    def _make_manifest_entry(self, data_file, sequence_number) -> None:
         """Create a minimal ManifestEntry-like object for the planner."""
         entry = MagicMock()
         entry.data_file = data_file
@@ -1636,7 +1705,7 @@ class TestBoundedMemoryPlannerRealDataFusion:
         return entry
 
     @pytest.mark.usefixtures("_skip_without_datafusion")
-    def test_full_pipeline_data_only_no_deletes(self):
+    def test_full_pipeline_data_only_no_deletes(self) -> None:
         """Data files with no delete files yield tasks with empty delete sets."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
@@ -1697,7 +1766,7 @@ class TestBoundedMemoryPlannerRealDataFusion:
             assert task.delete_files is None or len(task.delete_files) == 0
 
     @pytest.mark.usefixtures("_skip_without_datafusion")
-    def test_full_pipeline_with_position_deletes(self):
+    def test_full_pipeline_with_position_deletes(self) -> None:
         """Position deletes (seq >= data.seq) are correctly assigned to data files."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
@@ -1757,7 +1826,7 @@ class TestBoundedMemoryPlannerRealDataFusion:
         assert del_file.file_path == "s3://bucket/deletes/pos-del-001.parquet"
 
     @pytest.mark.usefixtures("_skip_without_datafusion")
-    def test_full_pipeline_equality_delete_sequence_gating(self):
+    def test_full_pipeline_equality_delete_sequence_gating(self) -> None:
         """Equality deletes require strictly greater sequence number (del.seq > data.seq)."""
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 

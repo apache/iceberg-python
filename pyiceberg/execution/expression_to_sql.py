@@ -155,7 +155,7 @@ class _ConvertToSqlExpression(BoundBooleanExpressionVisitor[str]):
         """Extract and quote the column name from a bound term."""
         return _quote_identifier(term.ref().field.name)
 
-    def visit_in(self, term: BoundTerm, literals: set[LiteralValue]) -> str:
+    def visit_in(self, term: BoundTerm, literals: set[LiteralValue]) -> str:  # type: ignore[override]
         # NULL in SQL IN never matches; emit OR col IS NULL for IS NOT DISTINCT FROM semantics.
         unwrapped = {_unwrap_literal(lit) for lit in literals}
         non_null = {val for val in unwrapped if val is not None}
@@ -172,7 +172,7 @@ class _ConvertToSqlExpression(BoundBooleanExpressionVisitor[str]):
         else:
             return "1=0"  # empty set -- no matches
 
-    def visit_not_in(self, term: BoundTerm, literals: set[LiteralValue]) -> str:
+    def visit_not_in(self, term: BoundTerm, literals: set[LiteralValue]) -> str:  # type: ignore[override]
         # NOT IN with NULL returns UNKNOWN for every row; handle with IS NOT NULL.
         unwrapped = {_unwrap_literal(lit) for lit in literals}
         non_null = {val for val in unwrapped if val is not None}

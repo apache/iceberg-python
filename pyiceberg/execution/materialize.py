@@ -71,8 +71,10 @@ def _cleanup_remaining_temp_files() -> None:
                 Path(path).unlink(missing_ok=True)
             except OSError:
                 pass
-    except Exception:
+    except (AttributeError, TypeError):
         # Suppress errors during interpreter shutdown (globals may be None).
+        # AttributeError: _temp_files_lock or Path may be None.
+        # TypeError: Path() may fail if pathlib module is being torn down.
         pass
 
 
@@ -93,7 +95,10 @@ def materialize_to_parquet(table: pa.Table) -> Generator[str, None, None]:
         >>> with materialize_to_parquet(user_df) as tmp_path:
         ...     pass  # file exists here
     """
-    tmp_file = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+    # Use NamedTemporaryFile for cross-platform temp path, then close immediately.
+    # Pattern is intentional: we need the path for pq.write_table, and manually
+    # control cleanup via try/finally.
+    tmp_file = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)  # noqa: SIM115
     tmp_path = tmp_file.name
     tmp_file.close()
 
@@ -118,7 +123,10 @@ def materialize_batches_to_parquet(
     Yields:
         Path to the temporary Parquet file.
     """
-    tmp_file = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+    # Use NamedTemporaryFile for cross-platform temp path, then close immediately.
+    # Pattern is intentional: we need the path for ParquetWriter, and manually
+    # control cleanup via try/finally.
+    tmp_file = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)  # noqa: SIM115
     tmp_path = tmp_file.name
     tmp_file.close()
 

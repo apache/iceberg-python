@@ -43,12 +43,9 @@ Property key conventions (from PyIceberg FileIO):
 from __future__ import annotations
 
 import threading
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pyiceberg.typedef import Properties
+from typing import Any
 
 __all__ = [
     "datafusion_env_vars_from_properties",
@@ -93,7 +90,7 @@ def _scoped_env_vars(env_vars: dict[str, str]) -> Generator[None, None, None]:
                     os.environ[key] = orig_value
 
 
-def datafusion_env_vars_from_properties(io_properties: Properties) -> dict[str, str]:
+def datafusion_env_vars_from_properties(io_properties: Mapping[str, Any]) -> dict[str, str]:
     """Translate PyIceberg io_properties to DataFusion environment variable mappings."""
     env_vars: dict[str, str] = {}
 

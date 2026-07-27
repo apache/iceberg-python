@@ -25,7 +25,10 @@ from unittest.mock import MagicMock, patch
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend, PyArrowReadBackend
+from pyiceberg.execution.backends.pyarrow_backend import (
+    PyArrowComputeBackend,
+    PyArrowReadBackend,
+)
 from pyiceberg.execution.protocol import Backends
 from pyiceberg.expressions import AlwaysTrue
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
@@ -58,7 +61,7 @@ class TestSchemaTypePromotion:
     type promotion case.
     """
 
-    def test_batch_reader_accepts_string_when_schema_expects_large_string(self):
+    def test_batch_reader_accepts_string_when_schema_expects_large_string(self) -> None:
         """RecordBatchReader.from_batches with target_schema handles type promotion.
 
         The new code uses pa.concat_tables(..., promote_options="permissive") for the
@@ -88,7 +91,7 @@ class TestSchemaTypePromotion:
         # Permissive promotion should handle string → large_string
         assert table.num_rows == 2
 
-    def test_to_arrow_via_file_scan_tasks_promotes_types(self):
+    def test_to_arrow_via_file_scan_tasks_promotes_types(self) -> None:
         """Full pipeline: orchestrate_scan returns string, final table has large_string."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
         from pyiceberg.table import _to_arrow_via_file_scan_tasks
@@ -144,7 +147,7 @@ class TestSchemaReconciliationWhenInferenceFails:
     must pass through unchanged (no crash, no data loss).
     """
 
-    def test_batches_pass_through_when_no_name_mapping(self, tmp_path):
+    def test_batches_pass_through_when_no_name_mapping(self, tmp_path) -> None:
         """orchestrate_scan returns batches unchanged when schema inference fails."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -203,7 +206,7 @@ class TestSchemaReconciliationWhenInferenceFails:
         assert result_table.num_rows == 3
         assert sorted(result_table.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_batches_pass_through_when_schema_matches(self, tmp_path):
+    def test_batches_pass_through_when_schema_matches(self, tmp_path) -> None:
         """When file schema matches projected schema, no reconciliation is applied."""
         from pyiceberg.execution._orchestrate import _infer_file_schema_from_batch
 
@@ -227,7 +230,7 @@ class TestSchemaReconciliationWithEvolvedFiles:
     new column. Schema reconciliation must fill NULL for missing columns.
     """
 
-    def test_file_missing_column_gets_null_fill(self, tmp_path):
+    def test_file_missing_column_gets_null_fill(self, tmp_path) -> None:
         """File without 'address' column → read returns available columns without crash.
 
         When the file lacks a projected column, the PyArrow dataset scanner
@@ -300,7 +303,7 @@ class TestSchemaReconciliationWithEvolvedFiles:
         assert "id" in result_table.column_names
         assert "name" in result_table.column_names
 
-    def test_file_with_all_columns_passes_through(self, tmp_path):
+    def test_file_with_all_columns_passes_through(self, tmp_path) -> None:
         """File with all projected columns passes through without modification."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -368,7 +371,7 @@ class TestSchemaInferenceCaching:
     pyarrow_to_schema() calls for files with identical Arrow schemas.
     """
 
-    def test_infer_file_schema_returns_same_result_for_same_arrow_schema(self):
+    def test_infer_file_schema_returns_same_result_for_same_arrow_schema(self) -> None:
         """Two batches with identical Arrow schemas must produce the same Iceberg schema."""
         from pyiceberg.execution._orchestrate import _infer_file_schema_from_batch
 
@@ -406,7 +409,7 @@ class TestSchemaInferenceCaching:
             assert result1.field_ids == result2.field_ids
             assert len(result1.fields) == len(result2.fields)
 
-    def test_cached_schema_avoids_repeated_pyarrow_to_schema_calls(self):
+    def test_cached_schema_avoids_repeated_pyarrow_to_schema_calls(self) -> None:
         """The cache must prevent calling pyarrow_to_schema multiple times for the same Arrow schema."""
         from pyiceberg.execution._orchestrate import _infer_file_schema_from_batch
 
@@ -427,7 +430,7 @@ class TestSchemaInferenceCaching:
         if result1 is not None:
             assert result1 == result2
 
-    def test_cache_keyed_by_schema_identity(self):
+    def test_cache_keyed_by_schema_identity(self) -> None:
         """The cache key must differentiate between different Arrow schemas."""
         from pyiceberg.execution._orchestrate import _infer_file_schema_from_batch
 
@@ -465,7 +468,7 @@ class TestSchemaInferenceCaching:
 class TestSchemaReconciliation:
     """Test schema reconciliation in orchestrate_scan for schema evolution scenarios."""
 
-    def test_schema_evolution_adds_nullable_column(self, tmp_path):
+    def test_schema_evolution_adds_nullable_column(self, tmp_path) -> None:
         """Files written before column addition get NULL-filled projected column."""
 
         from pyiceberg.schema import Schema
@@ -503,10 +506,14 @@ class TestSchemaEvolutionDuringScan:
     where the file schema differs from the projected schema.
     """
 
-    def test_scan_reads_only_available_columns_from_old_file(self, tmp_path):
+    def test_scan_reads_only_available_columns_from_old_file(self, tmp_path) -> None:
         """File with subset of projected columns reads without crashing."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
-        from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend, PyArrowReadBackend, PyArrowWriteBackend
+        from pyiceberg.execution.backends.pyarrow_backend import (
+            PyArrowComputeBackend,
+            PyArrowReadBackend,
+            PyArrowWriteBackend,
+        )
         from pyiceberg.execution.protocol import Backends
         from pyiceberg.expressions import AlwaysTrue
         from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
@@ -565,10 +572,14 @@ class TestSchemaEvolutionDuringScan:
         assert result.column("id").to_pylist() == [1, 2, 3]
         assert result.column("name").to_pylist() == ["a", "b", "c"]
 
-    def test_scan_with_column_subset_projection(self, tmp_path):
+    def test_scan_with_column_subset_projection(self, tmp_path) -> None:
         """Projecting fewer columns than the file has works correctly."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
-        from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend, PyArrowReadBackend, PyArrowWriteBackend
+        from pyiceberg.execution.backends.pyarrow_backend import (
+            PyArrowComputeBackend,
+            PyArrowReadBackend,
+            PyArrowWriteBackend,
+        )
         from pyiceberg.execution.protocol import Backends
         from pyiceberg.expressions import AlwaysTrue
         from pyiceberg.manifest import DataFile, DataFileContent, FileFormat

@@ -25,14 +25,17 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def clear_engine_detection_cache():
+def clear_engine_detection_cache() -> None:
     """Clear the engine detection and config caches before and after each test.
 
     _detect_available_engines and _read_execution_section_from_file are decorated
     with @lru_cache(maxsize=1). Without clearing, tests that mock imports or write
     config files may see stale results from a previous test's cache population.
     """
-    from pyiceberg.execution.engine import _detect_available_engines, _read_execution_section_from_file
+    from pyiceberg.execution.engine import (
+        _detect_available_engines,
+        _read_execution_section_from_file,
+    )
 
     _detect_available_engines.cache_clear()
     _read_execution_section_from_file.cache_clear()
@@ -42,7 +45,7 @@ def clear_engine_detection_cache():
 
 
 @pytest.fixture(autouse=True)
-def isolate_from_filesystem_config(monkeypatch, tmp_path):
+def isolate_from_filesystem_config(monkeypatch, tmp_path) -> None:
     """Isolate tests from user's .pyiceberg.yaml configuration.
 
     Without this fixture, a developer who has execution.compute-backend set in

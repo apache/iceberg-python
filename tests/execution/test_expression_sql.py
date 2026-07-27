@@ -57,7 +57,7 @@ class TestExpressionToSqlInWithNull:
     exercise the SQL visitor directly to validate the NULL-handling branches.
     """
 
-    def test_visit_in_with_null_produces_or_is_null(self):
+    def test_visit_in_with_null_produces_or_is_null(self) -> None:
         """visit_in with {1, 2, None} produces: ("id" IN (1, 2) OR "id" IS NULL)."""
         from pyiceberg.execution.expression_to_sql import _ConvertToSqlExpression
 
@@ -79,7 +79,7 @@ class TestExpressionToSqlInWithNull:
         # Must be an OR combination
         assert "OR" in sql, f"Expected OR for NULL handling, got: {sql}"
 
-    def test_visit_in_without_null_does_not_produce_is_null(self):
+    def test_visit_in_without_null_does_not_produce_is_null(self) -> None:
         """visit_in with {1, 2, 3} (no NULL) produces plain IN without IS NULL."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import In
@@ -98,7 +98,7 @@ class TestExpressionToSqlInWithNull:
         assert "IS NULL" not in sql, f"IN without NULL should not produce IS NULL clause, got: {sql}"
         assert "IN" in sql
 
-    def test_visit_in_with_only_null_produces_is_null(self):
+    def test_visit_in_with_only_null_produces_is_null(self) -> None:
         """visit_in with {None} produces just: "id" IS NULL."""
         from pyiceberg.execution.expression_to_sql import _ConvertToSqlExpression
 
@@ -117,7 +117,7 @@ class TestExpressionToSqlInWithNull:
         # Should NOT have "IN (" since there are no non-null values
         assert "IN (" not in sql, f"IN with only NULL should not have IN clause, got: {sql}"
 
-    def test_visit_not_in_with_null_produces_is_not_null(self):
+    def test_visit_not_in_with_null_produces_is_not_null(self) -> None:
         """visit_not_in with {2, None} produces: ("id" NOT IN (2) AND "id" IS NOT NULL)."""
         from pyiceberg.execution.expression_to_sql import _ConvertToSqlExpression
 
@@ -263,47 +263,47 @@ class TestLiteralToSqlAllTypes:
     datetime, time, and None. Each must produce valid DataFusion SQL.
     """
 
-    def test_bool_true(self):
+    def test_bool_true(self) -> None:
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(True) == "TRUE"
 
-    def test_bool_false(self):
+    def test_bool_false(self) -> None:
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(False) == "FALSE"
 
-    def test_int(self):
+    def test_int(self) -> None:
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(42) == "42"
 
-    def test_negative_int(self):
+    def test_negative_int(self) -> None:
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(-7) == "-7"
 
-    def test_float(self):
+    def test_float(self) -> None:
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(3.14) == "3.14"
 
-    def test_string(self):
+    def test_string(self) -> None:
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql("hello") == "'hello'"
 
-    def test_string_with_quote(self):
+    def test_string_with_quote(self) -> None:
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql("it's") == "'it''s'"
 
-    def test_bytes(self):
+    def test_bytes(self) -> None:
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(b"\x01\x02\x03") == "X'010203'"
 
-    def test_uuid(self):
+    def test_uuid(self) -> None:
         from uuid import UUID
 
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
@@ -311,21 +311,21 @@ class TestLiteralToSqlAllTypes:
         result = _literal_to_sql(UUID("12345678-1234-5678-1234-567812345678"))
         assert result == "'12345678-1234-5678-1234-567812345678'"
 
-    def test_decimal(self):
+    def test_decimal(self) -> None:
         from decimal import Decimal
 
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(Decimal("123.456")) == "123.456"
 
-    def test_date(self):
+    def test_date(self) -> None:
         import datetime
 
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(datetime.date(2024, 6, 15)) == "DATE '2024-06-15'"
 
-    def test_datetime(self):
+    def test_datetime(self) -> None:
         import datetime
 
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
@@ -333,14 +333,14 @@ class TestLiteralToSqlAllTypes:
         result = _literal_to_sql(datetime.datetime(2024, 6, 15, 10, 30, 0))
         assert result == "TIMESTAMP '2024-06-15T10:30:00'"
 
-    def test_time(self):
+    def test_time(self) -> None:
         import datetime
 
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(datetime.time(14, 30, 0)) == "TIME '14:30:00'"
 
-    def test_none(self):
+    def test_none(self) -> None:
         from pyiceberg.execution.expression_to_sql import _literal_to_sql
 
         assert _literal_to_sql(None) == "NULL"

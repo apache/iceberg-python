@@ -33,7 +33,7 @@ __all__ = ["PyArrowComputeBackend", "PyArrowReadBackend", "PyArrowWriteBackend"]
 import logging
 import os
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NewType
 
@@ -134,7 +134,7 @@ def _get_scanner_batch_readahead() -> int:
 # =============================================================================
 
 
-def _resolve_filesystem(location: str, io_properties: Properties) -> tuple[Any, str]:
+def _resolve_filesystem(location: str, io_properties: Mapping[str, Any]) -> tuple[Any, str]:
     """Resolve a PyArrow FileSystem and path from a location URI and io_properties.
 
     Reuses PyArrowFileIO's filesystem construction to ensure credential handling
@@ -155,14 +155,17 @@ def _resolve_filesystem(location: str, io_properties: Properties) -> tuple[Any, 
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
-    scheme, netloc, path = PyArrowFileIO.parse_location(location, io_properties)
+    # Convert Mapping to dict for PyArrowFileIO which expects dict
+    props_dict = dict(io_properties) if io_properties else {}
+
+    scheme, netloc, path = PyArrowFileIO.parse_location(location, props_dict)
 
     # Local filesystem: "file" scheme, or single-char scheme on Windows (drive letter, e.g., "c").
     if scheme == "file" or (len(scheme) == 1 and scheme.isalpha()):
         return LocalFileSystem(), os.path.abspath(location)
 
     # Cloud or remote filesystem — use PyArrowFileIO's credential resolution.
-    file_io = PyArrowFileIO(properties=io_properties)
+    file_io = PyArrowFileIO(properties=props_dict)
     fs = file_io.fs_by_scheme(scheme, netloc)
     return fs, path
 
@@ -174,13 +177,20 @@ def _resolve_filesystem(location: str, io_properties: Properties) -> tuple[Any, 
 
 def _extract_parquet_statistics(
     metadata_collector: list[pq.FileMetaData],
-) -> tuple[dict[int, int], dict[int, int], dict[int, int], dict[int, bytes], dict[int, bytes], list[int]]:
+) -> tuple[
+    dict[_ColumnIndex, int],
+    dict[_ColumnIndex, int],
+    dict[_ColumnIndex, int],
+    dict[_ColumnIndex, bytes],
+    dict[_ColumnIndex, bytes],
+    list[int],
+]:
     """Extract column statistics from Parquet FileMetaData collected during writes."""
-    column_sizes: dict[int, int] = {}
-    value_counts: dict[int, int] = {}
-    null_value_counts: dict[int, int] = {}
-    lower_bounds: dict[int, bytes] = {}
-    upper_bounds: dict[int, bytes] = {}
+    column_sizes: dict[_ColumnIndex, int] = {}
+    value_counts: dict[_ColumnIndex, int] = {}
+    null_value_counts: dict[_ColumnIndex, int] = {}
+    lower_bounds: dict[_ColumnIndex, bytes] = {}
+    upper_bounds: dict[_ColumnIndex, bytes] = {}
     split_offsets: list[int] = []
 
     for file_metadata in metadata_collector:
@@ -190,20 +200,20 @@ def _extract_parquet_statistics(
                 split_offsets.append(rg.column(0).data_page_offset)
             for col_idx in range(rg.num_columns):
                 col = rg.column(col_idx)
-                column_sizes[col_idx] = column_sizes.get(col_idx, 0) + col.total_compressed_size
-                value_counts[col_idx] = value_counts.get(col_idx, 0) + col.num_values
-                if col.statistics and col.statistics.has_null_count:
-                    null_value_counts[col_idx] = null_value_counts.get(col_idx, 0) + col.statistics.null_count
+                idx = _ColumnIndex(col_idx)
+                column_sizes[idx] = column_sizes.get(idx, 0) + col.total_compressed_size
+                value_counts[idx] = value_counts.get(idx, 0) + col.num_values
+                # pyarrow-stubs doesn't have has_null_count yet; it exists in pyarrow
+                if col.statistics and col.statistics.has_null_count:  # type: ignore[attr-defined]
+                    null_value_counts[idx] = null_value_counts.get(idx, 0) + col.statistics.null_count  # type: ignore[operator]
                 if col.statistics and col.statistics.has_min_max:
                     try:
                         min_val = col.statistics.min_raw
                         max_val = col.statistics.max_raw
-                        if min_val is not None:
-                            if col_idx not in lower_bounds or min_val < lower_bounds[col_idx]:
-                                lower_bounds[col_idx] = min_val
-                        if max_val is not None:
-                            if col_idx not in upper_bounds or max_val > upper_bounds[col_idx]:
-                                upper_bounds[col_idx] = max_val
+                        if min_val is not None and (idx not in lower_bounds or min_val < lower_bounds[idx]):
+                            lower_bounds[idx] = min_val
+                        if max_val is not None and (idx not in upper_bounds or max_val > upper_bounds[idx]):
+                            upper_bounds[idx] = max_val
                     except (TypeError, AttributeError):
                         pass
 
@@ -223,7 +233,7 @@ class PyArrowReadBackend:
         location: str,
         projected_schema: Schema,
         row_filter: BooleanExpression,
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         dictionary_columns: tuple[str, ...] = (),
     ) -> Iterator[pa.RecordBatch]:
         """Read Parquet with projection and optional filter pushdown."""
@@ -319,7 +329,7 @@ class PyArrowWriteBackend:
             output_stream,
             schema=schema,
             store_decimal_as_integer=True,
-            compression=config.compression,
+            compression=config.compression,  # type: ignore[arg-type]  # pyarrow accepts any valid codec
             compression_level=config.compression_level,
             data_page_size=config.data_page_size,
             dictionary_pagesize_limit=config.dictionary_pagesize_limit,
@@ -421,6 +431,7 @@ class PyArrowWriteBackend:
 
         def _open_new() -> None:
             nonlocal current_writer, current_path, current_rows, current_size, current_metadata_collector, pa_schema
+            assert pa_schema is not None  # Set from first batch before this is called
             file_name = f"{uuid.uuid4()}.parquet"
             if "://" in base_location:
                 current_path = f"{base_location.rstrip('/')}/{file_name}"
@@ -438,6 +449,7 @@ class PyArrowWriteBackend:
                 pa_schema = batch.schema
             if current_writer is None:
                 _open_new()
+            assert current_writer is not None  # Set by _open_new()
             current_writer.write_batch(batch)
             current_rows += batch.num_rows
             current_size += batch.nbytes
@@ -480,7 +492,7 @@ class PyArrowComputeBackend:
         self,
         file_paths: list[str],
         sort_keys: SortKeyList,
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """Sort data from Parquet files (materializes in memory)."""
@@ -524,7 +536,7 @@ class PyArrowComputeBackend:
         left_paths: list[str],
         right_paths: list[str],
         on: list[str],
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """LEFT ANTI JOIN from Parquet files (materializes in memory)."""
@@ -556,7 +568,7 @@ class PyArrowComputeBackend:
         data_path: str,
         position_delete_paths: list[str],
         projected_schema: Schema,
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """Read a data file and exclude rows at positions listed in delete files."""
@@ -572,7 +584,7 @@ def _apply_positional_deletes_impl(
     data_path: str,
     position_delete_paths: list[str],
     projected_schema: Schema | None = None,
-    io_properties: Properties | None = None,
+    io_properties: Mapping[str, Any] | None = None,
 ) -> Iterator[pa.RecordBatch]:
     """Apply positional deletes by filtering out rows at specified positions.
 
@@ -583,7 +595,7 @@ def _apply_positional_deletes_impl(
         io_properties: Storage credentials for cloud paths. When None, uses
             PyArrow's default filesystem resolution (environment-based).
     """
-    _props: Properties = io_properties if io_properties is not None else {}
+    _props: dict[str, Any] = dict(io_properties) if io_properties is not None else {}
 
     # Read positions to delete, filtering to entries for THIS data file.
     positions_to_delete: set[int] = set()
@@ -594,7 +606,10 @@ def _apply_positional_deletes_impl(
         scanner = del_dataset.scanner(columns=["pos"], filter=file_path_filter)
         for batch in scanner.to_batches():
             if batch.num_rows > 0:
-                positions_to_delete.update(batch.column("pos").to_pylist())
+                # Iceberg position delete files always have int64 pos column; None values
+                # would be spec-violation but we filter them defensively.
+                pos_values = (p for p in batch.column("pos").to_pylist() if p is not None)
+                positions_to_delete.update(pos_values)
 
     # Determine column projection.
     columns: list[str] | None = None
@@ -759,7 +774,7 @@ def _multi_column_anti_join(
         return left.filter(mask)
 
 
-def _any_null_mask(table: pa.Table, on: list[str]) -> pa.ChunkedArray:
+def _any_null_mask(table: pa.Table, on: list[str]) -> Any:
     """Return a boolean mask that is True for rows with ANY null in the join columns."""
     masks = [pc.is_null(table.column(col)) for col in on]
     result = masks[0]
@@ -777,14 +792,16 @@ _KEY_SEPARATOR = "\x1e\x1f"
 _NULL_SENTINEL = "\x00\x01NULL\x01\x00"
 
 
-def _build_composite_key_nonnull(table: pa.Table, on: list[str]) -> pa.ChunkedArray:
+def _build_composite_key_nonnull(table: pa.Table, on: list[str]) -> Any:
     """Build composite string key for rows guaranteed to have no NULLs in join columns.
 
     Uses a two-byte control character separator (0x1E 0x1F) that cannot appear in
     valid text data. A runtime check validates no values contain the separator to
     guarantee collision-free encoding.
+
+    Returns a ChunkedArray of strings (type Any due to pyarrow-stubs limitations).
     """
-    str_cols: list[pa.ChunkedArray] = []
+    str_cols: list[Any] = []
     for col_name in on:
         col = table.column(col_name)
         if not pa.types.is_string(col.type) and not pa.types.is_large_string(col.type):
@@ -805,27 +822,29 @@ def _build_composite_key_nonnull(table: pa.Table, on: list[str]) -> pa.ChunkedAr
                     "SQL-based anti-join which handles arbitrary column values."
                 )
 
-    result = str_cols[0]
+    result: Any = str_cols[0]
     for str_col in str_cols[1:]:
         result = pc.binary_join_element_wise(result, str_col, _KEY_SEPARATOR)
     return result
 
 
-def _build_composite_key_null_safe(table: pa.Table, on: list[str]) -> pa.ChunkedArray:
+def _build_composite_key_null_safe(table: pa.Table, on: list[str]) -> Any:
     """Build composite string key with NULL sentinel replacement for IS NOT DISTINCT FROM.
 
     Uses a two-byte control character separator (0x1E 0x1F) that cannot appear in
     valid text data. A runtime check validates no values contain the separator to
     guarantee collision-free encoding.
+
+    Returns a ChunkedArray of strings (type Any due to pyarrow-stubs limitations).
     """
-    str_cols: list[pa.ChunkedArray] = []
+    str_cols: list[Any] = []
     # Keep pre-sentinel versions for separator validation (sentinel doesn't contain
     # the separator, so we must validate against the original non-null values).
-    raw_str_cols: list[pa.ChunkedArray] = []
+    raw_str_cols: list[Any] = []
     for col_name in on:
         col = table.column(col_name)
         if not pa.types.is_string(col.type) and not pa.types.is_large_string(col.type):
-            str_col = pc.cast(col, pa.string())
+            str_col: Any = pc.cast(col, pa.string())
         else:
             str_col = col
         raw_str_cols.append(str_col)
@@ -847,7 +866,7 @@ def _build_composite_key_null_safe(table: pa.Table, on: list[str]) -> pa.Chunked
                     "SQL-based anti-join which handles arbitrary column values."
                 )
 
-    result = str_cols[0]
+    result: Any = str_cols[0]
     for str_col in str_cols[1:]:
         result = pc.binary_join_element_wise(result, str_col, _KEY_SEPARATOR)
     return result

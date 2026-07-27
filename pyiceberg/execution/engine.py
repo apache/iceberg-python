@@ -354,7 +354,12 @@ def build_backends(io_properties: Properties, operation: str = "scan", **overrid
         >>> backends.compute.supports_bounded_memory
         False
     """
-    from pyiceberg.execution.protocol import Backends, ComputeBackend, ReadBackend, WriteBackend
+    from pyiceberg.execution.protocol import (
+        Backends,
+        ComputeBackend,
+        ReadBackend,
+        WriteBackend,
+    )
 
     read_override = overrides.get("read")
     write_override = overrides.get("write")

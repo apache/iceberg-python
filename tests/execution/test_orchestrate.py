@@ -36,12 +36,19 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend, PyArrowReadBackend
+from pyiceberg.execution.backends.pyarrow_backend import (
+    PyArrowComputeBackend,
+    PyArrowReadBackend,
+)
 from pyiceberg.execution.protocol import Backends
 from pyiceberg.expressions import AlwaysTrue, EqualTo
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.schema import Schema
-from pyiceberg.table import FileScanTask, _to_arrow_batch_reader_via_file_scan_tasks, _to_arrow_via_file_scan_tasks
+from pyiceberg.table import (
+    FileScanTask,
+    _to_arrow_batch_reader_via_file_scan_tasks,
+    _to_arrow_via_file_scan_tasks,
+)
 from pyiceberg.types import IntegerType, NestedField, StringType
 
 # =============================================================================
@@ -56,7 +63,7 @@ class ObservableReadBackend:
     routes through the pluggable backend (not ArrowScan or any other path).
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._delegate = PyArrowReadBackend()
         self.calls: list[dict] = []
 
@@ -81,35 +88,35 @@ class ObservableComputeBackend:
     proving the orchestration dispatches correctly to the compute backend.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._delegate = PyArrowComputeBackend()
         self.calls: list[dict] = []
 
     @property
-    def supports_bounded_memory(self):
+    def supports_bounded_memory(self) -> None:
         return False
 
-    def sort(self, data, sort_keys, memory_limit=None):
+    def sort(self, data, sort_keys, memory_limit=None) -> None:
         self.calls.append({"method": "sort", "sort_keys": sort_keys})
         return self._delegate.sort(data, sort_keys, memory_limit)
 
-    def sort_from_files(self, file_paths, sort_keys, io_properties, memory_limit=None):
+    def sort_from_files(self, file_paths, sort_keys, io_properties, memory_limit=None) -> None:
         self.calls.append({"method": "sort_from_files", "file_paths": file_paths})
         return self._delegate.sort_from_files(file_paths, sort_keys, io_properties, memory_limit)
 
-    def anti_join(self, left, right, on, memory_limit=None):
+    def anti_join(self, left, right, on, memory_limit=None) -> None:
         self.calls.append({"method": "anti_join", "on": on})
         return self._delegate.anti_join(left, right, on, memory_limit)
 
-    def anti_join_from_files(self, left_paths, right_paths, on, io_properties, memory_limit=None):
+    def anti_join_from_files(self, left_paths, right_paths, on, io_properties, memory_limit=None) -> None:
         self.calls.append({"method": "anti_join_from_files", "on": on, "left_paths": left_paths})
         return self._delegate.anti_join_from_files(left_paths, right_paths, on, io_properties, memory_limit)
 
-    def filter(self, data, predicate):
+    def filter(self, data, predicate) -> None:
         self.calls.append({"method": "filter", "predicate": predicate})
         return self._delegate.filter(data, predicate)
 
-    def apply_positional_deletes(self, data_path, position_delete_paths, projected_schema, io_properties, memory_limit=None):
+    def apply_positional_deletes(self, data_path, position_delete_paths, projected_schema, io_properties, memory_limit=None) -> None:
         self.calls.append({"method": "apply_positional_deletes", "data_path": data_path})
         return self._delegate.apply_positional_deletes(
             data_path, position_delete_paths, projected_schema, io_properties, memory_limit
@@ -117,7 +124,7 @@ class ObservableComputeBackend:
 
 
 @pytest.fixture
-def schema():
+def schema() -> None:
     return Schema(
         NestedField(field_id=1, name="id", field_type=IntegerType(), required=True),
         NestedField(field_id=2, name="name", field_type=StringType(), required=False),
@@ -125,7 +132,7 @@ def schema():
 
 
 @pytest.fixture
-def observable_backends():
+def observable_backends() -> None:
     """Create backends with observable read and compute."""
     read = ObservableReadBackend()
     compute = ObservableComputeBackend()
@@ -139,7 +146,7 @@ class TestScanDispatchesThroughPluggableBackend:
     and verify they are called. This survives any refactoring.
     """
 
-    def test_scan_calls_read_backend_for_plain_read(self, tmp_path, schema, observable_backends):
+    def test_scan_calls_read_backend_for_plain_read(self, tmp_path, schema, observable_backends) -> None:
         """orchestrate_scan calls ReadBackend.read_parquet for tasks without deletes."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -181,7 +188,7 @@ class TestScanDispatchesThroughPluggableBackend:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_scan_calls_apply_positional_deletes_for_pos_tasks(self, tmp_path, schema, observable_backends):
+    def test_scan_calls_apply_positional_deletes_for_pos_tasks(self, tmp_path, schema, observable_backends) -> None:
         """orchestrate_scan correctly resolves positional deletes for pos delete tasks."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -230,7 +237,7 @@ class TestScanDispatchesThroughPluggableBackend:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [1, 3, 4, 5]
 
-    def test_scan_calls_anti_join_for_equality_deletes(self, tmp_path, schema, observable_backends):
+    def test_scan_calls_anti_join_for_equality_deletes(self, tmp_path, schema, observable_backends) -> None:
         """orchestrate_scan calls ComputeBackend.anti_join_from_files for equality delete tasks."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -284,7 +291,7 @@ class TestScanDispatchesThroughPluggableBackend:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [1, 3, 5]
 
-    def test_scan_calls_both_pos_and_eq_for_combined_deletes(self, tmp_path, schema, observable_backends):
+    def test_scan_calls_both_pos_and_eq_for_combined_deletes(self, tmp_path, schema, observable_backends) -> None:
         """orchestrate_scan resolves both positional and equality deletes for combined tasks."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -343,7 +350,7 @@ class TestScanDispatchesThroughPluggableBackend:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [2, 3, 5]
 
-    def test_scan_calls_filter_for_residual(self, tmp_path, schema, observable_backends):
+    def test_scan_calls_filter_for_residual(self, tmp_path, schema, observable_backends) -> None:
         """orchestrate_scan calls ComputeBackend.filter when task has non-trivial residual."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
         from pyiceberg.expressions.visitors import bind
@@ -393,7 +400,7 @@ class TestScanDispatchesThroughPluggableBackend:
 class TestToArrowDispatchesThroughBackends:
     """Behavioral proof: _to_arrow_via_file_scan_tasks routes through Backends.resolve."""
 
-    def test_to_arrow_resolves_backends_and_orchestrates(self, tmp_path, schema):
+    def test_to_arrow_resolves_backends_and_orchestrates(self, tmp_path, schema) -> None:
         """_to_arrow_via_file_scan_tasks calls Backends.resolve and passes result to orchestrate_scan."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -414,7 +421,7 @@ class TestToArrowDispatchesThroughBackends:
 
         resolve_called_with = {}
 
-        def tracking_resolve(cls_or_props, **kwargs):
+        def tracking_resolve(cls_or_props, **kwargs) -> None:
             # Backends.resolve is called as classmethod
             if isinstance(cls_or_props, dict):
                 props = cls_or_props
@@ -447,9 +454,12 @@ class TestToArrowDispatchesThroughBackends:
 class TestSchemaInferenceFailureLogging:
     """_build_reconcile_fn must log when schema inference fails."""
 
-    def test_logs_debug_when_schema_inference_returns_none(self, caplog):
+    def test_logs_debug_when_schema_inference_returns_none(self, caplog) -> None:
         """When _infer_file_schema_from_batch returns None, a debug message must be logged."""
-        from pyiceberg.execution._orchestrate import _NO_RECONCILIATION, _build_reconcile_fn
+        from pyiceberg.execution._orchestrate import (
+            _NO_RECONCILIATION,
+            _build_reconcile_fn,
+        )
 
         projected_schema = Schema(
             NestedField(1, "id", IntegerType(), required=True),
@@ -469,9 +479,8 @@ class TestSchemaInferenceFailureLogging:
         with patch(
             "pyiceberg.execution._orchestrate._infer_file_schema_from_batch",
             return_value=None,
-        ):
-            with caplog.at_level(logging.DEBUG, logger="pyiceberg.execution._orchestrate"):
-                result = _build_reconcile_fn(batch, projected_schema, mock_metadata, False)
+        ), caplog.at_level(logging.DEBUG, logger="pyiceberg.execution._orchestrate"):
+            result = _build_reconcile_fn(batch, projected_schema, mock_metadata, False)
 
         # Should return _NO_RECONCILIATION (correct behavior -- no error)
         assert result is _NO_RECONCILIATION
@@ -483,9 +492,12 @@ class TestSchemaInferenceFailureLogging:
             "breaking the non-error fast path."
         )
 
-    def test_no_log_when_schema_inference_succeeds(self, caplog):
+    def test_no_log_when_schema_inference_succeeds(self, caplog) -> None:
         """When schema inference succeeds and no reconciliation needed, no warning logged."""
-        from pyiceberg.execution._orchestrate import _NO_RECONCILIATION, _build_reconcile_fn
+        from pyiceberg.execution._orchestrate import (
+            _NO_RECONCILIATION,
+            _build_reconcile_fn,
+        )
 
         projected_schema = Schema(
             NestedField(1, "id", IntegerType(), required=True),
@@ -501,18 +513,20 @@ class TestSchemaInferenceFailureLogging:
         with patch(
             "pyiceberg.execution._orchestrate._infer_file_schema_from_batch",
             return_value=projected_schema,
-        ):
-            with caplog.at_level(logging.DEBUG, logger="pyiceberg.execution._orchestrate"):
-                result = _build_reconcile_fn(batch, projected_schema, mock_metadata, False)
+        ), caplog.at_level(logging.DEBUG, logger="pyiceberg.execution._orchestrate"):
+            result = _build_reconcile_fn(batch, projected_schema, mock_metadata, False)
 
         assert result is _NO_RECONCILIATION
         # No schema inference failure log
         schema_inference_logs = [r for r in caplog.records if "schema inference" in r.message.lower()]
         assert len(schema_inference_logs) == 0
 
-    def test_no_log_when_reconciliation_is_needed(self, caplog):
+    def test_no_log_when_reconciliation_is_needed(self, caplog) -> None:
         """When schema inference succeeds and reconciliation IS needed, no inference-failure log."""
-        from pyiceberg.execution._orchestrate import _NO_RECONCILIATION, _build_reconcile_fn
+        from pyiceberg.execution._orchestrate import (
+            _NO_RECONCILIATION,
+            _build_reconcile_fn,
+        )
 
         projected_schema = Schema(
             NestedField(1, "id", IntegerType(), required=True),
@@ -563,7 +577,7 @@ class TestSchemaInferenceFailureLogging:
 class TestCountFastPath:
     """DataScan.count() must use file metadata for tasks without deletes."""
 
-    def test_count_without_deletes_uses_record_count(self):
+    def test_count_without_deletes_uses_record_count(self) -> None:
         """Tasks with AlwaysTrue residual and no deletes → use metadata record_count."""
         mock_data_file = MagicMock()
         mock_data_file.record_count = 1000
@@ -601,7 +615,7 @@ class TestCountFastPath:
             )
             assert metadata_count == 1000
 
-    def test_count_with_deletes_calls_read_path(self):
+    def test_count_with_deletes_calls_read_path(self) -> None:
         """Tasks with delete files must go through the read path (orchestrate_scan)."""
         mock_data_file = MagicMock()
         mock_data_file.record_count = 1000
@@ -625,7 +639,7 @@ class TestCountFastPath:
         assert len(fast_path_tasks) == 0, "Task with deletes should NOT be on fast path"
         assert len(slow_path_tasks) == 1, "Task with deletes must go through slow path"
 
-    def test_count_mixed_tasks(self):
+    def test_count_mixed_tasks(self) -> None:
         """Mix of fast-path and slow-path tasks: both contribute to final count."""
         # Fast-path task: no deletes, AlwaysTrue residual
         fast_file = MagicMock()
@@ -657,7 +671,7 @@ class TestCountFastPath:
 class TestSortOnWriteBehavioral:
     """Behavioral tests for _apply_sort_order: verifies actual data transformation."""
 
-    def test_no_sort_when_table_has_no_sort_order(self):
+    def test_no_sort_when_table_has_no_sort_order(self) -> None:
         """When table has no sort order, _apply_sort_order returns input unchanged."""
         from pyiceberg.table import Transaction
 
@@ -676,7 +690,7 @@ class TestSortOnWriteBehavioral:
 
         assert result is input_table, "No sort order → input returned unchanged"
 
-    def test_no_sort_when_backend_cannot_spill(self):
+    def test_no_sort_when_backend_cannot_spill(self) -> None:
         """When backend lacks bounded memory, _apply_sort_order skips sort."""
         from pyiceberg.table import Transaction
 
@@ -695,7 +709,7 @@ class TestSortOnWriteBehavioral:
 
         assert result is input_table, "No bounded memory → sort skipped, input unchanged"
 
-    def test_sort_applied_when_backend_can_spill(self):
+    def test_sort_applied_when_backend_can_spill(self) -> None:
         """When backend supports bounded memory, _apply_sort_order produces sorted output."""
         from pyiceberg.table import Transaction
 
@@ -729,7 +743,7 @@ class TestSortOnWriteBehavioral:
 class TestConftestIsolationIsOverridable:
     """The autouse fixture isolates from filesystem config but can be overridden."""
 
-    def test_can_override_pyiceberg_home_in_test(self, tmp_path, monkeypatch):
+    def test_can_override_pyiceberg_home_in_test(self, tmp_path, monkeypatch) -> None:
         """Tests CAN set PYICEBERG_HOME explicitly to test config-file-based behavior."""
         # The conftest autouse fixture sets PYICEBERG_HOME to a temp dir.
         # This test shows you can override it within a test using monkeypatch.
@@ -748,7 +762,7 @@ class TestConftestIsolationIsOverridable:
         assert isinstance(exec_section, dict)
         assert exec_section.get("compute-backend") == "pyarrow"
 
-    def test_without_override_config_is_empty(self, tmp_path, monkeypatch):
+    def test_without_override_config_is_empty(self, tmp_path, monkeypatch) -> None:
         """Without explicit override, the conftest fixture ensures no config is found."""
         # The conftest autouse already sets PYICEBERG_HOME to tmp_path (which has no yaml)
         from pyiceberg.utils.config import Config
@@ -765,7 +779,7 @@ class TestConftestIsolationIsOverridable:
 
 
 @pytest.fixture
-def simple_schema():
+def simple_schema() -> None:
     return Schema(
         NestedField(1, "id", IntegerType(), required=True),
         NestedField(2, "name", StringType(), required=False),
@@ -773,7 +787,7 @@ def simple_schema():
 
 
 @pytest.fixture
-def sample_batches(simple_schema):
+def sample_batches(simple_schema) -> None:
     """Sample RecordBatches with schema matching what schema_to_pyarrow produces."""
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -794,7 +808,7 @@ def sample_batches(simple_schema):
 class TestScanDispatchesViaBackends:
     """Verify _to_arrow_via_file_scan_tasks calls Backends.resolve and orchestrate_scan."""
 
-    def test_to_arrow_calls_backends_resolve(self, simple_schema, sample_batches):
+    def test_to_arrow_calls_backends_resolve(self, simple_schema, sample_batches) -> None:
         """_to_arrow_via_file_scan_tasks must call Backends.resolve(io.properties)."""
         mock_scan = MagicMock()
         mock_scan._backends = None  # No cached backends → falls through to resolve()
@@ -816,7 +830,7 @@ class TestScanDispatchesViaBackends:
 
         mock_resolve.assert_called_once_with(mock_scan.io.properties)
 
-    def test_to_arrow_calls_orchestrate_scan(self, simple_schema, sample_batches):
+    def test_to_arrow_calls_orchestrate_scan(self, simple_schema, sample_batches) -> None:
         """_to_arrow_via_file_scan_tasks must route through orchestrate_scan."""
         mock_scan = MagicMock()
         mock_scan._backends = None  # No cached backends → falls through to resolve()
@@ -841,7 +855,7 @@ class TestScanDispatchesViaBackends:
         call_kwargs = mock_orchestrate.call_args[1]
         assert call_kwargs["backends"] is mock_backends
 
-    def test_to_arrow_applies_limit(self, simple_schema, sample_batches):
+    def test_to_arrow_applies_limit(self, simple_schema, sample_batches) -> None:
         """When scan.limit is set, the result table must be sliced."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()
@@ -862,7 +876,7 @@ class TestScanDispatchesViaBackends:
 
         assert len(result) == 2
 
-    def test_to_arrow_no_limit_returns_all(self, simple_schema, sample_batches):
+    def test_to_arrow_no_limit_returns_all(self, simple_schema, sample_batches) -> None:
         """Without limit, all rows are returned."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()
@@ -887,7 +901,7 @@ class TestScanDispatchesViaBackends:
 class TestBatchReaderDispatchesViaBackends:
     """Verify _to_arrow_batch_reader_via_file_scan_tasks routes through backends."""
 
-    def test_batch_reader_calls_backends_resolve(self, simple_schema, sample_batches):
+    def test_batch_reader_calls_backends_resolve(self, simple_schema, sample_batches) -> None:
         """_to_arrow_batch_reader_via_file_scan_tasks must call Backends.resolve."""
         mock_scan = MagicMock()
         mock_scan._backends = None  # No cached backends → falls through to resolve()
@@ -909,7 +923,7 @@ class TestBatchReaderDispatchesViaBackends:
 
         mock_resolve.assert_called_once_with(mock_scan.io.properties)
 
-    def test_batch_reader_returns_record_batch_reader(self, simple_schema, sample_batches):
+    def test_batch_reader_returns_record_batch_reader(self, simple_schema, sample_batches) -> None:
         """Result must be a pa.RecordBatchReader."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()
@@ -930,7 +944,7 @@ class TestBatchReaderDispatchesViaBackends:
 
         assert isinstance(result, pa.RecordBatchReader)
 
-    def test_batch_reader_streams_all_rows(self, simple_schema, sample_batches):
+    def test_batch_reader_streams_all_rows(self, simple_schema, sample_batches) -> None:
         """Reading all batches from the reader produces all original rows."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()
@@ -956,7 +970,7 @@ class TestBatchReaderDispatchesViaBackends:
 class TestBatchReaderCastsToTargetSchema:
     """Verify _to_arrow_batch_reader_via_file_scan_tasks applies .cast(target_schema)."""
 
-    def test_batch_reader_handles_string_to_large_string_promotion(self, simple_schema):
+    def test_batch_reader_handles_string_to_large_string_promotion(self, simple_schema) -> None:
         """Batches with string type should be promoted to large_string by .cast()."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -991,7 +1005,7 @@ class TestBatchReaderCastsToTargetSchema:
         assert len(table) == 2
         assert table.schema.field("name").type == pa.large_string()
 
-    def test_batch_reader_output_schema_matches_target(self, simple_schema):
+    def test_batch_reader_output_schema_matches_target(self, simple_schema) -> None:
         """The reader's output schema must always match the projected schema exactly."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -1026,7 +1040,7 @@ class TestBatchReaderCastsToTargetSchema:
 class TestDeleteCoWRoutesViaBackends:
     """Verify Transaction.delete CoW path uses the pluggable backend."""
 
-    def test_arrowscan_emits_deprecation_warning(self):
+    def test_arrowscan_emits_deprecation_warning(self) -> None:
         """Directly instantiating ArrowScan must emit a DeprecationWarning."""
         from pyiceberg.io.pyarrow import ArrowScan
 
@@ -1056,7 +1070,7 @@ class TestGetEqualityFieldNamesDroppedColumns:
     """_get_equality_field_names must warn and return [] when equality field IDs
     reference columns dropped via schema evolution."""
 
-    def test_equality_ids_referencing_dropped_columns_returns_empty_with_warning(self):
+    def test_equality_ids_referencing_dropped_columns_returns_empty_with_warning(self) -> None:
         """When equality_ids point to fields no longer in the schema, return [] and warn."""
         from unittest.mock import MagicMock
 
@@ -1087,7 +1101,7 @@ class TestGetEqualityFieldNamesDroppedColumns:
         assert "10" in str(w[0].message)
         assert "20" in str(w[0].message)
 
-    def test_equality_ids_none_returns_none_no_warning(self):
+    def test_equality_ids_none_returns_none_no_warning(self) -> None:
         """When equality_ids is None (not set on delete files), return None without warning.
 
         None distinguishes 'metadata absent' from 'IDs present but columns dropped' ([]).
@@ -1118,7 +1132,7 @@ class TestGetEqualityFieldNamesDroppedColumns:
 class TestPositionalDeletesZeroMatchingPositions:
     """apply_positional_deletes must return all data rows when no positions match."""
 
-    def test_no_matching_positions_returns_all_rows(self, tmp_path):
+    def test_no_matching_positions_returns_all_rows(self, tmp_path) -> None:
         """When delete file has positions for a DIFFERENT data file, all rows survive."""
         import pyarrow.parquet as pq
 
@@ -1163,7 +1177,7 @@ class TestPositionalDeletesZeroMatchingPositions:
         assert result.num_rows == 5
         assert result.column("id").to_pylist() == [1, 2, 3, 4, 5]
 
-    def test_empty_delete_file_returns_all_rows(self, tmp_path):
+    def test_empty_delete_file_returns_all_rows(self, tmp_path) -> None:
         """When the position delete file has zero rows, all data rows survive."""
         import pyarrow.parquet as pq
 
@@ -1203,7 +1217,7 @@ class TestPositionalDeletesZeroMatchingPositions:
 class TestBoundedMemoryPlannerEmptyManifests:
     """BoundedMemoryPlanner must handle empty manifest lists gracefully."""
 
-    def test_empty_manifests_yields_no_tasks(self, tmp_path):
+    def test_empty_manifests_yields_no_tasks(self, tmp_path) -> None:
         """When manifests list is empty, plan_files yields nothing without error."""
         pytest.importorskip("datafusion")
         from unittest.mock import MagicMock

@@ -49,7 +49,10 @@ import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.execution._orchestrate import orchestrate_scan
-from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend, PyArrowReadBackend
+from pyiceberg.execution.backends.pyarrow_backend import (
+    PyArrowComputeBackend,
+    PyArrowReadBackend,
+)
 from pyiceberg.execution.protocol import Backends
 from pyiceberg.expressions import AlwaysTrue
 from pyiceberg.manifest import DataFileContent, ManifestEntry
@@ -166,7 +169,7 @@ def _make_data_file(file_path: str, spec_id: int = 0) -> MagicMock:
 class TestEqualityDeleteBasic:
     """Basic equality delete: single-column anti-join excludes matching rows."""
 
-    def test_single_column_equality_delete(self, tmp_path):
+    def test_single_column_equality_delete(self, tmp_path) -> None:
         """Rows where id matches equality delete values are excluded."""
         # Data file: ids [1, 2, 3, 4, 5]
         data_table = pa.table({"id": [1, 2, 3, 4, 5], "value": ["a", "b", "c", "d", "e"]})
@@ -207,7 +210,7 @@ class TestEqualityDeleteBasic:
         surviving_ids = sorted(result.column("id").to_pylist())
         assert surviving_ids == [1, 3, 5], f"Expected [1,3,5] after deleting ids 2,4. Got {surviving_ids}"
 
-    def test_equality_delete_no_matches_returns_all(self, tmp_path):
+    def test_equality_delete_no_matches_returns_all(self, tmp_path) -> None:
         """When delete values don't match any data rows, all rows survive."""
         data_table = pa.table({"id": [1, 2, 3], "name": ["x", "y", "z"]})
         data_path = str(tmp_path / "data.parquet")
@@ -245,7 +248,7 @@ class TestEqualityDeleteBasic:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_equality_delete_all_rows_returns_empty(self, tmp_path):
+    def test_equality_delete_all_rows_returns_empty(self, tmp_path) -> None:
         """When all data rows match the delete, result is empty."""
         data_table = pa.table({"id": [1, 2], "name": ["a", "b"]})
         data_path = str(tmp_path / "data.parquet")
@@ -288,7 +291,7 @@ class TestEqualityDeleteBasic:
 class TestEqualityDeleteNullSemantics:
     """IS NOT DISTINCT FROM: NULL in data matches NULL in delete file."""
 
-    def test_null_matches_null_single_column(self, tmp_path):
+    def test_null_matches_null_single_column(self, tmp_path) -> None:
         """Per Iceberg spec §5.5.2: NULL matches NULL in equality delete resolution."""
         # Data file: id=1, id=NULL, id=3
         data_table = pa.table(
@@ -339,7 +342,7 @@ class TestEqualityDeleteNullSemantics:
 class TestEqualityDeleteMultiColumn:
     """Multi-column equality delete: composite key anti-join."""
 
-    def test_two_column_composite_key(self, tmp_path):
+    def test_two_column_composite_key(self, tmp_path) -> None:
         """Both columns must match for a row to be deleted (AND semantics)."""
         data_table = pa.table(
             {
@@ -391,7 +394,7 @@ class TestEqualityDeleteMultiColumn:
 class TestEqualityDeleteMissingEqualityIds:
     """When equality_ids is not set on delete files, a warning is emitted and data is returned as-is."""
 
-    def test_missing_equality_ids_warns_and_returns_superset(self, tmp_path):
+    def test_missing_equality_ids_warns_and_returns_superset(self, tmp_path) -> None:
         """Delete files without equality_ids emit UserWarning and don't filter."""
         data_table = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]})
         data_path = str(tmp_path / "data.parquet")
@@ -448,7 +451,7 @@ class TestEqualityDeleteAcceptance:
     so they can be assigned to FileScanTasks for the orchestrator to process.
     """
 
-    def test_planner_does_not_raise_on_equality_deletes(self):
+    def test_planner_does_not_raise_on_equality_deletes(self) -> None:
         """ManifestGroupPlanner must NOT raise ValueError for equality delete entries."""
         from unittest.mock import MagicMock, patch
 
@@ -491,7 +494,7 @@ class TestIncludeFieldIdsFalseIsIntentional:
     INTENTIONAL and correct. Users care about column names and data types.
     """
 
-    def test_to_arrow_batch_reader_schema_has_no_field_ids(self):
+    def test_to_arrow_batch_reader_schema_has_no_field_ids(self) -> None:
         """The batch reader output schema must NOT contain PARQUET:field_id metadata."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
         from pyiceberg.schema import Schema
@@ -513,7 +516,7 @@ class TestIncludeFieldIdsFalseIsIntentional:
                 f"User-facing output should not include internal Iceberg field IDs."
             )
 
-    def test_output_schema_preserves_column_names(self):
+    def test_output_schema_preserves_column_names(self) -> None:
         """Column names must be preserved in the user-facing schema."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
         from pyiceberg.schema import Schema
@@ -527,7 +530,7 @@ class TestIncludeFieldIdsFalseIsIntentional:
         arrow_schema = schema_to_pyarrow(schema, include_field_ids=False)
         assert arrow_schema.names == ["user_id", "email"]
 
-    def test_output_schema_preserves_data_types(self):
+    def test_output_schema_preserves_data_types(self) -> None:
         """Data types must be preserved in the user-facing schema."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
         from pyiceberg.schema import Schema
@@ -544,7 +547,7 @@ class TestIncludeFieldIdsFalseIsIntentional:
         assert arrow_schema.field("name").type == pa.large_string()
         assert arrow_schema.field("score").type == pa.float64()
 
-    def test_include_field_ids_true_does_include_metadata(self):
+    def test_include_field_ids_true_does_include_metadata(self) -> None:
         """Verify that include_field_ids=True DOES include metadata (for internal use)."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
         from pyiceberg.schema import Schema
@@ -648,7 +651,7 @@ class TestEqualityDeleteSequenceNumberGating:
         result = index.for_data_file(3, data_entry.data_file)
         assert len(result) == 1
 
-    def test_mixed_equality_and_position_with_same_seq(self):
+    def test_mixed_equality_and_position_with_same_seq(self) -> None:
         """With both delete types at same seq as data, only position applies."""
         index = DeleteFileIndex()
 
@@ -666,7 +669,7 @@ class TestEqualityDeleteSequenceNumberGating:
         assert "pos_del.parquet" in paths, "Position delete with same seq should apply"
         assert "eq_del.parquet" not in paths, "Equality delete with same seq must NOT apply"
 
-    def test_multiple_equality_deletes_different_seqs(self):
+    def test_multiple_equality_deletes_different_seqs(self) -> None:
         """Only equality deletes with seq STRICTLY GREATER than data apply."""
         index = DeleteFileIndex()
 
@@ -820,7 +823,7 @@ class TestPositionDeleteSequenceGating:
 class TestMixedDeleteTypes:
     """Verify correct gating when both position and equality deletes exist."""
 
-    def test_mixed_at_same_sequence_only_position_applies(self):
+    def test_mixed_at_same_sequence_only_position_applies(self) -> None:
         """At same seq: position delete applies, equality delete does NOT."""
         index = DeleteFileIndex()
 

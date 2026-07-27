@@ -28,7 +28,11 @@ import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.execution._orchestrate import orchestrate_scan
-from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend, PyArrowReadBackend, _apply_positional_deletes_impl
+from pyiceberg.execution.backends.pyarrow_backend import (
+    PyArrowComputeBackend,
+    PyArrowReadBackend,
+    _apply_positional_deletes_impl,
+)
 from pyiceberg.execution.protocol import Backends
 from pyiceberg.expressions import AlwaysTrue
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
@@ -38,7 +42,7 @@ from pyiceberg.types import IntegerType, NestedField, StringType
 
 
 @pytest.fixture
-def table_schema():
+def table_schema() -> None:
     return Schema(
         NestedField(field_id=1, name="id", field_type=IntegerType(), required=True),
         NestedField(field_id=2, name="name", field_type=StringType(), required=False),
@@ -82,12 +86,14 @@ class TestDataFusionPositionalDeleteBasic:
     """Verify DataFusion positional delete produces correct survivors."""
 
     @pytest.fixture(autouse=True)
-    def _skip_if_no_datafusion(self):
+    def _skip_if_no_datafusion(self) -> None:
         pytest.importorskip("datafusion")
 
-    def test_deletes_correct_rows(self, data_file, pos_delete_file):
+    def test_deletes_correct_rows(self, data_file, pos_delete_file) -> None:
         """Rows at positions 2, 5, 7 are excluded; others survive."""
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField, StringType
 
@@ -111,9 +117,11 @@ class TestDataFusionPositionalDeleteBasic:
         # Positions 2, 5, 7 → ids 2, 5, 7 are removed
         assert ids == [0, 1, 3, 4, 6, 8, 9]
 
-    def test_no_deletes_returns_all_rows(self, tmp_path, data_file):
+    def test_no_deletes_returns_all_rows(self, tmp_path, data_file) -> None:
         """Position delete file with no entries for this data file returns all rows."""
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField, StringType
 
@@ -147,9 +155,11 @@ class TestDataFusionPositionalDeleteBasic:
         result = pa.Table.from_batches(batches)
         assert result.num_rows == 10
 
-    def test_all_rows_deleted_returns_empty(self, tmp_path, data_file):
+    def test_all_rows_deleted_returns_empty(self, tmp_path, data_file) -> None:
         """Deleting all positions produces zero output rows."""
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField, StringType
 
@@ -182,9 +192,11 @@ class TestDataFusionPositionalDeleteBasic:
         total_rows = sum(b.num_rows for b in batches)
         assert total_rows == 0
 
-    def test_multiple_delete_files_combined(self, tmp_path, data_file):
+    def test_multiple_delete_files_combined(self, tmp_path, data_file) -> None:
         """Multiple position delete files are combined correctly."""
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField, StringType
 
@@ -233,9 +245,11 @@ class TestDataFusionPositionalDeleteBasic:
     @pytest.mark.skipif(
         os.name == "nt", reason="DataFusion temp file operations at 100K row scale exceed test timeout on Windows."
     )
-    def test_large_position_set_bounded_memory(self, tmp_path):
+    def test_large_position_set_bounded_memory(self, tmp_path) -> None:
         """Many positions: DataFusion handles within memory_limit (no Python set)."""
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField
 
@@ -275,9 +289,11 @@ class TestDataFusionPositionalDeleteBasic:
         expected = list(range(1, num_rows, 2))
         assert result.column("id").to_pylist() == expected
 
-    def test_parity_with_pyarrow_implementation(self, data_file, pos_delete_file):
+    def test_parity_with_pyarrow_implementation(self, data_file, pos_delete_file) -> None:
         """DataFusion and PyArrow produce identical survivors."""
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField, StringType
@@ -315,7 +331,7 @@ class TestDataFusionPositionalDeleteBasic:
         assert sorted(pa_result.column("id").to_pylist()) == sorted(df_result.column("id").to_pylist())
         assert sorted(pa_result.column("name").to_pylist()) == sorted(df_result.column("name").to_pylist())
 
-    def test_streaming_write_does_not_materialize_full_file(self, tmp_path):
+    def test_streaming_write_does_not_materialize_full_file(self, tmp_path) -> None:
         """Verify the temp file approach: data is written via streaming, not to_table().
 
         The implementation streams the data file batch-by-batch to a temp Parquet
@@ -323,7 +339,9 @@ class TestDataFusionPositionalDeleteBasic:
         DataFusion. This test verifies correctness of the streaming path by using
         a multi-row-group file (which produces multiple batches from the scanner).
         """
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField, StringType
 
@@ -384,12 +402,14 @@ class TestDataFusionPositionalDeleteBasic:
         for pos in positions:
             assert pos not in surviving_ids
 
-    def test_temp_file_cleaned_up_after_operation(self, tmp_path, data_file, pos_delete_file):
+    def test_temp_file_cleaned_up_after_operation(self, tmp_path, data_file, pos_delete_file) -> None:
         """Temp file used for streaming is cleaned up even on success."""
         import glob
         import tempfile
 
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField, StringType
 
@@ -417,14 +437,16 @@ class TestDataFusionPositionalDeleteBasic:
         new_files = after - before
         assert len(new_files) == 0, f"Temp file(s) not cleaned up: {new_files}"
 
-    def test_wide_table_only_projects_requested_columns(self, tmp_path):
+    def test_wide_table_only_projects_requested_columns(self, tmp_path) -> None:
         """A wide table (many columns) only reads/outputs the projected columns.
 
         Verifies that the temp Parquet file contains only projected columns + pos,
         not all columns from the source file. This prevents unnecessary I/O and
         memory usage for wide tables where only a few columns are needed.
         """
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField, StringType
 
@@ -492,7 +514,7 @@ class TestPositionalDeleteMultiFileScoping:
     data files. Only entries matching the current data file's path should be applied.
     """
 
-    def test_position_delete_file_with_entries_for_multiple_data_files(self, tmp_path):
+    def test_position_delete_file_with_entries_for_multiple_data_files(self, tmp_path) -> None:
         """Only positions referencing THIS file are applied; others are ignored."""
         # Data file A: id=[1, 2, 3]
         data_path_a = str(tmp_path / "data_a.parquet")
@@ -524,7 +546,7 @@ class TestPositionalDeleteMultiFileScoping:
         result_b = pa.Table.from_batches(list(_apply_positional_deletes_impl(data_path_b, [del_path])))
         assert sorted(result_b.column("id").to_pylist()) == [4, 6]
 
-    def test_position_delete_all_entries_for_other_file(self, tmp_path):
+    def test_position_delete_all_entries_for_other_file(self, tmp_path) -> None:
         """If delete file has no entries for this file, all rows survive."""
         # Data file A: id=[1, 2, 3]
         data_path_a = str(tmp_path / "data_a.parquet")
@@ -550,7 +572,7 @@ class TestPositionalDeleteMultiFileScoping:
         result = pa.Table.from_batches(list(_apply_positional_deletes_impl(data_path_a, [del_path])))
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_position_delete_multiple_files_same_positions(self, tmp_path):
+    def test_position_delete_multiple_files_same_positions(self, tmp_path) -> None:
         """Different data files can have positions deleted at the same index."""
         # Data file A: id=[10, 20, 30]
         data_path_a = str(tmp_path / "data_a.parquet")
@@ -580,7 +602,7 @@ class TestPositionalDeleteMultiFileScoping:
         result_b = pa.Table.from_batches(list(_apply_positional_deletes_impl(data_path_b, [del_path])))
         assert sorted(result_b.column("id").to_pylist()) == [50, 60]
 
-    def test_position_delete_mixed_entries_large_file(self, tmp_path):
+    def test_position_delete_mixed_entries_large_file(self, tmp_path) -> None:
         """Position delete file with many entries for many files -- only this file's applied."""
         # Create a data file with 10 rows
         data_path = str(tmp_path / "target.parquet")
@@ -605,7 +627,7 @@ class TestPositionalDeleteMultiFileScoping:
         expected = [0, 1, 2, 4, 5, 6, 8, 9]
         assert sorted(result.column("id").to_pylist()) == expected
 
-    def test_via_compute_backend_interface(self, tmp_path, table_schema):
+    def test_via_compute_backend_interface(self, tmp_path, table_schema) -> None:
         """Same multi-file scoping works through the PyArrowComputeBackend interface."""
         data_path_a = str(tmp_path / "data_a.parquet")
         pq.write_table(pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]}), data_path_a)
@@ -637,7 +659,7 @@ class TestPositionalDeleteMultiFileScoping:
 
 
 @pytest.fixture
-def data_file_path(tmp_path, table_schema):
+def data_file_path(tmp_path, table_schema) -> None:
     """Write a 5-row data file: id=[1,2,3,4,5], name=["a","b","c","d","e"]."""
     path = str(tmp_path / "data.parquet")
     table = pa.table({"id": [1, 2, 3, 4, 5], "name": ["a", "b", "c", "d", "e"]})
@@ -646,7 +668,7 @@ def data_file_path(tmp_path, table_schema):
 
 
 @pytest.fixture
-def pos_delete_path(tmp_path, data_file_path):
+def pos_delete_path(tmp_path, data_file_path) -> None:
     """Position delete file: removes rows at positions 1 and 3 (id=2, id=4)."""
     path = str(tmp_path / "pos_delete.parquet")
     table = pa.table(
@@ -660,7 +682,7 @@ def pos_delete_path(tmp_path, data_file_path):
 
 
 @pytest.fixture
-def eq_delete_path(tmp_path):
+def eq_delete_path(tmp_path) -> None:
     """Equality delete file: removes rows where id=3."""
     path = str(tmp_path / "eq_delete.parquet")
     table = pa.table({"id": [3]})
@@ -669,7 +691,7 @@ def eq_delete_path(tmp_path):
 
 
 @pytest.fixture
-def backends():
+def backends() -> None:
     """PyArrow-only backends for deterministic testing."""
     return Backends(
         read=PyArrowReadBackend(),
@@ -680,7 +702,7 @@ def backends():
 
 
 @pytest.fixture
-def table_metadata(table_schema):
+def table_metadata(table_schema) -> None:
     """Minimal table metadata mock with schema and specs."""
     metadata = MagicMock()
     metadata.schema.return_value = table_schema
@@ -690,7 +712,7 @@ def table_metadata(table_schema):
     return metadata
 
 
-def _make_file_scan_task(data_path, pos_del_path, eq_del_path):
+def _make_file_scan_task(data_path, pos_del_path, eq_del_path) -> None:
     """Construct a FileScanTask with both positional and equality delete files."""
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
@@ -733,7 +755,7 @@ class TestCombinedPositionalAndEqualityDeletes:
 
     def test_both_delete_types_produce_correct_survivors(
         self, data_file_path, pos_delete_path, eq_delete_path, backends, table_metadata, table_schema
-    ):
+    ) -> None:
         """Combined pos+eq deletes yield exactly the correct surviving rows."""
         task = _make_file_scan_task(data_file_path, pos_delete_path, eq_delete_path)
 
@@ -758,7 +780,7 @@ class TestCombinedPositionalAndEqualityDeletes:
             f"Expected [1, 5] after positional (remove pos 1,3 → id=2,4) and equality (remove id=3) deletes. Got {surviving_ids}"
         )
 
-    def test_positional_deletes_applied_before_equality(self, tmp_path, backends, table_metadata, table_schema):
+    def test_positional_deletes_applied_before_equality(self, tmp_path, backends, table_metadata, table_schema) -> None:
         """Positional deletes reference ORIGINAL positions, not post-equality positions.
 
         If equality were applied first (removing id=3 at pos 2), the remaining rows
@@ -807,7 +829,7 @@ class TestCombinedPositionalAndEqualityDeletes:
         # eq removes id=30. Final survivors: [20, 40, 50]
         assert surviving_ids == [20, 40, 50]
 
-    def test_combined_deletes_with_null_equality_values(self, tmp_path, backends, table_metadata, table_schema):
+    def test_combined_deletes_with_null_equality_values(self, tmp_path, backends, table_metadata, table_schema) -> None:
         """NULL in equality delete file matches NULL in data via IS NOT DISTINCT FROM."""
         # Data: id=[1, None, 3, None, 5]
         data_path = str(tmp_path / "data_null.parquet")
@@ -859,7 +881,7 @@ class TestCombinedPositionalAndEqualityDeletes:
         # Verify no NULLs remain
         assert None not in result_table.column("id").to_pylist()
 
-    def test_combined_deletes_empty_positional_file(self, tmp_path, backends, table_metadata, table_schema):
+    def test_combined_deletes_empty_positional_file(self, tmp_path, backends, table_metadata, table_schema) -> None:
         """If positional delete file has no matching positions, all rows pass to equality phase."""
         # Data: id=[1, 2, 3]
         data_path = str(tmp_path / "data_empty_pos.parquet")
@@ -900,7 +922,7 @@ class TestCombinedPositionalAndEqualityDeletes:
         # No positional deletes applied. Equality removes id=2. Survivors: [1, 3]
         assert surviving_ids == [1, 3]
 
-    def test_combined_deletes_equality_schema_differs_from_projected(self, tmp_path, backends, table_metadata):
+    def test_combined_deletes_equality_schema_differs_from_projected(self, tmp_path, backends, table_metadata) -> None:
         """Equality delete file is read with its OWN schema, not the projected schema.
 
         This regression test verifies the fix for _chain_read_batches → _read_equality_delete_batches:
@@ -966,7 +988,7 @@ class TestCombinedPositionalAndEqualityDeletes:
         # pos removes position 4 (id=5). eq removes id=2. Survivors: [1, 3, 4]
         assert surviving_ids == [1, 3, 4]
 
-    def test_combined_deletes_multiple_equality_delete_files(self, tmp_path, backends, table_metadata, table_schema):
+    def test_combined_deletes_multiple_equality_delete_files(self, tmp_path, backends, table_metadata, table_schema) -> None:
         """Multiple equality delete files are chained correctly."""
         # Data: id=[1, 2, 3, 4, 5, 6]
         data_path = str(tmp_path / "data_multi.parquet")
@@ -1044,7 +1066,7 @@ class TestCombinedPositionalAndEqualityDeletes:
         # pos removes position 0 (id=1). eq removes id=3 and id=5. Survivors: [2, 4, 6]
         assert surviving_ids == [2, 4, 6]
 
-    def test_combined_deletes_multi_file_position_delete(self, tmp_path, backends, table_metadata, table_schema):
+    def test_combined_deletes_multi_file_position_delete(self, tmp_path, backends, table_metadata, table_schema) -> None:
         """Position delete file referencing MULTIPLE data files, combined with equality.
 
         Verifies that positions from OTHER data files are NOT applied to the current task,
@@ -1131,7 +1153,7 @@ class TestCombinedPositionalAndEqualityDeletes:
 class TestEqualityDeleteSchemaEvolution:
     """Regression: equality deletes with field IDs dropped via schema evolution."""
 
-    def test_equality_delete_with_evolved_away_field_warns(self, tmp_path, backends):
+    def test_equality_delete_with_evolved_away_field_warns(self, tmp_path, backends) -> None:
         """equality_ids referencing dropped fields emit a warning and skip anti-join."""
         # Current schema: only has "id" (field_id=1). Field 2 ("name") was dropped.
         current_schema = Schema(
@@ -1194,7 +1216,7 @@ class TestEqualityDeleteSchemaEvolution:
         result_table = pa.Table.from_batches(results)
         assert sorted(result_table.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_equality_delete_with_null_values_is_not_distinct_from(self, tmp_path, backends):
+    def test_equality_delete_with_null_values_is_not_distinct_from(self, tmp_path, backends) -> None:
         """NULL in equality delete file correctly matches NULL in data file."""
         schema = Schema(
             NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
@@ -1264,7 +1286,7 @@ class TestEqualityDeleteSchemaEvolution:
 class TestCoWDeleteEdgeCases:
     """Regression guards for CoW delete edge cases."""
 
-    def test_cow_delete_skips_empty_record_count_files(self, tmp_path):
+    def test_cow_delete_skips_empty_record_count_files(self, tmp_path) -> None:
         """Files with record_count=0 in metadata are skipped without I/O."""
         # Create a mock file scan task with record_count=0
         data_file = DataFile.from_args(

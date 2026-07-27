@@ -50,7 +50,7 @@ class TestSortedReaderTempFileCleanup:
     These tests cover the basic happy-path lifecycle.
     """
 
-    def test_cleanup_on_full_exhaustion(self, tmp_path):
+    def test_cleanup_on_full_exhaustion(self, tmp_path) -> None:
         """Temp file is cleaned up after reader is fully consumed."""
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
         from pyiceberg.execution.materialize import materialize_to_parquet
@@ -68,10 +68,13 @@ class TestSortedReaderTempFileCleanup:
         result = reader.read_all()
         assert result.column("id").to_pylist() == [1, 2, 3]
 
-    def test_cleanup_guard_on_abandoned_reader(self, tmp_path):
+    def test_cleanup_guard_on_abandoned_reader(self, tmp_path) -> None:
         """Temp file is cleaned up via __del__ when reader is GC'd without exhaustion."""
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
-        from pyiceberg.execution.materialize import _active_temp_files, materialize_to_parquet
+        from pyiceberg.execution.materialize import (
+            _active_temp_files,
+            materialize_to_parquet,
+        )
 
         table = pa.table({"id": [3, 1, 2], "val": ["c", "a", "b"]})
         schema = table.schema
@@ -108,7 +111,7 @@ class TestExpressionToSqlBoundPredicates:
     """Verify expression_to_sql works with real bound expressions (not just AlwaysTrue)."""
 
     @pytest.fixture
-    def schema(self):
+    def schema(self) -> None:
         """Schema for binding expressions."""
         from pyiceberg.schema import Schema
         from pyiceberg.types import IntegerType, NestedField
@@ -118,7 +121,7 @@ class TestExpressionToSqlBoundPredicates:
             NestedField(field_id=2, name="name", field_type=StringType(), required=False),
         )
 
-    def test_bound_equal_to(self, schema):
+    def test_bound_equal_to(self, schema) -> None:
         """BoundEqualTo produces correct SQL: 'col = value'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import EqualTo
@@ -130,7 +133,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"id" = 42' in sql
 
-    def test_bound_greater_than(self, schema):
+    def test_bound_greater_than(self, schema) -> None:
         """BoundGreaterThan produces correct SQL: 'col > value'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import GreaterThan
@@ -142,7 +145,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"id" > 10' in sql
 
-    def test_bound_less_than_or_equal(self, schema):
+    def test_bound_less_than_or_equal(self, schema) -> None:
         """BoundLessThanOrEqual produces correct SQL: 'col <= value'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import LessThanOrEqual
@@ -154,7 +157,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"id" <= 99' in sql
 
-    def test_bound_is_null(self, schema):
+    def test_bound_is_null(self, schema) -> None:
         """BoundIsNull produces correct SQL: 'col IS NULL'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import IsNull
@@ -166,7 +169,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"name" IS NULL' in sql
 
-    def test_bound_not_null(self, schema):
+    def test_bound_not_null(self, schema) -> None:
         """BoundNotNull produces correct SQL: 'col IS NOT NULL'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import NotNull
@@ -178,7 +181,7 @@ class TestExpressionToSqlBoundPredicates:
 
         assert '"id" IS NOT NULL' in sql
 
-    def test_bound_in_set(self, schema):
+    def test_bound_in_set(self, schema) -> None:
         """BoundIn produces correct SQL: 'col IN (values)'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import In
@@ -193,7 +196,7 @@ class TestExpressionToSqlBoundPredicates:
         assert "2" in sql
         assert "3" in sql
 
-    def test_bound_starts_with(self, schema):
+    def test_bound_starts_with(self, schema) -> None:
         """BoundStartsWith produces correct SQL with LIKE and ESCAPE."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import StartsWith
@@ -207,7 +210,7 @@ class TestExpressionToSqlBoundPredicates:
         assert "pre" in sql
         assert "ESCAPE" in sql
 
-    def test_bound_and_or_compound(self, schema):
+    def test_bound_and_or_compound(self, schema) -> None:
         """Compound AND/OR expressions produce correct SQL."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import And, EqualTo, GreaterThan, Or
@@ -223,7 +226,7 @@ class TestExpressionToSqlBoundPredicates:
         assert "'alice'" in sql
         assert "'bob'" in sql
 
-    def test_string_with_special_chars(self, schema):
+    def test_string_with_special_chars(self, schema) -> None:
         """String literals with quotes are properly escaped."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import EqualTo
@@ -245,7 +248,7 @@ class TestExpressionToSqlBoundPredicates:
 class TestMultiColumnAntiJoinStructArray:
     """Verify multi-column anti-join uses O(n+m) struct approach without warnings."""
 
-    def test_large_multi_column_no_warning(self):
+    def test_large_multi_column_no_warning(self) -> None:
         """Multi-column anti-join with many right rows emits no warning (O(n+m) now)."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -272,7 +275,7 @@ class TestMultiColumnAntiJoinStructArray:
         # All left rows should be preserved (no match in right)
         assert sum(b.num_rows for b in result) == 3
 
-    def test_multi_column_correctness_with_nulls(self):
+    def test_multi_column_correctness_with_nulls(self) -> None:
         """Multi-column anti-join correctly handles NULLs with IS NOT DISTINCT FROM."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -304,9 +307,12 @@ class TestMultiColumnAntiJoinStructArray:
 class TestConfigCacheInvalidation:
     """Verify clear_config_cache() resets cached config state."""
 
-    def test_clear_config_cache_resets_engine_detection(self):
+    def test_clear_config_cache_resets_engine_detection(self) -> None:
         """After clear_config_cache(), engine detection re-probes imports."""
-        from pyiceberg.execution.engine import _detect_available_engines, clear_config_cache
+        from pyiceberg.execution.engine import (
+            _detect_available_engines,
+            clear_config_cache,
+        )
 
         # Call once to populate cache
         result1 = _detect_available_engines()
@@ -320,9 +326,12 @@ class TestConfigCacheInvalidation:
         # Content should be same (same packages installed) but it's a fresh call
         assert result1 == result2
 
-    def test_clear_config_cache_resets_file_config(self):
+    def test_clear_config_cache_resets_file_config(self) -> None:
         """After clear_config_cache(), file config is re-read."""
-        from pyiceberg.execution.engine import _read_execution_section_from_file, clear_config_cache
+        from pyiceberg.execution.engine import (
+            _read_execution_section_from_file,
+            clear_config_cache,
+        )
 
         # Populate cache
         result1 = _read_execution_section_from_file()
@@ -334,9 +343,13 @@ class TestConfigCacheInvalidation:
         result2 = _read_execution_section_from_file()
         assert result1 == result2
 
-    def test_env_var_change_picked_up_after_clear(self, monkeypatch):
+    def test_env_var_change_picked_up_after_clear(self, monkeypatch) -> None:
         """After setting env var + clear_config_cache, resolve uses the new value."""
-        from pyiceberg.execution.engine import ExecutionEngine, clear_config_cache, resolve_backends
+        from pyiceberg.execution.engine import (
+            ExecutionEngine,
+            clear_config_cache,
+            resolve_backends,
+        )
 
         # Set env var to force pyarrow
         monkeypatch.setenv("PYICEBERG_EXECUTION__COMPUTE_BACKEND", "pyarrow")
@@ -357,7 +370,7 @@ class TestConfigCacheInvalidation:
 class TestCleanupGuardUsesWeakrefFinalize:
     """_CleanupGuard must use weakref.finalize instead of __del__ for GC cleanup."""
 
-    def test_no_del_method(self):
+    def test_no_del_method(self) -> None:
         """_CleanupGuard should NOT define __del__ (fragile, not guaranteed)."""
         from pyiceberg.execution._sorted_reader import _CleanupGuard
 
@@ -366,7 +379,7 @@ class TestCleanupGuardUsesWeakrefFinalize:
             "_CleanupGuard defines __del__ which is fragile. Use weakref.finalize for reliable GC cleanup instead."
         )
 
-    def test_explicit_cleanup_prevents_finalizer_from_running(self):
+    def test_explicit_cleanup_prevents_finalizer_from_running(self) -> None:
         """Calling cleanup() must deactivate the finalizer (no double-cleanup)."""
         from pyiceberg.execution._sorted_reader import _CleanupGuard
 
@@ -384,7 +397,7 @@ class TestCleanupGuardUsesWeakrefFinalize:
         gc.collect()
         ctx_manager.__exit__.assert_not_called()
 
-    def test_gc_triggers_cleanup_when_not_explicitly_cleaned(self):
+    def test_gc_triggers_cleanup_when_not_explicitly_cleaned(self) -> None:
         """When cleanup() is never called, GC must still trigger ctx.__exit__."""
         from pyiceberg.execution._sorted_reader import _CleanupGuard
 
@@ -398,7 +411,7 @@ class TestCleanupGuardUsesWeakrefFinalize:
         # The finalizer should have called __exit__
         ctx_manager.__exit__.assert_called_once_with(None, None, None)
 
-    def test_cleanup_is_idempotent(self):
+    def test_cleanup_is_idempotent(self) -> None:
         """Multiple calls to cleanup() must be safe (only first one acts)."""
         from pyiceberg.execution._sorted_reader import _CleanupGuard
 
@@ -416,7 +429,7 @@ class TestCleanupGuardUsesWeakrefFinalize:
 class TestCleanupGuardIntegrationWithSortedReader:
     """_SortedRecordBatchReader properly wires _CleanupGuard for lifecycle management."""
 
-    def test_full_consumption_cleans_up(self):
+    def test_full_consumption_cleans_up(self) -> None:
         """Fully consuming the reader cleans up the temp file."""
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
         from pyiceberg.execution.materialize import materialize_to_parquet
@@ -442,7 +455,7 @@ class TestCleanupGuardIntegrationWithSortedReader:
         # After full consumption, temp file should be cleaned up
         assert len(batches) > 0
 
-    def test_abandoned_reader_cleans_up_on_gc(self):
+    def test_abandoned_reader_cleans_up_on_gc(self) -> None:
         """Abandoning the reader without full consumption still cleans up."""
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
         from pyiceberg.execution.materialize import materialize_to_parquet
@@ -482,7 +495,7 @@ class TestCleanupGuardIntegrationWithSortedReader:
 class TestOrchestrateScanStreamingMode:
     """Verify orchestrate_scan supports streaming=True for O(batch_size) delivery."""
 
-    def test_orchestrate_scan_accepts_streaming_parameter(self):
+    def test_orchestrate_scan_accepts_streaming_parameter(self) -> None:
         """orchestrate_scan has a streaming parameter that defaults to False."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -490,7 +503,7 @@ class TestOrchestrateScanStreamingMode:
         assert "streaming" in sig.parameters
         assert sig.parameters["streaming"].default is False
 
-    def test_streaming_true_produces_same_results_as_false(self, tmp_path):
+    def test_streaming_true_produces_same_results_as_false(self, tmp_path) -> None:
         """streaming=True produces identical data to streaming=False."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -549,7 +562,7 @@ class TestOrchestrateScanStreamingMode:
         streaming_ids = sorted(id_val for batch in result_streaming for id_val in batch.column("id").to_pylist())
         assert eager_ids == streaming_ids == [1, 2, 3, 4, 5]
 
-    def test_streaming_cleans_up_temp_files(self, tmp_path):
+    def test_streaming_cleans_up_temp_files(self, tmp_path) -> None:
         """streaming=True does not leak temp files after iteration completes."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -603,7 +616,7 @@ class TestOrchestrateScanStreamingMode:
 class TestBatchReaderUsesStreaming:
     """Verify to_arrow_batch_reader path passes streaming=True to orchestrate_scan."""
 
-    def test_batch_reader_path_sets_streaming_true(self, tmp_path):
+    def test_batch_reader_path_sets_streaming_true(self, tmp_path) -> None:
         """_to_arrow_batch_reader_via_file_scan_tasks passes streaming=True.
 
         We verify this by patching orchestrate_scan at its definition module
@@ -611,7 +624,10 @@ class TestBatchReaderUsesStreaming:
         """
         from pyiceberg.execution._orchestrate import orchestrate_scan
         from pyiceberg.schema import Schema
-        from pyiceberg.table import FileScanTask, _to_arrow_batch_reader_via_file_scan_tasks
+        from pyiceberg.table import (
+            FileScanTask,
+            _to_arrow_batch_reader_via_file_scan_tasks,
+        )
         from pyiceberg.types import IntegerType, NestedField
 
         schema = Schema(
@@ -636,7 +652,7 @@ class TestBatchReaderUsesStreaming:
         captured_kwargs = {}
         original_fn = orchestrate_scan
 
-        def spy_orchestrate_scan(*args, **kwargs):
+        def spy_orchestrate_scan(*args, **kwargs) -> None:
             captured_kwargs.update(kwargs)
             return original_fn(*args, **kwargs)
 

@@ -32,10 +32,12 @@ import pytest
 
 hypothesis = pytest.importorskip("hypothesis")
 
-from hypothesis import HealthCheck, assume, given, settings  # noqa: E402
-from hypothesis import strategies as st  # noqa: E402
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
 
-from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend  # noqa: E402
+from pyiceberg.execution.backends.pyarrow_backend import (
+    PyArrowComputeBackend,
+)
 
 # =============================================================================
 # Strategies: generate random Arrow data
@@ -82,7 +84,7 @@ class TestAntiJoinProperties:
 
     @given(left=int64_table(min_rows=0, max_rows=80), right=int64_table(min_rows=0, max_rows=40))
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_anti_join_result_is_subset_of_left(self, left, right):
+    def test_anti_join_result_is_subset_of_left(self, left, right) -> None:
         """∀ left, right: anti_join(left, right) ⊆ left (result rows come from left only)."""
         batches = list(self.backend.anti_join(iter(left.to_batches()), iter(right.to_batches()), on=["key"]))
         if not batches:
@@ -96,7 +98,7 @@ class TestAntiJoinProperties:
 
     @given(left=int64_table(min_rows=0, max_rows=80), right=int64_table(min_rows=0, max_rows=40))
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_anti_join_excludes_matching_keys(self, left, right):
+    def test_anti_join_excludes_matching_keys(self, left, right) -> None:
         """∀ left, right: no row in result has key matching any right key (IS NOT DISTINCT FROM)."""
         batches = list(self.backend.anti_join(iter(left.to_batches()), iter(right.to_batches()), on=["key"]))
         if not batches:
@@ -112,7 +114,7 @@ class TestAntiJoinProperties:
 
     @given(left=int64_table(min_rows=1, max_rows=50))
     @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_anti_join_empty_right_returns_all_left(self, left):
+    def test_anti_join_empty_right_returns_all_left(self, left) -> None:
         """∀ left: anti_join(left, ∅) = left (empty right → all left rows survive)."""
         right = pa.table({"key": pa.array([], type=pa.int64())})
         batches = list(self.backend.anti_join(iter(left.to_batches()), iter(right.to_batches()), on=["key"]))
@@ -125,7 +127,7 @@ class TestAntiJoinProperties:
 
     @given(data=int64_table(min_rows=1, max_rows=50))
     @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_anti_join_self_returns_empty(self, data):
+    def test_anti_join_self_returns_empty(self, data) -> None:
         """∀ data: anti_join(data, data) = ∅ (every row matches itself)."""
         batches = list(self.backend.anti_join(iter(data.to_batches()), iter(data.to_batches()), on=["key"]))
         if batches:
@@ -138,7 +140,7 @@ class TestAntiJoinProperties:
         right=int64_table(min_rows=0, max_rows=30, columns=("a", "b")),
     )
     @settings(max_examples=150, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_multi_column_anti_join_subset_invariant(self, left, right):
+    def test_multi_column_anti_join_subset_invariant(self, left, right) -> None:
         """Multi-column anti-join result is always a subset of left."""
         batches = list(self.backend.anti_join(iter(left.to_batches()), iter(right.to_batches()), on=["a", "b"]))
         if not batches:
@@ -159,7 +161,7 @@ class TestFilterProperties:
 
     @given(data=int64_table(min_rows=0, max_rows=100, columns=("value",)))
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_filter_never_adds_rows(self, data):
+    def test_filter_never_adds_rows(self, data) -> None:
         """∀ data, predicate: |filter(data)| ≤ |data| (filter only removes)."""
 
         # Use AlwaysTrue which should return all rows
@@ -175,7 +177,7 @@ class TestFilterProperties:
 
     @given(data=int64_table(min_rows=0, max_rows=100, columns=("value",)))
     @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_filter_always_true_preserves_all(self, data):
+    def test_filter_always_true_preserves_all(self, data) -> None:
         """∀ data: filter(data, AlwaysTrue) = data (identity filter)."""
         from pyiceberg.expressions import AlwaysTrue
 
@@ -185,7 +187,7 @@ class TestFilterProperties:
 
     @given(data=int64_table(min_rows=0, max_rows=100, columns=("value",)))
     @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_filter_always_false_returns_empty(self, data):
+    def test_filter_always_false_returns_empty(self, data) -> None:
         """∀ data: filter(data, AlwaysFalse) = ∅ (nothing passes)."""
         from pyiceberg.expressions import AlwaysFalse
 
@@ -206,7 +208,7 @@ class TestSortProperties:
 
     @given(data=int64_table(min_rows=0, max_rows=100, columns=("key",)))
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_sort_preserves_multiset(self, data):
+    def test_sort_preserves_multiset(self, data) -> None:
         """∀ data: sorted(data) has the same multiset of values as data."""
         batches = list(self.backend.sort(iter(data.to_batches()), sort_keys=[("key", "ascending")]))
         if not batches:
@@ -222,7 +224,7 @@ class TestSortProperties:
 
     @given(data=int64_table(min_rows=0, max_rows=100, columns=("key",)))
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_sort_ascending_is_ordered(self, data):
+    def test_sort_ascending_is_ordered(self, data) -> None:
         """∀ data: sort(data, ascending) produces non-decreasing key values."""
         assume(data.num_rows > 0)
         batches = list(self.backend.sort(iter(data.to_batches()), sort_keys=[("key", "ascending")]))
@@ -236,7 +238,7 @@ class TestSortProperties:
 
     @given(data=int64_table(min_rows=0, max_rows=100, columns=("key",)))
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_sort_descending_is_ordered(self, data):
+    def test_sort_descending_is_ordered(self, data) -> None:
         """∀ data: sort(data, descending) produces non-increasing key values."""
         assume(data.num_rows > 0)
         batches = list(self.backend.sort(iter(data.to_batches()), sort_keys=[("key", "descending")]))
@@ -249,7 +251,7 @@ class TestSortProperties:
 
     @given(data=int64_table(min_rows=0, max_rows=50, columns=("key",)))
     @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_sort_idempotent(self, data):
+    def test_sort_idempotent(self, data) -> None:
         """∀ data: sort(sort(data)) = sort(data) (sorting is idempotent)."""
         first_sort = list(self.backend.sort(iter(data.to_batches()), sort_keys=[("key", "ascending")]))
         if not first_sort:
@@ -283,7 +285,7 @@ def high_null_int64_table(draw, min_rows=1, max_rows=60, columns=("key",), null_
 
 
 @st.composite
-def high_null_multi_column_table(draw, min_rows=1, max_rows=40, null_probability=0.3):
+def high_null_multi_column_table(draw, min_rows=1, max_rows=40, null_probability=0.3) -> None:
     """Generate a multi-column table with independent NULLs per column."""
     num_rows = draw(st.integers(min_value=min_rows, max_value=max_rows))
     data = {}
@@ -321,7 +323,7 @@ class TestAntiJoinNullSemantics:
         right=high_null_int64_table(min_rows=1, max_rows=30),
     )
     @settings(max_examples=300, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_null_in_left_excluded_when_null_in_right(self, left, right):
+    def test_null_in_left_excluded_when_null_in_right(self, left, right) -> None:
         """If right contains NULL, then ALL left NULLs are excluded (IS NOT DISTINCT FROM).
 
         This is the core NULL semantic: NULL is NOT DISTINCT FROM NULL → match → exclude.
@@ -350,7 +352,7 @@ class TestAntiJoinNullSemantics:
         right=high_null_int64_table(min_rows=1, max_rows=30, null_probability=0.0),
     )
     @settings(max_examples=300, suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much], deadline=None)
-    def test_null_in_left_preserved_when_no_null_in_right(self, left, right):
+    def test_null_in_left_preserved_when_no_null_in_right(self, left, right) -> None:
         """If right has NO NULL, then left NULLs survive (no right row to match).
 
         This verifies the converse: NULLs are only excluded when there's a matching
@@ -386,7 +388,7 @@ class TestAntiJoinNullSemantics:
         right_null_count=st.integers(min_value=1, max_value=5),
     )
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_null_count_reduction_exact(self, non_null_values, left_null_count, right_null_count):
+    def test_null_count_reduction_exact(self, non_null_values, left_null_count, right_null_count) -> None:
         """When both sides have NULLs, ALL left NULLs are removed (not just matching count).
 
         IS NOT DISTINCT FROM is a predicate (returns true/false), not a counting join.
@@ -419,7 +421,7 @@ class TestAntiJoinNullSemantics:
         right=high_null_multi_column_table(min_rows=1, max_rows=20),
     )
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_multi_column_null_semantics(self, left, right):
+    def test_multi_column_null_semantics(self, left, right) -> None:
         """Multi-column IS NOT DISTINCT FROM: (NULL, NULL) matches (NULL, NULL).
 
         For multi-column joins, IS NOT DISTINCT FROM applies independently per column:
@@ -452,7 +454,7 @@ class TestAntiJoinNullSemantics:
         right=high_null_multi_column_table(min_rows=1, max_rows=15),
     )
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_multi_column_partial_null_no_false_match(self, left, right):
+    def test_multi_column_partial_null_no_false_match(self, left, right) -> None:
         """(NULL, 5) does NOT match (NULL, 6) — partial NULL overlap is not a match.
 
         IS NOT DISTINCT FROM is applied per-column conjunctively:
@@ -479,7 +481,7 @@ class TestAntiJoinNullSemantics:
         null_positions=st.lists(st.integers(0, 19), min_size=1, max_size=5, unique=True),
     )
     @settings(max_examples=150, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_null_exclusion_does_not_affect_non_null_rows(self, values, null_positions):
+    def test_null_exclusion_does_not_affect_non_null_rows(self, values, null_positions) -> None:
         """Excluding NULLs via anti-join must NOT accidentally exclude non-null rows.
 
         Regression guard: a buggy NULL handling implementation might overmatch
@@ -516,7 +518,7 @@ class TestAntiJoinNullSemantics:
         )
 
 
-def _null_sentinel(value):
+def _null_sentinel(value) -> None:
     """Convert None to a hashable sentinel for set-based IS NOT DISTINCT FROM checks."""
     _SENTINEL = object()
     return _SENTINEL if value is None else value
@@ -526,6 +528,6 @@ def _null_sentinel(value):
 _NULL_SENTINEL_OBJ = object()
 
 
-def _null_sentinel(value):
+def _null_sentinel(value) -> None:
     """Convert None to a hashable sentinel for set-based IS NOT DISTINCT FROM checks."""
     return _NULL_SENTINEL_OBJ if value is None else value

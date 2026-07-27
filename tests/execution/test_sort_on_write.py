@@ -35,10 +35,15 @@ class TestApplySortOrderWithRecordBatchReader:
     """Behavioral tests for _apply_sort_order when df is a pa.RecordBatchReader."""
 
     @pytest.fixture
-    def transaction_with_sort_order(self):
+    def transaction_with_sort_order(self) -> None:
         """Create a minimal Transaction-like object with a sort order configured."""
         from pyiceberg.table import Transaction
-        from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
+        from pyiceberg.table.sorting import (
+            NullOrder,
+            SortDirection,
+            SortField,
+            SortOrder,
+        )
         from pyiceberg.transforms import IdentityTransform
 
         schema = Schema(
@@ -70,7 +75,7 @@ class TestApplySortOrderWithRecordBatchReader:
 
         return tx
 
-    def test_record_batch_reader_input_produces_sorted_output(self, transaction_with_sort_order):
+    def test_record_batch_reader_input_produces_sorted_output(self, transaction_with_sort_order) -> None:
         """RecordBatchReader input to _apply_sort_order produces correctly sorted output."""
         pytest.importorskip("datafusion")
 
@@ -104,7 +109,7 @@ class TestApplySortOrderWithRecordBatchReader:
         assert result_table.column("id").to_pylist() == [1, 2, 3, 4, 5]
         assert result_table.column("name").to_pylist() == ["a", "b", "c", "d", "e"]
 
-    def test_table_input_produces_sorted_output(self, transaction_with_sort_order):
+    def test_table_input_produces_sorted_output(self, transaction_with_sort_order) -> None:
         """pa.Table input to _apply_sort_order also produces correctly sorted output."""
         pytest.importorskip("datafusion")
 
@@ -132,7 +137,7 @@ class TestApplySortOrderWithRecordBatchReader:
         assert result_table.column("id").to_pylist() == [1, 2, 3, 4, 5]
         assert result_table.column("name").to_pylist() == ["a", "b", "c", "d", "e"]
 
-    def test_no_sort_order_returns_input_unchanged(self):
+    def test_no_sort_order_returns_input_unchanged(self) -> None:
         """If table has no sort order, _apply_sort_order returns input unchanged."""
         from pyiceberg.table import Transaction
         from pyiceberg.table.sorting import UNSORTED_SORT_ORDER_ID
@@ -152,10 +157,15 @@ class TestApplySortOrderWithRecordBatchReader:
 
         assert result is input_table
 
-    def test_no_bounded_memory_returns_input_unchanged(self):
+    def test_no_bounded_memory_returns_input_unchanged(self) -> None:
         """If compute backend cannot spill, _apply_sort_order returns input unchanged."""
         from pyiceberg.table import Transaction
-        from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
+        from pyiceberg.table.sorting import (
+            NullOrder,
+            SortDirection,
+            SortField,
+            SortOrder,
+        )
         from pyiceberg.transforms import IdentityTransform
 
         schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True))
@@ -184,7 +194,7 @@ class TestApplySortOrderWithRecordBatchReader:
 
         assert result is input_table
 
-    def test_sorted_reader_cleans_up_temp_file(self, transaction_with_sort_order):
+    def test_sorted_reader_cleans_up_temp_file(self, transaction_with_sort_order) -> None:
         """Temp file created by _apply_sort_order is cleaned up after reader is consumed."""
         pytest.importorskip("datafusion")
 
@@ -215,7 +225,7 @@ class TestApplySortOrderWithRecordBatchReader:
 class TestSortedRecordBatchReaderTypeAnnotations:
     """Verify _SortedRecordBatchReader.create() has precise type annotations."""
 
-    def test_create_signature_has_proper_types(self):
+    def test_create_signature_has_proper_types(self) -> None:
         """create() parameters must have fully-parameterized type annotations."""
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
 
@@ -244,7 +254,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
         return_str = str(return_ann)
         assert "Any" not in return_str
 
-    def test_create_returns_record_batch_reader(self):
+    def test_create_returns_record_batch_reader(self) -> None:
         """create() must return a pa.RecordBatchReader when called with valid args."""
         from contextlib import contextmanager
 
@@ -253,7 +263,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
         schema = pa.schema([pa.field("x", pa.int32())])
 
         @contextmanager
-        def fake_materialize():
+        def fake_materialize() -> None:
             yield "/tmp/fake.parquet"
 
         def fake_sort(path: str) -> Iterator[pa.RecordBatch]:
@@ -267,7 +277,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
 
         assert isinstance(reader, pa.RecordBatchReader)
 
-    def test_create_streams_sorted_batches(self):
+    def test_create_streams_sorted_batches(self) -> None:
         """Reader must stream all batches from sort_fn."""
         from contextlib import contextmanager
 
@@ -276,7 +286,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
         schema = pa.schema([pa.field("val", pa.int64())])
 
         @contextmanager
-        def fake_materialize():
+        def fake_materialize() -> None:
             yield "/tmp/fake.parquet"
 
         def fake_sort(path: str) -> Iterator[pa.RecordBatch]:
@@ -297,7 +307,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
 class TestSortedRecordBatchReaderCleanup:
     """Verify temp file lifecycle management."""
 
-    def test_cleanup_on_normal_exhaustion(self, tmp_path):
+    def test_cleanup_on_normal_exhaustion(self, tmp_path) -> None:
         """Context manager __exit__ called when reader is fully consumed."""
         from contextlib import contextmanager
 
@@ -307,7 +317,7 @@ class TestSortedRecordBatchReaderCleanup:
         schema = pa.schema([pa.field("x", pa.int32())])
 
         @contextmanager
-        def tracked_materialize():
+        def tracked_materialize() -> None:
             yield str(tmp_path / "data.parquet")
             cleanup_called.append(True)
 
@@ -323,7 +333,7 @@ class TestSortedRecordBatchReaderCleanup:
         reader.read_all()
         assert cleanup_called
 
-    def test_cleanup_on_exception_in_sort(self, tmp_path):
+    def test_cleanup_on_exception_in_sort(self, tmp_path) -> None:
         """Context manager __exit__ called even when sort_fn raises."""
         from contextlib import contextmanager
 
@@ -333,7 +343,7 @@ class TestSortedRecordBatchReaderCleanup:
         schema = pa.schema([pa.field("x", pa.int32())])
 
         @contextmanager
-        def tracked_materialize():
+        def tracked_materialize() -> None:
             try:
                 yield str(tmp_path / "data.parquet")
             finally:
@@ -341,7 +351,7 @@ class TestSortedRecordBatchReaderCleanup:
 
         def failing_sort(path: str) -> Iterator[pa.RecordBatch]:
             raise RuntimeError("sort failed")
-            yield  # noqa: F841, B901 - unreachable; makes it a generator
+            yield
 
         reader = _SortedRecordBatchReader.create(
             materialize_fn=tracked_materialize,
@@ -363,7 +373,7 @@ class TestSortedRecordBatchReaderCleanup:
 class TestWarnIfLargeMaterialization:
     """Verify DataFusion backend emits ResourceWarning above the 1GB threshold."""
 
-    def test_large_table_emits_resource_warning(self):
+    def test_large_table_emits_resource_warning(self) -> None:
         """ResourceWarning is emitted when materialized result exceeds 1GB."""
         import warnings
 
@@ -384,7 +394,7 @@ class TestWarnIfLargeMaterialization:
         assert len(resource_warnings) == 1, f"Expected 1 ResourceWarning, got {len(resource_warnings)}: {caught}"
         assert "GB" in str(resource_warnings[0].message)
 
-    def test_small_table_no_warning(self):
+    def test_small_table_no_warning(self) -> None:
         """No warning emitted when materialized result is below threshold."""
         import warnings
 
@@ -405,7 +415,9 @@ class TestWarnIfLargeMaterialization:
 
     def test_threshold_is_exactly_1gb(self):
         """The materialization warning threshold is exactly 1 GB."""
-        from pyiceberg.execution.backends.datafusion_backend import _MATERIALIZATION_WARNING_THRESHOLD_DEFAULT
+        from pyiceberg.execution.backends.datafusion_backend import (
+            _MATERIALIZATION_WARNING_THRESHOLD_DEFAULT,
+        )
 
         assert _MATERIALIZATION_WARNING_THRESHOLD_DEFAULT == 1 * 1024 * 1024 * 1024
 
@@ -431,7 +443,7 @@ class TestSortOrderIdOnDataFiles:
     If sort is skipped (no DF installed), sort_order_id must be None.
     """
 
-    def test_sort_order_id_set_when_sort_applied(self):
+    def test_sort_order_id_set_when_sort_applied(self) -> None:
         """_prepare_write returns sort_order_id when table has sort order + DF backend."""
         from unittest.mock import MagicMock, PropertyMock
 
@@ -466,7 +478,7 @@ class TestSortOrderIdOnDataFiles:
 
         assert sort_order_id == 7, f"Expected sort_order_id=7, got {sort_order_id}"
 
-    def test_sort_order_id_none_when_no_bounded_memory(self):
+    def test_sort_order_id_none_when_no_bounded_memory(self) -> None:
         """_prepare_write returns sort_order_id=None when backend cannot sort."""
         from unittest.mock import MagicMock, PropertyMock
 
@@ -500,7 +512,7 @@ class TestSortOrderIdOnDataFiles:
 
         assert sort_order_id is None, f"sort_order_id should be None when backend cannot sort, got {sort_order_id}"
 
-    def test_sort_order_id_none_when_unsorted_table(self):
+    def test_sort_order_id_none_when_unsorted_table(self) -> None:
         """_prepare_write returns sort_order_id=None when table has no sort order."""
         from unittest.mock import MagicMock, PropertyMock
 
@@ -531,7 +543,7 @@ class TestSortOrderIdOnDataFiles:
 
         assert sort_order_id is None, f"sort_order_id should be None for unsorted table, got {sort_order_id}"
 
-    def test_sort_applies_globally_not_per_partition(self):
+    def test_sort_applies_globally_not_per_partition(self) -> None:
         """Sort-on-write sorts the entire input globally, not per-partition.
 
         This is a known limitation for partitioned tables: the global sort

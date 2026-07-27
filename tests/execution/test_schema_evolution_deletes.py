@@ -53,7 +53,7 @@ class TestEqualityDeletesWithDroppedColumns:
     list (no column names resolved), causing the equality deletes to be skipped.
     """
 
-    def test_all_equality_ids_dropped_emits_warning(self):
+    def test_all_equality_ids_dropped_emits_warning(self) -> None:
         """When ALL equality field IDs reference dropped columns, a warning is emitted."""
         from pyiceberg.execution._orchestrate import _get_equality_field_names
 
@@ -84,7 +84,7 @@ class TestEqualityDeletesWithDroppedColumns:
         assert "do not exist" in str(user_warnings[0].message)
         assert "schema evolution" in str(user_warnings[0].message)
 
-    def test_partial_equality_ids_dropped_resolves_remaining(self):
+    def test_partial_equality_ids_dropped_resolves_remaining(self) -> None:
         """When SOME equality field IDs are dropped, resolve the remaining ones."""
         from pyiceberg.execution._orchestrate import _get_equality_field_names
 
@@ -106,7 +106,7 @@ class TestEqualityDeletesWithDroppedColumns:
         # Should resolve 'id' (field_id=1) but not 'email' (field_id=3)
         assert result == ["id"]
 
-    def test_no_equality_ids_returns_none(self):
+    def test_no_equality_ids_returns_none(self) -> None:
         """When delete files have no equality_ids metadata at all, return None."""
         from pyiceberg.execution._orchestrate import _get_equality_field_names
 
@@ -125,7 +125,7 @@ class TestEqualityDeletesWithDroppedColumns:
         # None means "metadata absent" -- distinct from empty list
         assert result is None
 
-    def test_orchestrate_scan_warns_when_equality_ids_unresolvable(self):
+    def test_orchestrate_scan_warns_when_equality_ids_unresolvable(self) -> None:
         """orchestrate_scan emits a warning when equality_ids cannot be resolved and returns data unchanged."""
         from pyiceberg.execution._orchestrate import _get_equality_field_names
 
@@ -149,7 +149,7 @@ class TestEqualityDeletesWithDroppedColumns:
         assert len(user_warnings) == 1
         assert "compaction" in str(user_warnings[0].message).lower()
 
-    def test_none_vs_empty_list_triggers_different_caller_behavior(self):
+    def test_none_vs_empty_list_triggers_different_caller_behavior(self) -> None:
         """Callers must distinguish None (no metadata) from [] (columns dropped).
 
         - None: caller should emit "do not specify equality_ids" warning
@@ -202,14 +202,14 @@ class TestBoundedMemoryPlannerEmptyManifests:
     """Verify BoundedMemoryPlanner handles edge cases with empty or delete-only manifests."""
 
     @pytest.fixture
-    def planner(self):
+    def planner(self) -> None:
         """Create a BoundedMemoryPlanner instance (requires DataFusion)."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
 
         return BoundedMemoryPlanner(memory_limit=64 * 1024 * 1024)
 
-    def test_no_data_entries_yields_zero_tasks(self, planner):
+    def test_no_data_entries_yields_zero_tasks(self, planner) -> None:
         """When all manifests contain only delete entries (no data files), yield nothing."""
         from pyiceberg.execution.planning import InMemoryPlanner
 
@@ -235,7 +235,7 @@ class TestBoundedMemoryPlannerEmptyManifests:
 
         assert tasks == []
 
-    def test_stream_entries_to_parquet_handles_empty_input(self, planner):
+    def test_stream_entries_to_parquet_handles_empty_input(self, planner) -> None:
         """_stream_entries_to_parquet with zero entries produces valid (empty) Parquet files."""
         import tempfile
         from pathlib import Path
@@ -276,7 +276,7 @@ class TestBoundedMemoryPlannerEmptyManifests:
 class TestSortOnWriteTempFileCleanupOnException:
     """Verify temp files are cleaned up when the input reader raises mid-stream."""
 
-    def test_materialize_context_manager_cleans_up_on_exception(self):
+    def test_materialize_context_manager_cleans_up_on_exception(self) -> None:
         """materialize_batches_to_parquet deletes temp file when context exits normally after write."""
         import os
 
@@ -300,7 +300,7 @@ class TestSortOnWriteTempFileCleanupOnException:
         assert tmp_path_captured is not None
         assert not Path(tmp_path_captured).exists(), f"Temp file {tmp_path_captured} was not cleaned up after context exit"
 
-    def test_sorted_reader_cleanup_guard_on_sort_exception(self):
+    def test_sorted_reader_cleanup_guard_on_sort_exception(self) -> None:
         """_CleanupGuard cleans up when sort_fn raises an exception."""
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
         from pyiceberg.execution.materialize import materialize_to_parquet
@@ -320,7 +320,7 @@ class TestSortOnWriteTempFileCleanupOnException:
         with pytest.raises(RuntimeError, match="Sort backend failure"):
             reader.read_all()
 
-    def test_sorted_reader_cleanup_guard_on_partial_consumption(self):
+    def test_sorted_reader_cleanup_guard_on_partial_consumption(self) -> None:
         """Temp file is cleaned up even if the reader is only partially consumed then dropped."""
         import gc
 
@@ -335,7 +335,7 @@ class TestSortOnWriteTempFileCleanupOnException:
         from contextlib import contextmanager
 
         @contextmanager
-        def _tracking_materialize():
+        def _tracking_materialize() -> None:
             with materialize_to_parquet(table) as path:
                 paths_created.append(path)
                 yield path
@@ -387,7 +387,7 @@ class TestCowTwoPassFileImmutabilityInvariant:
     to fail (OCC retry pattern).
     """
 
-    def test_two_pass_produces_same_result_as_single_pass(self):
+    def test_two_pass_produces_same_result_as_single_pass(self) -> None:
         """Two-pass streaming and single-pass materialization produce identical results."""
         import tempfile
         from pathlib import Path
@@ -441,7 +441,7 @@ class TestCowTwoPassFileImmutabilityInvariant:
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
-    def test_two_pass_fails_if_file_disappears(self):
+    def test_two_pass_fails_if_file_disappears(self) -> None:
         """If the file is deleted between passes, the second read raises an error."""
         import tempfile
         from pathlib import Path

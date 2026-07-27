@@ -49,7 +49,7 @@ class TestProtocolModuleIsDeclarative:
     registry, and protocol validation must live in engine.py.
     """
 
-    def test_backends_resolve_delegates_to_build_backends(self):
+    def test_backends_resolve_delegates_to_build_backends(self) -> None:
         """Backends.resolve() must produce the same result as build_backends().
 
         Behavioral equivalent: call both and verify they produce functionally
@@ -68,7 +68,7 @@ class TestProtocolModuleIsDeclarative:
         assert type(via_resolve.compute) is type(via_build.compute)
         assert dict(via_resolve.io_properties) == dict(via_build.io_properties)
 
-    def test_protocol_module_does_not_perform_instantiation(self):
+    def test_protocol_module_does_not_perform_instantiation(self) -> None:
         """Backends.resolve() must delegate -- calling it should go through build_backends.
 
         Behavioral equivalent: patch build_backends and verify Backends.resolve()
@@ -89,13 +89,13 @@ class TestProtocolModuleIsDeclarative:
         call_args = mock_build.call_args
         assert call_args[0][0] == {"key": "val"}, "build_backends must receive io_properties"
 
-    def test_build_backends_lives_in_engine_module(self):
+    def test_build_backends_lives_in_engine_module(self) -> None:
         """engine.py must export a build_backends() factory function."""
         from pyiceberg.execution.engine import build_backends
 
         assert callable(build_backends)
 
-    def test_build_backends_returns_backends_instance(self):
+    def test_build_backends_returns_backends_instance(self) -> None:
         """build_backends() must return a fully constructed Backends dataclass."""
         from pyiceberg.execution.engine import build_backends
         from pyiceberg.execution.protocol import Backends
@@ -107,7 +107,7 @@ class TestProtocolModuleIsDeclarative:
         assert hasattr(result, "compute")
         assert hasattr(result, "io_properties")
 
-    def test_build_backends_passes_io_properties_through(self):
+    def test_build_backends_passes_io_properties_through(self) -> None:
         """build_backends() must store io_properties values (frozen snapshot)."""
         from pyiceberg.execution.engine import build_backends
 
@@ -116,7 +116,7 @@ class TestProtocolModuleIsDeclarative:
         # Snapshot semantics: same values, but frozen (MappingProxyType)
         assert dict(result.io_properties) == props
 
-    def test_build_backends_validates_read_protocol(self):
+    def test_build_backends_validates_read_protocol(self) -> None:
         """build_backends() must raise TypeError for invalid read override."""
         from pyiceberg.execution.engine import build_backends
 
@@ -126,7 +126,7 @@ class TestProtocolModuleIsDeclarative:
         with pytest.raises(TypeError, match="ReadBackend"):
             build_backends({}, read=NotAReader())
 
-    def test_build_backends_validates_write_protocol(self):
+    def test_build_backends_validates_write_protocol(self) -> None:
         """build_backends() must raise TypeError for invalid write override."""
         from pyiceberg.execution.engine import build_backends
 
@@ -136,7 +136,7 @@ class TestProtocolModuleIsDeclarative:
         with pytest.raises(TypeError, match="WriteBackend"):
             build_backends({}, write=NotAWriter())
 
-    def test_build_backends_validates_compute_protocol(self):
+    def test_build_backends_validates_compute_protocol(self) -> None:
         """build_backends() must raise TypeError for invalid compute override."""
         from pyiceberg.execution.engine import build_backends
 
@@ -146,16 +146,19 @@ class TestProtocolModuleIsDeclarative:
         with pytest.raises(TypeError, match="ComputeBackend"):
             build_backends({}, compute=NotACompute())
 
-    def test_build_backends_accepts_string_overrides(self):
+    def test_build_backends_accepts_string_overrides(self) -> None:
         """build_backends() with string overrides resolves to correct backends."""
-        from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend, PyArrowReadBackend
+        from pyiceberg.execution.backends.pyarrow_backend import (
+            PyArrowComputeBackend,
+            PyArrowReadBackend,
+        )
         from pyiceberg.execution.engine import build_backends
 
         result = build_backends({}, read="pyarrow", compute="pyarrow")
         assert isinstance(result.read, PyArrowReadBackend)
         assert isinstance(result.compute, PyArrowComputeBackend)
 
-    def test_build_backends_accepts_instance_overrides(self):
+    def test_build_backends_accepts_instance_overrides(self) -> None:
         """build_backends() with instance overrides uses them directly."""
         from pyiceberg.execution.backends.pyarrow_backend import (
             PyArrowComputeBackend,
@@ -170,9 +173,12 @@ class TestProtocolModuleIsDeclarative:
         assert result.read is read_instance
         assert result.compute is compute_instance
 
-    def test_backends_resolve_still_works_end_to_end(self):
+    def test_backends_resolve_still_works_end_to_end(self) -> None:
         """Backends.resolve() must continue to work after the refactor."""
-        from pyiceberg.execution.backends.pyarrow_backend import PyArrowReadBackend, PyArrowWriteBackend
+        from pyiceberg.execution.backends.pyarrow_backend import (
+            PyArrowReadBackend,
+            PyArrowWriteBackend,
+        )
         from pyiceberg.execution.protocol import Backends
 
         result = Backends.resolve({})
@@ -193,7 +199,7 @@ class TestSortOnWriteIsBestEffort:
     guarantee" at the protocol level and the public API level.
     """
 
-    def test_compute_backend_docstring_states_best_effort(self):
+    def test_compute_backend_docstring_states_best_effort(self) -> None:
         """ComputeBackend.supports_bounded_memory docstring must say 'best-effort'."""
         from pyiceberg.execution.protocol import ComputeBackend
 
@@ -203,7 +209,7 @@ class TestSortOnWriteIsBestEffort:
             "use it for best-effort optimizations (e.g., sort-on-write), not correctness."
         )
 
-    def test_apply_sort_order_docstring_states_best_effort(self):
+    def test_apply_sort_order_docstring_states_best_effort(self) -> None:
         """_apply_sort_order docstring must document that sorting is best-effort."""
         from pyiceberg.table import Transaction
 
@@ -213,7 +219,7 @@ class TestSortOnWriteIsBestEffort:
             "optimization that depends on compute backend capabilities."
         )
 
-    def test_unsorted_data_is_still_correct(self):
+    def test_unsorted_data_is_still_correct(self) -> None:
         """Data written without sort-on-write must be valid Iceberg data.
 
         Behavioral equivalent: verify that _apply_sort_order returns input
@@ -250,7 +256,7 @@ class TestSortOnWriteIsBestEffort:
             "must return the input unchanged (unsorted data is still valid)."
         )
 
-    def test_sort_on_write_skipped_when_no_bounded_memory(self):
+    def test_sort_on_write_skipped_when_no_bounded_memory(self) -> None:
         """When compute backend lacks bounded memory, data is returned unchanged."""
         from unittest.mock import MagicMock
 
@@ -286,13 +292,13 @@ class TestSortOnWriteIsBestEffort:
 class TestPublicAPIExports:
     """Verify build_backends is exported from the execution package."""
 
-    def test_build_backends_in_engine_public_api(self):
+    def test_build_backends_in_engine_public_api(self) -> None:
         """build_backends should be importable from pyiceberg.execution.engine."""
         from pyiceberg.execution.engine import build_backends
 
         assert callable(build_backends)
 
-    def test_build_backends_in_package_all(self):
+    def test_build_backends_in_package_all(self) -> None:
         """build_backends should be listed in pyiceberg.execution.__all__."""
         import pyiceberg.execution as exec_pkg
 
@@ -307,7 +313,7 @@ class TestPublicAPIExports:
 class TestProtocolModuleHasNoInstantiationLogic:
     """protocol.py must NOT contain backend instantiation logic (SRP: engine.py owns that)."""
 
-    def test_no_instantiate_functions_in_protocol(self):
+    def test_no_instantiate_functions_in_protocol(self) -> None:
         """protocol.py must not define any _instantiate_* functions."""
         from pyiceberg.execution import protocol
 
@@ -320,7 +326,7 @@ class TestProtocolModuleHasNoInstantiationLogic:
             f"protocol.py should only define Protocol interfaces and dataclasses."
         )
 
-    def test_no_backend_imports_in_protocol(self):
+    def test_no_backend_imports_in_protocol(self) -> None:
         """protocol.py must not import from pyiceberg.execution.backends.* at module level.
 
         Backend imports at module level would couple interface definitions to
@@ -343,7 +349,7 @@ class TestProtocolModuleHasNoInstantiationLogic:
                         f"Move instantiation logic to engine.py."
                     )
 
-    def test_backends_resolve_delegates_to_engine(self):
+    def test_backends_resolve_delegates_to_engine(self) -> None:
         """Backends.resolve() must delegate to engine.build_backends()."""
         from pyiceberg.execution.protocol import Backends
 
@@ -357,7 +363,7 @@ class TestProtocolModuleHasNoInstantiationLogic:
 class TestEngineModuleOwnsInstantiation:
     """engine.py must contain the registry and instantiation logic."""
 
-    def test_engine_has_read_backend_registry(self):
+    def test_engine_has_read_backend_registry(self) -> None:
         """engine.py must define _READ_BACKEND_REGISTRY."""
         from pyiceberg.execution import engine
 
@@ -365,7 +371,7 @@ class TestEngineModuleOwnsInstantiation:
         assert isinstance(engine._READ_BACKEND_REGISTRY, dict)
         assert "PYARROW" in engine._READ_BACKEND_REGISTRY
 
-    def test_engine_has_compute_backend_registry(self):
+    def test_engine_has_compute_backend_registry(self) -> None:
         """engine.py must define _COMPUTE_BACKEND_REGISTRY."""
         from pyiceberg.execution import engine
 
@@ -373,13 +379,13 @@ class TestEngineModuleOwnsInstantiation:
         assert isinstance(engine._COMPUTE_BACKEND_REGISTRY, dict)
         assert "PYARROW" in engine._COMPUTE_BACKEND_REGISTRY
 
-    def test_engine_has_build_backends_function(self):
+    def test_engine_has_build_backends_function(self) -> None:
         """engine.py must export build_backends() as the public factory."""
         from pyiceberg.execution.engine import build_backends
 
         assert callable(build_backends)
 
-    def test_engine_instantiate_functions_exist(self):
+    def test_engine_instantiate_functions_exist(self) -> None:
         """engine.py must define _instantiate_read, _instantiate_write, _instantiate_compute."""
         from pyiceberg.execution import engine
 
@@ -387,7 +393,7 @@ class TestEngineModuleOwnsInstantiation:
         assert hasattr(engine, "_instantiate_write") and callable(engine._instantiate_write)
         assert hasattr(engine, "_instantiate_compute") and callable(engine._instantiate_compute)
 
-    def test_build_backends_returns_backends_dataclass(self):
+    def test_build_backends_returns_backends_dataclass(self) -> None:
         """build_backends() must return a Backends dataclass instance."""
         from pyiceberg.execution.engine import build_backends
         from pyiceberg.execution.protocol import Backends
@@ -404,7 +410,7 @@ class TestEngineModuleOwnsInstantiation:
 class TestAllExportsAreValid:
     """Every name in __all__ must resolve to an actual attribute on the module."""
 
-    def test_no_ghost_entries_in_all(self):
+    def test_no_ghost_entries_in_all(self) -> None:
         """Every name in __all__ must be getattr-able from the module."""
         import pyiceberg.execution as mod
 
@@ -415,7 +421,7 @@ class TestAllExportsAreValid:
 
         assert not ghosts, f"__all__ contains names that don't exist on the module: {ghosts}"
 
-    def test_all_imports_are_exported(self):
+    def test_all_imports_are_exported(self) -> None:
         """Every public name imported at module level should be in __all__.
 
         Private names (starting with _), submodules, and __future__ are excluded.
@@ -440,7 +446,7 @@ class TestAllExportsAreValid:
 
         assert not missing, f"These public names are imported but missing from __all__: {missing}"
 
-    def test_build_backends_in_all(self):
+    def test_build_backends_in_all(self) -> None:
         """build_backends must be in __all__ (documented as public API)."""
         import pyiceberg.execution as mod
 
@@ -450,7 +456,7 @@ class TestAllExportsAreValid:
 class TestFrozenDataclasses:
     """Verify value objects are truly immutable (frozen=True)."""
 
-    def test_write_result_is_frozen(self):
+    def test_write_result_is_frozen(self) -> None:
         """_WriteResult must be frozen (no mutation after construction)."""
         from pyiceberg.execution.backends.pyarrow_backend import _WriteResult
 
@@ -470,7 +476,7 @@ class TestFrozenDataclasses:
         with pytest.raises(dataclasses.FrozenInstanceError):
             wr.file_path = "/other/path"  # type: ignore[misc]
 
-    def test_backends_is_frozen(self):
+    def test_backends_is_frozen(self) -> None:
         """Backends must be frozen (no mutation after construction)."""
         from unittest.mock import MagicMock
 
@@ -481,7 +487,7 @@ class TestFrozenDataclasses:
         with pytest.raises(dataclasses.FrozenInstanceError):
             b.read = MagicMock()  # type: ignore[misc]
 
-    def test_resolved_backends_is_frozen(self):
+    def test_resolved_backends_is_frozen(self) -> None:
         """ResolvedBackends must be frozen."""
         from pyiceberg.execution.engine import ExecutionEngine, ResolvedBackends
 
@@ -498,21 +504,21 @@ class TestFrozenDataclasses:
 class TestTypeAnnotationsOnPublicAPI:
     """Verify key public functions have return type annotations (not bare -> None or missing)."""
 
-    def test_build_backends_has_return_annotation(self):
+    def test_build_backends_has_return_annotation(self) -> None:
         """build_backends() must declare its return type."""
         from pyiceberg.execution.engine import build_backends
 
         sig = inspect.signature(build_backends)
         assert sig.return_annotation is not inspect.Signature.empty
 
-    def test_resolve_backends_has_return_annotation(self):
+    def test_resolve_backends_has_return_annotation(self) -> None:
         """resolve_backends() must declare its return type."""
         from pyiceberg.execution.engine import resolve_backends
 
         sig = inspect.signature(resolve_backends)
         assert sig.return_annotation is not inspect.Signature.empty
 
-    def test_get_memory_limit_has_return_annotation(self):
+    def test_get_memory_limit_has_return_annotation(self) -> None:
         """get_memory_limit() must declare int return type."""
         from pyiceberg.execution.engine import get_memory_limit
 
@@ -521,7 +527,7 @@ class TestTypeAnnotationsOnPublicAPI:
         # With `from __future__ import annotations`, annotation is the string 'int'
         assert sig.return_annotation in (int, "int")
 
-    def test_expression_to_sql_has_return_annotation(self):
+    def test_expression_to_sql_has_return_annotation(self) -> None:
         """expression_to_sql() must declare str return type."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
 

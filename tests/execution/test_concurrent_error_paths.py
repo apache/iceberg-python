@@ -51,7 +51,7 @@ class TestConcurrentAntiJoinSemanticCorrectness:
     contamination from shared backend instances.
     """
 
-    def test_parallel_anti_joins_produce_independent_results(self):
+    def test_parallel_anti_joins_produce_independent_results(self) -> None:
         """Multiple threads performing anti-joins on distinct data yield correct results."""
         backend = PyArrowComputeBackend()
 
@@ -67,7 +67,7 @@ class TestConcurrentAntiJoinSemanticCorrectness:
 
         errors: list[str] = []
 
-        def run_anti_join(left_data, right_data, expected):
+        def run_anti_join(left_data, right_data, expected) -> None:
             left = [pa.record_batch(left_data)]
             right = [pa.record_batch(right_data)] if right_data["id"] else []
             result_batches = list(backend.anti_join(iter(left), iter(right), ["id"]))
@@ -90,14 +90,14 @@ class TestConcurrentAntiJoinSemanticCorrectness:
 
         assert not errors, f"Concurrent anti-join produced incorrect results: {errors}"
 
-    def test_parallel_anti_joins_with_nulls_produce_correct_results(self):
+    def test_parallel_anti_joins_with_nulls_produce_correct_results(self) -> None:
         """Concurrent anti-joins with NULL values maintain IS NOT DISTINCT FROM semantics."""
         backend = PyArrowComputeBackend()
 
         results: list[set] = []
         lock = threading.Lock()
 
-        def anti_join_with_nulls(thread_id: int):
+        def anti_join_with_nulls(thread_id: int) -> None:
             # Left has [1, 2, None, 4], right has [2, None]
             # IS NOT DISTINCT FROM: None matches None → result is {1, 4}
             left = [pa.record_batch({"id": pa.array([1, 2, None, 4], type=pa.int64())})]
@@ -130,7 +130,7 @@ class TestEqualityDeletesWithRenamedColumns:
     "full_name" — because find_column_name(field_id=2) returns the NEW name.
     """
 
-    def test_renamed_column_resolves_via_field_id(self):
+    def test_renamed_column_resolves_via_field_id(self) -> None:
         """Equality delete on field_id=2 resolves to current name after rename."""
         from pyiceberg.execution._orchestrate import _get_equality_field_names
 
@@ -153,7 +153,7 @@ class TestEqualityDeletesWithRenamedColumns:
         # Should resolve to the CURRENT name "full_name" (not the old "name")
         assert result == ["full_name"]
 
-    def test_renamed_column_anti_join_uses_new_name(self):
+    def test_renamed_column_anti_join_uses_new_name(self) -> None:
         """Anti-join correctly uses the renamed column for equality delete resolution."""
         backend = PyArrowComputeBackend()
 
@@ -181,7 +181,7 @@ class TestEqualityDeletesWithRenamedColumns:
         assert result.column("id").to_pylist() == [1, 3]
         assert result.column("full_name").to_pylist() == ["alice", "charlie"]
 
-    def test_partially_renamed_multi_column_equality_delete(self):
+    def test_partially_renamed_multi_column_equality_delete(self) -> None:
         """Multi-column equality delete works when some columns are renamed."""
         from pyiceberg.execution._orchestrate import _get_equality_field_names
 
@@ -220,12 +220,12 @@ class TestBoundedMemoryPlannerCorruptInput:
     """
 
     @pytest.fixture
-    def _skip_if_no_datafusion(self):
+    def _skip_if_no_datafusion(self) -> None:
         """Skip test if DataFusion is not installed."""
         pytest.importorskip("datafusion")
 
     @pytest.mark.usefixtures("_skip_if_no_datafusion")
-    def test_truncated_parquet_raises_readable_error(self, tmp_path):
+    def test_truncated_parquet_raises_readable_error(self, tmp_path) -> None:
         """A truncated Parquet file registered with DataFusion raises on query."""
         from datafusion import SessionContext
 
@@ -255,7 +255,7 @@ class TestBoundedMemoryPlannerCorruptInput:
         )
 
     @pytest.mark.usefixtures("_skip_if_no_datafusion")
-    def test_empty_parquet_produces_zero_results(self, tmp_path):
+    def test_empty_parquet_produces_zero_results(self, tmp_path) -> None:
         """An empty (valid but zero-row) Parquet file yields zero tasks from the planner."""
         from datafusion import SessionContext
 
@@ -311,7 +311,7 @@ class TestCowDeleteTwoPassFailSafe:
     so the transaction can be retried against the new table state (OCC pattern).
     """
 
-    def test_file_missing_on_second_pass_raises(self, tmp_path):
+    def test_file_missing_on_second_pass_raises(self, tmp_path) -> None:
         """If a data file disappears between pass 1 and pass 2, an error is raised."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowReadBackend
 
@@ -339,7 +339,7 @@ class TestCowDeleteTwoPassFailSafe:
         with pytest.raises((FileNotFoundError, OSError, pa.ArrowInvalid, Exception)):
             list(read_backend.read_parquet(str(data_file), schema, MagicMock(__class__=type("AlwaysTrue", (), {})), {}))
 
-    def test_cow_two_pass_does_not_swallow_read_errors(self):
+    def test_cow_two_pass_does_not_swallow_read_errors(self) -> None:
         """The CoW large-file path must NOT try/except around the second read.
 
         This is a structural assertion: the code must let FileNotFoundError
@@ -350,7 +350,7 @@ class TestCowDeleteTwoPassFailSafe:
 
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
-        def failing_iterator():
+        def failing_iterator() -> None:
             yield pa.record_batch({"id": [1, 2]})
             raise FileNotFoundError("File was removed by concurrent compaction")
 

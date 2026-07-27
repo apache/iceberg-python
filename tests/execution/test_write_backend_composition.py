@@ -40,7 +40,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType, NestedField, StringType
 
 
-def _make_output_file(path: Path):
+def _make_output_file(path: Path) -> Any:
     """Create a minimal OutputFile for local testing on Windows and Unix.
 
     Uses PyArrowFileIO with a scheme-less path for Windows compatibility.
@@ -90,7 +90,7 @@ class _LocalOutputFile:
 class TestWriteBackendComposesWithFormatModel:
     """WriteBackend.write_data_file delegates to FileFormatModel.create_writer."""
 
-    def test_pyarrow_write_backend_delegates_to_format_model(self, tmp_path):
+    def test_pyarrow_write_backend_delegates_to_format_model(self, tmp_path) -> None:
         """PyArrowWriteBackend.write_data_file creates a writer from the format model."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowWriteBackend
 
@@ -120,7 +120,7 @@ class TestWriteBackendComposesWithFormatModel:
         assert isinstance(stats, DataFileStatistics)
         assert stats.record_count == 3
 
-    def test_write_data_file_returns_correct_statistics(self, tmp_path):
+    def test_write_data_file_returns_correct_statistics(self, tmp_path) -> None:
         """Statistics reflect null counts and record count accurately."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowWriteBackend
 
@@ -152,7 +152,7 @@ class TestWriteBackendComposesWithFormatModel:
         assert any(v == 2 for v in stats.null_value_counts.values())
         assert isinstance(stats.split_offsets, list)
 
-    def test_write_data_file_with_empty_table(self, tmp_path):
+    def test_write_data_file_with_empty_table(self, tmp_path) -> None:
         """Writing an empty table raises ValueError (cannot close writer without data)."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowWriteBackend
 
@@ -172,7 +172,7 @@ class TestWriteBackendComposesWithFormatModel:
                 format_model=format_model,
             )
 
-    def test_write_backend_satisfies_protocol(self):
+    def test_write_backend_satisfies_protocol(self) -> None:
         """PyArrowWriteBackend satisfies the WriteBackend protocol."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowWriteBackend
         from pyiceberg.execution.protocol import WriteBackend
@@ -180,7 +180,7 @@ class TestWriteBackendComposesWithFormatModel:
         backend = PyArrowWriteBackend()
         assert isinstance(backend, WriteBackend)
 
-    def test_write_data_file_produces_readable_parquet(self, tmp_path):
+    def test_write_data_file_produces_readable_parquet(self, tmp_path) -> None:
         """Written file can be read back with identical data."""
         import pyarrow.parquet as pq
 
@@ -215,7 +215,7 @@ class TestWriteBackendComposesWithFormatModel:
         assert read_back.column("id").to_pylist() == [1, 2, 3]
         assert read_back.column("value").to_pylist() == ["x", "y", "z"]
 
-    def test_empty_table_raises_on_close(self, tmp_path):
+    def test_empty_table_raises_on_close(self, tmp_path) -> None:
         """write_data_file with 0-row table raises ValueError from format writer.
 
         This documents current behavior: the PyArrowWriteBackend guards
@@ -253,7 +253,7 @@ class TestWriteFileUsesWriteBackend:
     @pytest.mark.skipif(
         __import__("sys").platform == "win32", reason="PyArrowFileIO does not support bare Windows paths for write operations"
     )
-    def test_write_file_accepts_write_backend_parameter(self, tmp_path):
+    def test_write_file_accepts_write_backend_parameter(self, tmp_path) -> None:
         """write_file() composes WriteBackend with its internal format model."""
         import uuid
 
@@ -294,7 +294,7 @@ class TestWriteFileUsesWriteBackend:
     @pytest.mark.skipif(
         __import__("sys").platform == "win32", reason="PyArrowFileIO does not support bare Windows paths for write operations"
     )
-    def test_write_file_without_backend_is_backward_compatible(self, tmp_path):
+    def test_write_file_without_backend_is_backward_compatible(self, tmp_path) -> None:
         """write_file() without write_backend still works (no regression)."""
         import uuid
 
@@ -337,7 +337,7 @@ class TestDataframeToDataFilesComposition:
     @pytest.mark.skipif(
         __import__("sys").platform == "win32", reason="PyArrowFileIO does not support bare Windows paths for write operations"
     )
-    def test_dataframe_to_data_files_with_write_backend(self, tmp_path):
+    def test_dataframe_to_data_files_with_write_backend(self, tmp_path) -> None:
         """write_backend flows from _dataframe_to_data_files → write_file."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowWriteBackend
         from pyiceberg.io.pyarrow import PyArrowFileIO, _dataframe_to_data_files

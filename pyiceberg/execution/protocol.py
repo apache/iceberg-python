@@ -63,7 +63,7 @@ class ReadBackend(Protocol):
         location: str,
         projected_schema: Schema,
         row_filter: BooleanExpression,
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         dictionary_columns: tuple[str, ...] = (),
     ) -> Iterator[pa.RecordBatch]:
         """Read a Parquet file with projection and optional filter pushdown.
@@ -144,7 +144,7 @@ class ComputeBackend(Protocol):
         self,
         file_paths: list[str],
         sort_keys: SortKeyList,
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """Sort data from Parquet files with bounded memory."""
@@ -155,7 +155,7 @@ class ComputeBackend(Protocol):
         left_paths: list[str],
         right_paths: list[str],
         on: list[str],
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """LEFT ANTI JOIN from Parquet files with bounded memory."""
@@ -174,7 +174,7 @@ class ComputeBackend(Protocol):
         data_path: str,
         position_delete_paths: list[str],
         projected_schema: Schema,
-        io_properties: Properties,
+        io_properties: Mapping[str, Any],
         memory_limit: int | None = None,
     ) -> Iterator[pa.RecordBatch]:
         """Read a data file and exclude rows at positions listed in delete files."""

@@ -33,7 +33,10 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
 
-from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend, PyArrowReadBackend
+from pyiceberg.execution.backends.pyarrow_backend import (
+    PyArrowComputeBackend,
+    PyArrowReadBackend,
+)
 from pyiceberg.execution.protocol import Backends
 from pyiceberg.expressions import AlwaysTrue
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
@@ -65,7 +68,7 @@ class TestLSPBehavioralEquivalence:
     supports_bounded_memory=False produce identical sort and anti-join output.
     """
 
-    def test_sort_output_identical_regardless_of_bounded_memory_flag(self, tmp_path):
+    def test_sort_output_identical_regardless_of_bounded_memory_flag(self, tmp_path) -> None:
         """PyArrow (bounded=False) and PyArrow-sort produce same result as any bounded backend would."""
         backend = PyArrowComputeBackend()
         assert backend.supports_bounded_memory is False
@@ -78,7 +81,7 @@ class TestLSPBehavioralEquivalence:
         assert result.column("id").to_pylist() == [1, 2, 3, 4, 5]
         assert result.column("val").to_pylist() == ["a", "b", "c", "d", "e"]
 
-    def test_anti_join_output_identical_regardless_of_bounded_memory_flag(self, tmp_path):
+    def test_anti_join_output_identical_regardless_of_bounded_memory_flag(self, tmp_path) -> None:
         """All backends produce same anti-join output -- the flag doesn't change semantics."""
         backend = PyArrowComputeBackend()
         assert backend.supports_bounded_memory is False
@@ -89,7 +92,7 @@ class TestLSPBehavioralEquivalence:
         result = pa.Table.from_batches(list(backend.anti_join(iter(left.to_batches()), iter(right.to_batches()), on=["id"])))
         assert sorted(result.column("id").to_pylist()) == [1, 3, 5]
 
-    def test_supports_bounded_memory_is_read_only_capability_flag(self):
+    def test_supports_bounded_memory_is_read_only_capability_flag(self) -> None:
         """supports_bounded_memory is a property (not settable) -- pure capability advertisement."""
         backend = PyArrowComputeBackend()
 
@@ -97,7 +100,7 @@ class TestLSPBehavioralEquivalence:
         with pytest.raises(AttributeError):
             backend.supports_bounded_memory = True  # type: ignore[misc]
 
-    def test_sort_from_files_produces_same_output_across_backends(self, tmp_path):
+    def test_sort_from_files_produces_same_output_across_backends(self, tmp_path) -> None:
         """sort_from_files output is deterministic regardless of which backend runs it."""
         file_path = str(tmp_path / "data.parquet")
         pq.write_table(pa.table({"id": [5, 3, 1, 4, 2]}), file_path)
@@ -111,7 +114,9 @@ class TestLSPBehavioralEquivalence:
 
         # If DataFusion available (bounded=True), verify same output
         try:
-            from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+            from pyiceberg.execution.backends.datafusion_backend import (
+                DataFusionComputeBackend,
+            )
 
             df_backend = DataFusionComputeBackend()
             assert df_backend.supports_bounded_memory is True
@@ -120,7 +125,7 @@ class TestLSPBehavioralEquivalence:
         except ImportError:
             pass  # DataFusion not installed -- skip cross-check
 
-    def test_apply_sort_order_skips_gracefully_without_bounded_memory(self):
+    def test_apply_sort_order_skips_gracefully_without_bounded_memory(self) -> None:
         """_apply_sort_order returns input unchanged when no bounded backend available.
 
         This proves the capability check is used for GATING (skip operation),
@@ -158,7 +163,7 @@ class TestStreamingFilterEmptyBatches:
     The streaming filter must silently skip these without error.
     """
 
-    def test_empty_batch_input_produces_no_output(self):
+    def test_empty_batch_input_produces_no_output(self) -> None:
         """Zero-row batches in the input are silently dropped."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
@@ -168,7 +173,7 @@ class TestStreamingFilterEmptyBatches:
         result = list(_cow_filter_batches(iter([empty_batch]), pc.field("id") > 0))
         assert result == []
 
-    def test_mix_of_empty_and_nonempty_batches(self):
+    def test_mix_of_empty_and_nonempty_batches(self) -> None:
         """Mixed input: empty batches are dropped, non-empty ones pass through."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
@@ -181,7 +186,7 @@ class TestStreamingFilterEmptyBatches:
         assert len(result) == 1
         assert result[0].num_rows == 3
 
-    def test_filter_that_eliminates_all_rows(self):
+    def test_filter_that_eliminates_all_rows(self) -> None:
         """When filter eliminates all rows from a batch, it's not yielded."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
@@ -192,7 +197,7 @@ class TestStreamingFilterEmptyBatches:
         result = list(_cow_filter_batches(iter([batch]), pc.field("id") > 100))
         assert result == []
 
-    def test_multiple_batches_partial_filtering(self):
+    def test_multiple_batches_partial_filtering(self) -> None:
         """Multiple batches with partial filtering preserves correct rows."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
@@ -230,7 +235,7 @@ class TestOrchestrateScanEmptyTasks:
     without raising, rather than crashing on empty-input edge cases.
     """
 
-    def test_empty_task_iterator_produces_no_batches(self):
+    def test_empty_task_iterator_produces_no_batches(self) -> None:
         """orchestrate_scan with zero tasks yields zero batches, no error."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -258,7 +263,7 @@ class TestOrchestrateScanEmptyTasks:
 
         assert result == [], f"Expected empty list for zero tasks, got {len(result)} batches"
 
-    def test_empty_task_iterator_does_not_invoke_backends(self):
+    def test_empty_task_iterator_does_not_invoke_backends(self) -> None:
         """With zero tasks, no backend methods should be called at all."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -309,7 +314,7 @@ class TestSerializePartitionKeyFallback:
     function must still produce correct and unique keys via the repr() fallback.
     """
 
-    def test_standard_record_with_data_attribute(self):
+    def test_standard_record_with_data_attribute(self) -> None:
         """Normal path: partition with sequence protocol produces JSON key."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
@@ -318,10 +323,10 @@ class TestSerializePartitionKeyFallback:
 
             _data = [100, "us-east-1", None]
 
-            def __len__(self):
+            def __len__(self) -> None:
                 return len(self._data)
 
-            def __getitem__(self, idx):
+            def __getitem__(self, idx) -> None:
                 return self._data[idx]
 
         key = _serialize_partition_key(0, FakeRecord())
@@ -334,14 +339,14 @@ class TestSerializePartitionKeyFallback:
         assert parsed[2] == "us-east-1"
         assert parsed[3] is None
 
-    def test_fallback_for_record_without_data_attribute(self):
+    def test_fallback_for_record_without_data_attribute(self) -> None:
         """Fallback path: partition without _data uses repr() instead of crashing."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class OpaqueRecord:
             """Record without _data attribute (e.g., Cython Record)."""
 
-            def __repr__(self):
+            def __repr__(self) -> None:
                 return "OpaqueRecord(a=1, b='x')"
 
         key = _serialize_partition_key(0, OpaqueRecord())
@@ -349,83 +354,83 @@ class TestSerializePartitionKeyFallback:
         assert len(key) > 0
         # Should not raise -- the fallback path handled it
 
-    def test_different_partitions_produce_different_keys(self):
+    def test_different_partitions_produce_different_keys(self) -> None:
         """Different partition values MUST produce different keys."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class RecordA:
             _data = [1, "us-east-1"]
 
-            def __len__(self):
+            def __len__(self) -> None:
                 return len(self._data)
 
-            def __getitem__(self, idx):
+            def __getitem__(self, idx) -> None:
                 return self._data[idx]
 
         class RecordB:
             _data = [1, "us-west-2"]
 
-            def __len__(self):
+            def __len__(self) -> None:
                 return len(self._data)
 
-            def __getitem__(self, idx):
+            def __getitem__(self, idx) -> None:
                 return self._data[idx]
 
         key_a = _serialize_partition_key(0, RecordA())
         key_b = _serialize_partition_key(0, RecordB())
         assert key_a != key_b, f"Different partition values must produce different keys: '{key_a}' == '{key_b}'"
 
-    def test_different_spec_ids_produce_different_keys(self):
+    def test_different_spec_ids_produce_different_keys(self) -> None:
         """Same partition values but different spec_ids MUST produce different keys."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class RecordA:
             _data = [1, "us-east-1"]
 
-            def __len__(self):
+            def __len__(self) -> None:
                 return len(self._data)
 
-            def __getitem__(self, idx):
+            def __getitem__(self, idx) -> None:
                 return self._data[idx]
 
         key_spec0 = _serialize_partition_key(0, RecordA())
         key_spec1 = _serialize_partition_key(1, RecordA())
         assert key_spec0 != key_spec1, f"Different spec_ids must produce different keys: '{key_spec0}' == '{key_spec1}'"
 
-    def test_none_partition_produces_valid_key(self):
+    def test_none_partition_produces_valid_key(self) -> None:
         """None partition (unpartitioned table) produces a simple key."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
         key = _serialize_partition_key(0, None)
         assert key == "0", f"None partition should produce '0', got '{key}'"
 
-    def test_fallback_path_different_records_produce_different_keys(self):
+    def test_fallback_path_different_records_produce_different_keys(self) -> None:
         """Fallback (repr-based) keys are unique for different records."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class OpaqueRecordA:
-            def __repr__(self):
+            def __repr__(self) -> None:
                 return "OpaqueRecord(a=1, b='x')"
 
         class OpaqueRecordB:
-            def __repr__(self):
+            def __repr__(self) -> None:
                 return "OpaqueRecord(a=2, b='y')"
 
         key_a = _serialize_partition_key(0, OpaqueRecordA())
         key_b = _serialize_partition_key(0, OpaqueRecordB())
         assert key_a != key_b, f"Different opaque records must produce different keys: '{key_a}' == '{key_b}'"
 
-    def test_partition_with_string_containing_pipes(self):
+    def test_partition_with_string_containing_pipes(self) -> None:
         """Partition values with pipes (|) must not corrupt JSON serialization."""
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class RecordWithPipes:
             _data = ["us|east|1", "value|with|pipes"]
 
-            def __len__(self):
+            def __len__(self) -> None:
                 return len(self._data)
 
-            def __getitem__(self, idx):
+            def __getitem__(self, idx) -> None:
                 return self._data[idx]
 
         key = _serialize_partition_key(0, RecordWithPipes())
@@ -453,33 +458,42 @@ class TestCowThresholdConfigurable:
 
         assert COW_THRESHOLD_DEFAULT == 64 * 1024 * 1024
 
-    def test_get_cow_threshold_returns_default_without_config(self):
+    def test_get_cow_threshold_returns_default_without_config(self) -> None:
         """Without config or env var, returns the 64 MB default."""
-        from pyiceberg.execution.engine import COW_THRESHOLD_DEFAULT, get_execution_config_int
+        from pyiceberg.execution.engine import (
+            COW_THRESHOLD_DEFAULT,
+            get_execution_config_int,
+        )
 
         # conftest.py already isolates from filesystem config
         result = get_execution_config_int("cow-threshold", COW_THRESHOLD_DEFAULT)
         assert result == 64 * 1024 * 1024
 
-    def test_get_cow_threshold_reads_env_var(self, monkeypatch):
+    def test_get_cow_threshold_reads_env_var(self, monkeypatch) -> None:
         """PYICEBERG_EXECUTION__COW_THRESHOLD env var overrides the default."""
         monkeypatch.setenv("PYICEBERG_EXECUTION__COW_THRESHOLD", "33554432")  # 32 MB
 
-        from pyiceberg.execution.engine import COW_THRESHOLD_DEFAULT, get_execution_config_int
+        from pyiceberg.execution.engine import (
+            COW_THRESHOLD_DEFAULT,
+            get_execution_config_int,
+        )
 
         result = get_execution_config_int("cow-threshold", COW_THRESHOLD_DEFAULT)
         assert result == 33554432
 
-    def test_get_cow_threshold_invalid_env_var_uses_default(self, monkeypatch):
+    def test_get_cow_threshold_invalid_env_var_uses_default(self, monkeypatch) -> None:
         """Invalid (non-integer) env var falls back to default."""
         monkeypatch.setenv("PYICEBERG_EXECUTION__COW_THRESHOLD", "not_a_number")
 
-        from pyiceberg.execution.engine import COW_THRESHOLD_DEFAULT, get_execution_config_int
+        from pyiceberg.execution.engine import (
+            COW_THRESHOLD_DEFAULT,
+            get_execution_config_int,
+        )
 
         result = get_execution_config_int("cow-threshold", COW_THRESHOLD_DEFAULT)
         assert result == 64 * 1024 * 1024
 
-    def test_cow_threshold_zero_forces_two_pass_for_all_files(self, monkeypatch):
+    def test_cow_threshold_zero_forces_two_pass_for_all_files(self, monkeypatch) -> None:
         """cow_threshold=0 means all files use two-pass streaming (no single-pass path).
 
         When cow_threshold=0, the condition `file_size < cow_threshold` is always False
@@ -488,7 +502,10 @@ class TestCowThresholdConfigurable:
         """
         monkeypatch.setenv("PYICEBERG_EXECUTION__COW_THRESHOLD", "0")
 
-        from pyiceberg.execution.engine import COW_THRESHOLD_DEFAULT, get_execution_config_int
+        from pyiceberg.execution.engine import (
+            COW_THRESHOLD_DEFAULT,
+            get_execution_config_int,
+        )
 
         threshold = get_execution_config_int("cow-threshold", COW_THRESHOLD_DEFAULT)
         assert threshold == 0
@@ -504,7 +521,7 @@ class TestBackendModulesHaveAll:
     Backend modules should define __all__ to match the codebase convention.
     """
 
-    def test_pyarrow_backend_has_all(self):
+    def test_pyarrow_backend_has_all(self) -> None:
         """pyarrow_backend.py must define __all__."""
         import pyiceberg.execution.backends.pyarrow_backend as mod
 
@@ -513,7 +530,7 @@ class TestBackendModulesHaveAll:
         assert "PyArrowWriteBackend" in mod.__all__
         assert "PyArrowComputeBackend" in mod.__all__
 
-    def test_datafusion_backend_has_all(self):
+    def test_datafusion_backend_has_all(self) -> None:
         """datafusion_backend.py must define __all__."""
         source = open("pyiceberg/execution/backends/datafusion_backend.py").read()
         tree = ast.parse(source)
@@ -536,7 +553,7 @@ class TestDictionaryColumnsParameter:
     must not cause errors, and the DATA must be correct regardless of encoding.
     """
 
-    def test_pyarrow_read_accepts_dictionary_columns(self, tmp_path):
+    def test_pyarrow_read_accepts_dictionary_columns(self, tmp_path) -> None:
         """PyArrow read backend accepts dictionary_columns without error."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -565,10 +582,12 @@ class TestDictionaryColumnsParameter:
         total_rows = sum(b.num_rows for b in batches)
         assert total_rows == 3
 
-    def test_datafusion_read_accepts_dictionary_columns(self, tmp_path):
+    def test_datafusion_read_accepts_dictionary_columns(self, tmp_path) -> None:
         """DataFusion read backend accepts dictionary_columns without error."""
         pytest.importorskip("datafusion")
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionReadBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionReadBackend,
+        )
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         schema = Schema(
@@ -604,7 +623,7 @@ class TestBoundedMemoryPlannerEmptyDeleteSet:
     empty delete_files sets.
     """
 
-    def test_planner_with_no_delete_manifests(self):
+    def test_planner_with_no_delete_manifests(self) -> None:
         """BoundedMemoryPlanner produces tasks with no deletes when delete Parquet is empty."""
         pytest.importorskip("datafusion")
 
@@ -711,7 +730,7 @@ class TestCoWDeleteEndToEndBehavioral:
     verifying correctness of the actual filtering logic.
     """
 
-    def test_streaming_filter_correct_results_single_batch(self, tmp_path):
+    def test_streaming_filter_correct_results_single_batch(self, tmp_path) -> None:
         """Single-batch file: streaming filter produces correct survivors."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
@@ -731,7 +750,7 @@ class TestCoWDeleteEndToEndBehavioral:
         result = pa.Table.from_batches(filtered, schema=schema)
         assert sorted(result.column("id").to_pylist()) == [3, 4, 5]
 
-    def test_streaming_filter_correct_results_multi_batch(self, tmp_path):
+    def test_streaming_filter_correct_results_multi_batch(self, tmp_path) -> None:
         """Multi-batch: streaming filter processes each batch independently."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
@@ -749,7 +768,7 @@ class TestCoWDeleteEndToEndBehavioral:
         result = pa.Table.from_batches(filtered, schema=schema)
         assert sorted(result.column("id").to_pylist()) == [1, 3, 5, 7, 9]
 
-    def test_streaming_filter_all_rows_excluded(self, tmp_path):
+    def test_streaming_filter_all_rows_excluded(self, tmp_path) -> None:
         """When all rows are filtered, yields no batches."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
@@ -762,7 +781,7 @@ class TestCoWDeleteEndToEndBehavioral:
 
         assert len(filtered) == 0
 
-    def test_streaming_filter_empty_input(self):
+    def test_streaming_filter_empty_input(self) -> None:
         """Empty input produces empty output."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
 
@@ -770,7 +789,7 @@ class TestCoWDeleteEndToEndBehavioral:
         filtered = list(_cow_filter_batches(iter([]), keep_filter))
         assert len(filtered) == 0
 
-    def test_two_pass_count_matches_streaming_write(self, tmp_path):
+    def test_two_pass_count_matches_streaming_write(self, tmp_path) -> None:
         """Pass 1 count and Pass 2 streaming produce identical row counts."""
         pa.schema([pa.field("id", pa.int32()), pa.field("val", pa.string())])
         data_path = str(tmp_path / "data.parquet")
@@ -831,7 +850,7 @@ class TestCoWDeletePartitioned:
     These tests verify the filtering logic still produces correct survivors.
     """
 
-    def test_partitioned_cow_filter_preserves_partition_column(self, tmp_path):
+    def test_partitioned_cow_filter_preserves_partition_column(self, tmp_path) -> None:
         """Partition column values are preserved in filtered output."""
         pa.schema(
             [
@@ -862,7 +881,7 @@ class TestCoWDeletePartitioned:
         # Partition column preserved
         assert set(filtered.column("region").to_pylist()) == {"us", "eu"}
 
-    def test_partitioned_cow_all_rows_deleted(self, tmp_path):
+    def test_partitioned_cow_all_rows_deleted(self, tmp_path) -> None:
         """When all rows match delete filter, file is dropped entirely."""
         data = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]})
         data_path = str(tmp_path / "data.parquet")
@@ -888,7 +907,7 @@ class TestPlanningAutoSwitchBehavioral:
     gracefully when DataFusion is not available.
     """
 
-    def test_below_threshold_uses_in_memory_planner(self):
+    def test_below_threshold_uses_in_memory_planner(self) -> None:
         """Tables with few delete files use InMemoryPlanner (fast path)."""
         from pyiceberg.execution.engine import BOUNDED_PLANNER_THRESHOLD
         from pyiceberg.manifest import ManifestContent, ManifestFile
@@ -907,7 +926,7 @@ class TestPlanningAutoSwitchBehavioral:
         )
         assert total_delete_files < BOUNDED_PLANNER_THRESHOLD
 
-    def test_above_threshold_triggers_bounded_planner(self):
+    def test_above_threshold_triggers_bounded_planner(self) -> None:
         """Tables with >100K delete files trigger BoundedMemoryPlanner."""
         from pyiceberg.execution.engine import BOUNDED_PLANNER_THRESHOLD
         from pyiceberg.manifest import ManifestContent, ManifestFile
@@ -924,7 +943,7 @@ class TestPlanningAutoSwitchBehavioral:
         )
         assert total_delete_files > BOUNDED_PLANNER_THRESHOLD
 
-    def test_threshold_fallback_when_datafusion_not_installed(self):
+    def test_threshold_fallback_when_datafusion_not_installed(self) -> None:
         """When DataFusion not available, the code path emits a warning."""
         from pyiceberg.execution.engine import BOUNDED_PLANNER_THRESHOLD
 
@@ -947,7 +966,7 @@ class TestPlanningAutoSwitchBehavioral:
             assert "500,000" in str(caught[0].message)
             assert "datafusion" in str(caught[0].message).lower()
 
-    def test_threshold_constant_is_reasonable(self):
+    def test_threshold_constant_is_reasonable(self) -> None:
         """BOUNDED_PLANNER_THRESHOLD is 100K -- reasonable for memory safety."""
         from pyiceberg.execution.engine import BOUNDED_PLANNER_THRESHOLD
 
@@ -955,7 +974,7 @@ class TestPlanningAutoSwitchBehavioral:
         # Above 100K, the cross-product assignment can explode
         assert BOUNDED_PLANNER_THRESHOLD == 100_000
 
-    def test_data_manifests_not_counted_in_threshold(self):
+    def test_data_manifests_not_counted_in_threshold(self) -> None:
         """Only DELETE manifests contribute to the threshold, not DATA manifests."""
         from pyiceberg.manifest import ManifestContent
 
@@ -986,7 +1005,7 @@ class TestPlanningAutoSwitchBehavioral:
 class TestOrchestrateErrorHandling:
     """Verify cleanup guarantees when backends raise mid-iteration."""
 
-    def test_spill_and_stream_cleans_temp_on_exception(self):
+    def test_spill_and_stream_cleans_temp_on_exception(self) -> None:
         """_spill_and_stream must delete temp file even if iteration is abandoned."""
         from pyiceberg.execution._orchestrate import _spill_and_stream
 
@@ -1005,7 +1024,7 @@ class TestOrchestrateErrorHandling:
         # Force cleanup by closing the generator (simulates abandonment)
         gen.close()
 
-    def test_materialize_batches_cleans_up_on_exception(self):
+    def test_materialize_batches_cleans_up_on_exception(self) -> None:
         """materialize_batches_to_parquet must clean temp file on exception."""
         from pyiceberg.execution.materialize import materialize_batches_to_parquet
 
@@ -1023,7 +1042,7 @@ class TestOrchestrateErrorHandling:
         # File must be cleaned up
         assert not Path(tmp_path).exists(), f"Temp file {tmp_path} was not cleaned up after exception exit"
 
-    def test_materialize_to_parquet_cleans_up_on_exception(self):
+    def test_materialize_to_parquet_cleans_up_on_exception(self) -> None:
         """materialize_to_parquet must clean temp file on exception."""
         from pyiceberg.execution.materialize import materialize_to_parquet
 
@@ -1039,7 +1058,7 @@ class TestOrchestrateErrorHandling:
         # File must be cleaned up
         assert not Path(tmp_path).exists(), f"Temp file {tmp_path} was not cleaned up after exception exit"
 
-    def test_materialize_batches_empty_iterator_produces_readable_file(self):
+    def test_materialize_batches_empty_iterator_produces_readable_file(self) -> None:
         """materialize_batches_to_parquet with zero batches produces a valid empty Parquet file.
 
         Edge case: user passes an iterator that yields nothing (e.g., all rows filtered out
@@ -1081,7 +1100,7 @@ class TestSpillAndStreamThresholdBoundary:
     - 4 batches (= 4, not < 4) → at threshold → spill to temp Parquet then stream
     """
 
-    def test_below_threshold_yields_from_memory_identity(self):
+    def test_below_threshold_yields_from_memory_identity(self) -> None:
         """Below threshold (3 < 4) → no spill, same batch objects returned."""
         from unittest.mock import patch
 
@@ -1098,7 +1117,7 @@ class TestSpillAndStreamThresholdBoundary:
         for orig, out in zip(batches, result, strict=True):
             assert orig is out
 
-    def test_at_threshold_spills_to_disk(self):
+    def test_at_threshold_spills_to_disk(self) -> None:
         """At threshold (4 is not < 4) → spill to Parquet, data round-trips."""
         from unittest.mock import patch
 
@@ -1116,7 +1135,7 @@ class TestSpillAndStreamThresholdBoundary:
         all_values = sorted(v for b in result for v in b.column("x").to_pylist())
         assert all_values == [0, 1, 2, 3]
 
-    def test_above_threshold_spills_to_disk(self):
+    def test_above_threshold_spills_to_disk(self) -> None:
         """Above threshold (5 > 4) → spill to Parquet, all data preserved."""
         from unittest.mock import patch
 
@@ -1159,7 +1178,7 @@ class TestOomWarningThresholdConfigurable:
 
         assert OOM_WARNING_THRESHOLD_BYTES == 2 * 1024 * 1024 * 1024
 
-    def test_warning_fires_above_default(self):
+    def test_warning_fires_above_default(self) -> None:
         """ResourceWarning emitted when total file bytes exceed 2 GB."""
         from pyiceberg.table import _warn_if_large_result
 
@@ -1170,7 +1189,7 @@ class TestOomWarningThresholdConfigurable:
         with pytest.warns(ResourceWarning, match="compressed Parquet data"):
             _warn_if_large_result(tasks, metadata)
 
-    def test_no_warning_below_default(self):
+    def test_no_warning_below_default(self) -> None:
         """No ResourceWarning when total is below 2 GB."""
         from pyiceberg.table import _warn_if_large_result
 
@@ -1182,7 +1201,7 @@ class TestOomWarningThresholdConfigurable:
             warnings.simplefilter("error")
             _warn_if_large_result(tasks, metadata)  # Should NOT raise
 
-    def test_env_var_overrides_default(self, monkeypatch):
+    def test_env_var_overrides_default(self, monkeypatch) -> None:
         """PYICEBERG_EXECUTION__OOM_WARNING_THRESHOLD overrides the default."""
         from pyiceberg.table import _warn_if_large_result
 
@@ -1196,7 +1215,7 @@ class TestOomWarningThresholdConfigurable:
         with pytest.warns(ResourceWarning, match="compressed Parquet data"):
             _warn_if_large_result(tasks, metadata)
 
-    def test_env_var_higher_threshold_suppresses_warning(self, monkeypatch):
+    def test_env_var_higher_threshold_suppresses_warning(self, monkeypatch) -> None:
         """Higher threshold via env var suppresses the warning for moderate data."""
         from pyiceberg.table import _warn_if_large_result
 
@@ -1225,14 +1244,16 @@ class TestDataFusionRealExecution:
     """
 
     @pytest.fixture(autouse=True)
-    def _skip_without_datafusion(self):
+    def _skip_without_datafusion(self) -> None:
         pytest.importorskip("datafusion")
 
-    def test_sort_from_files_produces_sorted_output(self, tmp_path):
+    def test_sort_from_files_produces_sorted_output(self, tmp_path) -> None:
         """Given an unsorted Parquet file, sort_from_files returns sorted batches."""
         import pyarrow.parquet as pq
 
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
 
         # Write unsorted data
         table = pa.table({"id": [3, 1, 4, 1, 5, 9, 2, 6], "val": ["c", "a", "d", "a", "e", "i", "b", "f"]})
@@ -1245,11 +1266,13 @@ class TestDataFusionRealExecution:
         result = pa.Table.from_batches(batches)
         assert result.column("id").to_pylist() == [1, 1, 2, 3, 4, 5, 6, 9]
 
-    def test_sort_from_files_descending(self, tmp_path):
+    def test_sort_from_files_descending(self, tmp_path) -> None:
         """sort_from_files respects descending direction."""
         import pyarrow.parquet as pq
 
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
 
         table = pa.table({"x": [5, 2, 8, 1, 3]})
         path = str(tmp_path / "data.parquet")
@@ -1260,11 +1283,13 @@ class TestDataFusionRealExecution:
         result = pa.Table.from_batches(batches)
         assert result.column("x").to_pylist() == [8, 5, 3, 2, 1]
 
-    def test_anti_join_from_files_excludes_matching_rows(self, tmp_path):
+    def test_anti_join_from_files_excludes_matching_rows(self, tmp_path) -> None:
         """Given data + delete files, anti_join_from_files returns only survivors."""
         import pyarrow.parquet as pq
 
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
 
         data = pa.table({"id": [1, 2, 3, 4, 5], "val": ["a", "b", "c", "d", "e"]})
         deletes = pa.table({"id": [2, 4]})
@@ -1279,11 +1304,13 @@ class TestDataFusionRealExecution:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [1, 3, 5]
 
-    def test_anti_join_from_files_null_equals_null(self, tmp_path):
+    def test_anti_join_from_files_null_equals_null(self, tmp_path) -> None:
         """IS NOT DISTINCT FROM: NULL in right excludes NULL in left."""
         import pyarrow.parquet as pq
 
-        from pyiceberg.execution.backends.datafusion_backend import DataFusionComputeBackend
+        from pyiceberg.execution.backends.datafusion_backend import (
+            DataFusionComputeBackend,
+        )
 
         data = pa.table({"id": pa.array([1, None, 3, None, 5], type=pa.int64())})
         deletes = pa.table({"id": pa.array([None], type=pa.int64())})
@@ -1303,7 +1330,7 @@ class TestDataFusionRealExecution:
 class TestBoundedPlannerComplexTypes:
     """Test BoundedMemoryPlanner serialization with complex partition value types."""
 
-    def test_serialize_partition_with_bytes(self):
+    def test_serialize_partition_with_bytes(self) -> None:
         """Partition values containing bytes are hex-serialized deterministically."""
         from pyiceberg.execution.planning import _serialize_partition_key
         from pyiceberg.typedef import Record
@@ -1312,7 +1339,7 @@ class TestBoundedPlannerComplexTypes:
         result = _serialize_partition_key(0, record)
         assert "010203" in result  # hex-encoded bytes
 
-    def test_serialize_partition_with_decimal(self):
+    def test_serialize_partition_with_decimal(self) -> None:
         """Decimal partition values use canonical string form."""
         from decimal import Decimal
 
@@ -1323,7 +1350,7 @@ class TestBoundedPlannerComplexTypes:
         result = _serialize_partition_key(0, record)
         assert "123.456" in result
 
-    def test_serialize_partition_with_uuid(self):
+    def test_serialize_partition_with_uuid(self) -> None:
         """UUID partition values use standard 8-4-4-4-12 form."""
         from uuid import UUID
 
@@ -1335,7 +1362,7 @@ class TestBoundedPlannerComplexTypes:
         result = _serialize_partition_key(0, record)
         assert "12345678-1234-5678-1234-567812345678" in result
 
-    def test_serialize_partition_with_datetime(self):
+    def test_serialize_partition_with_datetime(self) -> None:
         """Datetime partition values use ISO format."""
         import datetime
 
@@ -1347,7 +1374,7 @@ class TestBoundedPlannerComplexTypes:
         result = _serialize_partition_key(0, record)
         assert "2024-01-15T10:30:00" in result
 
-    def test_serialize_partition_with_date(self):
+    def test_serialize_partition_with_date(self) -> None:
         """Date partition values use ISO format."""
         import datetime
 
@@ -1359,7 +1386,7 @@ class TestBoundedPlannerComplexTypes:
         result = _serialize_partition_key(0, record)
         assert "2024-06-15" in result
 
-    def test_serialize_partition_with_memoryview(self):
+    def test_serialize_partition_with_memoryview(self) -> None:
         """memoryview partition values are handled same as bytes."""
         from pyiceberg.execution.planning import _serialize_partition_key
         from pyiceberg.typedef import Record
@@ -1368,9 +1395,12 @@ class TestBoundedPlannerComplexTypes:
         result = _serialize_partition_key(0, record)
         assert "deadbeef" in result
 
-    def test_datafile_roundtrip_with_key_metadata(self):
+    def test_datafile_roundtrip_with_key_metadata(self) -> None:
         """DataFile with key_metadata survives serialize/deserialize round-trip."""
-        from pyiceberg.execution.planning import _deserialize_data_file, _serialize_data_file
+        from pyiceberg.execution.planning import (
+            _deserialize_data_file,
+            _serialize_data_file,
+        )
         from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
         from pyiceberg.typedef import Record
 
@@ -1413,7 +1443,7 @@ class TestCowDeleteConcurrentFileRemoval:
     this gracefully via the try/except (FileNotFoundError, OSError) block.
     """
 
-    def test_file_removed_between_passes_is_skipped(self, tmp_path):
+    def test_file_removed_between_passes_is_skipped(self, tmp_path) -> None:
         """If the data file disappears between pass 1 and pass 2, it is skipped."""
 
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowReadBackend
@@ -1427,7 +1457,7 @@ class TestCowDeleteConcurrentFileRemoval:
         call_count = [0]
         original_read = backend.read_parquet
 
-        def _read_that_fails_on_second_call(*args, **kwargs):
+        def _read_that_fails_on_second_call(*args, **kwargs) -> None:
             call_count[0] += 1
             if call_count[0] == 2:
                 raise FileNotFoundError(f"File not found: {data_path}")
@@ -1462,7 +1492,7 @@ class TestCowDeleteZeroRecordCount:
     metadata). The skip is safe because an empty file has no rows to delete.
     """
 
-    def test_zero_record_count_is_skipped(self):
+    def test_zero_record_count_is_skipped(self) -> None:
         """Files with record_count=0 are skipped (no read, no rewrite)."""
         from unittest.mock import MagicMock
 
@@ -1484,7 +1514,7 @@ class TestBoundedPlannerEmptyDeleteManifests:
     with NULL delete_blobs (no deletes assigned).
     """
 
-    def test_stream_entries_no_deletes_produces_valid_output(self, tmp_path):
+    def test_stream_entries_no_deletes_produces_valid_output(self, tmp_path) -> None:
         """Phase 1 with zero delete entries produces an empty delete Parquet file."""
         import pyarrow.parquet as pq
 

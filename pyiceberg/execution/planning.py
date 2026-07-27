@@ -166,8 +166,11 @@ class BoundedMemoryPlanner:
             case_sensitive=case_sensitive,
         )
 
-        data_tmp = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
-        delete_tmp = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+        # Use NamedTemporaryFile for cross-platform temp paths, then close immediately.
+        # Pattern is intentional: we need paths for parquet streaming, and manually
+        # control cleanup via try/finally.
+        data_tmp = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)  # noqa: SIM115
+        delete_tmp = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)  # noqa: SIM115
         data_tmp_path = data_tmp.name
         delete_tmp_path = delete_tmp.name
         data_tmp.close()
@@ -207,7 +210,7 @@ class BoundedMemoryPlanner:
         from pyiceberg.manifest import DataFileContent
 
         data_schema = pa.schema(
-            [
+            [  # type: ignore[arg-type]
                 pa.field("file_path", pa.string()),
                 pa.field("partition_key", pa.string()),
                 pa.field("sequence_number", pa.int64()),
@@ -217,7 +220,7 @@ class BoundedMemoryPlanner:
             ]
         )
         delete_schema = pa.schema(
-            [
+            [  # type: ignore[arg-type]
                 pa.field("file_path", pa.string()),
                 pa.field("partition_key", pa.string()),
                 pa.field("sequence_number", pa.int64()),
@@ -297,7 +300,7 @@ class BoundedMemoryPlanner:
 
     def _yield_scan_tasks(
         self,
-        join_result_stream: Iterator,
+        join_result_stream: Iterator[Any],
         data_tmp_path: str,
         delete_tmp_path: str,
         table_metadata: TableMetadata,
@@ -373,7 +376,7 @@ def _deserialize_data_file(blob: bytes) -> DataFile:
     """
     import pickle
 
-    return pickle.loads(blob)  # noqa: S301 — same-process temp files, see _serialize_data_file docstring
+    return pickle.loads(blob)
 
 
 def _serialize_partition_key(spec_id: int, partition: Record | None) -> str:
@@ -423,9 +426,7 @@ def _partition_value_serializer(value: Any) -> Any:
         return bytes(value).hex()
     elif isinstance(value, Decimal):
         return str(value)
-    elif isinstance(value, datetime.datetime):
-        return value.isoformat()
-    elif isinstance(value, datetime.date):
+    elif isinstance(value, (datetime.datetime, datetime.date)):
         return value.isoformat()
     elif isinstance(value, UUID):
         return str(value)

@@ -61,7 +61,7 @@ class _SortedRecordBatchReader:
 
         guard = _CleanupGuard(ctx_manager)
 
-        def _sorted_batches_with_cleanup() -> Iterator:
+        def _sorted_batches_with_cleanup() -> Iterator[pa.RecordBatch]:
             try:
                 for batch in sort_fn(tmp_path):
                     if batch.schema != schema:
@@ -81,7 +81,7 @@ class _SortedRecordBatchReader:
 class _CleanupGuard:
     """Guard that ensures a context manager is exited even if the reader is abandoned."""
 
-    __slots__ = ("_ctx_manager", "_cleaned_up", "_ref", "__weakref__")
+    __slots__ = ("__weakref__", "_cleaned_up", "_ctx_manager", "_ref")
 
     def __init__(self, ctx_manager: Any) -> None:
         import weakref
@@ -105,5 +105,8 @@ class _CleanupGuard:
         """Weakref finalizer callback for abandoned readers."""
         try:
             ctx_manager.__exit__(None, None, None)
-        except Exception:
+        except (OSError, RuntimeError):
+            # Finalizers run during interpreter shutdown when resources may already
+            # be cleaned up. OSError for I/O cleanup failures, RuntimeError for
+            # threading/event-loop cleanup. Other exceptions propagate.
             pass

@@ -32,9 +32,9 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import Executor
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from pyiceberg.expressions import AlwaysTrue
 from pyiceberg.manifest import DataFileContent
@@ -49,9 +49,10 @@ if TYPE_CHECKING:
     from pyiceberg.manifest import DataFile
     from pyiceberg.table import FileScanTask
     from pyiceberg.table.metadata import TableMetadata
-    from pyiceberg.typedef import Properties
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 #: Default positional delete file size threshold (1 MB). Below this, the PyArrow
 #: set-based approach is used. Above, the DataFusion bounded-memory path kicks in.
@@ -120,7 +121,7 @@ def _bounded_map(
     from collections import deque
     from concurrent.futures import Future
 
-    inflight: deque[Future] = deque()
+    inflight: deque[Future[list[pa.RecordBatch]]] = deque()
 
     for item in items:
         inflight.append(executor.submit(fn, item))
@@ -205,7 +206,9 @@ def orchestrate_scan(
                 # Skip anti-join (no columns to join on); results are a superset.
                 pass
             elif backends.supports_bounded_memory:
-                from pyiceberg.execution.materialize import materialize_batches_to_parquet
+                from pyiceberg.execution.materialize import (
+                    materialize_batches_to_parquet,
+                )
                 from pyiceberg.io.pyarrow import schema_to_pyarrow
 
                 arrow_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
@@ -285,7 +288,7 @@ def orchestrate_scan(
             batches = backends.compute.filter(batches, task.residual)
 
         result_batches: list[pa.RecordBatch] = []
-        reconcile_fn = None
+        reconcile_fn: Callable[[pa.RecordBatch], pa.RecordBatch] | object | None = None
 
         for batch in batches:
             if reconcile_fn is None:
@@ -299,7 +302,12 @@ def orchestrate_scan(
                     schema_cache_lock=schema_cache_lock,
                 )
 
-            result_batches.append(reconcile_fn(batch) if reconcile_fn is not _NO_RECONCILIATION else batch)
+            if reconcile_fn is _NO_RECONCILIATION:
+                result_batches.append(batch)
+            elif callable(reconcile_fn):
+                result_batches.append(reconcile_fn(batch))
+            else:
+                result_batches.append(batch)
 
         return result_batches
 
@@ -340,7 +348,10 @@ def _spill_and_stream(batches: list[pa.RecordBatch]) -> Iterator[pa.RecordBatch]
         yield from batches
         return
 
-    tmp_file = tempfile.NamedTemporaryFile(suffix=".parquet", prefix="pyiceberg_stream_", delete=False)
+    # Use NamedTemporaryFile for cross-platform temp path, then close immediately.
+    # Pattern is intentional: we need the path for parquet writer, and manually
+    # control cleanup via _active_temp_files tracker.
+    tmp_file = tempfile.NamedTemporaryFile(suffix=".parquet", prefix="pyiceberg_stream_", delete=False)  # noqa: SIM115
     tmp_path = tmp_file.name
     tmp_file.close()
 
@@ -370,7 +381,7 @@ def _apply_positional_deletes(
     task: FileScanTask,
     pos_deletes: list[DataFile],
     projected_schema: Schema,
-    io_properties: Properties,
+    io_properties: Mapping[str, Any],
 ) -> Iterator[pa.RecordBatch]:
     """Route positional deletes to the optimal implementation.
 
@@ -379,7 +390,9 @@ def _apply_positional_deletes(
     compute backend's apply_positional_deletes (DataFusion bounded-memory path)
     only when delete files are large enough that the position set would be risky.
     """
-    from pyiceberg.execution.backends.pyarrow_backend import _apply_positional_deletes_impl
+    from pyiceberg.execution.backends.pyarrow_backend import (
+        _apply_positional_deletes_impl,
+    )
 
     total_delete_bytes = sum(d.file_size_in_bytes for d in pos_deletes)
 
@@ -402,7 +415,7 @@ def _apply_positional_deletes(
 def _read_equality_delete_batches(
     delete_files: list[DataFile],
     equality_schema: Schema,
-    io_properties: Properties,
+    io_properties: Mapping[str, Any],
     backends: Backends,
 ) -> Iterator[pa.RecordBatch]:
     """Read and chain batches from multiple equality delete files."""
@@ -433,7 +446,7 @@ def _build_reconcile_fn(
     downcast_ns: bool,
     *,
     task: FileScanTask | None = None,
-    schema_cache: dict | None = None,
+    schema_cache: dict[pa.Schema, Schema | None] | None = None,
     schema_cache_lock: threading.Lock | None = None,
 ) -> Callable[[pa.RecordBatch], pa.RecordBatch] | object:
     """Determine whether schema reconciliation is needed and return the appropriate function."""
@@ -596,11 +609,11 @@ def _get_sort_order(table_metadata: TableMetadata) -> SortKeyList | None:
     if sort_order is None or not sort_order.fields:
         return None
 
-    result = []
+    result: SortKeyList = []
     for field in sort_order.fields:
         col_name = schema.find_column_name(field.source_id)
         if col_name is None:
             return None  # Cannot resolve sort field
-        direction = "ascending" if field.direction.name == "ASC" else "descending"
+        direction: Literal["ascending", "descending"] = "ascending" if field.direction.name == "ASC" else "descending"
         result.append((col_name, direction))
     return result

@@ -49,7 +49,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def catalog():
+def catalog() -> None:
     """Create an InMemoryCatalog with a temp warehouse."""
     from pyiceberg.catalog.memory import InMemoryCatalog
 
@@ -60,7 +60,7 @@ def catalog():
 
 
 @pytest.fixture
-def simple_schema():
+def simple_schema() -> None:
     """Schema with id (int) and name (string)."""
     return Schema(
         NestedField(1, "id", IntegerType(), required=True),
@@ -71,7 +71,7 @@ def simple_schema():
 class TestCoWDeleteIntegration:
     """End-to-end CoW delete through the pluggable backend."""
 
-    def test_delete_removes_matching_rows(self, catalog, simple_schema):
+    def test_delete_removes_matching_rows(self, catalog, simple_schema) -> None:
         """Basic CoW delete: filter removes matching rows, keeps others."""
         table = catalog.create_table("default.cow_basic", simple_schema)
 
@@ -90,7 +90,7 @@ class TestCoWDeleteIntegration:
         assert result.num_rows == 3
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_delete_all_rows_drops_file(self, catalog, simple_schema):
+    def test_delete_all_rows_drops_file(self, catalog, simple_schema) -> None:
         """Deleting all rows results in an empty table."""
         table = catalog.create_table("default.cow_drop", simple_schema)
 
@@ -108,7 +108,7 @@ class TestCoWDeleteIntegration:
         result = table.scan().to_arrow()
         assert result.num_rows == 0
 
-    def test_delete_no_matching_rows_is_noop(self, catalog, simple_schema):
+    def test_delete_no_matching_rows_is_noop(self, catalog, simple_schema) -> None:
         """Delete with a filter matching no rows produces a warning and no change."""
         import warnings
 
@@ -132,7 +132,7 @@ class TestCoWDeleteIntegration:
         result = table.scan().to_arrow()
         assert result.num_rows == 3
 
-    def test_delete_with_statistics_short_circuit(self, catalog):
+    def test_delete_with_statistics_short_circuit(self, catalog) -> None:
         """Files whose column bounds prove no match are skipped (zero I/O)."""
         schema = Schema(
             NestedField(1, "id", IntegerType(), required=True),
@@ -164,7 +164,7 @@ class TestCoWDeleteIntegration:
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3]
         assert sorted(result.column("value").to_pylist()) == [10, 20, 30]
 
-    def test_delete_partial_file_rewrites_correctly(self, catalog, simple_schema):
+    def test_delete_partial_file_rewrites_correctly(self, catalog, simple_schema) -> None:
         """Partial delete rewrites file with only surviving rows."""
         table = catalog.create_table("default.cow_partial", simple_schema)
 
@@ -187,7 +187,7 @@ class TestCoWDeleteIntegration:
 class TestScanIntegration:
     """End-to-end scan through the pluggable backend."""
 
-    def test_scan_with_filter(self, catalog, simple_schema):
+    def test_scan_with_filter(self, catalog, simple_schema) -> None:
         """Scan with row filter returns only matching rows."""
         table = catalog.create_table("default.scan_filter", simple_schema)
 
@@ -205,7 +205,7 @@ class TestScanIntegration:
         assert result.num_rows == 11  # 90..100 inclusive
         assert min(result.column("id").to_pylist()) == 90
 
-    def test_scan_with_column_projection(self, catalog, simple_schema):
+    def test_scan_with_column_projection(self, catalog, simple_schema) -> None:
         """Scan with select returns only requested columns."""
         table = catalog.create_table("default.scan_project", simple_schema)
 
@@ -221,7 +221,7 @@ class TestScanIntegration:
         assert result.column_names == ["id"]
         assert result.num_rows == 3
 
-    def test_scan_count(self, catalog, simple_schema):
+    def test_scan_count(self, catalog, simple_schema) -> None:
         """scan().count() returns correct row count."""
         table = catalog.create_table("default.scan_count", simple_schema)
 
@@ -235,7 +235,7 @@ class TestScanIntegration:
 
         assert table.scan().count() == 50
 
-    def test_scan_to_batch_reader(self, catalog, simple_schema):
+    def test_scan_to_batch_reader(self, catalog, simple_schema) -> None:
         """to_arrow_batch_reader() streams batches correctly."""
         table = catalog.create_table("default.scan_stream", simple_schema)
 
@@ -251,7 +251,7 @@ class TestScanIntegration:
         total_rows = sum(batch.num_rows for batch in reader)
         assert total_rows == 20
 
-    def test_multiple_appends_scan_all(self, catalog, simple_schema):
+    def test_multiple_appends_scan_all(self, catalog, simple_schema) -> None:
         """Multiple appends produce multiple files; scan reads all."""
         table = catalog.create_table("default.multi_append", simple_schema)
 
@@ -271,7 +271,7 @@ class TestScanIntegration:
 class TestSortOnWriteIntegration:
     """Sort-on-write via the pluggable backend."""
 
-    def test_sort_on_write_with_datafusion(self, catalog):
+    def test_sort_on_write_with_datafusion(self, catalog) -> None:
         """When DataFusion is installed and table has sort order, data is written sorted."""
         try:
             import datafusion  # noqa: F401
@@ -303,7 +303,7 @@ class TestSortOnWriteIntegration:
         assert result.column("id").to_pylist() == [1, 2, 3, 4, 5]
         assert result.column("value").to_pylist() == [10, 20, 30, 40, 50]
 
-    def test_sort_on_write_without_datafusion_still_works(self, catalog, monkeypatch):
+    def test_sort_on_write_without_datafusion_still_works(self, catalog, monkeypatch) -> None:
         """Without DataFusion, sort-on-write is skipped — data is still written correctly."""
         from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
 
@@ -333,7 +333,7 @@ class TestSortOnWriteIntegration:
 class TestAppendOverwriteIntegration:
     """Append and overwrite operations through the pluggable backend."""
 
-    def test_overwrite_replaces_data(self, catalog, simple_schema):
+    def test_overwrite_replaces_data(self, catalog, simple_schema) -> None:
         """Overwrite with a filter replaces matching data."""
         from pyiceberg.expressions import GreaterThan
 
