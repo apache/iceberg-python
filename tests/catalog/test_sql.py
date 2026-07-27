@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from sqlalchemy import Engine, create_engine, inspect
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.exc import ArgumentError
 
 from pyiceberg.catalog import load_catalog
@@ -261,3 +261,203 @@ class TestSqlCatalogClose:
 
         # Second close should not raise an exception
         catalog_sqlite.close()
+
+
+def get_columns(engine: Engine) -> set[str]:
+    return {c["name"] for c in inspect(engine).get_columns("iceberg_tables")}
+
+
+def test_adds_iceberg_type_column_to_old_schema(warehouse: Path) -> None:
+    uri = f"sqlite:////{warehouse}/test-migration-add-col"
+    engine = _create_v0_db(uri)
+
+    # Verify the column does not exist in the old schema
+    assert "iceberg_type" not in get_columns(engine)
+
+    # Load the catalog with schema_version='v1' to trigger migration
+    catalog = SqlCatalog(
+        name="test",
+        uri=uri,
+        warehouse=f"file://{warehouse}",
+        init_catalog_tables="false",
+        schema_version="v1",
+    )
+    assert "iceberg_type" in get_columns(catalog.engine)
+
+
+def test_idempotent_when_column_already_exists(warehouse: Path) -> None:
+    catalog = SqlCatalog(
+        name="test",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{warehouse}",
+    )
+    assert "iceberg_type" in get_columns(catalog.engine)
+
+    # Verify initialization is idempotent when column already exists
+    catalog._init_catalog()
+    assert "iceberg_type" in get_columns(catalog.engine)
+
+
+def test_list_tables_filters_by_iceberg_type(warehouse: Path) -> None:
+    catalog = SqlCatalog(
+        name="test",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{warehouse}",
+    )
+    catalog.create_namespace("ns")
+    schema = Schema(NestedField(1, "id", StringType(), required=True))
+    catalog.create_table(("ns", "table_V1"), schema)
+
+    # Insert a legacy-schema row (iceberg_type IS NULL); should appear in list_tables.
+    with catalog.engine.connect() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO iceberg_tables "
+                "(catalog_name, table_namespace, table_name, metadata_location, previous_metadata_location, iceberg_type) "
+                "VALUES ('test', 'ns', 'table_V0', NULL, NULL, NULL)"
+            )
+        )
+        # Insert a non-TABLE row; should NOT appear in list_tables.
+        conn.execute(
+            text(
+                "INSERT INTO iceberg_tables "
+                "(catalog_name, table_namespace, table_name, metadata_location, previous_metadata_location, iceberg_type) "
+                "VALUES ('test', 'ns', 'some_view', NULL, NULL, 'VIEW')"
+            )
+        )
+        conn.commit()
+
+    tables = [t[-1] for t in catalog.list_tables("ns")]
+    assert "table_V1" in tables
+    assert "table_V0" in tables
+    assert "some_view" not in tables
+
+
+def test_migration_to_v1_with_property_set(warehouse: Path) -> None:
+    uri = f"sqlite:////{warehouse}/test-v1-migrate"
+    engine = _create_v0_db(uri)
+
+    assert "iceberg_type" not in get_columns(engine)
+
+    catalog = SqlCatalog(
+        name="test",
+        uri=uri,
+        warehouse=f"file://{warehouse}",
+        init_catalog_tables="false",
+        schema_version="v1",
+    )
+    assert "iceberg_type" in get_columns(catalog.engine)
+
+
+def test_invalid_schema_version_raises(warehouse: Path) -> None:
+    with pytest.raises(ValueError, match="Invalid schema_version"):
+        SqlCatalog(
+            name="test",
+            uri="sqlite:///:memory:",
+            warehouse=f"file://{warehouse}",
+            schema_version="invalid",
+        )
+
+
+def test_list_tables_works_on_v0_schema(warehouse: Path) -> None:
+    """list_tables should work on V0 schemas without iceberg_type column."""
+    uri = f"sqlite:////{warehouse}/test-v0-list"
+    _create_v0_db(uri)
+
+    catalog = SqlCatalog(
+        name="test",
+        uri=uri,
+        warehouse=f"file://{warehouse}",
+        init_catalog_tables="false",
+    )
+
+    # Create namespace directly
+    with catalog.engine.connect() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO iceberg_namespace_properties "
+                "(catalog_name, namespace, property_key, property_value) "
+                "VALUES ('test', 'ns', 'exists', 'true')"
+            )
+        )
+        # Insert rows (all are tables on V0, no iceberg_type column to distinguish)
+        conn.execute(
+            text(
+                "INSERT INTO iceberg_tables "
+                "(catalog_name, table_namespace, table_name, metadata_location, previous_metadata_location) "
+                "VALUES ('test', 'ns', 'table1', 'loc1', NULL)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO iceberg_tables "
+                "(catalog_name, table_namespace, table_name, metadata_location, previous_metadata_location) "
+                "VALUES ('test', 'ns', 'table2', 'loc2', NULL)"
+            )
+        )
+        conn.commit()
+
+    # list_tables should work on V0 (no iceberg_type filtering)
+    tables = [t[-1] for t in catalog.list_tables("ns")]
+    assert "table1" in tables
+    assert "table2" in tables
+
+
+def _create_v0_db(uri: str) -> Engine:
+    """Create a SQLite DB with V0 schema (no iceberg_type column). Returns the engine."""
+    engine = create_engine(uri)
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE iceberg_tables ("
+                "  catalog_name VARCHAR(255) NOT NULL,"
+                "  table_namespace VARCHAR(255) NOT NULL,"
+                "  table_name VARCHAR(255) NOT NULL,"
+                "  metadata_location VARCHAR(1000),"
+                "  previous_metadata_location VARCHAR(1000),"
+                "  PRIMARY KEY (catalog_name, table_namespace, table_name)"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE iceberg_namespace_properties ("
+                "  catalog_name VARCHAR(255) NOT NULL,"
+                "  namespace VARCHAR(255) NOT NULL,"
+                "  property_key VARCHAR(255) NOT NULL,"
+                "  property_value VARCHAR(1000) NOT NULL,"
+                "  PRIMARY KEY (catalog_name, namespace, property_key)"
+                ")"
+            )
+        )
+        conn.commit()
+    return engine
+
+
+def _make_v0_catalog(uri: str, warehouse: Path) -> SqlCatalog:
+    _create_v0_db(uri)
+    return SqlCatalog("test", uri=uri, warehouse=f"file://{warehouse}", init_catalog_tables="false")
+
+
+def test_namespace_exists_on_v0_schema(warehouse: Path) -> None:
+    """namespace_exists should not fail on V0 schema (no iceberg_type column)."""
+    catalog = _make_v0_catalog(f"sqlite:////{warehouse}/test-v0-ns-exists", warehouse)
+    catalog.create_namespace("ns")
+    assert catalog.namespace_exists("ns")
+    assert not catalog.namespace_exists("missing")
+
+
+def test_create_and_load_table_on_v0_schema(warehouse: Path) -> None:
+    """create_table and load_table should work on V0 schema without iceberg_type column."""
+    catalog = _make_v0_catalog(f"sqlite:////{warehouse}/test-v0-create", warehouse)
+    catalog.create_namespace("ns")
+    schema = Schema(NestedField(1, "id", StringType(), required=True))
+    tbl = catalog.create_table(("ns", "tbl"), schema)
+    assert tbl.name() == ("ns", "tbl")
+
+    # load_table must work without iceberg_type in the SELECT
+    loaded = catalog.load_table(("ns", "tbl"))
+    assert loaded.name() == ("ns", "tbl")
+
+    # iceberg_type column must still be absent from the DB (no migration occurred)
+    assert "iceberg_type" not in get_columns(catalog.engine)
