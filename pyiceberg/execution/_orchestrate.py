@@ -290,26 +290,11 @@ def orchestrate_scan(
                 dictionary_columns=dictionary_columns,
             )
 
-        # Post-filter guarantees correctness; read_parquet pushdown is best-effort only.
-        # Use the row_filter parameter (not task.residual) for post-filtering.
-        # This allows callers like Transaction.delete's _read_live_rows to override
-        # the task's residual (e.g., pass AlwaysTrue() to read all rows).
-        #
-        # The residual from ManifestGroupPlanner may contain unbound predicates
-        # (e.g., for unpartitioned tables or predicates not involving partition columns).
-        # We must bind to the projected schema before converting to PyArrow expression.
-        # However, some residuals may already be bound (from tests or REST scan planning),
-        # so we catch the TypeError from bind() and use the residual as-is.
-        if not isinstance(row_filter, AlwaysTrue):
-            from pyiceberg.expressions.visitors import bind
-
-            try:
-                bound_filter = bind(projected_schema, row_filter, case_sensitive)
-            except TypeError:
-                # Predicate is already bound
-                bound_filter = row_filter
-            batches = backends.compute.filter(batches, bound_filter)
-
+        # Schema reconciliation must happen BEFORE post-filter because:
+        # 1. The filter may reference columns that don't exist in the file but are projected
+        #    from partition values (e.g., partition_id column projected from manifest metadata)
+        # 2. Column names may have changed (e.g., "idx" renamed to "id" via schema evolution)
+        # The reconciled batches have the correct schema with all projected columns.
         result_batches: list[pa.RecordBatch] = []
         reconcile_fn: Callable[[pa.RecordBatch], pa.RecordBatch] | object | None = None
 
@@ -331,6 +316,30 @@ def orchestrate_scan(
                 result_batches.append(reconcile_fn(batch))
             else:
                 result_batches.append(batch)
+
+        # Post-filter guarantees correctness; read_parquet pushdown is best-effort only.
+        # Use the row_filter parameter (not task.residual) for post-filtering.
+        # This allows callers like Transaction.delete's _read_live_rows to override
+        # the task's residual (e.g., pass AlwaysTrue() to read all rows).
+        #
+        # The residual from ManifestGroupPlanner may contain unbound predicates
+        # (e.g., for unpartitioned tables or predicates not involving partition columns).
+        # We must bind to the projected schema before converting to PyArrow expression.
+        # However, some residuals may already be bound (from tests or REST scan planning),
+        # so we catch the TypeError from bind() and use the residual as-is.
+        #
+        # Post-filter happens AFTER reconciliation so that:
+        # - Projected partition columns are available for filtering
+        # - Renamed columns use their current names
+        if not isinstance(row_filter, AlwaysTrue):
+            from pyiceberg.expressions.visitors import bind
+
+            try:
+                bound_filter = bind(projected_schema, row_filter, case_sensitive)
+            except TypeError:
+                # Predicate is already bound
+                bound_filter = row_filter
+            result_batches = list(backends.compute.filter(iter(result_batches), bound_filter))
 
         return result_batches
 
@@ -578,12 +587,15 @@ def _build_reconcile_fn(
                             break
 
         if needs_reconciliation:
-            partition_spec = table_metadata.specs().get(table_metadata.default_spec_id)
+            # Use the file's spec_id to get the correct partition spec for this file.
+            # Files may have been written with different specs before partition evolution,
+            # so we can't use default_spec_id which is the current spec.
+            partition_spec = table_metadata.specs().get(task.file.spec_id) if task is not None else None
             projected_missing_fields = (
                 _get_column_projection_values(
                     task.file, projected_schema, table_metadata.schema(), partition_spec, file_schema.field_ids
                 )
-                if task is not None
+                if task is not None and partition_spec is not None
                 else {}
             )
 
