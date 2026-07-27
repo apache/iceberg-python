@@ -253,7 +253,14 @@ class PyArrowReadBackend:
                 pa_filter = None
 
         filesystem, path = _resolve_filesystem(location, io_properties)
-        dataset = ds.dataset(path, format="parquet", filesystem=filesystem)
+
+        # Configure parquet format with dictionary columns if specified
+        format_kwargs: dict[str, Any] = {}
+        if dictionary_columns:
+            format_kwargs["dictionary_columns"] = list(dictionary_columns)
+        parquet_format = ds.ParquetFileFormat(**format_kwargs) if format_kwargs else "parquet"
+
+        dataset = ds.dataset(path, format=parquet_format, filesystem=filesystem)
 
         # Only request columns that exist in the file. Missing columns (from schema
         # evolution) will be filled with NULLs by the schema reconciliation layer in

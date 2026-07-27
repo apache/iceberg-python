@@ -343,29 +343,34 @@ def orchestrate_scan(
         if puffin_positions:
             result_batches = _apply_puffin_positions(result_batches, puffin_positions)
 
-        # Post-filter guarantees correctness; read_parquet pushdown is best-effort only.
-        # Use the row_filter parameter (not task.residual) for post-filtering.
-        # This allows callers like Transaction.delete's _read_live_rows to override
-        # the task's residual (e.g., pass AlwaysTrue() to read all rows).
+        # Post-filter uses the task's residual, NOT the original row_filter.
+        # The residual is what remains after partition pruning - it only references
+        # columns that are either:
+        # 1. In the projected schema (user selected them)
+        # 2. Partition columns projected via identity transform
         #
-        # The residual from ManifestGroupPlanner may contain unbound predicates
-        # (e.g., for unpartitioned tables or predicates not involving partition columns).
-        # We must bind to the projected schema before converting to PyArrow expression.
-        # However, some residuals may already be bound (from tests or REST scan planning),
-        # so we catch the TypeError from bind() and use the residual as-is.
+        # If residual is AlwaysTrue, partition pruning handled the entire filter
+        # and no row-level filtering is needed. If the original row_filter references
+        # columns not in the projection, the residual should be AlwaysTrue (because
+        # partition pruning eliminated all non-matching files) or the filter should
+        # have been pushed down during read_parquet.
         #
         # Post-filter happens AFTER reconciliation so that:
         # - Projected partition columns are available for filtering
-        # - Renamed columns use their current names
-        if not isinstance(row_filter, AlwaysTrue):
+        # - Renamed columns use their current names (for schema evolution)
+        if not isinstance(task.residual, AlwaysTrue):
             from pyiceberg.expressions.visitors import bind
 
             try:
-                bound_filter = bind(projected_schema, row_filter, case_sensitive)
-            except TypeError:
-                # Predicate is already bound
-                bound_filter = row_filter
-            result_batches = list(backends.compute.filter(iter(result_batches), bound_filter))
+                bound_filter = bind(projected_schema, task.residual, case_sensitive)
+            except (TypeError, ValueError):
+                # Predicate is already bound, or references columns not in projected schema.
+                # The latter can happen if the filter references non-partition columns that
+                # weren't selected - in this case we skip post-filter and rely on pushdown.
+                bound_filter = None
+
+            if bound_filter is not None:
+                result_batches = list(backends.compute.filter(iter(result_batches), bound_filter))
 
         return result_batches
 
