@@ -85,9 +85,7 @@ def many_batches(simple_schema: Schema) -> list[pa.RecordBatch]:
 class TestLimitDoesNotMaterializeFullScan:
     """Verify that scan.limit(N).to_arrow() only reads N rows, not the full table."""
 
-    def test_limit_stops_consuming_generator_early(
-        self, simple_schema: Schema, many_batches: list[pa.RecordBatch]
-    ) -> None:
+    def test_limit_stops_consuming_generator_early(self, simple_schema: Schema, many_batches: list[pa.RecordBatch]) -> None:
         """With limit=10, orchestrate_scan's generator should NOT be fully consumed."""
         consumed_count = 0
 
@@ -120,9 +118,7 @@ class TestLimitDoesNotMaterializeFullScan:
             f"should only need 1 batch. The implementation is materializing the full scan."
         )
 
-    def test_limit_returns_exact_row_count(
-        self, simple_schema: Schema, many_batches: list[pa.RecordBatch]
-    ) -> None:
+    def test_limit_returns_exact_row_count(self, simple_schema: Schema, many_batches: list[pa.RecordBatch]) -> None:
         """Result table must have exactly `limit` rows."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()
@@ -143,9 +139,7 @@ class TestLimitDoesNotMaterializeFullScan:
 
         assert len(result) == 250
 
-    def test_no_limit_returns_all_rows(
-        self, simple_schema: Schema, many_batches: list[pa.RecordBatch]
-    ) -> None:
+    def test_no_limit_returns_all_rows(self, simple_schema: Schema, many_batches: list[pa.RecordBatch]) -> None:
         """Without limit, all rows are returned (full materialization is expected)."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()
@@ -166,9 +160,7 @@ class TestLimitDoesNotMaterializeFullScan:
 
         assert len(result) == 10_000
 
-    def test_limit_larger_than_data_returns_all(
-        self, simple_schema: Schema, many_batches: list[pa.RecordBatch]
-    ) -> None:
+    def test_limit_larger_than_data_returns_all(self, simple_schema: Schema, many_batches: list[pa.RecordBatch]) -> None:
         """Limit larger than available data returns all rows without error."""
         mock_scan = MagicMock()
         mock_scan.table_metadata = MagicMock()

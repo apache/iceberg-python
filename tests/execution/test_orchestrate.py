@@ -211,9 +211,7 @@ class TestScanDispatchesThroughPluggableBackend:
     and verify they are called. This survives any refactoring.
     """
 
-    def test_scan_calls_read_backend_for_plain_read(
-        self, tmp_path: Path, schema: Schema, observable_backends: Backends
-    ) -> None:
+    def test_scan_calls_read_backend_for_plain_read(self, tmp_path: Path, schema: Schema, observable_backends: Backends) -> None:
         """orchestrate_scan calls ReadBackend.read_parquet for tasks without deletes."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -425,9 +423,7 @@ class TestScanDispatchesThroughPluggableBackend:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [2, 3, 5]
 
-    def test_scan_calls_filter_for_residual(
-        self, tmp_path: Path, schema: Schema, observable_backends: Backends
-    ) -> None:
+    def test_scan_calls_filter_for_residual(self, tmp_path: Path, schema: Schema, observable_backends: Backends) -> None:
         """orchestrate_scan calls ComputeBackend.filter when task has non-trivial residual."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
         from pyiceberg.expressions.visitors import bind
@@ -554,10 +550,13 @@ class TestSchemaInferenceFailureLogging:
         mock_metadata.schema.return_value = projected_schema
         mock_metadata.format_version = 2
         # Force _infer_file_schema_from_batch to return None
-        with patch(
-            "pyiceberg.execution._orchestrate._infer_file_schema_from_batch",
-            return_value=None,
-        ), caplog.at_level(logging.DEBUG, logger="pyiceberg.execution._orchestrate"):
+        with (
+            patch(
+                "pyiceberg.execution._orchestrate._infer_file_schema_from_batch",
+                return_value=None,
+            ),
+            caplog.at_level(logging.DEBUG, logger="pyiceberg.execution._orchestrate"),
+        ):
             result = _build_reconcile_fn(batch, projected_schema, mock_metadata, False)
 
         # Should return _NO_RECONCILIATION (correct behavior -- no error)
@@ -588,10 +587,13 @@ class TestSchemaInferenceFailureLogging:
         mock_metadata.format_version = 2
 
         # Mock schema inference to return a schema matching projected (no reconciliation needed)
-        with patch(
-            "pyiceberg.execution._orchestrate._infer_file_schema_from_batch",
-            return_value=projected_schema,
-        ), caplog.at_level(logging.DEBUG, logger="pyiceberg.execution._orchestrate"):
+        with (
+            patch(
+                "pyiceberg.execution._orchestrate._infer_file_schema_from_batch",
+                return_value=projected_schema,
+            ),
+            caplog.at_level(logging.DEBUG, logger="pyiceberg.execution._orchestrate"),
+        ):
             result = _build_reconcile_fn(batch, projected_schema, mock_metadata, False)
 
         assert result is _NO_RECONCILIATION

@@ -240,7 +240,8 @@ class TestArrowScanParityBasicScan:
 class TestArrowScanParityWithFilter:
     """Verify scans with row filters produce identical output."""
 
-    def test_equality_filter_same_result(self,
+    def test_equality_filter_same_result(
+        self,
         parity_schema: Schema,
         parity_table_metadata: TableMetadataV2,
         parity_data_file: tuple[str, DataFile],
@@ -260,7 +261,8 @@ class TestArrowScanParityWithFilter:
         assert old_result.num_rows == new_result.num_rows
         assert old_result.column("id").to_pylist() == new_result.column("id").to_pylist()
 
-    def test_range_filter_same_result(self,
+    def test_range_filter_same_result(
+        self,
         parity_schema: Schema,
         parity_table_metadata: TableMetadataV2,
         parity_data_file: tuple[str, DataFile],
@@ -284,7 +286,8 @@ class TestArrowScanParityWithFilter:
 class TestArrowScanParityWithLimit:
     """Verify scans with limit produce identical output."""
 
-    def test_limit_same_result(self,
+    def test_limit_same_result(
+        self,
         parity_schema: Schema,
         parity_table_metadata: TableMetadataV2,
         parity_data_file: tuple[str, DataFile],
@@ -306,7 +309,8 @@ class TestArrowScanParityWithLimit:
 class TestArrowScanParityEmptyScan:
     """Verify empty scans produce identical output."""
 
-    def test_empty_tasks_same_result(self,
+    def test_empty_tasks_same_result(
+        self,
         parity_schema: Schema,
         parity_table_metadata: TableMetadataV2,
     ) -> None:

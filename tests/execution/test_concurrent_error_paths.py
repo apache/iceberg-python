@@ -69,9 +69,7 @@ class TestConcurrentAntiJoinSemanticCorrectness:
 
         errors: list[str] = []
 
-        def run_anti_join(
-            left_data: dict[str, list[int]], right_data: dict[str, list[int]], expected: set[int]
-        ) -> None:
+        def run_anti_join(left_data: dict[str, list[int]], right_data: dict[str, list[int]], expected: set[int]) -> None:
             left = [pa.record_batch(left_data)]
             right = [pa.record_batch(right_data)] if right_data["id"] else []
             result_batches = list(backend.anti_join(iter(left), iter(right), ["id"]))

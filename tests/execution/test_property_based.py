@@ -412,9 +412,7 @@ class TestAntiJoinNullSemantics:
         right_null_count=st.integers(min_value=1, max_value=5),
     )
     @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_null_count_reduction_exact(
-        self, non_null_values: list[int], left_null_count: int, right_null_count: int
-    ) -> None:
+    def test_null_count_reduction_exact(self, non_null_values: list[int], left_null_count: int, right_null_count: int) -> None:
         """When both sides have NULLs, ALL left NULLs are removed (not just matching count).
 
         IS NOT DISTINCT FROM is a predicate (returns true/false), not a counting join.
@@ -507,9 +505,7 @@ class TestAntiJoinNullSemantics:
         null_positions=st.lists(st.integers(0, 19), min_size=1, max_size=5, unique=True),
     )
     @settings(max_examples=150, suppress_health_check=[HealthCheck.too_slow], deadline=None)
-    def test_null_exclusion_does_not_affect_non_null_rows(
-        self, values: list[int], null_positions: list[int]
-    ) -> None:
+    def test_null_exclusion_does_not_affect_non_null_rows(self, values: list[int], null_positions: list[int]) -> None:
         """Excluding NULLs via anti-join must NOT accidentally exclude non-null rows.
 
         Regression guard: a buggy NULL handling implementation might overmatch

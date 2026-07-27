@@ -114,8 +114,8 @@ if TYPE_CHECKING:
     from pyiceberg_core.datafusion import IcebergDataFusionTable
 
     from pyiceberg.catalog import Catalog
-    from pyiceberg.execution.protocol import Backends
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
+    from pyiceberg.execution.protocol import Backends
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -441,9 +441,7 @@ class Transaction:
 
         return df, backends, sort_order_id
 
-    def _apply_sort_order(
-        self, df: pa.Table | pa.RecordBatchReader, backends: Backends
-    ) -> pa.Table | pa.RecordBatchReader:
+    def _apply_sort_order(self, df: pa.Table | pa.RecordBatchReader, backends: Backends) -> pa.Table | pa.RecordBatchReader:
         """Sort data before writing if table has a sort order and a bounded-memory backend is available.
 
         Sort-on-write is a **best-effort** performance optimization, not a correctness
@@ -867,9 +865,7 @@ class Transaction:
             projected_schema = self.table_metadata.schema()
 
             # Statistics-based short-circuit: classify files without reading data.
-            strict_metrics_eval = _StrictMetricsEvaluator(
-                projected_schema, delete_filter, case_sensitive=case_sensitive
-            ).eval
+            strict_metrics_eval = _StrictMetricsEvaluator(projected_schema, delete_filter, case_sensitive=case_sensitive).eval
             inclusive_metrics_eval = _InclusiveMetricsEvaluator(
                 projected_schema, delete_filter, case_sensitive=case_sensitive
             ).eval
@@ -884,14 +880,21 @@ class Transaction:
 
                 if not pos_deletes and not eq_deletes:
                     return backends.read.read_parquet(
-                        task.file.file_path, projected_schema, AlwaysTrue(), self._table.io.properties,
+                        task.file.file_path,
+                        projected_schema,
+                        AlwaysTrue(),
+                        self._table.io.properties,
                     )
 
                 if pos_deletes and eq_deletes:
                     eq_cols = _get_equality_field_names(eq_deletes, self.table_metadata)
                     if not eq_cols:
                         return _apply_positional_deletes(
-                            backends, task, pos_deletes, projected_schema, self._table.io.properties,
+                            backends,
+                            task,
+                            pos_deletes,
+                            projected_schema,
+                            self._table.io.properties,
                         )
 
                     if backends.supports_bounded_memory:
@@ -900,32 +903,51 @@ class Transaction:
                         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
                         pos_batches = _apply_positional_deletes(
-                            backends, task, pos_deletes, projected_schema, self._table.io.properties,
+                            backends,
+                            task,
+                            pos_deletes,
+                            projected_schema,
+                            self._table.io.properties,
                         )
                         arrow_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
                         with materialize_batches_to_parquet(pos_batches, arrow_schema) as tmp_path:
-                            result_batches = list(backends.compute.anti_join_from_files(
-                                left_paths=[tmp_path],
-                                right_paths=[d.file_path for d in eq_deletes],
-                                on=eq_cols,
-                                io_properties=self._table.io.properties,
-                            ))
+                            result_batches = list(
+                                backends.compute.anti_join_from_files(
+                                    left_paths=[tmp_path],
+                                    right_paths=[d.file_path for d in eq_deletes],
+                                    on=eq_cols,
+                                    io_properties=self._table.io.properties,
+                                )
+                            )
                         return iter(result_batches)
                     else:
                         pos_batches = _apply_positional_deletes(
-                            backends, task, pos_deletes, projected_schema, self._table.io.properties,
+                            backends,
+                            task,
+                            pos_deletes,
+                            projected_schema,
+                            self._table.io.properties,
                         )
                         eq_schema = _build_equality_schema(eq_deletes, self.table_metadata)
                         eq_batches = _read_equality_delete_batches(
-                            eq_deletes, eq_schema, self._table.io.properties, backends,
+                            eq_deletes,
+                            eq_schema,
+                            self._table.io.properties,
+                            backends,
                         )
                         return backends.compute.anti_join(
-                            left=pos_batches, right=eq_batches, on=eq_cols,
+                            left=pos_batches,
+                            right=eq_batches,
+                            on=eq_cols,
                         )
 
                 elif pos_deletes:
                     return _apply_positional_deletes(
-                        backends, task, pos_deletes, projected_schema, self._table.io.properties,
+                        backends,
+                        task,
+                        pos_deletes,
+                        projected_schema,
+                        self._table.io.properties,
                     )
 
                 else:  # eq_deletes only
@@ -938,7 +960,10 @@ class Transaction:
                             io_properties=self._table.io.properties,
                         )
                     return backends.read.read_parquet(
-                        task.file.file_path, projected_schema, AlwaysTrue(), self._table.io.properties,
+                        task.file.file_path,
+                        projected_schema,
+                        AlwaysTrue(),
+                        self._table.io.properties,
                     )
 
             for original_file in files:
@@ -1132,8 +1157,13 @@ class Transaction:
         # The in-memory path iterates target batches one at a time and accumulates
         # only the matching updates (always ≤ source_size).
         return self._upsert_in_memory(
-            df, join_cols, when_matched_update_all, when_not_matched_insert_all,
-            case_sensitive, branch, snapshot_properties,
+            df,
+            join_cols,
+            when_matched_update_all,
+            when_not_matched_insert_all,
+            case_sensitive,
+            branch,
+            snapshot_properties,
         )
 
     def _upsert_in_memory(
@@ -2621,9 +2651,7 @@ class DataScan(TableScan):
         from pyiceberg.manifest import ManifestContent
 
         delete_manifests = [m for m in manifests if m.content == ManifestContent.DELETES]
-        total_delete_files = sum(
-            (m.existing_files_count or 0) + (m.added_files_count or 0) for m in delete_manifests
-        )
+        total_delete_files = sum((m.existing_files_count or 0) + (m.added_files_count or 0) for m in delete_manifests)
 
         # Configurable threshold: execution.planning-threshold in .pyiceberg.yaml
         # or PYICEBERG_EXECUTION__PLANNING_THRESHOLD env var. Default: 100,000.
@@ -2719,18 +2747,13 @@ class DataScan(TableScan):
 
         # Fast path: sum record counts from tasks that can be answered from metadata alone
         metadata_count = sum(
-            task.file.record_count
-            for task in tasks_list
-            if task.residual == AlwaysTrue() and len(task.delete_files) == 0
+            task.file.record_count for task in tasks_list if task.residual == AlwaysTrue() and len(task.delete_files) == 0
         )
 
         # Slow path: batch all tasks needing reads into a single orchestrate_scan call.
         # This leverages the thread pool's parallelism across all tasks at once,
         # rather than creating per-task orchestrate_scan calls with single-item iterators.
-        tasks_needing_read = [
-            task for task in tasks_list
-            if not (task.residual == AlwaysTrue() and len(task.delete_files) == 0)
-        ]
+        tasks_needing_read = [task for task in tasks_list if not (task.residual == AlwaysTrue() and len(task.delete_files) == 0)]
 
         read_count = 0
         if tasks_needing_read:
@@ -2867,8 +2890,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:

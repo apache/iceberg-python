@@ -81,9 +81,7 @@ class TestApplySortOrderWithRecordBatchReader:
 
         return tx
 
-    def test_record_batch_reader_input_produces_sorted_output(
-        self, transaction_with_sort_order: Transaction
-    ) -> None:
+    def test_record_batch_reader_input_produces_sorted_output(self, transaction_with_sort_order: Transaction) -> None:
         """RecordBatchReader input to _apply_sort_order produces correctly sorted output."""
         pytest.importorskip("datafusion")
 
@@ -117,9 +115,7 @@ class TestApplySortOrderWithRecordBatchReader:
         assert result_table.column("id").to_pylist() == [1, 2, 3, 4, 5]
         assert result_table.column("name").to_pylist() == ["a", "b", "c", "d", "e"]
 
-    def test_table_input_produces_sorted_output(
-        self, transaction_with_sort_order: Transaction
-    ) -> None:
+    def test_table_input_produces_sorted_output(self, transaction_with_sort_order: Transaction) -> None:
         """pa.Table input to _apply_sort_order also produces correctly sorted output."""
         pytest.importorskip("datafusion")
 
@@ -204,9 +200,7 @@ class TestApplySortOrderWithRecordBatchReader:
 
         assert result is input_table
 
-    def test_sorted_reader_cleans_up_temp_file(
-        self, transaction_with_sort_order: Transaction
-    ) -> None:
+    def test_sorted_reader_cleans_up_temp_file(self, transaction_with_sort_order: Transaction) -> None:
         """Temp file created by _apply_sort_order is cleaned up after reader is consumed."""
         pytest.importorskip("datafusion")
 
