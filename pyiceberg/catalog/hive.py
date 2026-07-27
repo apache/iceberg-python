@@ -59,6 +59,7 @@ from pyiceberg.catalog import (
     METADATA_LOCATION,
     TABLE_TYPE,
     URI,
+    ICEBERG_VIEW,
     MetastoreCatalog,
     PropertiesUpdateSummary,
 )
@@ -480,7 +481,28 @@ class HiveCatalog(MetastoreCatalog):
 
     @override
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
-        raise NotImplementedError
+        """List Iceberg views under the given namespace in the catalog.
+
+        When the database doesn't exist, it will just return an empty list.
+
+        Args:
+            namespace: Database to list.
+
+        Returns:
+            List[Identifier]: list of views identifiers.
+
+        Raises:
+            NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
+        """
+        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        with self._client as open_client:
+            return [
+                (database_name, table.tableName)
+                for table in open_client.get_table_objects_by_name(
+                    dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
+                )
+                if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG_VIEW
+            ]
 
     @override
     def view_exists(self, identifier: str | Identifier) -> bool:
