@@ -470,7 +470,12 @@ def _build_reconcile_fn(
     else:
         file_schema = _infer_file_schema_from_batch(batch, table_metadata, downcast_ns)
 
-    if file_schema is not None and file_schema.field_ids != projected_schema.field_ids:
+    if file_schema is not None:
+        # Always reconcile to ensure correct nullability, types, and field order.
+        # The original ArrowScan.to_record_batches unconditionally called
+        # _to_requested_schema for every batch -- we must do the same to
+        # correctly handle cases where field IDs match but nullability differs
+        # (e.g., Parquet file has required=True but Iceberg schema has optional=True).
         partition_spec = table_metadata.specs().get(table_metadata.default_spec_id)
         projected_missing_fields = (
             _get_column_projection_values(
@@ -497,14 +502,14 @@ def _build_reconcile_fn(
 
         return _reconcile
 
-    if file_schema is None:
-        logger.debug(
-            "Schema inference failed for batch (Arrow schema fingerprint: %s). "
-            "Skipping schema reconciliation -- batches will pass through unchanged. "
-            "If columns are missing or have wrong types, check that the table has "
-            "a name mapping or that Parquet files include field IDs in metadata.",
-            batch.schema.fingerprint if hasattr(batch.schema, "fingerprint") else str(batch.schema),
-        )
+    # file_schema is None -- schema inference failed
+    logger.debug(
+        "Schema inference failed for batch (Arrow schema fingerprint: %s). "
+        "Skipping schema reconciliation -- batches will pass through unchanged. "
+        "If columns are missing or have wrong types, check that the table has "
+        "a name mapping or that Parquet files include field IDs in metadata.",
+        batch.schema.fingerprint if hasattr(batch.schema, "fingerprint") else str(batch.schema),
+    )
 
     return _NO_RECONCILIATION
 
