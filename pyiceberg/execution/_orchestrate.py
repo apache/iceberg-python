@@ -201,6 +201,10 @@ def orchestrate_scan(
                     for chunk in pos_array.chunks:
                         puffin_positions.update(chunk.to_pylist())
 
+        # Track whether we pushed down the filter during read.
+        # Post-filter is required when we didn't push down but have a non-trivial filter.
+        filter_pushed_down = False
+
         if parquet_pos_deletes and eq_deletes:
             batches: Iterator[pa.RecordBatch] = _apply_positional_deletes(
                 backends,
@@ -250,6 +254,7 @@ def orchestrate_scan(
                     right=_read_equality_delete_batches(eq_deletes, eq_schema, io_properties, backends),
                     on=eq_cols,
                 )
+            # Note: filter not pushed down in this path
         elif eq_deletes:
             eq_cols = _get_equality_field_names(eq_deletes, table_metadata)
             if eq_cols is None:
@@ -272,6 +277,7 @@ def orchestrate_scan(
                     io_properties,
                     dictionary_columns=dictionary_columns,
                 )
+                filter_pushed_down = not isinstance(pushdown_filter, AlwaysTrue)
             elif not eq_cols:
                 # equality_ids present but all referenced columns dropped via schema
                 # evolution. _get_equality_field_names already emitted a warning.
@@ -284,6 +290,7 @@ def orchestrate_scan(
                     io_properties,
                     dictionary_columns=dictionary_columns,
                 )
+                filter_pushed_down = not isinstance(pushdown_filter, AlwaysTrue)
             else:
                 batches = backends.compute.anti_join_from_files(
                     left_paths=[task.file.file_path],
@@ -291,6 +298,7 @@ def orchestrate_scan(
                     on=eq_cols,
                     io_properties=io_properties,
                 )
+                # Note: filter not pushed down in anti_join_from_files path
         elif parquet_pos_deletes:
             batches = _apply_positional_deletes(
                 backends,
@@ -299,6 +307,7 @@ def orchestrate_scan(
                 projected_schema,
                 io_properties,
             )
+            # Note: filter not pushed down in positional delete path
         else:
             # Use task.residual for pushdown (handles schema evolution column names).
             # If row_filter is AlwaysTrue, caller wants all rows - use AlwaysTrue for pushdown too.
@@ -310,6 +319,7 @@ def orchestrate_scan(
                 io_properties,
                 dictionary_columns=dictionary_columns,
             )
+            filter_pushed_down = not isinstance(pushdown_filter, AlwaysTrue)
 
         # Schema reconciliation must happen BEFORE post-filter because:
         # 1. The filter may reference columns that don't exist in the file but are projected
@@ -343,23 +353,22 @@ def orchestrate_scan(
         if puffin_positions:
             result_batches = _apply_puffin_positions(result_batches, puffin_positions)
 
-        # Post-filter is only needed if pushdown didn't handle the filter.
-        # Pushdown happens via task.residual in read_parquet. If residual is not AlwaysTrue,
-        # it means the filter was pushed down to the scanner, so post-filter is redundant.
+        # Post-filter is needed when we have a non-trivial row_filter but didn't push it
+        # down during read. This happens in several cases:
+        # 1. Positional delete paths don't push down (they read all rows to apply deletes)
+        # 2. Equality delete anti-join paths don't push down
+        # 3. The filter references partition columns not in projected schema (partition
+        #    pruning handled it, but we can skip post-filter in that case)
         #
         # We SKIP post-filter when:
         # 1. row_filter is AlwaysTrue (no filter to apply)
-        # 2. task.residual is not AlwaysTrue (pushdown handled the filter)
+        # 2. filter_pushed_down is True (scanner already applied it)
         # 3. row_filter references columns not in projected schema (partition pruning handled it)
         #
-        # We APPLY post-filter only when residual is AlwaysTrue AND row_filter is non-trivial
-        # AND the filter can be bound to the projected schema. This handles cases where
-        # partition pruning eliminated the filter from residual but we still need to verify.
-        #
         # NOTE: Using batch.filter() with PyArrow expressions doesn't support all types
-        # (e.g., extension types like UUID). By skipping post-filter when pushdown worked,
-        # we avoid these issues since the dataset scanner handles extension types properly.
-        if not isinstance(row_filter, AlwaysTrue) and isinstance(task.residual, AlwaysTrue):
+        # (e.g., extension types like UUID). For paths that push down the filter, the
+        # dataset scanner handles extension types properly.
+        if not isinstance(row_filter, AlwaysTrue) and not filter_pushed_down:
             from pyiceberg.expressions.visitors import bind
 
             try:
