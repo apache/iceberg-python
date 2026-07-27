@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from pyiceberg.io import OutputFile
 from pyiceberg.manifest import FileFormat
@@ -143,18 +143,17 @@ class FileFormatWriter(ABC):
         self._result = self.close()
 
 
-class FileFormatModel(ABC):
+@runtime_checkable
+class FileFormatModel(Protocol):
     """Represents a file format's capabilities. Creates writers."""
 
     @property
-    @abstractmethod
     def format(self) -> FileFormat: ...
 
-    @abstractmethod
     def file_extension(self) -> str:
         """Return file extension without dot, e.g. 'parquet', 'orc'."""
+        ...
 
-    @abstractmethod
     def create_writer(
         self,
         output_file: OutputFile,
@@ -162,9 +161,9 @@ class FileFormatModel(ABC):
         properties: Properties,
     ) -> FileFormatWriter: ...
 
-    @abstractmethod
     def add_field_metadata(self, field: NestedField, metadata: dict[bytes, bytes], include_field_ids: bool) -> None:
         """Add format-specific Arrow field metadata."""
+        ...
 
 
 class FileFormatFactory:
