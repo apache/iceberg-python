@@ -241,10 +241,13 @@ def orchestrate_scan(
                     UserWarning,
                     stacklevel=2,
                 )
+                # Use task.residual for pushdown (handles schema evolution column names).
+                # If row_filter is AlwaysTrue, caller wants all rows - use AlwaysTrue for pushdown too.
+                pushdown_filter = AlwaysTrue() if isinstance(row_filter, AlwaysTrue) else task.residual
                 batches = backends.read.read_parquet(
                     task.file.file_path,
                     projected_schema,
-                    row_filter,
+                    pushdown_filter,
                     io_properties,
                     dictionary_columns=dictionary_columns,
                 )
@@ -252,10 +255,11 @@ def orchestrate_scan(
                 # equality_ids present but all referenced columns dropped via schema
                 # evolution. _get_equality_field_names already emitted a warning.
                 # Skip anti-join; fall through to plain read (superset of correct results).
+                pushdown_filter = AlwaysTrue() if isinstance(row_filter, AlwaysTrue) else task.residual
                 batches = backends.read.read_parquet(
                     task.file.file_path,
                     projected_schema,
-                    row_filter,
+                    pushdown_filter,
                     io_properties,
                     dictionary_columns=dictionary_columns,
                 )
@@ -275,10 +279,13 @@ def orchestrate_scan(
                 io_properties,
             )
         else:
+            # Use task.residual for pushdown (handles schema evolution column names).
+            # If row_filter is AlwaysTrue, caller wants all rows - use AlwaysTrue for pushdown too.
+            pushdown_filter = AlwaysTrue() if isinstance(row_filter, AlwaysTrue) else task.residual
             batches = backends.read.read_parquet(
                 task.file.file_path,
                 projected_schema,
-                row_filter,
+                pushdown_filter,
                 io_properties,
                 dictionary_columns=dictionary_columns,
             )
@@ -542,8 +549,9 @@ def _build_reconcile_fn(
     if file_schema is not None:
         # Check if reconciliation is actually needed:
         # 1. Field IDs differ (schema evolution - columns added/removed)
-        # 2. File field is required but projected field is optional (need to widen nullability)
-        # 3. File type needs widening promotion (e.g., int32 → int64)
+        # 2. Column names differ (schema evolution - column renamed)
+        # 3. File field is required but projected field is optional (need to widen nullability)
+        # 4. File type needs widening promotion (e.g., int32 → int64)
         #
         # We do NOT reconcile for narrowing type conversions (e.g., int64 → int32) because:
         # - These would fail in _to_requested_schema's promote() call
@@ -555,6 +563,10 @@ def _build_reconcile_fn(
             for proj_field in projected_schema.fields:
                 file_field = file_schema.find_field(proj_field.field_id)
                 if file_field is not None:
+                    # Check column name: file name differs from projected name → column was renamed
+                    if file_field.name != proj_field.name:
+                        needs_reconciliation = True
+                        break
                     # Check nullability: file required but projected optional → need to widen
                     if file_field.required and not proj_field.required:
                         needs_reconciliation = True

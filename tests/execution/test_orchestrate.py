@@ -424,17 +424,17 @@ class TestScanDispatchesThroughPluggableBackend:
         assert sorted(result.column("id").to_pylist()) == [2, 3, 5]
 
     def test_scan_calls_filter_for_residual(self, tmp_path: Path, schema: Schema, observable_backends: Backends) -> None:
-        """orchestrate_scan calls ComputeBackend.filter when task has non-trivial residual."""
+        """orchestrate_scan calls ComputeBackend.filter when row_filter has non-trivial predicate."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
         from pyiceberg.expressions.visitors import bind
 
         data_path = str(tmp_path / "data.parquet")
         pq.write_table(pa.table({"id": [1, 2, 3, 4, 5], "name": ["a", "b", "c", "d", "e"]}), data_path)
 
-        # Create a BOUND residual predicate (expression_to_pyarrow requires bound predicates)
-        bound_residual = bind(schema, EqualTo("id", 3), case_sensitive=True)
+        # Create a BOUND predicate (expression_to_pyarrow requires bound predicates)
+        bound_filter = bind(schema, EqualTo("id", 3), case_sensitive=True)
 
-        # Task with a non-AlwaysTrue residual
+        # Task with AlwaysTrue residual (pushdown handles the filter)
         task = FileScanTask(
             data_file=DataFile.from_args(
                 content=DataFileContent.DATA,
@@ -443,7 +443,7 @@ class TestScanDispatchesThroughPluggableBackend:
                 record_count=5,
                 file_size_in_bytes=500,
             ),
-            residual=bound_residual,
+            residual=AlwaysTrue(),
         )
 
         mock_metadata = MagicMock()
@@ -456,12 +456,12 @@ class TestScanDispatchesThroughPluggableBackend:
                 tasks=iter([task]),
                 table_metadata=mock_metadata,
                 projected_schema=schema,
-                row_filter=AlwaysTrue(),
+                row_filter=bound_filter,
                 case_sensitive=True,
             )
         )
 
-        # BEHAVIORAL PROOF: filter was called with the residual
+        # BEHAVIORAL PROOF: filter was called with the row_filter
         compute_backend = _get_observable_compute(observable_backends)
         filter_calls = [c for c in compute_backend.calls if c["method"] == "filter"]
         assert len(filter_calls) == 1
