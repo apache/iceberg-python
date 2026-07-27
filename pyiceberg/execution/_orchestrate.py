@@ -287,10 +287,16 @@ def orchestrate_scan(
         # The residual from ManifestGroupPlanner may contain unbound predicates
         # (e.g., for unpartitioned tables or predicates not involving partition columns).
         # We must bind to the projected schema before converting to PyArrow expression.
+        # However, some residuals may already be bound (from tests or REST scan planning),
+        # so we catch the TypeError from bind() and use the residual as-is.
         if not isinstance(task.residual, AlwaysTrue):
             from pyiceberg.expressions.visitors import bind
 
-            bound_residual = bind(projected_schema, task.residual, case_sensitive)
+            try:
+                bound_residual = bind(projected_schema, task.residual, case_sensitive)
+            except TypeError:
+                # Predicate is already bound
+                bound_residual = task.residual
             batches = backends.compute.filter(batches, bound_residual)
 
         result_batches: list[pa.RecordBatch] = []
@@ -455,7 +461,16 @@ def _build_reconcile_fn(
     schema_cache: dict[pa.Schema, Schema | None] | None = None,
     schema_cache_lock: threading.Lock | None = None,
 ) -> Callable[[pa.RecordBatch], pa.RecordBatch] | object:
-    """Determine whether schema reconciliation is needed and return the appropriate function."""
+    """Determine whether schema reconciliation is needed and return the appropriate function.
+
+    Reconciliation is needed when:
+    1. Field IDs differ (columns missing/added via schema evolution)
+    2. Nullability differs (file has required=True but table schema has optional=True)
+
+    We deliberately skip reconciliation when only types differ (e.g., int64 vs int32)
+    because the inferred file schema from Arrow types may not match Iceberg types exactly,
+    and attempting type promotion in such cases can fail (e.g., long → int is invalid).
+    """
     from pyiceberg.io.pyarrow import _get_column_projection_values, _to_requested_schema
 
     file_schema: Schema | None
@@ -477,36 +492,55 @@ def _build_reconcile_fn(
         file_schema = _infer_file_schema_from_batch(batch, table_metadata, downcast_ns)
 
     if file_schema is not None:
-        # Always reconcile to ensure correct nullability, types, and field order.
-        # The original ArrowScan.to_record_batches unconditionally called
-        # _to_requested_schema for every batch -- we must do the same to
-        # correctly handle cases where field IDs match but nullability differs
-        # (e.g., Parquet file has required=True but Iceberg schema has optional=True).
-        partition_spec = table_metadata.specs().get(table_metadata.default_spec_id)
-        projected_missing_fields = (
-            _get_column_projection_values(
-                task.file, projected_schema, table_metadata.schema(), partition_spec, file_schema.field_ids
+        # Check if reconciliation is actually needed:
+        # 1. Field IDs differ (schema evolution - columns added/removed)
+        # 2. File field is required but projected field is optional (need to widen nullability)
+        #
+        # We do NOT reconcile when file is nullable but projected is required - the file
+        # schema being more permissive is fine (readers handle this via coercion).
+        # We also skip type-only differences because inferred Arrow types may not match
+        # Iceberg types exactly (e.g., int64 vs int32), and attempting promotion can fail.
+        needs_reconciliation = file_schema.field_ids != projected_schema.field_ids
+
+        if not needs_reconciliation:
+            # Check if any file field is stricter (required) than projected (optional)
+            for proj_field in projected_schema.fields:
+                file_field = file_schema.find_field(proj_field.field_id)
+                # Only reconcile if file is required but projected allows nulls
+                # (file has required=True, projected has required=False)
+                if file_field is not None and file_field.required and not proj_field.required:
+                    needs_reconciliation = True
+                    break
+
+        if needs_reconciliation:
+            partition_spec = table_metadata.specs().get(table_metadata.default_spec_id)
+            projected_missing_fields = (
+                _get_column_projection_values(
+                    task.file, projected_schema, table_metadata.schema(), partition_spec, file_schema.field_ids
+                )
+                if task is not None
+                else {}
             )
-            if task is not None
-            else {}
-        )
 
-        # Capture per-file constants for the closure.
-        _file_schema = file_schema
-        _downcast = downcast_ns
-        _missing_fields = projected_missing_fields
+            # Capture per-file constants for the closure.
+            _file_schema = file_schema
+            _downcast = downcast_ns
+            _missing_fields = projected_missing_fields
 
-        def _reconcile(b: pa.RecordBatch) -> pa.RecordBatch:
-            return _to_requested_schema(
-                projected_schema,
-                _file_schema,
-                b,
-                downcast_ns_timestamp_to_us=_downcast,
-                projected_missing_fields=_missing_fields,
-                allow_timestamp_tz_mismatch=True,
-            )
+            def _reconcile(b: pa.RecordBatch) -> pa.RecordBatch:
+                return _to_requested_schema(
+                    projected_schema,
+                    _file_schema,
+                    b,
+                    downcast_ns_timestamp_to_us=_downcast,
+                    projected_missing_fields=_missing_fields,
+                    allow_timestamp_tz_mismatch=True,
+                )
 
-        return _reconcile
+            return _reconcile
+
+        # Schemas are compatible (same field IDs, same nullability) - no reconciliation needed
+        return _NO_RECONCILIATION
 
     # file_schema is None -- schema inference failed
     logger.debug(
