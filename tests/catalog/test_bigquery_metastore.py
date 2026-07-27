@@ -67,9 +67,12 @@ def test_create_table_with_database_location(
     test_catalog = BigQueryMetastoreCatalog(
         catalog_name, **{"gcp.bigquery.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
     )
-    test_catalog.create_namespace(namespace=gcp_dataset_name)
-    table = test_catalog.create_table(identifier, table_schema_nested)
-    assert table.name() == identifier
+    try:
+        test_catalog.create_namespace(namespace=gcp_dataset_name)
+        table = test_catalog.create_table(identifier, table_schema_nested)
+        assert table.name() == identifier
+    finally:
+        test_catalog.close()
 
 
 def test_drop_table_with_database_location(
@@ -93,19 +96,22 @@ def test_drop_table_with_database_location(
     test_catalog = BigQueryMetastoreCatalog(
         catalog_name, **{"gcp.bigquery.project-id": "alexstephen-test-1", "warehouse": "gs://alexstephen-test-bq-bucket/"}
     )
-    test_catalog.create_namespace(namespace=gcp_dataset_name)
-    test_catalog.create_table(identifier, table_schema_nested)
-    test_catalog.drop_table(identifier)
-
-    client_mock.get_table.side_effect = NotFound("Table Not Found")
-    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
-
-    # Expect that the table no longer exists.
     try:
-        test_catalog.load_table(identifier)
-        raise AssertionError()
-    except NoSuchTableError:
-        assert True
+        test_catalog.create_namespace(namespace=gcp_dataset_name)
+        test_catalog.create_table(identifier, table_schema_nested)
+        test_catalog.drop_table(identifier)
+
+        client_mock.get_table.side_effect = NotFound("Table Not Found")
+        mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+
+        # Expect that the table no longer exists.
+        try:
+            test_catalog.load_table(identifier)
+            raise AssertionError()
+        except NoSuchTableError:
+            assert True
+    finally:
+        test_catalog.close()
 
 
 def test_drop_namespace(mocker: MockFixture, gcp_dataset_name: str) -> None:
@@ -116,11 +122,14 @@ def test_drop_namespace(mocker: MockFixture, gcp_dataset_name: str) -> None:
     catalog_name = "test_catalog"
     test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.bigquery.project-id": "alexstephen-test-1"})
 
-    test_catalog.drop_namespace(gcp_dataset_name)
-    client_mock.delete_dataset.assert_called_once()
-    args, _ = client_mock.delete_dataset.call_args
-    assert isinstance(args[0], Dataset)
-    assert args[0].dataset_id == gcp_dataset_name
+    try:
+        test_catalog.drop_namespace(gcp_dataset_name)
+        client_mock.delete_dataset.assert_called_once()
+        args, _ = client_mock.delete_dataset.call_args
+        assert isinstance(args[0], Dataset)
+        assert args[0].dataset_id == gcp_dataset_name
+    finally:
+        test_catalog.close()
 
 
 def test_list_tables(mocker: MockFixture, gcp_dataset_name: str) -> None:
@@ -151,14 +160,19 @@ def test_list_tables(mocker: MockFixture, gcp_dataset_name: str) -> None:
     catalog_name = "test_catalog"
     test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.bigquery.project-id": "my-project"})
 
-    tables = test_catalog.list_tables(gcp_dataset_name)
+    try:
+        tables = test_catalog.list_tables(gcp_dataset_name)
 
-    # Assert that all tables returned by client.list_tables are listed
-    assert len(tables) == 2
-    assert (gcp_dataset_name, "iceberg_table_A") in tables
-    assert (gcp_dataset_name, "iceberg_table_B") in tables
+        # Assert that all tables returned by client.list_tables are listed
+        assert len(tables) == 2
+        assert (gcp_dataset_name, "iceberg_table_A") in tables
+        assert (gcp_dataset_name, "iceberg_table_B") in tables
 
-    client_mock.list_tables.assert_called_once_with(dataset=DatasetReference(project="my-project", dataset_id=gcp_dataset_name))
+        client_mock.list_tables.assert_called_once_with(
+            dataset=DatasetReference(project="my-project", dataset_id=gcp_dataset_name)
+        )
+    finally:
+        test_catalog.close()
 
 
 def test_list_namespaces(mocker: MockFixture) -> None:
@@ -173,8 +187,11 @@ def test_list_namespaces(mocker: MockFixture) -> None:
     catalog_name = "test_catalog"
     test_catalog = BigQueryMetastoreCatalog(catalog_name, **{"gcp.bigquery.project-id": "my-project"})
 
-    namespaces = test_catalog.list_namespaces()
-    assert len(namespaces) == 2
-    assert ("dataset1",) in namespaces
-    assert ("dataset2",) in namespaces
-    client_mock.list_datasets.assert_called_once()
+    try:
+        namespaces = test_catalog.list_namespaces()
+        assert len(namespaces) == 2
+        assert ("dataset1",) in namespaces
+        assert ("dataset2",) in namespaces
+        client_mock.list_datasets.assert_called_once()
+    finally:
+        test_catalog.close()

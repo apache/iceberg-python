@@ -103,6 +103,16 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         self.project_id = project_id
 
     @override
+    def close(self) -> None:
+        """Close the catalog and release BigQuery client resources.
+
+        This method closes the BigQuery client connection. This is crucial for proper
+        resource cleanup and must be called in test fixture teardowns to prevent
+        Python 3.13+ ResourceWarnings about unclosed connections.
+        """
+        self.client.close()
+
+    @override
     def create_table(
         self,
         identifier: str | Identifier,
