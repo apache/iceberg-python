@@ -244,7 +244,7 @@ def orchestrate_scan(
                 batches = backends.read.read_parquet(
                     task.file.file_path,
                     projected_schema,
-                    task.residual,
+                    row_filter,
                     io_properties,
                     dictionary_columns=dictionary_columns,
                 )
@@ -255,7 +255,7 @@ def orchestrate_scan(
                 batches = backends.read.read_parquet(
                     task.file.file_path,
                     projected_schema,
-                    task.residual,
+                    row_filter,
                     io_properties,
                     dictionary_columns=dictionary_columns,
                 )
@@ -278,26 +278,30 @@ def orchestrate_scan(
             batches = backends.read.read_parquet(
                 task.file.file_path,
                 projected_schema,
-                task.residual,
+                row_filter,
                 io_properties,
                 dictionary_columns=dictionary_columns,
             )
 
         # Post-filter guarantees correctness; read_parquet pushdown is best-effort only.
+        # Use the row_filter parameter (not task.residual) for post-filtering.
+        # This allows callers like Transaction.delete's _read_live_rows to override
+        # the task's residual (e.g., pass AlwaysTrue() to read all rows).
+        #
         # The residual from ManifestGroupPlanner may contain unbound predicates
         # (e.g., for unpartitioned tables or predicates not involving partition columns).
         # We must bind to the projected schema before converting to PyArrow expression.
         # However, some residuals may already be bound (from tests or REST scan planning),
         # so we catch the TypeError from bind() and use the residual as-is.
-        if not isinstance(task.residual, AlwaysTrue):
+        if not isinstance(row_filter, AlwaysTrue):
             from pyiceberg.expressions.visitors import bind
 
             try:
-                bound_residual = bind(projected_schema, task.residual, case_sensitive)
+                bound_filter = bind(projected_schema, row_filter, case_sensitive)
             except TypeError:
                 # Predicate is already bound
-                bound_residual = task.residual
-            batches = backends.compute.filter(batches, bound_residual)
+                bound_filter = row_filter
+            batches = backends.compute.filter(batches, bound_filter)
 
         result_batches: list[pa.RecordBatch] = []
         reconcile_fn: Callable[[pa.RecordBatch], pa.RecordBatch] | object | None = None
