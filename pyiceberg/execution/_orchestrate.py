@@ -182,16 +182,12 @@ def orchestrate_scan(
         # require different handling that's not yet implemented - they will be silently
         # skipped, which may return a superset of correct results.
         pos_deletes = [
-            d
-            for d in task.delete_files
-            if d.content == DataFileContent.POSITION_DELETES and d.file_format == FileFormat.PARQUET
+            d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES and d.file_format == FileFormat.PARQUET
         ]
 
         # Warn if there are unsupported delete file formats (e.g., Puffin DVs)
         unsupported_deletes = [
-            d
-            for d in task.delete_files
-            if d.content == DataFileContent.POSITION_DELETES and d.file_format != FileFormat.PARQUET
+            d for d in task.delete_files if d.content == DataFileContent.POSITION_DELETES and d.file_format != FileFormat.PARQUET
         ]
         if unsupported_deletes:
             import warnings
