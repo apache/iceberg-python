@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from collections.abc import Iterator
 from pathlib import PosixPath
 
 import pyarrow as pa
@@ -36,10 +37,11 @@ def test_readable_bound_without_bound() -> None:
 
 
 @pytest.fixture
-def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
+def catalog(tmp_path: PosixPath) -> Iterator[InMemoryCatalog]:
     cat = InMemoryCatalog("test.in_memory.catalog", warehouse=tmp_path.absolute().as_posix())
     cat.create_namespace("default")
-    return cat
+    yield cat
+    cat.close()
 
 
 def test_inspect_entries_and_files_render_empty_string_bound(catalog: InMemoryCatalog) -> None:
