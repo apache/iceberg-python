@@ -36,7 +36,7 @@ import pytest
 class TestFastPathSkipsLock:
     """When env vars already have correct values, _scoped_env_vars skips mutation."""
 
-    def test_fast_path_no_mutation_when_values_present(self, monkeypatch) -> None:
+    def test_fast_path_no_mutation_when_values_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """If env vars are already set correctly, _scoped_env_vars performs no mutation."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
@@ -66,7 +66,7 @@ class TestFastPathSkipsLock:
         # Fast path: no changes before, during, or after
         assert before_snapshot == during_snapshot == after_snapshot
 
-    def test_slow_path_acquires_lock_when_values_differ(self, monkeypatch) -> None:
+    def test_slow_path_acquires_lock_when_values_differ(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """If env vars differ from desired, the lock IS acquired."""
         import pyiceberg.execution.object_store as obj_store
         from pyiceberg.execution.object_store import _scoped_env_vars
@@ -93,7 +93,7 @@ class TestFastPathSkipsLock:
 
         assert lock_acquired_count[0] > 0
 
-    def test_slow_path_when_key_not_present(self, monkeypatch) -> None:
+    def test_slow_path_when_key_not_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """If env var is not set at all, the lock IS acquired."""
         import pyiceberg.execution.object_store as obj_store
         from pyiceberg.execution.object_store import _scoped_env_vars
@@ -120,7 +120,7 @@ class TestFastPathSkipsLock:
 
         assert lock_acquired_count[0] > 0
 
-    def test_slow_path_restores_original_values(self, monkeypatch) -> None:
+    def test_slow_path_restores_original_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """After the slow path exits, original env vars are restored."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
@@ -131,7 +131,7 @@ class TestFastPathSkipsLock:
 
         assert os.environ["__PYICEBERG_RESTORE_TEST"] == "original"
 
-    def test_slow_path_restores_on_exception(self, monkeypatch) -> None:
+    def test_slow_path_restores_on_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Env vars are restored even when the scoped block raises."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
@@ -148,7 +148,7 @@ class TestFastPathSkipsLock:
 class TestParallelTasksWithSameCredentials:
     """Concurrent tasks with identical credentials should not block each other."""
 
-    def test_concurrent_tasks_same_creds_run_in_parallel(self, monkeypatch) -> None:
+    def test_concurrent_tasks_same_creds_run_in_parallel(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Multiple threads with same env vars should NOT serialize."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 
@@ -182,7 +182,7 @@ class TestParallelTasksWithSameCredentials:
         overlaps = (t2_start < t1_end) or (t1_start < t2_end)
         assert overlaps
 
-    def test_concurrent_tasks_different_creds_serialize(self, monkeypatch) -> None:
+    def test_concurrent_tasks_different_creds_serialize(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Threads with DIFFERENT credentials must NOT overlap (serialized)."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 

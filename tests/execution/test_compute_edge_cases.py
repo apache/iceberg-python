@@ -21,12 +21,14 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
+from pyiceberg.execution.protocol import ComputeBackend
 from pyiceberg.expressions import AlwaysFalse
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 
@@ -99,7 +101,7 @@ class TestAntiJoinFromFilesEmptyLeft:
 
             return DataFusionComputeBackend()
 
-    def test_anti_join_from_files_empty_left_returns_empty(self, tmp_path, compute_backend) -> None:
+    def test_anti_join_from_files_empty_left_returns_empty(self, tmp_path: Path, compute_backend: ComputeBackend) -> None:
         """anti_join_from_files with zero-row left Parquet produces zero output rows."""
         left_path = str(tmp_path / "empty_left.parquet")
         pq.write_table(pa.table({"id": pa.array([], type=pa.int64())}), left_path)
@@ -111,7 +113,7 @@ class TestAntiJoinFromFilesEmptyLeft:
         total_rows = sum(b.num_rows for b in result)
         assert total_rows == 0, f"anti_join_from_files with empty left file should return 0 rows, got {total_rows}"
 
-    def test_anti_join_from_files_empty_right_returns_all_left(self, tmp_path, compute_backend) -> None:
+    def test_anti_join_from_files_empty_right_returns_all_left(self, tmp_path: Path, compute_backend: ComputeBackend) -> None:
         """anti_join_from_files with zero-row right Parquet returns all left rows."""
         left_path = str(tmp_path / "left.parquet")
         pq.write_table(pa.table({"id": [1, 2, 3, 4, 5]}), left_path)
@@ -123,7 +125,7 @@ class TestAntiJoinFromFilesEmptyLeft:
         total_rows = sum(b.num_rows for b in result)
         assert total_rows == 5, f"anti_join_from_files with empty right file should return all 5 left rows, got {total_rows}"
 
-    def test_anti_join_from_files_both_empty_returns_empty(self, tmp_path, compute_backend) -> None:
+    def test_anti_join_from_files_both_empty_returns_empty(self, tmp_path: Path, compute_backend: ComputeBackend) -> None:
         """anti_join_from_files with both files empty returns zero rows."""
         left_path = str(tmp_path / "empty_left.parquet")
         pq.write_table(pa.table({"id": pa.array([], type=pa.int64())}), left_path)
@@ -149,7 +151,7 @@ class TestPyArrowAntiJoinFromFilesNullSemantics:
     DataFusion/DuckDB are not installed.
     """
 
-    def test_pyarrow_anti_join_from_files_null_matches_null(self, tmp_path) -> None:
+    def test_pyarrow_anti_join_from_files_null_matches_null(self, tmp_path: Path) -> None:
         """NULL in delete file should match NULL in data file for PyArrow backend."""
         # Data: id=[1, 2, None, 3, None]
         data_path = str(tmp_path / "data.parquet")
@@ -168,7 +170,7 @@ class TestPyArrowAntiJoinFromFilesNullSemantics:
         # No NULLs should remain
         assert None not in result.column("id").to_pylist()
 
-    def test_pyarrow_anti_join_in_memory_null_matches_null(self, tmp_path) -> None:
+    def test_pyarrow_anti_join_in_memory_null_matches_null(self, tmp_path: Path) -> None:
         """NULL matching also works for the in-memory anti_join path."""
         backend = PyArrowComputeBackend()
 
@@ -182,7 +184,7 @@ class TestPyArrowAntiJoinFromFilesNullSemantics:
         assert result_ids == [1, 3]
         assert None not in result.column("id").to_pylist()
 
-    def test_pyarrow_anti_join_multi_column_null_handling(self, tmp_path) -> None:
+    def test_pyarrow_anti_join_multi_column_null_handling(self, tmp_path: Path) -> None:
         """Multi-column anti-join with NULLs in composite key.
 
         Tests the per-row matching algorithm that handles multi-column joins
@@ -268,7 +270,7 @@ class TestMultiColumnAntiJoinMixedNulls:
     These tests verify correctness for complex NULL patterns across 3+ columns.
     """
 
-    def test_three_column_anti_join_basic(self, tmp_path) -> None:
+    def test_three_column_anti_join_basic(self, tmp_path: Path) -> None:
         """Anti-join on 3 columns correctly excludes matching rows."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -307,7 +309,7 @@ class TestMultiColumnAntiJoinMixedNulls:
         assert ("eu", 2024, 1) in list(zip(surviving["region"], surviving["year"], surviving["month"], strict=False))
         assert ("ap", 2024, 1) in list(zip(surviving["region"], surviving["year"], surviving["month"], strict=False))
 
-    def test_three_column_anti_join_null_matches_null(self, tmp_path) -> None:
+    def test_three_column_anti_join_null_matches_null(self, tmp_path: Path) -> None:
         """NULL in any join column matches NULL in the other side (IS NOT DISTINCT FROM)."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -347,7 +349,7 @@ class TestMultiColumnAntiJoinMixedNulls:
         assert 4 in result.column("a").to_pylist()
         assert 50 in result.column("c").to_pylist()
 
-    def test_three_column_anti_join_partial_null_no_match(self, tmp_path) -> None:
+    def test_three_column_anti_join_partial_null_no_match(self, tmp_path: Path) -> None:
         """NULL in one column but different values in others → no match."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowComputeBackend
 
@@ -386,7 +388,7 @@ class TestMultiColumnAntiJoinMixedNulls:
         not _try_import_datafusion(),
         reason="DataFusion not installed",
     )
-    def test_three_column_anti_join_datafusion_matches_pyarrow(self, tmp_path) -> None:
+    def test_three_column_anti_join_datafusion_matches_pyarrow(self, tmp_path: Path) -> None:
         """DataFusion and PyArrow produce identical results for 3-column mixed-NULL join."""
         from pyiceberg.execution.backends.datafusion_backend import (
             DataFusionComputeBackend,
@@ -512,7 +514,7 @@ class TestSortFromFilesEmptyInput:
         result = list(backend.sort_from_files([], [("id", "ascending")], {}))
         assert result == []
 
-    def test_pyarrow_anti_join_from_files_empty_left(self, tmp_path) -> None:
+    def test_pyarrow_anti_join_from_files_empty_left(self, tmp_path: Path) -> None:
         """Anti-join with empty left produces empty result."""
         import pyarrow.parquet as pq
 

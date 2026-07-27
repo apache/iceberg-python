@@ -203,7 +203,8 @@ class TestSortOnWriteIsBestEffort:
         """ComputeBackend.supports_bounded_memory docstring must say 'best-effort'."""
         from pyiceberg.execution.protocol import ComputeBackend
 
-        doc = ComputeBackend.supports_bounded_memory.fget.__doc__ or ""
+        prop = ComputeBackend.__dict__["supports_bounded_memory"]
+        doc = prop.fget.__doc__ if hasattr(prop, "fget") and prop.fget else ""
         assert "best-effort" in doc.lower() or "best effort" in doc.lower(), (
             "ComputeBackend.supports_bounded_memory must document that callers "
             "use it for best-effort optimizations (e.g., sort-on-write), not correctness."

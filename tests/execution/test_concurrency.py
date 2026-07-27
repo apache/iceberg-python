@@ -283,7 +283,7 @@ class TestScopedEnvVarsThreadSafety:
 class TestScopedEnvVarsConcurrency:
     """Verify _scoped_env_vars does not deadlock with concurrent same-credential tasks."""
 
-    def test_concurrent_same_credentials_no_deadlock(self, monkeypatch) -> None:
+    def test_concurrent_same_credentials_no_deadlock(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Multiple threads using the same credentials must not deadlock.
 
         The fast-path optimization means threads with identical env vars
@@ -323,7 +323,7 @@ class TestScopedEnvVarsConcurrency:
         assert len(errors) == 0, f"Threads raised errors: {errors}"
         assert len(results) == 16, f"Only {len(results)}/16 threads completed -- possible deadlock"
 
-    def test_concurrent_different_credentials_serialized(self, monkeypatch) -> None:
+    def test_concurrent_different_credentials_serialized(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Different credentials must serialize (one at a time) but still complete."""
         from pyiceberg.execution.object_store import _scoped_env_vars
 

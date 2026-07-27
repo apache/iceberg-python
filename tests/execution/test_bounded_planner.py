@@ -24,6 +24,8 @@ import datetime
 import inspect
 import json
 from decimal import Decimal
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import UUID
 
@@ -57,7 +59,7 @@ class TestBoundedMemoryPlannerWithRealData:
 
         return BoundedMemoryPlanner()
 
-    def test_stream_entries_to_parquet_produces_valid_files(self, tmp_path) -> None:
+    def test_stream_entries_to_parquet_produces_valid_files(self, tmp_path: Path) -> None:
         """Phase 1: _stream_entries_to_parquet creates valid Parquet files."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
@@ -116,7 +118,7 @@ class TestBoundedMemoryPlannerWithRealData:
         assert "file_path" in delete_table.schema.names
         assert "content" in delete_table.schema.names
 
-    def test_execute_assignment_join_produces_correct_assignments(self, tmp_path) -> None:
+    def test_execute_assignment_join_produces_correct_assignments(self, tmp_path: Path) -> None:
         """Phase 2: SQL join assigns delete files to data files by partition + sequence."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
@@ -196,7 +198,7 @@ class TestBoundedMemoryPlannerWithRealData:
         # data_3 (seq=3): delete at seq=2 does NOT apply (2 < 3)
         assert assignments["data_3.parquet"] is None or assignments["data_3.parquet"] == [None]
 
-    def test_yield_scan_tasks_produces_file_scan_tasks(self, tmp_path) -> None:
+    def test_yield_scan_tasks_produces_file_scan_tasks(self, tmp_path: Path) -> None:
         """Phase 3: _yield_scan_tasks converts join output to FileScanTasks."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
@@ -244,10 +246,10 @@ class TestBoundedMemoryPlannerWithRealData:
         class FakePartition:
             _data = ["us-east-1", 2024, None]
 
-            def __len__(self) -> None:
+            def __len__(self) -> int:
                 return len(self._data)
 
-            def __getitem__(self, idx) -> None:
+            def __getitem__(self, idx) -> Any:
                 return self._data[idx]
 
         mock_partition = FakePartition()
@@ -265,10 +267,10 @@ class TestBoundedMemoryPlannerWithRealData:
         class FakePartition:
             _data = ["value|with|pipes", None, "normal"]
 
-            def __len__(self) -> None:
+            def __len__(self) -> int:
                 return len(self._data)
 
-            def __getitem__(self, idx) -> None:
+            def __getitem__(self, idx) -> Any:
                 return self._data[idx]
 
         mock_partition = FakePartition()
@@ -276,7 +278,7 @@ class TestBoundedMemoryPlannerWithRealData:
         assert "|" in key
         assert "null" in key
 
-    def test_full_pipeline_end_to_end(self, tmp_path) -> None:
+    def test_full_pipeline_end_to_end(self, tmp_path: Path) -> None:
         """End-to-end: planner reads mock entries, executes join, yields FileScanTasks."""
         pytest.importorskip("datafusion")
         from pyiceberg.execution.planning import BoundedMemoryPlanner
@@ -461,7 +463,7 @@ class TestBoundedMemoryPlannerPartitionScoping:
 class TestInMemoryPlannerBehavioral:
     """Behavioral tests for InMemoryPlanner."""
 
-    def test_in_memory_planner_produces_file_scan_tasks(self, tmp_path) -> None:
+    def test_in_memory_planner_produces_file_scan_tasks(self, tmp_path: Path) -> None:
         """InMemoryPlanner wraps ManifestGroupPlanner and yields FileScanTasks."""
         from pyiceberg.execution.planning import InMemoryPlanner
 
@@ -1587,7 +1589,7 @@ class TestSerializePartitionKeyFallback:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class OpaquePartition:
-            def __repr__(self) -> None:
+            def __repr__(self) -> str:
                 return "OpaquePartition(x=1, y=2)"
 
         result = _serialize_partition_key(5, OpaquePartition())
@@ -1599,7 +1601,7 @@ class TestSerializePartitionKeyFallback:
         from pyiceberg.execution.planning import _serialize_partition_key
 
         class StableRepr:
-            def __repr__(self) -> None:
+            def __repr__(self) -> str:
                 return "StableRepr(42)"
 
         obj1 = StableRepr()
@@ -1697,7 +1699,7 @@ class TestBoundedMemoryPlannerRealDataFusion:
     def _skip_without_datafusion(self) -> None:
         pytest.importorskip("datafusion")
 
-    def _make_manifest_entry(self, data_file, sequence_number) -> None:
+    def _make_manifest_entry(self, data_file: str, sequence_number) -> None:
         """Create a minimal ManifestEntry-like object for the planner."""
         entry = MagicMock()
         entry.data_file = data_file

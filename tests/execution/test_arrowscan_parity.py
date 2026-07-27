@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import sys
 import warnings
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -69,7 +70,7 @@ def parity_schema() -> Schema:
 
 
 @pytest.fixture
-def parity_table_metadata(parity_schema, tmp_path) -> TableMetadataV2:
+def parity_table_metadata(parity_schema, tmp_path: Path) -> TableMetadataV2:
     """Minimal TableMetadata for parity tests."""
     return TableMetadataV2(
         location=str(tmp_path),
@@ -87,7 +88,7 @@ def parity_table_metadata(parity_schema, tmp_path) -> TableMetadataV2:
 
 
 @pytest.fixture
-def parity_data_file(tmp_path, parity_schema) -> tuple[str, DataFile]:
+def parity_data_file(tmp_path: Path, parity_schema) -> tuple[str, DataFile]:
     """Write a test Parquet file and return (path, DataFile)."""
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -285,7 +286,7 @@ class TestArrowScanParityEmptyScan:
 class TestArrowScanParityWithPositionalDeletes:
     """Verify scans with positional deletes produce identical output."""
 
-    def test_positional_deletes_same_survivors(self, tmp_path, parity_schema, parity_table_metadata) -> None:
+    def test_positional_deletes_same_survivors(self, tmp_path: Path, parity_schema, parity_table_metadata) -> None:
         """Positional deletes produce same surviving rows from both paths."""
         from pyiceberg.io.pyarrow import PyArrowFileIO, schema_to_pyarrow
 
@@ -357,7 +358,7 @@ class TestSchemaEvolutionDuringScan:
     NULL for the 'category' column in rows from the old file.
     """
 
-    def test_old_file_missing_column_returns_nulls(self, tmp_path) -> None:
+    def test_old_file_missing_column_returns_nulls(self, tmp_path: Path) -> None:
         """File written before schema evolution has NULLs for new columns."""
         from pyiceberg.io.pyarrow import PyArrowFileIO, schema_to_pyarrow
 
@@ -424,7 +425,7 @@ class TestSchemaEvolutionDuringScan:
         # New column should be all NULLs
         assert result.column("category").to_pylist() == [None, None, None]
 
-    def test_old_and_new_files_combined(self, tmp_path) -> None:
+    def test_old_and_new_files_combined(self, tmp_path: Path) -> None:
         """Scan combining old-schema and new-schema files produces correct result."""
         from pyiceberg.io.pyarrow import PyArrowFileIO, schema_to_pyarrow
 

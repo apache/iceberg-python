@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
@@ -147,7 +148,7 @@ class TestSchemaReconciliationWhenInferenceFails:
     must pass through unchanged (no crash, no data loss).
     """
 
-    def test_batches_pass_through_when_no_name_mapping(self, tmp_path) -> None:
+    def test_batches_pass_through_when_no_name_mapping(self, tmp_path: Path) -> None:
         """orchestrate_scan returns batches unchanged when schema inference fails."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -206,7 +207,7 @@ class TestSchemaReconciliationWhenInferenceFails:
         assert result_table.num_rows == 3
         assert sorted(result_table.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_batches_pass_through_when_schema_matches(self, tmp_path) -> None:
+    def test_batches_pass_through_when_schema_matches(self, tmp_path: Path) -> None:
         """When file schema matches projected schema, no reconciliation is applied."""
         from pyiceberg.execution._orchestrate import _infer_file_schema_from_batch
 
@@ -230,7 +231,7 @@ class TestSchemaReconciliationWithEvolvedFiles:
     new column. Schema reconciliation must fill NULL for missing columns.
     """
 
-    def test_file_missing_column_gets_null_fill(self, tmp_path) -> None:
+    def test_file_missing_column_gets_null_fill(self, tmp_path: Path) -> None:
         """File without 'address' column → read returns available columns without crash.
 
         When the file lacks a projected column, the PyArrow dataset scanner
@@ -303,7 +304,7 @@ class TestSchemaReconciliationWithEvolvedFiles:
         assert "id" in result_table.column_names
         assert "name" in result_table.column_names
 
-    def test_file_with_all_columns_passes_through(self, tmp_path) -> None:
+    def test_file_with_all_columns_passes_through(self, tmp_path: Path) -> None:
         """File with all projected columns passes through without modification."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -468,7 +469,7 @@ class TestSchemaInferenceCaching:
 class TestSchemaReconciliation:
     """Test schema reconciliation in orchestrate_scan for schema evolution scenarios."""
 
-    def test_schema_evolution_adds_nullable_column(self, tmp_path) -> None:
+    def test_schema_evolution_adds_nullable_column(self, tmp_path: Path) -> None:
         """Files written before column addition get NULL-filled projected column."""
 
         from pyiceberg.schema import Schema
@@ -506,7 +507,7 @@ class TestSchemaEvolutionDuringScan:
     where the file schema differs from the projected schema.
     """
 
-    def test_scan_reads_only_available_columns_from_old_file(self, tmp_path) -> None:
+    def test_scan_reads_only_available_columns_from_old_file(self, tmp_path: Path) -> None:
         """File with subset of projected columns reads without crashing."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
         from pyiceberg.execution.backends.pyarrow_backend import (
@@ -572,7 +573,7 @@ class TestSchemaEvolutionDuringScan:
         assert result.column("id").to_pylist() == [1, 2, 3]
         assert result.column("name").to_pylist() == ["a", "b", "c"]
 
-    def test_scan_with_column_subset_projection(self, tmp_path) -> None:
+    def test_scan_with_column_subset_projection(self, tmp_path: Path) -> None:
         """Projecting fewer columns than the file has works correctly."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
         from pyiceberg.execution.backends.pyarrow_backend import (

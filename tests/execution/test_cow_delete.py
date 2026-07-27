@@ -30,6 +30,7 @@ from __future__ import annotations
 import inspect
 import os
 import warnings
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
@@ -405,7 +406,7 @@ def _make_data_file(
 class TestCowStatsAllRowsDeleted:
     """When statistics prove ALL rows match the delete filter, the file should be dropped."""
 
-    def test_strict_eval_drops_file_without_read(self, tmp_path) -> None:
+    def test_strict_eval_drops_file_without_read(self, tmp_path: Path) -> None:
         """File with min > delete threshold should be dropped entirely."""
         from pyiceberg.conversions import to_bytes
         from pyiceberg.expressions.visitors import (
@@ -431,7 +432,7 @@ class TestCowStatsAllRowsDeleted:
 class TestCowStatsNoRowsDeleted:
     """When statistics prove NO rows match the delete filter, the file should be skipped."""
 
-    def test_inclusive_eval_skips_file_without_read(self, tmp_path) -> None:
+    def test_inclusive_eval_skips_file_without_read(self, tmp_path: Path) -> None:
         """File with max < delete threshold should be skipped entirely."""
         from pyiceberg.conversions import to_bytes
         from pyiceberg.expressions.visitors import (
@@ -564,7 +565,7 @@ class TestCowStatsWithNulls:
 class TestCowThresholdIsConfigurable:
     """The CoW single-pass threshold must be configurable at runtime."""
 
-    def test_default_value_is_64mb(self):
+    def test_default_value_is_64mb(self) -> None:
         """Default threshold should be 64 MB (reasonable for typical compression)."""
         from pyiceberg.execution.engine import COW_THRESHOLD_DEFAULT
 
@@ -629,7 +630,7 @@ class TestCowThresholdIsConfigurable:
 class TestCowThresholdFromConfigFile:
     """The CoW threshold must be readable from .pyiceberg.yaml config file."""
 
-    def test_config_file_sets_threshold(self, tmp_path, monkeypatch) -> None:
+    def test_config_file_sets_threshold(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """execution.cow-threshold in .pyiceberg.yaml overrides the default."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -647,7 +648,7 @@ class TestCowThresholdFromConfigFile:
         result = get_execution_config_int("cow-threshold", 64 * 1024 * 1024)
         assert result == 32 * 1024 * 1024  # 33554432 = 32 MB
 
-    def test_env_var_takes_priority_over_config_file(self, tmp_path, monkeypatch) -> None:
+    def test_env_var_takes_priority_over_config_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Env var overrides config file value (documented priority: env > config > default)."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -664,7 +665,7 @@ class TestCowThresholdFromConfigFile:
         result = get_execution_config_int("cow-threshold", 64 * 1024 * 1024)
         assert result == 256 * 1024 * 1024  # Env var wins: 268435456 = 256 MB
 
-    def test_invalid_config_file_value_falls_back_to_default(self, tmp_path, monkeypatch) -> None:
+    def test_invalid_config_file_value_falls_back_to_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Non-integer config file value gracefully falls back to default."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -808,7 +809,7 @@ class TestStreamingFilterBatchesBehavior:
 class TestCowDeleteRaceCondition:
     """Test that CoW pass-2 propagates errors when files disappear (fail-fast OCC)."""
 
-    def test_pass2_file_not_found_raises(self, tmp_path):
+    def test_pass2_file_not_found_raises(self, tmp_path: Path) -> None:
         """If the data file disappears between pass 1 and pass 2, read_parquet raises."""
         import pyarrow as pa
 
@@ -842,7 +843,7 @@ class TestCowDeleteRaceCondition:
         with pytest.raises(Exception):  # noqa: B017
             list(backend.read_parquet(data_path, schema, AlwaysTrue(), {}))
 
-    def test_pass2_errors_propagate_not_caught(self):
+    def test_pass2_errors_propagate_not_caught(self) -> None:
         """The CoW delete path does NOT catch I/O errors in pass 2.
 
         Errors must propagate to fail the transaction. Silently skipping a rewrite
@@ -933,7 +934,7 @@ class TestExpressionToSqlNegativePath:
         with pytest.raises((TypeError, AttributeError)):
             expression_to_sql(unbound_expr)
 
-    def test_always_true_produces_1_equals_1(self):
+    def test_always_true_produces_1_equals_1(self) -> None:
         """AlwaysTrue converts to SQL '1=1'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import AlwaysTrue
@@ -941,7 +942,7 @@ class TestExpressionToSqlNegativePath:
         result = expression_to_sql(AlwaysTrue())
         assert result == "1=1"
 
-    def test_always_false_produces_1_equals_0(self):
+    def test_always_false_produces_1_equals_0(self) -> None:
         """AlwaysFalse converts to SQL '1=0'."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import AlwaysFalse
@@ -953,7 +954,7 @@ class TestExpressionToSqlNegativePath:
 class TestGetExecutionConfigIntPriority:
     """Test the three-level priority (env > yaml > default) for arbitrary config keys."""
 
-    def test_default_value_when_nothing_set(self, tmp_path, monkeypatch) -> None:
+    def test_default_value_when_nothing_set(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Returns the provided default when no env var and no config file."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -967,7 +968,7 @@ class TestGetExecutionConfigIntPriority:
         result = get_execution_config_int("my-test-key", 42)
         assert result == 42
 
-    def test_config_file_overrides_default(self, tmp_path, monkeypatch) -> None:
+    def test_config_file_overrides_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Config file value takes priority over default."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -983,7 +984,7 @@ class TestGetExecutionConfigIntPriority:
         result = get_execution_config_int("my-test-key", 42)
         assert result == 99
 
-    def test_env_var_overrides_config_file(self, tmp_path, monkeypatch) -> None:
+    def test_env_var_overrides_config_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Env var takes priority over config file value."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -999,7 +1000,7 @@ class TestGetExecutionConfigIntPriority:
         result = get_execution_config_int("my-test-key", 42)
         assert result == 200
 
-    def test_invalid_env_var_falls_back_to_default(self, tmp_path, monkeypatch) -> None:
+    def test_invalid_env_var_falls_back_to_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Non-integer env var falls back to default."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -1013,7 +1014,7 @@ class TestGetExecutionConfigIntPriority:
         result = get_execution_config_int("my-test-key", 42)
         assert result == 42
 
-    def test_dash_to_underscore_env_var_mapping(self, tmp_path, monkeypatch) -> None:
+    def test_dash_to_underscore_env_var_mapping(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Config key 'cow-threshold' maps to env var PYICEBERG_EXECUTION__COW_THRESHOLD."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -1088,7 +1089,7 @@ class TestCowDeleteRespectsExistingDeletes:
     """
 
     @pytest.fixture
-    def cow_table_with_pos_deletes(self, tmp_path) -> None:
+    def cow_table_with_pos_deletes(self, tmp_path: Path) -> None:
         """Create a table state with a data file that has an associated position delete."""
         # Write a data file with 5 rows: id=[1,2,3,4,5]
         data_path = str(tmp_path / "data.parquet")
@@ -1107,7 +1108,7 @@ class TestCowDeleteRespectsExistingDeletes:
 
         return data_path, pos_delete_path
 
-    def test_cow_small_file_excludes_position_deleted_rows(self, cow_table_with_pos_deletes, tmp_path) -> None:
+    def test_cow_small_file_excludes_position_deleted_rows(self, cow_table_with_pos_deletes, tmp_path: Path) -> None:
         """Small file CoW path must not include position-deleted rows in rewrite."""
         from pyiceberg.execution.backends.pyarrow_backend import (
             PyArrowComputeBackend,
@@ -1151,7 +1152,7 @@ class TestCowDeleteRespectsExistingDeletes:
         # Both pos-deleted (id=2) and CoW-deleted (id=4) rows should be gone
         assert final_ids == [1, 3, 5], f"Expected [1,3,5] but got {final_ids}"
 
-    def test_cow_large_file_streaming_excludes_position_deleted_rows(self, cow_table_with_pos_deletes, tmp_path) -> None:
+    def test_cow_large_file_streaming_excludes_position_deleted_rows(self, cow_table_with_pos_deletes, tmp_path: Path) -> None:
         """Large file two-pass streaming CoW must also exclude position-deleted rows."""
         from pyiceberg.execution._orchestrate import _cow_filter_batches
         from pyiceberg.execution.backends.pyarrow_backend import (
@@ -1190,7 +1191,7 @@ class TestCowDeleteRespectsExistingDeletes:
 
         assert final_ids == [1, 3, 5], f"Expected [1,3,5] but got {final_ids}"
 
-    def test_cow_with_equality_deletes_excludes_eq_deleted_rows(self, tmp_path) -> None:
+    def test_cow_with_equality_deletes_excludes_eq_deleted_rows(self, tmp_path: Path) -> None:
         """CoW path must apply equality deletes (anti-join) before complement filter."""
         from pyiceberg.execution.backends.pyarrow_backend import (
             _anti_join_tables,
@@ -1213,7 +1214,7 @@ class TestCowDeleteRespectsExistingDeletes:
         final_ids = sorted(final_table.column("id").to_pylist())
         assert final_ids == [1, 3, 5], f"Expected [1,3,5] but got {final_ids}"
 
-    def test_cow_with_combined_pos_and_eq_deletes(self, tmp_path) -> None:
+    def test_cow_with_combined_pos_and_eq_deletes(self, tmp_path: Path) -> None:
         """CoW path must handle files with both position AND equality deletes."""
         from pyiceberg.execution.backends.pyarrow_backend import (
             _anti_join_tables,
@@ -1258,7 +1259,7 @@ class TestCowDeleteRespectsExistingDeletes:
         final_ids = sorted(final_table.column("id").to_pylist())
         assert final_ids == [1, 4, 6], f"Expected [1,4,6] but got {final_ids}"
 
-    def test_cow_no_deletes_falls_through_to_raw_read(self, tmp_path) -> None:
+    def test_cow_no_deletes_falls_through_to_raw_read(self, tmp_path: Path) -> None:
         """When task has no delete files, _read_live_rows is equivalent to raw read."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowReadBackend
         from pyiceberg.types import IntegerType, NestedField

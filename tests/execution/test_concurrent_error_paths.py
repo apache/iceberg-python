@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pyarrow as pa
@@ -225,7 +226,7 @@ class TestBoundedMemoryPlannerCorruptInput:
         pytest.importorskip("datafusion")
 
     @pytest.mark.usefixtures("_skip_if_no_datafusion")
-    def test_truncated_parquet_raises_readable_error(self, tmp_path) -> None:
+    def test_truncated_parquet_raises_readable_error(self, tmp_path: Path) -> None:
         """A truncated Parquet file registered with DataFusion raises on query."""
         from datafusion import SessionContext
 
@@ -255,7 +256,7 @@ class TestBoundedMemoryPlannerCorruptInput:
         )
 
     @pytest.mark.usefixtures("_skip_if_no_datafusion")
-    def test_empty_parquet_produces_zero_results(self, tmp_path) -> None:
+    def test_empty_parquet_produces_zero_results(self, tmp_path: Path) -> None:
         """An empty (valid but zero-row) Parquet file yields zero tasks from the planner."""
         from datafusion import SessionContext
 
@@ -311,7 +312,7 @@ class TestCowDeleteTwoPassFailSafe:
     so the transaction can be retried against the new table state (OCC pattern).
     """
 
-    def test_file_missing_on_second_pass_raises(self, tmp_path) -> None:
+    def test_file_missing_on_second_pass_raises(self, tmp_path: Path) -> None:
         """If a data file disappears between pass 1 and pass 2, an error is raised."""
         from pyiceberg.execution.backends.pyarrow_backend import PyArrowReadBackend
 

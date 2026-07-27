@@ -42,6 +42,7 @@ Additionally validates:
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pyarrow as pa
@@ -169,7 +170,7 @@ def _make_data_file(file_path: str, spec_id: int = 0) -> MagicMock:
 class TestEqualityDeleteBasic:
     """Basic equality delete: single-column anti-join excludes matching rows."""
 
-    def test_single_column_equality_delete(self, tmp_path) -> None:
+    def test_single_column_equality_delete(self, tmp_path: Path) -> None:
         """Rows where id matches equality delete values are excluded."""
         # Data file: ids [1, 2, 3, 4, 5]
         data_table = pa.table({"id": [1, 2, 3, 4, 5], "value": ["a", "b", "c", "d", "e"]})
@@ -210,7 +211,7 @@ class TestEqualityDeleteBasic:
         surviving_ids = sorted(result.column("id").to_pylist())
         assert surviving_ids == [1, 3, 5], f"Expected [1,3,5] after deleting ids 2,4. Got {surviving_ids}"
 
-    def test_equality_delete_no_matches_returns_all(self, tmp_path) -> None:
+    def test_equality_delete_no_matches_returns_all(self, tmp_path: Path) -> None:
         """When delete values don't match any data rows, all rows survive."""
         data_table = pa.table({"id": [1, 2, 3], "name": ["x", "y", "z"]})
         data_path = str(tmp_path / "data.parquet")
@@ -248,7 +249,7 @@ class TestEqualityDeleteBasic:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3]
 
-    def test_equality_delete_all_rows_returns_empty(self, tmp_path) -> None:
+    def test_equality_delete_all_rows_returns_empty(self, tmp_path: Path) -> None:
         """When all data rows match the delete, result is empty."""
         data_table = pa.table({"id": [1, 2], "name": ["a", "b"]})
         data_path = str(tmp_path / "data.parquet")
@@ -291,7 +292,7 @@ class TestEqualityDeleteBasic:
 class TestEqualityDeleteNullSemantics:
     """IS NOT DISTINCT FROM: NULL in data matches NULL in delete file."""
 
-    def test_null_matches_null_single_column(self, tmp_path) -> None:
+    def test_null_matches_null_single_column(self, tmp_path: Path) -> None:
         """Per Iceberg spec §5.5.2: NULL matches NULL in equality delete resolution."""
         # Data file: id=1, id=NULL, id=3
         data_table = pa.table(
@@ -342,7 +343,7 @@ class TestEqualityDeleteNullSemantics:
 class TestEqualityDeleteMultiColumn:
     """Multi-column equality delete: composite key anti-join."""
 
-    def test_two_column_composite_key(self, tmp_path) -> None:
+    def test_two_column_composite_key(self, tmp_path: Path) -> None:
         """Both columns must match for a row to be deleted (AND semantics)."""
         data_table = pa.table(
             {
@@ -394,7 +395,7 @@ class TestEqualityDeleteMultiColumn:
 class TestEqualityDeleteMissingEqualityIds:
     """When equality_ids is not set on delete files, a warning is emitted and data is returned as-is."""
 
-    def test_missing_equality_ids_warns_and_returns_superset(self, tmp_path) -> None:
+    def test_missing_equality_ids_warns_and_returns_superset(self, tmp_path: Path) -> None:
         """Delete files without equality_ids emit UserWarning and don't filter."""
         data_table = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]})
         data_path = str(tmp_path / "data.parquet")
@@ -572,7 +573,7 @@ class TestIncludeFieldIdsFalseIsIntentional:
 class TestEqualityDeleteSequenceNumberGating:
     """Equality deletes must use strictly-greater seq gating (delete.seq > data.seq)."""
 
-    def test_equality_delete_same_seq_does_NOT_apply(self):
+    def test_equality_delete_same_seq_does_NOT_apply(self) -> None:
         """An equality delete with seq == data.seq must NOT apply to the data file.
 
         Per spec: equality deletes target only data written BEFORE them.
@@ -594,7 +595,7 @@ class TestEqualityDeleteSequenceNumberGating:
             "Spec §5.5.2: equality deletes require delete.seq > data.seq."
         )
 
-    def test_equality_delete_greater_seq_DOES_apply(self):
+    def test_equality_delete_greater_seq_DOES_apply(self) -> None:
         """An equality delete with seq > data.seq MUST apply to the data file."""
         index = DeleteFileIndex()
 
@@ -608,7 +609,7 @@ class TestEqualityDeleteSequenceNumberGating:
         assert len(result) == 1
         assert list(result)[0].file_path == "eq_del.parquet"
 
-    def test_equality_delete_lesser_seq_does_NOT_apply(self):
+    def test_equality_delete_lesser_seq_does_NOT_apply(self) -> None:
         """An equality delete with seq < data.seq must NOT apply."""
         index = DeleteFileIndex()
 
@@ -621,7 +622,7 @@ class TestEqualityDeleteSequenceNumberGating:
         result = index.for_data_file(10, data_entry.data_file)
         assert len(result) == 0
 
-    def test_position_delete_same_seq_DOES_apply(self):
+    def test_position_delete_same_seq_DOES_apply(self) -> None:
         """A position delete with seq == data.seq MUST apply (different rule from equality).
 
         Position deletes use >= because they reference specific (file_path, pos) tuples
@@ -639,7 +640,7 @@ class TestEqualityDeleteSequenceNumberGating:
         assert len(result) == 1
         assert list(result)[0].file_path == "pos_del.parquet"
 
-    def test_position_delete_greater_seq_DOES_apply(self):
+    def test_position_delete_greater_seq_DOES_apply(self) -> None:
         """A position delete with seq > data.seq MUST apply."""
         index = DeleteFileIndex()
 
@@ -696,7 +697,7 @@ class TestEqualityDeleteSequenceNumberGating:
 class TestEqualityDeleteSequenceGating:
     """Verify equality deletes are ONLY assigned when del.seq > data.seq."""
 
-    def test_equality_delete_same_sequence_NOT_assigned(self):
+    def test_equality_delete_same_sequence_NOT_assigned(self) -> None:
         """Equality delete with SAME sequence number as data MUST NOT apply.
 
         Per spec §5.5.2: "Equality delete files [...] apply to data files with
@@ -723,7 +724,7 @@ class TestEqualityDeleteSequenceGating:
             "Per spec: equality deletes only apply to data with LOWER sequence number."
         )
 
-    def test_equality_delete_higher_sequence_IS_assigned(self):
+    def test_equality_delete_higher_sequence_IS_assigned(self) -> None:
         """Equality delete with HIGHER sequence number than data MUST apply."""
         index = DeleteFileIndex()
 
@@ -744,7 +745,7 @@ class TestEqualityDeleteSequenceGating:
         assert len(result) == 1
         assert list(result)[0].file_path == "s3://bucket/eq_delete.parquet"
 
-    def test_equality_delete_lower_sequence_NOT_assigned(self):
+    def test_equality_delete_lower_sequence_NOT_assigned(self) -> None:
         """Equality delete with LOWER sequence number than data MUST NOT apply."""
         index = DeleteFileIndex()
 
@@ -768,7 +769,7 @@ class TestEqualityDeleteSequenceGating:
 class TestPositionDeleteSequenceGating:
     """Verify position deletes use NON-STRICT (>=) gating."""
 
-    def test_position_delete_same_sequence_IS_assigned(self):
+    def test_position_delete_same_sequence_IS_assigned(self) -> None:
         """Position delete with SAME sequence number as data MUST apply.
 
         Position deletes use >= (not strictly >).
@@ -789,7 +790,7 @@ class TestPositionDeleteSequenceGating:
         result = index.for_data_file(5, data_file)
         assert len(result) == 1, "Position delete at same sequence number MUST be assigned (>=, not >)."
 
-    def test_position_delete_higher_sequence_IS_assigned(self):
+    def test_position_delete_higher_sequence_IS_assigned(self) -> None:
         """Position delete with HIGHER sequence number than data MUST apply."""
         index = DeleteFileIndex()
 
@@ -804,7 +805,7 @@ class TestPositionDeleteSequenceGating:
         result = index.for_data_file(5, data_file)
         assert len(result) == 1
 
-    def test_position_delete_lower_sequence_NOT_assigned(self):
+    def test_position_delete_lower_sequence_NOT_assigned(self) -> None:
         """Position delete with LOWER sequence number than data MUST NOT apply."""
         index = DeleteFileIndex()
 

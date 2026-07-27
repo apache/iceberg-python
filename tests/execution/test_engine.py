@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import inspect
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -349,7 +350,7 @@ class TestScopedEnvVarsSerializationWarning:
         finally:
             os.environ.pop("__TEST_PYICEBERG_EXC", None)
 
-    def test_todo_comment_references_issue_1624(self):
+    def test_todo_comment_references_issue_1624(self) -> None:
         """object_store.py must reference #1624 as the long-term fix for removing the lock."""
         import pyiceberg.execution.object_store as obj_store
 
@@ -952,7 +953,7 @@ class TestGetExecutionConfigInt:
             result = get_execution_config_int("cow-threshold", 64)
         assert result == 64
 
-    def test_yaml_config_used_when_no_env_var(self, tmp_path, monkeypatch) -> None:
+    def test_yaml_config_used_when_no_env_var(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Config file value is used when no env var is set."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -967,7 +968,7 @@ class TestGetExecutionConfigInt:
         result = get_execution_config_int("cow-threshold", 67108864)
         assert result == 33554432
 
-    def test_env_var_overrides_yaml_config(self, tmp_path, monkeypatch) -> None:
+    def test_env_var_overrides_yaml_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Env var takes priority over YAML config file value."""
         from pyiceberg.execution.engine import (
             clear_config_cache,
@@ -998,7 +999,7 @@ class TestGetExecutionConfigInt:
         # At least one hit (the second call reuses the first's cache entry)
         assert info.hits >= 1
 
-    def test_clear_config_cache_invalidates_section_cache(self, tmp_path, monkeypatch) -> None:
+    def test_clear_config_cache_invalidates_section_cache(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """clear_config_cache() forces re-read of the YAML section."""
         from pyiceberg.execution.engine import (
             clear_config_cache,

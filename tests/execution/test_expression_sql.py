@@ -151,7 +151,7 @@ class TestExpressionToSqlDeepNesting:
     realistic nesting depths succeed, and documents the practical limit.
     """
 
-    def test_deeply_nested_and_100_levels(self):
+    def test_deeply_nested_and_100_levels(self) -> None:
         """100-level nested AND tree produces valid SQL without stack overflow."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import And
@@ -176,7 +176,7 @@ class TestExpressionToSqlDeepNesting:
         for i in range(1, 101):
             assert str(i) in sql, f"Value {i} missing from SQL output"
 
-    def test_deeply_nested_or_100_levels(self):
+    def test_deeply_nested_or_100_levels(self) -> None:
         """100-level nested OR tree produces valid SQL without stack overflow."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import Or
@@ -195,7 +195,7 @@ class TestExpressionToSqlDeepNesting:
 
         assert sql.count("OR") == 99, f"Expected 99 ORs in deeply nested expression, got {sql.count('OR')}"
 
-    def test_mixed_and_or_50_levels(self):
+    def test_mixed_and_or_50_levels(self) -> None:
         """Mixed AND/OR nesting: 50 levels alternating AND and OR."""
         from pyiceberg.execution.expression_to_sql import expression_to_sql
         from pyiceberg.expressions import And, Or
@@ -219,7 +219,7 @@ class TestExpressionToSqlDeepNesting:
         assert "AND" in sql
         assert "OR" in sql
 
-    def test_nesting_at_recursion_boundary_500_levels(self):
+    def test_nesting_at_recursion_boundary_500_levels(self) -> None:
         """500-level nesting tests approaching Python's default recursion limit.
 
         Python's default recursion limit is 1000. Each visitor level adds ~3

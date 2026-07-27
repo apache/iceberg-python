@@ -24,6 +24,7 @@ import glob
 import inspect
 import tempfile
 import warnings
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
@@ -50,7 +51,7 @@ class TestSortedReaderTempFileCleanup:
     These tests cover the basic happy-path lifecycle.
     """
 
-    def test_cleanup_on_full_exhaustion(self, tmp_path) -> None:
+    def test_cleanup_on_full_exhaustion(self, tmp_path: Path) -> None:
         """Temp file is cleaned up after reader is fully consumed."""
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
         from pyiceberg.execution.materialize import materialize_to_parquet
@@ -68,7 +69,7 @@ class TestSortedReaderTempFileCleanup:
         result = reader.read_all()
         assert result.column("id").to_pylist() == [1, 2, 3]
 
-    def test_cleanup_guard_on_abandoned_reader(self, tmp_path) -> None:
+    def test_cleanup_guard_on_abandoned_reader(self, tmp_path: Path) -> None:
         """Temp file is cleaned up via __del__ when reader is GC'd without exhaustion."""
         from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
         from pyiceberg.execution.materialize import (
@@ -343,7 +344,7 @@ class TestConfigCacheInvalidation:
         result2 = _read_execution_section_from_file()
         assert result1 == result2
 
-    def test_env_var_change_picked_up_after_clear(self, monkeypatch) -> None:
+    def test_env_var_change_picked_up_after_clear(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """After setting env var + clear_config_cache, resolve uses the new value."""
         from pyiceberg.execution.engine import (
             ExecutionEngine,
@@ -503,7 +504,7 @@ class TestOrchestrateScanStreamingMode:
         assert "streaming" in sig.parameters
         assert sig.parameters["streaming"].default is False
 
-    def test_streaming_true_produces_same_results_as_false(self, tmp_path) -> None:
+    def test_streaming_true_produces_same_results_as_false(self, tmp_path: Path) -> None:
         """streaming=True produces identical data to streaming=False."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -562,7 +563,7 @@ class TestOrchestrateScanStreamingMode:
         streaming_ids = sorted(id_val for batch in result_streaming for id_val in batch.column("id").to_pylist())
         assert eager_ids == streaming_ids == [1, 2, 3, 4, 5]
 
-    def test_streaming_cleans_up_temp_files(self, tmp_path) -> None:
+    def test_streaming_cleans_up_temp_files(self, tmp_path: Path) -> None:
         """streaming=True does not leak temp files after iteration completes."""
         from pyiceberg.execution._orchestrate import orchestrate_scan
 
@@ -616,7 +617,7 @@ class TestOrchestrateScanStreamingMode:
 class TestBatchReaderUsesStreaming:
     """Verify to_arrow_batch_reader path passes streaming=True to orchestrate_scan."""
 
-    def test_batch_reader_path_sets_streaming_true(self, tmp_path) -> None:
+    def test_batch_reader_path_sets_streaming_true(self, tmp_path: Path) -> None:
         """_to_arrow_batch_reader_via_file_scan_tasks passes streaming=True.
 
         We verify this by patching orchestrate_scan at its definition module

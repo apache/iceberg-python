@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pyarrow as pa
@@ -307,7 +308,7 @@ class TestSortedRecordBatchReaderTypeAnnotations:
 class TestSortedRecordBatchReaderCleanup:
     """Verify temp file lifecycle management."""
 
-    def test_cleanup_on_normal_exhaustion(self, tmp_path) -> None:
+    def test_cleanup_on_normal_exhaustion(self, tmp_path: Path) -> None:
         """Context manager __exit__ called when reader is fully consumed."""
         from contextlib import contextmanager
 
@@ -333,7 +334,7 @@ class TestSortedRecordBatchReaderCleanup:
         reader.read_all()
         assert cleanup_called
 
-    def test_cleanup_on_exception_in_sort(self, tmp_path) -> None:
+    def test_cleanup_on_exception_in_sort(self, tmp_path: Path) -> None:
         """Context manager __exit__ called even when sort_fn raises."""
         from contextlib import contextmanager
 
@@ -413,7 +414,7 @@ class TestWarnIfLargeMaterialization:
         resource_warnings = [w for w in caught if issubclass(w.category, ResourceWarning)]
         assert len(resource_warnings) == 0, f"No ResourceWarning expected below threshold, got: {resource_warnings}"
 
-    def test_threshold_is_exactly_1gb(self):
+    def test_threshold_is_exactly_1gb(self) -> None:
         """The materialization warning threshold is exactly 1 GB."""
         from pyiceberg.execution.backends.datafusion_backend import (
             _MATERIALIZATION_WARNING_THRESHOLD_DEFAULT,

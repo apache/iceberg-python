@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import sys
 import warnings
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -124,7 +125,7 @@ _skip_win32 = pytest.mark.skipif(sys.platform == "win32", reason="InMemoryCatalo
 
 
 @pytest.fixture
-def catalog(tmp_path) -> None:
+def catalog(tmp_path: Path) -> InMemoryCatalog:
     """Create an InMemoryCatalog with local filesystem warehouse."""
     return InMemoryCatalog(
         "test_catalog",
@@ -133,7 +134,7 @@ def catalog(tmp_path) -> None:
 
 
 @pytest.fixture
-def table_schema() -> None:
+def table_schema() -> Schema:
     """Simple schema for round-trip testing."""
     return Schema(
         NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
@@ -146,7 +147,7 @@ def table_schema() -> None:
 class TestInMemoryCatalogRoundTrip:
     """Full round-trip: create table → write → scan → verify correctness."""
 
-    def test_write_and_scan_returns_correct_data(self, catalog, table_schema) -> None:
+    def test_write_and_scan_returns_correct_data(self, catalog: InMemoryCatalog, table_schema: Schema) -> None:
         """Write rows via append, scan back, verify content matches."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.roundtrip", schema=table_schema)
@@ -168,7 +169,7 @@ class TestInMemoryCatalogRoundTrip:
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3, 4, 5]
         assert sorted(result.column("value").to_pylist()) == [100, 200, 300, 400, 500]
 
-    def test_filtered_scan_returns_subset(self, catalog, table_schema) -> None:
+    def test_filtered_scan_returns_subset(self, catalog: InMemoryCatalog, table_schema: Schema) -> None:
         """Scan with row_filter returns only matching rows."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.filtered", schema=table_schema)
@@ -192,7 +193,7 @@ class TestInMemoryCatalogRoundTrip:
         assert len(filtered) == 3
         assert sorted(filtered.column("value").to_pylist()) == [30, 40, 50]
 
-    def test_scan_with_projection(self, catalog, table_schema) -> None:
+    def test_scan_with_projection(self, catalog: InMemoryCatalog, table_schema: Schema) -> None:
         """Scan with column selection returns only requested columns."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.projected", schema=table_schema)
@@ -212,7 +213,7 @@ class TestInMemoryCatalogRoundTrip:
         assert result.schema.names == ["id", "name"]
         assert "value" not in result.schema.names
 
-    def test_scan_empty_table(self, catalog, table_schema) -> None:
+    def test_scan_empty_table(self, catalog: InMemoryCatalog, table_schema: Schema) -> None:
         """Scan on empty table returns zero rows with correct schema."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.empty", schema=table_schema)
@@ -221,7 +222,7 @@ class TestInMemoryCatalogRoundTrip:
 
         assert len(result) == 0
 
-    def test_multiple_appends_scan_all(self, catalog, table_schema) -> None:
+    def test_multiple_appends_scan_all(self, catalog: InMemoryCatalog, table_schema: Schema) -> None:
         """Multiple appends are visible in a single scan."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.multi_append", schema=table_schema)
@@ -251,7 +252,7 @@ class TestInMemoryCatalogRoundTrip:
         assert len(result) == 4
         assert sorted(result.column("id").to_pylist()) == [1, 2, 3, 4]
 
-    def test_to_arrow_batch_reader_streams_correctly(self, catalog, table_schema) -> None:
+    def test_to_arrow_batch_reader_streams_correctly(self, catalog: InMemoryCatalog, table_schema: Schema) -> None:
         """to_arrow_batch_reader returns a working RecordBatchReader."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.stream", schema=table_schema)
@@ -271,7 +272,7 @@ class TestInMemoryCatalogRoundTrip:
         result = reader.read_all()
         assert len(result) == 3
 
-    def test_count_matches_scan_length(self, catalog, table_schema) -> None:
+    def test_count_matches_scan_length(self, catalog: InMemoryCatalog, table_schema: Schema) -> None:
         """table.scan().count() matches len(table.scan().to_arrow())."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.count_check", schema=table_schema)
@@ -290,7 +291,7 @@ class TestInMemoryCatalogRoundTrip:
 
         assert count == arrow_len == 5
 
-    def test_delete_removes_rows(self, catalog, table_schema) -> None:
+    def test_delete_removes_rows(self, catalog: InMemoryCatalog, table_schema: Schema) -> None:
         """table.delete via CoW rewrites correctly removes filtered rows."""
         catalog.create_namespace("db")
         table = catalog.create_table("db.delete_test", schema=table_schema)
@@ -325,7 +326,7 @@ class TestResolveFilesystemFromIoProperties:
     REST catalog credential vending (temporary STS tokens) would get 403 errors.
     """
 
-    def test_local_path_returns_local_filesystem(self, tmp_path) -> None:
+    def test_local_path_returns_local_filesystem(self, tmp_path: Path) -> None:
         """Local paths resolve to LocalFileSystem without using io_properties."""
         from pyarrow.fs import LocalFileSystem
 
@@ -337,7 +338,7 @@ class TestResolveFilesystemFromIoProperties:
         fs, path = _resolve_filesystem(str(local_file), {})
         assert isinstance(fs, LocalFileSystem)
 
-    def test_s3_path_uses_io_properties_credentials(self):
+    def test_s3_path_uses_io_properties_credentials(self) -> None:
         """S3 paths construct S3FileSystem from io_properties, not from environment."""
         from pyarrow.fs import S3FileSystem
 
@@ -357,7 +358,7 @@ class TestResolveFilesystemFromIoProperties:
         # We verify by checking the region is the one from props.
         assert fs.region == "eu-west-1"
 
-    def test_s3_path_with_custom_endpoint(self):
+    def test_s3_path_with_custom_endpoint(self) -> None:
         """S3 paths with custom endpoint (MinIO, LocalStack) use io_properties."""
         from pyarrow.fs import S3FileSystem
 
@@ -375,7 +376,7 @@ class TestResolveFilesystemFromIoProperties:
         assert isinstance(fs, S3FileSystem)
         assert path == "warehouse/table/data.parquet"
 
-    def test_empty_io_properties_still_resolves_s3(self):
+    def test_empty_io_properties_still_resolves_s3(self) -> None:
         """S3 paths with empty io_properties fall back to environment (default behavior)."""
         from pyarrow.fs import S3FileSystem
 
@@ -385,7 +386,7 @@ class TestResolveFilesystemFromIoProperties:
         fs, path = _resolve_filesystem("s3://bucket/key.parquet", {})
         assert isinstance(fs, S3FileSystem)
 
-    def test_read_parquet_passes_io_properties_to_filesystem(self, tmp_path) -> None:
+    def test_read_parquet_passes_io_properties_to_filesystem(self, tmp_path: Path) -> None:
         """PyArrowReadBackend.read_parquet uses io_properties for filesystem resolution."""
         import pyarrow.parquet as pq
 
@@ -415,7 +416,7 @@ class TestResolveFilesystemFromIoProperties:
         total_rows = sum(b.num_rows for b in batches)
         assert total_rows == 3
 
-    def test_positional_deletes_impl_uses_io_properties(self, tmp_path) -> None:
+    def test_positional_deletes_impl_uses_io_properties(self, tmp_path: Path) -> None:
         """_apply_positional_deletes_impl passes io_properties to filesystem resolution."""
         import pyarrow.parquet as pq
 
