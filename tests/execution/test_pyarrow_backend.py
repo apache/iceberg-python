@@ -21,6 +21,7 @@ Covers:
 - _anti_join_tables struct-array O(n+m) multi-column join correctness
 - NULL handling with IS NOT DISTINCT FROM semantics
 - Full InMemoryCatalog round-trip through pluggable backend
+- _extract_filter_columns regex correctness for filter column safeguard
 """
 
 from __future__ import annotations
@@ -37,6 +38,75 @@ from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.expressions import AlwaysTrue, EqualTo
 from pyiceberg.schema import Schema
 from pyiceberg.types import IntegerType, LongType, NestedField, StringType
+
+# =============================================================================
+# _extract_filter_columns correctness (for partition column safeguard)
+# =============================================================================
+
+
+class TestExtractFilterColumns:
+    """_extract_filter_columns must correctly extract column names from PyArrow expressions.
+
+    This is critical for the safeguard in read_parquet() that prevents pushing filters
+    to the scanner when they reference columns not in the file (e.g., partition columns).
+    """
+
+    def test_simple_equality(self) -> None:
+        """Extract column from simple equality expression."""
+        from pyiceberg.execution.backends.pyarrow_backend import _extract_filter_columns
+
+        expr = pc.field("partition_id") == 1
+        columns = _extract_filter_columns(expr)
+        assert columns == {"partition_id"}
+
+    def test_simple_comparison(self) -> None:
+        """Extract column from comparison expression."""
+        from pyiceberg.execution.backends.pyarrow_backend import _extract_filter_columns
+
+        expr = pc.field("id") > 5
+        columns = _extract_filter_columns(expr)
+        assert columns == {"id"}
+
+    def test_multiple_columns_and(self) -> None:
+        """Extract multiple columns from AND expression."""
+        from pyiceberg.execution.backends.pyarrow_backend import _extract_filter_columns
+
+        expr = (pc.field("a") == 1) & (pc.field("b") == 2)
+        columns = _extract_filter_columns(expr)
+        assert columns == {"a", "b"}
+
+    def test_multiple_columns_or(self) -> None:
+        """Extract multiple columns from OR expression."""
+        from pyiceberg.execution.backends.pyarrow_backend import _extract_filter_columns
+
+        expr = (pc.field("x") < 10) | (pc.field("y") > 20)
+        columns = _extract_filter_columns(expr)
+        assert columns == {"x", "y"}
+
+    def test_complex_nested(self) -> None:
+        """Extract columns from complex nested expression."""
+        from pyiceberg.execution.backends.pyarrow_backend import _extract_filter_columns
+
+        expr = ((pc.field("a") == 1) & (pc.field("b") == 2)) | (pc.field("c") > 3)
+        columns = _extract_filter_columns(expr)
+        assert columns == {"a", "b", "c"}
+
+    def test_same_column_multiple_times(self) -> None:
+        """Same column referenced multiple times returns single entry."""
+        from pyiceberg.execution.backends.pyarrow_backend import _extract_filter_columns
+
+        expr = (pc.field("id") > 5) & (pc.field("id") < 10)
+        columns = _extract_filter_columns(expr)
+        assert columns == {"id"}
+
+    def test_isin_expression(self) -> None:
+        """Extract column from is_in expression."""
+        from pyiceberg.execution.backends.pyarrow_backend import _extract_filter_columns
+
+        expr = pc.field("category").isin(["a", "b", "c"])
+        columns = _extract_filter_columns(expr)
+        assert columns == {"category"}
+
 
 # =============================================================================
 # Multi-column anti-join correctness (O(n+m) struct-array approach)

@@ -294,8 +294,12 @@ class PyArrowReadBackend:
 def _extract_filter_columns(pa_filter: pc.Expression) -> set[str]:
     """Extract column names referenced by a PyArrow compute expression.
 
-    Uses string representation parsing since PyArrow doesn't expose a clean API
-    for expression introspection.
+    Parses the string representation of the expression to find column names.
+    PyArrow expressions have string formats like:
+    - (column_name == value) for comparisons
+    - ((a == 1) and (b == 2)) for compound expressions
+    - is_in(column_name, ...) for isin expressions
+    - is_null(column_name, ...) for null checks
 
     Args:
         pa_filter: A PyArrow compute expression.
@@ -307,9 +311,17 @@ def _extract_filter_columns(pa_filter: pc.Expression) -> set[str]:
 
     columns: set[str] = set()
     expr_str = str(pa_filter)
-    # Find all field_ref('name') patterns in the expression string
-    for match in re.finditer(r"field_ref\('([^']+)'", expr_str):
+
+    # Pattern 1: column before comparison operators (==, !=, <, >, <=, >=)
+    # Matches: "column_name ==" or "column_name <" etc.
+    for match in re.finditer(r"([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:==|!=|<=|>=|<|>)", expr_str):
         columns.add(match.group(1))
+
+    # Pattern 2: function calls with column as first argument
+    # Matches: "is_in(column_name," or "is_null(column_name," etc.
+    for match in re.finditer(r"(?:is_in|is_null|is_nan|is_valid)\(([a-zA-Z_][a-zA-Z0-9_]*)", expr_str):
+        columns.add(match.group(1))
+
     return columns
 
 
