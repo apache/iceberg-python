@@ -269,6 +269,14 @@ class PyArrowReadBackend:
         file_columns = set(dataset.schema.names)
         available_columns = [c for c in columns if c in file_columns]
 
+        # If filter references columns not in the file (e.g., partition columns
+        # projected from manifest metadata), don't push the filter down.
+        # The orchestrator will apply it via post-filter after schema reconciliation.
+        if pa_filter is not None:
+            filter_columns = _extract_filter_columns(pa_filter)
+            if not filter_columns.issubset(file_columns):
+                pa_filter = None
+
         scanner = dataset.scanner(
             columns=available_columns if available_columns else None,
             filter=pa_filter,
@@ -281,6 +289,28 @@ class PyArrowReadBackend:
 # =============================================================================
 # WRITE
 # =============================================================================
+
+
+def _extract_filter_columns(pa_filter: pc.Expression) -> set[str]:
+    """Extract column names referenced by a PyArrow compute expression.
+
+    Uses string representation parsing since PyArrow doesn't expose a clean API
+    for expression introspection.
+
+    Args:
+        pa_filter: A PyArrow compute expression.
+
+    Returns:
+        Set of column names referenced by the expression.
+    """
+    import re
+
+    columns: set[str] = set()
+    expr_str = str(pa_filter)
+    # Find all field_ref('name') patterns in the expression string
+    for match in re.finditer(r"field_ref\('([^']+)'", expr_str):
+        columns.add(match.group(1))
+    return columns
 
 
 class PyArrowWriteBackend:

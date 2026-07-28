@@ -423,16 +423,20 @@ class TestScanDispatchesThroughPluggableBackend:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [2, 3, 5]
 
-    def test_scan_applies_filter_via_pushdown_when_residual_is_always_true(
+    def test_scan_applies_filter_via_post_filter_when_residual_is_always_true(
         self, tmp_path: Path, schema: Schema, observable_backends: Backends
     ) -> None:
-        """orchestrate_scan pushes down filter when task.residual is AlwaysTrue.
+        """orchestrate_scan applies filter via post-filter when task.residual is AlwaysTrue.
 
-        This tests the fix for REST catalogs returning residual_filter=None:
-        - task.residual becomes AlwaysTrue
-        - row_filter should be bound and pushed down to the scanner
-        - Post-filter (ComputeBackend.filter) should NOT be called
-        - Result should still be correct (filter applied via pushdown)
+        When task.residual is AlwaysTrue, it means either:
+        1. Partition filters were fully evaluated by the planner
+        2. REST server didn't compute a residual (residual_filter=None)
+
+        In both cases, we DON'T push down the filter because:
+        - Partition column filters reference columns not in the data file
+        - The row_filter may reference columns that require schema reconciliation
+
+        Instead, the filter is applied via post-filter (ComputeBackend.filter).
         """
         from pyiceberg.execution._orchestrate import orchestrate_scan
         from pyiceberg.expressions.visitors import bind
@@ -443,7 +447,7 @@ class TestScanDispatchesThroughPluggableBackend:
         # Create a BOUND predicate
         bound_filter = bind(schema, EqualTo("id", 3), case_sensitive=True)
 
-        # Task with AlwaysTrue residual (simulating REST catalog)
+        # Task with AlwaysTrue residual (simulating REST catalog or partition filter)
         task = FileScanTask(
             data_file=DataFile.from_args(
                 content=DataFileContent.DATA,
@@ -470,12 +474,12 @@ class TestScanDispatchesThroughPluggableBackend:
             )
         )
 
-        # With the fix: filter is pushed down to scanner, post-filter is NOT called
+        # With the fix: filter is applied via post-filter (not pushdown)
         compute_backend = _get_observable_compute(observable_backends)
         filter_calls = [c for c in compute_backend.calls if c["method"] == "filter"]
-        assert len(filter_calls) == 0, "Post-filter should not be called when filter is pushed down"
+        assert len(filter_calls) == 1, "Post-filter should be called when task.residual is AlwaysTrue"
 
-        # Verify correct result - filter was applied via pushdown
+        # Verify correct result - filter was applied
         result = pa.Table.from_batches(batches)
         assert result.column("id").to_pylist() == [3], "Filter should select only id=3"
 
@@ -1370,26 +1374,32 @@ class TestResolvePushdownFilter:
         result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
         assert result is task_residual
 
-    def test_always_true_residual_falls_back_to_bound_row_filter(self) -> None:
-        """When task.residual is AlwaysTrue, bind and return row_filter.
+    def test_always_true_residual_returns_always_true(self) -> None:
+        """When task.residual is AlwaysTrue, return AlwaysTrue for pushdown.
 
-        This is the critical case for REST catalog: when the server returns
-        residual_filter=None, it becomes AlwaysTrue, and we should bind the
-        original row_filter and use it for pushdown instead of losing the filter entirely.
+        When the planner returns AlwaysTrue for residual, it means either:
+        1. Partition filters were fully evaluated (nothing left for scanner)
+        2. REST server didn't compute a residual
+
+        In both cases, we should NOT push down the row_filter because:
+        - Partition column filters reference columns not in the data file
+        - The row_filter may be unbound and fail expression conversion
+
+        The orchestrator will apply row_filter via post-filter after schema
+        reconciliation adds partition columns (if applicable).
         """
         from pyiceberg.execution._orchestrate import _resolve_pushdown_filter
-        from pyiceberg.expressions import AlwaysTrue, BoundGreaterThan, GreaterThan
+        from pyiceberg.expressions import AlwaysTrue, GreaterThan
 
         schema = Schema(
             NestedField(1, "id", IntegerType(), required=True),
         )
         row_filter = GreaterThan("id", 2)
-        task_residual = AlwaysTrue()  # REST server returned residual_filter=None
+        task_residual = AlwaysTrue()  # Partition filter fully evaluated or REST returned None
 
         result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
-        # Should be a bound expression now
-        assert isinstance(result, BoundGreaterThan)
-        assert not isinstance(result, AlwaysTrue)
+        # Should return AlwaysTrue - no pushdown, post-filter will handle it
+        assert isinstance(result, AlwaysTrue)
 
 
 class TestPlainReadWithAlwaysTrueResidual:

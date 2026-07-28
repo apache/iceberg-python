@@ -83,42 +83,36 @@ def _resolve_pushdown_filter(
     Filter selection priority:
     1. If row_filter is AlwaysTrue → push AlwaysTrue (no filter requested)
     2. If task.residual is non-trivial → use it (handles schema evolution column renames)
-    3. Otherwise → bind and return row_filter (e.g., REST server returned residual_filter=None)
+    3. Otherwise (task.residual is AlwaysTrue) → return AlwaysTrue, let post-filter handle it
 
-    The task.residual comes from the scan planner and has column names adjusted for
-    schema evolution (old column names that match the file). When REST server-side
-    planning is used, the server may return residual_filter=None which becomes
-    AlwaysTrue, so we fall back to the original row_filter in that case.
+    When task.residual is AlwaysTrue, it means either:
+    - The planner evaluated partition filters and there's nothing left for the scanner
+    - The REST server didn't compute a residual (residual_filter=None)
+
+    In both cases, we should NOT push down the row_filter to the scanner because:
+    - Partition column filters reference columns not in the data file
+    - The row_filter may be unbound and fail expression conversion
+
+    The orchestrator will apply row_filter via post-filter after schema reconciliation
+    adds partition columns (if applicable).
 
     Args:
         row_filter: The original row filter from the scan (possibly unbound).
-        task_residual: The residual filter from the FileScanTask (usually bound).
-        projected_schema: The projected schema to bind unbound filters against.
-        case_sensitive: Whether to use case-sensitive column matching when binding.
+        task_residual: The residual filter from the FileScanTask.
+        projected_schema: The projected schema (unused now but kept for API stability).
+        case_sensitive: Case sensitivity for matching (unused now but kept for API stability).
 
     Returns:
-        The filter expression to push down to the Parquet scanner. Returns AlwaysTrue
-        if the filter cannot be bound (e.g., references columns not in the schema).
+        The filter expression to push down to the Parquet scanner.
     """
     if isinstance(row_filter, AlwaysTrue):
         return AlwaysTrue()
     elif not isinstance(task_residual, AlwaysTrue):
+        # Planner computed a non-trivial residual - use it for pushdown
         return task_residual
     else:
-        # Fall back to row_filter: must bind it to the schema first.
-        # The row_filter may be unbound (e.g., GreaterThan("id", 2)) and expression_to_pyarrow
-        # requires bound expressions. Binding converts UnboundPredicate to BoundPredicate
-        # with proper field references.
-        from pyiceberg.expressions.visitors import bind
-
-        try:
-            return bind(projected_schema, row_filter, case_sensitive)
-        except (TypeError, ValueError):
-            # TypeError: filter is already bound
-            # ValueError: filter references columns not in the schema
-            # In either case, return the filter as-is and let the scanner handle it
-            # (or fall back to post-filter if scanner can't apply it)
-            return row_filter
+        # task.residual is AlwaysTrue: don't push down, let post-filter handle it
+        return AlwaysTrue()
 
 
 #: Sentinel object returned by _build_reconcile_fn when the batch's schema already
