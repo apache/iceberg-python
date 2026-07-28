@@ -72,6 +72,55 @@ def _get_pos_delete_threshold() -> int:
     return get_execution_config_int("pos-delete-threshold", _POS_DELETE_THRESHOLD_DEFAULT)
 
 
+def _resolve_pushdown_filter(
+    row_filter: BooleanExpression,
+    task_residual: BooleanExpression,
+    projected_schema: Schema,
+    case_sensitive: bool,
+) -> BooleanExpression:
+    """Determine the filter to push down to the Parquet scanner.
+
+    Filter selection priority:
+    1. If row_filter is AlwaysTrue → push AlwaysTrue (no filter requested)
+    2. If task.residual is non-trivial → use it (handles schema evolution column renames)
+    3. Otherwise → bind and return row_filter (e.g., REST server returned residual_filter=None)
+
+    The task.residual comes from the scan planner and has column names adjusted for
+    schema evolution (old column names that match the file). When REST server-side
+    planning is used, the server may return residual_filter=None which becomes
+    AlwaysTrue, so we fall back to the original row_filter in that case.
+
+    Args:
+        row_filter: The original row filter from the scan (possibly unbound).
+        task_residual: The residual filter from the FileScanTask (usually bound).
+        projected_schema: The projected schema to bind unbound filters against.
+        case_sensitive: Whether to use case-sensitive column matching when binding.
+
+    Returns:
+        The filter expression to push down to the Parquet scanner. Returns AlwaysTrue
+        if the filter cannot be bound (e.g., references columns not in the schema).
+    """
+    if isinstance(row_filter, AlwaysTrue):
+        return AlwaysTrue()
+    elif not isinstance(task_residual, AlwaysTrue):
+        return task_residual
+    else:
+        # Fall back to row_filter: must bind it to the schema first.
+        # The row_filter may be unbound (e.g., GreaterThan("id", 2)) and expression_to_pyarrow
+        # requires bound expressions. Binding converts UnboundPredicate to BoundPredicate
+        # with proper field references.
+        from pyiceberg.expressions.visitors import bind
+
+        try:
+            return bind(projected_schema, row_filter, case_sensitive)
+        except (TypeError, ValueError):
+            # TypeError: filter is already bound
+            # ValueError: filter references columns not in the schema
+            # In either case, return the filter as-is and let the scanner handle it
+            # (or fall back to post-filter if scanner can't apply it)
+            return row_filter
+
+
 #: Sentinel object returned by _build_reconcile_fn when the batch's schema already
 #: matches the projected schema (no reconciliation needed). Distinct from a callable
 #: to avoid the overhead of an identity-function call on every batch in the common case.
@@ -267,9 +316,7 @@ def orchestrate_scan(
                     UserWarning,
                     stacklevel=2,
                 )
-                # Use task.residual for pushdown (handles schema evolution column names).
-                # If row_filter is AlwaysTrue, caller wants all rows - use AlwaysTrue for pushdown too.
-                pushdown_filter = AlwaysTrue() if isinstance(row_filter, AlwaysTrue) else task.residual
+                pushdown_filter = _resolve_pushdown_filter(row_filter, task.residual, projected_schema, case_sensitive)
                 batches = backends.read.read_parquet(
                     task.file.file_path,
                     projected_schema,
@@ -282,7 +329,7 @@ def orchestrate_scan(
                 # equality_ids present but all referenced columns dropped via schema
                 # evolution. _get_equality_field_names already emitted a warning.
                 # Skip anti-join; fall through to plain read (superset of correct results).
-                pushdown_filter = AlwaysTrue() if isinstance(row_filter, AlwaysTrue) else task.residual
+                pushdown_filter = _resolve_pushdown_filter(row_filter, task.residual, projected_schema, case_sensitive)
                 batches = backends.read.read_parquet(
                     task.file.file_path,
                     projected_schema,
@@ -309,9 +356,8 @@ def orchestrate_scan(
             )
             # Note: filter not pushed down in positional delete path
         else:
-            # Use task.residual for pushdown (handles schema evolution column names).
-            # If row_filter is AlwaysTrue, caller wants all rows - use AlwaysTrue for pushdown too.
-            pushdown_filter = AlwaysTrue() if isinstance(row_filter, AlwaysTrue) else task.residual
+            # Plain read path: push down filter to scanner for efficiency.
+            pushdown_filter = _resolve_pushdown_filter(row_filter, task.residual, projected_schema, case_sensitive)
             batches = backends.read.read_parquet(
                 task.file.file_path,
                 projected_schema,

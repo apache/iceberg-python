@@ -423,18 +423,27 @@ class TestScanDispatchesThroughPluggableBackend:
         result = pa.Table.from_batches(batches)
         assert sorted(result.column("id").to_pylist()) == [2, 3, 5]
 
-    def test_scan_calls_filter_for_residual(self, tmp_path: Path, schema: Schema, observable_backends: Backends) -> None:
-        """orchestrate_scan calls ComputeBackend.filter when row_filter has non-trivial predicate."""
+    def test_scan_applies_filter_via_pushdown_when_residual_is_always_true(
+        self, tmp_path: Path, schema: Schema, observable_backends: Backends
+    ) -> None:
+        """orchestrate_scan pushes down filter when task.residual is AlwaysTrue.
+
+        This tests the fix for REST catalogs returning residual_filter=None:
+        - task.residual becomes AlwaysTrue
+        - row_filter should be bound and pushed down to the scanner
+        - Post-filter (ComputeBackend.filter) should NOT be called
+        - Result should still be correct (filter applied via pushdown)
+        """
         from pyiceberg.execution._orchestrate import orchestrate_scan
         from pyiceberg.expressions.visitors import bind
 
         data_path = str(tmp_path / "data.parquet")
         pq.write_table(pa.table({"id": [1, 2, 3, 4, 5], "name": ["a", "b", "c", "d", "e"]}), data_path)
 
-        # Create a BOUND predicate (expression_to_pyarrow requires bound predicates)
+        # Create a BOUND predicate
         bound_filter = bind(schema, EqualTo("id", 3), case_sensitive=True)
 
-        # Task with AlwaysTrue residual (pushdown handles the filter)
+        # Task with AlwaysTrue residual (simulating REST catalog)
         task = FileScanTask(
             data_file=DataFile.from_args(
                 content=DataFileContent.DATA,
@@ -461,14 +470,14 @@ class TestScanDispatchesThroughPluggableBackend:
             )
         )
 
-        # BEHAVIORAL PROOF: filter was called with the row_filter
+        # With the fix: filter is pushed down to scanner, post-filter is NOT called
         compute_backend = _get_observable_compute(observable_backends)
         filter_calls = [c for c in compute_backend.calls if c["method"] == "filter"]
-        assert len(filter_calls) == 1
+        assert len(filter_calls) == 0, "Post-filter should not be called when filter is pushed down"
 
-        # Verify correct result
+        # Verify correct result - filter was applied via pushdown
         result = pa.Table.from_batches(batches)
-        assert result.column("id").to_pylist() == [3]
+        assert result.column("id").to_pylist() == [3], "Filter should select only id=3"
 
 
 class TestToArrowDispatchesThroughBackends:
@@ -1325,3 +1334,134 @@ class TestBoundedMemoryPlannerEmptyManifests:
         )
 
         assert tasks == []
+
+
+class TestResolvePushdownFilter:
+    """Test _resolve_pushdown_filter helper for correct filter selection.
+
+    This function determines which filter to push down to the Parquet scanner:
+    1. If row_filter is AlwaysTrue → use AlwaysTrue (no filter)
+    2. If task.residual is non-trivial → use it (handles schema evolution)
+    3. Otherwise → bind and return row_filter (REST server returned residual_filter=None)
+    """
+
+    def test_always_true_row_filter_returns_always_true(self) -> None:
+        """When row_filter is AlwaysTrue, pushdown should be AlwaysTrue."""
+        from pyiceberg.execution._orchestrate import _resolve_pushdown_filter
+        from pyiceberg.expressions import AlwaysTrue, GreaterThan
+
+        schema = Schema(
+            NestedField(1, "id", IntegerType(), required=True),
+        )
+        result = _resolve_pushdown_filter(AlwaysTrue(), GreaterThan("id", 5), schema, case_sensitive=True)
+        assert isinstance(result, AlwaysTrue)
+
+    def test_non_trivial_residual_is_used(self) -> None:
+        """When task.residual is non-trivial, it should be used (schema evolution case)."""
+        from pyiceberg.execution._orchestrate import _resolve_pushdown_filter
+        from pyiceberg.expressions import GreaterThan
+
+        schema = Schema(
+            NestedField(1, "id", IntegerType(), required=True),
+        )
+        row_filter = GreaterThan("new_col_name", 5)
+        task_residual = GreaterThan("old_col_name", 5)  # Schema evolution renamed column
+
+        result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
+        assert result is task_residual
+
+    def test_always_true_residual_falls_back_to_bound_row_filter(self) -> None:
+        """When task.residual is AlwaysTrue, bind and return row_filter.
+
+        This is the critical case for REST catalog: when the server returns
+        residual_filter=None, it becomes AlwaysTrue, and we should bind the
+        original row_filter and use it for pushdown instead of losing the filter entirely.
+        """
+        from pyiceberg.execution._orchestrate import _resolve_pushdown_filter
+        from pyiceberg.expressions import AlwaysTrue, BoundGreaterThan, GreaterThan
+
+        schema = Schema(
+            NestedField(1, "id", IntegerType(), required=True),
+        )
+        row_filter = GreaterThan("id", 2)
+        task_residual = AlwaysTrue()  # REST server returned residual_filter=None
+
+        result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
+        # Should be a bound expression now
+        assert isinstance(result, BoundGreaterThan)
+        assert not isinstance(result, AlwaysTrue)
+
+
+class TestPlainReadWithAlwaysTrueResidual:
+    """Regression test: plain read path must apply filter when task.residual is AlwaysTrue.
+
+    Bug scenario (fixed in this PR):
+    - User creates unpartitioned table via REST catalog
+    - User deletes rows (CoW)
+    - User scans with row_filter
+    - REST server returns residual_filter=None → task.residual=AlwaysTrue
+    - OLD BUG: pushdown_filter = task.residual = AlwaysTrue (filter lost!)
+    - FIX: fall back to row_filter when task.residual is AlwaysTrue
+    """
+
+    def test_filter_applied_when_residual_is_always_true(self, tmp_path: Path) -> None:
+        """Plain read with AlwaysTrue residual but non-trivial row_filter must filter rows."""
+        # Write a data file with rows [1, 2, 3, 4, 5]
+        data_schema = pa.schema([pa.field("id", pa.int32()), pa.field("category", pa.string())])
+        data_table = pa.table({"id": [1, 2, 3, 4, 5], "category": ["a", "a", "a", "a", "a"]}, schema=data_schema)
+        data_path = str(tmp_path / "data.parquet")
+        pq.write_table(data_table, data_path)
+
+        # Create a FileScanTask with AlwaysTrue residual (simulating REST server)
+        from pyiceberg.expressions import GreaterThan
+        from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=data_path,
+            file_format=FileFormat.PARQUET,
+            partition={},
+            record_count=5,
+            file_size_in_bytes=1000,
+        )
+
+        task = FileScanTask(
+            data_file=data_file,
+            delete_files=None,
+            residual=AlwaysTrue(),  # REST server returned residual_filter=None
+        )
+
+        # Create mock scan objects
+        schema = Schema(
+            NestedField(1, "id", IntegerType(), required=True),
+            NestedField(2, "category", StringType(), required=False),
+        )
+        mock_metadata = MagicMock()
+        mock_metadata.schema.return_value = schema
+        mock_metadata.format_version = 2
+        mock_metadata.name_mapping.return_value = None
+        mock_metadata.schemas = [schema]
+
+        # Run orchestrate_scan with a row_filter that should filter out id <= 2
+        from pyiceberg.execution._orchestrate import orchestrate_scan
+        from pyiceberg.execution.protocol import Backends
+
+        backends = Backends.resolve({})
+        row_filter = GreaterThan("id", 2)
+
+        result_batches = list(
+            orchestrate_scan(
+                backends=backends,
+                tasks=iter([task]),
+                table_metadata=mock_metadata,
+                projected_schema=schema,
+                row_filter=row_filter,
+                case_sensitive=True,
+            )
+        )
+
+        result = pa.Table.from_batches(result_batches)
+        # Should only have rows where id > 2: [3, 4, 5]
+        assert sorted(result.column("id").to_pylist()) == [3, 4, 5], (
+            f"Filter should exclude id <= 2, got {result.column('id').to_pylist()}"
+        )
