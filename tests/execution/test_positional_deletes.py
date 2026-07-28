@@ -1331,3 +1331,378 @@ class TestCoWDeleteEdgeCases:
         # Verify the guard: with record_count=0, the file is skipped
         # The guard fires before the threshold check
         assert original_row_count == 0  # Would hit `continue` in the loop
+
+
+# =============================================================================
+# Test: Positional Deletes + Row Filter (regression test for ea07a19b)
+# =============================================================================
+
+
+class TestPositionalDeletesWithRowFilter:
+    """Regression tests for positional deletes combined with row_filter.
+
+    These tests verify the fix in commit ea07a19b: the post-filter must be applied
+    when positional deletes are present, because the positional delete path does NOT
+    push down the row_filter.
+
+    The bug in commit 2b82fb96 used task.residual to infer whether pushdown happened,
+    which was incorrect. task.residual is set by the planner and doesn't reflect
+    whether the orchestrator actually pushed down the filter during read.
+    """
+
+    @pytest.fixture
+    def wide_data_file(self, tmp_path: Path) -> str:
+        """Write a data file with 100 rows: id=[1..100]."""
+        path = str(tmp_path / "wide_data.parquet")
+        table = pa.table({"id": list(range(1, 101)), "name": [f"row_{i}" for i in range(1, 101)]})
+        pq.write_table(table, path)
+        return path
+
+    @pytest.fixture
+    def pos_delete_for_wide(self, tmp_path: Path, wide_data_file: str) -> str:
+        """Position delete file: removes rows at positions 0,1,2,3 (id=1,2,3,4)."""
+        path = str(tmp_path / "pos_delete_wide.parquet")
+        table = pa.table(
+            {
+                "file_path": [wide_data_file] * 4,
+                "pos": pa.array([0, 1, 2, 3], type=pa.int64()),
+            }
+        )
+        pq.write_table(table, path)
+        return path
+
+    def test_positional_deletes_with_row_filter_applies_both(
+        self,
+        wide_data_file: str,
+        pos_delete_for_wide: str,
+        tmp_path: Path,
+    ) -> None:
+        """Positional deletes + row_filter: both must be applied.
+
+        This is the exact scenario that failed in CI (test_read_multiple_batches_in_task_with_position_deletes):
+        - Data file has many rows
+        - Position deletes remove some rows (by position)
+        - row_filter should further filter the surviving rows
+
+        The bug was: post-filter was skipped because task.residual != AlwaysTrue,
+        but positional delete paths don't push down the filter.
+        """
+        from pyiceberg.expressions import LessThanOrEqual
+        from pyiceberg.expressions.visitors import bind
+
+        schema = Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=True),
+            NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+        )
+
+        backends = Backends(
+            read=PyArrowReadBackend(),
+            write=MagicMock(),
+            compute=PyArrowComputeBackend(),
+            io_properties={},
+        )
+
+        metadata = MagicMock()
+        metadata.schema.return_value = schema
+        metadata.format_version = 2
+
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=wide_data_file,
+            file_format=FileFormat.PARQUET,
+            record_count=100,
+            file_size_in_bytes=5000,
+        )
+        pos_delete_file = DataFile.from_args(
+            content=DataFileContent.POSITION_DELETES,
+            file_path=pos_delete_for_wide,
+            file_format=FileFormat.PARQUET,
+            record_count=4,
+            file_size_in_bytes=500,
+        )
+
+        # Create a task with a non-trivial residual (simulating what the planner would set)
+        # The key bug was: task.residual != AlwaysTrue caused post-filter to be skipped
+        row_filter = LessThanOrEqual("id", 50)
+        bound_filter = bind(schema, row_filter, case_sensitive=True)
+
+        task = FileScanTask(
+            data_file=data_file,
+            delete_files={pos_delete_file},
+            residual=bound_filter,  # Non-trivial residual (this was the bug trigger)
+        )
+
+        results = list(
+            orchestrate_scan(
+                backends=backends,
+                tasks=iter([task]),
+                table_metadata=metadata,
+                projected_schema=schema,
+                row_filter=bound_filter,
+                case_sensitive=True,
+            )
+        )
+
+        result_table = pa.Table.from_batches(results)
+        surviving_ids = sorted(result_table.column("id").to_pylist())
+
+        # Position deletes: remove positions 0,1,2,3 → remove id=1,2,3,4
+        # Row filter: keep only id <= 50
+        # Expected: [5, 6, 7, ..., 50] = 46 rows
+        expected_ids = list(range(5, 51))
+
+        assert surviving_ids == expected_ids, (
+            f"Expected {len(expected_ids)} rows (5-50) after positional deletes (remove 1-4) and "
+            f"row_filter (id <= 50). Got {len(surviving_ids)} rows: {surviving_ids[:10]}..."
+        )
+
+    def test_positional_deletes_with_row_filter_always_true_residual(
+        self,
+        wide_data_file: str,
+        pos_delete_for_wide: str,
+        tmp_path: Path,
+    ) -> None:
+        """Positional deletes + row_filter with AlwaysTrue residual: filter still applied.
+
+        Even when task.residual is AlwaysTrue, if row_filter is non-trivial,
+        the post-filter must still run for positional delete paths.
+        """
+        from pyiceberg.expressions import LessThanOrEqual
+        from pyiceberg.expressions.visitors import bind
+
+        schema = Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=True),
+            NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+        )
+
+        backends = Backends(
+            read=PyArrowReadBackend(),
+            write=MagicMock(),
+            compute=PyArrowComputeBackend(),
+            io_properties={},
+        )
+
+        metadata = MagicMock()
+        metadata.schema.return_value = schema
+        metadata.format_version = 2
+
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=wide_data_file,
+            file_format=FileFormat.PARQUET,
+            record_count=100,
+            file_size_in_bytes=5000,
+        )
+        pos_delete_file = DataFile.from_args(
+            content=DataFileContent.POSITION_DELETES,
+            file_path=pos_delete_for_wide,
+            file_format=FileFormat.PARQUET,
+            record_count=4,
+            file_size_in_bytes=500,
+        )
+
+        row_filter = LessThanOrEqual("id", 50)
+        bound_filter = bind(schema, row_filter, case_sensitive=True)
+
+        # Task with AlwaysTrue residual
+        task = FileScanTask(
+            data_file=data_file,
+            delete_files={pos_delete_file},
+            residual=AlwaysTrue(),  # AlwaysTrue residual
+        )
+
+        results = list(
+            orchestrate_scan(
+                backends=backends,
+                tasks=iter([task]),
+                table_metadata=metadata,
+                projected_schema=schema,
+                row_filter=bound_filter,  # But row_filter is non-trivial
+                case_sensitive=True,
+            )
+        )
+
+        result_table = pa.Table.from_batches(results)
+        surviving_ids = sorted(result_table.column("id").to_pylist())
+
+        # Expected: [5, 6, 7, ..., 50] = 46 rows
+        expected_ids = list(range(5, 51))
+        assert surviving_ids == expected_ids
+
+    def test_equality_deletes_with_row_filter(self, tmp_path: Path) -> None:
+        """Equality deletes + row_filter: both must be applied.
+
+        Similar to positional deletes, equality delete paths (anti_join_from_files)
+        don't push down the filter, so post-filter is needed.
+        """
+        from pyiceberg.expressions import LessThanOrEqual
+        from pyiceberg.expressions.visitors import bind
+
+        schema = Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=True),
+            NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+        )
+
+        backends = Backends(
+            read=PyArrowReadBackend(),
+            write=MagicMock(),
+            compute=PyArrowComputeBackend(),
+            io_properties={},
+        )
+
+        metadata = MagicMock()
+        metadata.schema.return_value = schema
+        metadata.format_version = 2
+
+        # Data file: id=[1..100]
+        data_path = str(tmp_path / "eq_data.parquet")
+        pq.write_table(
+            pa.table({"id": list(range(1, 101)), "name": [f"row_{i}" for i in range(1, 101)]}),
+            data_path,
+        )
+
+        # Equality delete: remove id=1,2,3,4
+        eq_path = str(tmp_path / "eq_delete.parquet")
+        pq.write_table(pa.table({"id": [1, 2, 3, 4]}), eq_path)
+
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=data_path,
+            file_format=FileFormat.PARQUET,
+            record_count=100,
+            file_size_in_bytes=5000,
+        )
+        eq_delete_file = DataFile.from_args(
+            content=DataFileContent.EQUALITY_DELETES,
+            file_path=eq_path,
+            file_format=FileFormat.PARQUET,
+            record_count=4,
+            file_size_in_bytes=500,
+            equality_ids=[1],  # field_id=1 is "id"
+        )
+
+        row_filter = LessThanOrEqual("id", 50)
+        bound_filter = bind(schema, row_filter, case_sensitive=True)
+
+        task = FileScanTask(
+            data_file=data_file,
+            delete_files={eq_delete_file},
+            residual=bound_filter,
+        )
+
+        results = list(
+            orchestrate_scan(
+                backends=backends,
+                tasks=iter([task]),
+                table_metadata=metadata,
+                projected_schema=schema,
+                row_filter=bound_filter,
+                case_sensitive=True,
+            )
+        )
+
+        result_table = pa.Table.from_batches(results)
+        surviving_ids = sorted(result_table.column("id").to_pylist())
+
+        # Equality deletes: remove id=1,2,3,4
+        # Row filter: keep only id <= 50
+        # Expected: [5, 6, 7, ..., 50] = 46 rows
+        expected_ids = list(range(5, 51))
+        assert surviving_ids == expected_ids
+
+    def test_combined_deletes_with_row_filter(self, tmp_path: Path) -> None:
+        """Combined positional + equality deletes + row_filter: all must be applied."""
+        from pyiceberg.expressions import LessThanOrEqual
+        from pyiceberg.expressions.visitors import bind
+
+        schema = Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=True),
+            NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+        )
+
+        backends = Backends(
+            read=PyArrowReadBackend(),
+            write=MagicMock(),
+            compute=PyArrowComputeBackend(),
+            io_properties={},
+        )
+
+        metadata = MagicMock()
+        metadata.schema.return_value = schema
+        metadata.format_version = 2
+
+        # Data file: id=[1..100]
+        data_path = str(tmp_path / "combined_data.parquet")
+        pq.write_table(
+            pa.table({"id": list(range(1, 101)), "name": [f"row_{i}" for i in range(1, 101)]}),
+            data_path,
+        )
+
+        # Position delete: remove positions 0,1 (id=1,2)
+        pos_path = str(tmp_path / "combined_pos.parquet")
+        pq.write_table(
+            pa.table(
+                {
+                    "file_path": [data_path, data_path],
+                    "pos": pa.array([0, 1], type=pa.int64()),
+                }
+            ),
+            pos_path,
+        )
+
+        # Equality delete: remove id=3,4
+        eq_path = str(tmp_path / "combined_eq.parquet")
+        pq.write_table(pa.table({"id": [3, 4]}), eq_path)
+
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=data_path,
+            file_format=FileFormat.PARQUET,
+            record_count=100,
+            file_size_in_bytes=5000,
+        )
+        pos_delete_file = DataFile.from_args(
+            content=DataFileContent.POSITION_DELETES,
+            file_path=pos_path,
+            file_format=FileFormat.PARQUET,
+            record_count=2,
+            file_size_in_bytes=200,
+        )
+        eq_delete_file = DataFile.from_args(
+            content=DataFileContent.EQUALITY_DELETES,
+            file_path=eq_path,
+            file_format=FileFormat.PARQUET,
+            record_count=2,
+            file_size_in_bytes=200,
+            equality_ids=[1],
+        )
+
+        row_filter = LessThanOrEqual("id", 50)
+        bound_filter = bind(schema, row_filter, case_sensitive=True)
+
+        task = FileScanTask(
+            data_file=data_file,
+            delete_files={pos_delete_file, eq_delete_file},
+            residual=bound_filter,
+        )
+
+        results = list(
+            orchestrate_scan(
+                backends=backends,
+                tasks=iter([task]),
+                table_metadata=metadata,
+                projected_schema=schema,
+                row_filter=bound_filter,
+                case_sensitive=True,
+            )
+        )
+
+        result_table = pa.Table.from_batches(results)
+        surviving_ids = sorted(result_table.column("id").to_pylist())
+
+        # Position deletes: remove positions 0,1 → remove id=1,2
+        # Equality deletes: remove id=3,4
+        # Row filter: keep only id <= 50
+        # Expected: [5, 6, 7, ..., 50] = 46 rows
+        expected_ids = list(range(5, 51))
+        assert surviving_ids == expected_ids
