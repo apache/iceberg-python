@@ -868,10 +868,46 @@ class Transaction:
         if not when_matched_update_all and not when_not_matched_insert_all:
             raise ValueError("no upsert options selected...exiting")
 
-        if upsert_util.has_duplicate_rows(df, join_cols):
-            raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, schema_to_pyarrow
 
-        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
+        table_arrow_schema = schema_to_pyarrow(self.table_metadata.schema(), include_field_ids=False)
+        df_column_names = set(df.schema.names)
+
+        for col in join_cols:
+            if col not in table_arrow_schema.names:
+                raise ValueError(
+                    f"Join column '{col}' does not exist in the table schema. "
+                    f"Available columns: {', '.join(table_arrow_schema.names)}."
+                )
+            table_field = table_arrow_schema.field(col)
+            # Table-level rejections: These types are fundamentally unreliable or
+            # unsupported as join keys regardless of the input data format.
+            if pa.types.is_floating(table_field.type):
+                raise ValueError(
+                    f"Floating point column '{col}' cannot be used as a join key in upsert. "
+                    "Floating point equality is unreliable; please cast to Decimal or Integer."
+                )
+            if pa.types.is_nested(table_field.type):
+                raise ValueError(
+                    f"Nested column '{col}' of type '{table_field.type}' cannot be used as a join key in upsert. "
+                    "Only primitive types are supported."
+                )
+
+            # Dataframe-level rejections: only validate when the column is present in the
+            # source; missing columns are surfaced by _check_pyarrow_schema_compatible below.
+            if col not in df_column_names:
+                continue
+            arr = df.column(col)
+            if pa.types.is_dictionary(arr.type):
+                raise NotImplementedError(
+                    f"Dictionary-encoded column '{col}' is not currently supported as a join key in upsert."
+                )
+            if pa.types.is_null(arr.type):
+                raise ValueError(f"Null-type column '{col}' cannot be used as a join key in upsert.")
+            if isinstance(arr.type, pa.BaseExtensionType):
+                raise NotImplementedError(
+                    f"Extension type '{arr.type}' for column '{col}' is not currently supported as a join key in upsert."
+                )
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
@@ -880,6 +916,10 @@ class Transaction:
             downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             format_version=self.table_metadata.format_version,
         )
+
+        # Validate uniqueness after type checks to avoid comparing/hashing unsupported types.
+        if upsert_util.has_duplicate_rows(df, join_cols):
+            raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
 
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
