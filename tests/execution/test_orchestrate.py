@@ -1360,19 +1360,55 @@ class TestResolvePushdownFilter:
         result = _resolve_pushdown_filter(AlwaysTrue(), GreaterThan("id", 5), schema, case_sensitive=True)
         assert isinstance(result, AlwaysTrue)
 
-    def test_non_trivial_residual_is_used(self) -> None:
-        """When task.residual is non-trivial, it should be used (schema evolution case)."""
+    def test_non_trivial_bound_residual_is_used(self) -> None:
+        """When task.residual is non-trivial and BOUND, it should be used for pushdown.
+
+        In the schema evolution case, the local planner produces a bound residual
+        that references the file's column names, not the projected schema's names.
+        This bound residual can be converted to PyArrow and pushed down.
+
+        Note: Unbound residuals (e.g., from REST server) cannot be pushed down because
+        expression_to_pyarrow requires bound expressions. They fall back to post-filter.
+        """
         from pyiceberg.execution._orchestrate import _resolve_pushdown_filter
-        from pyiceberg.expressions import GreaterThan
+        from pyiceberg.expressions import BoundGreaterThan, BoundReference, GreaterThan
+        from pyiceberg.expressions.literals import LongLiteral
+        from pyiceberg.schema import Accessor
 
         schema = Schema(
             NestedField(1, "id", IntegerType(), required=True),
         )
         row_filter = GreaterThan("new_col_name", 5)
-        task_residual = GreaterThan("old_col_name", 5)  # Schema evolution renamed column
+
+        # Create a BOUND residual (as the local planner would produce for schema evolution)
+        # The bound reference uses the file's column name, not the projected schema's name
+        old_col_field = NestedField(1, "old_col_name", IntegerType(), required=True)
+        bound_term = BoundReference(field=old_col_field, accessor=Accessor(position=0, inner=None))
+        task_residual = BoundGreaterThan(term=bound_term, literal=LongLiteral(5))
 
         result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
         assert result is task_residual
+
+    def test_unbound_residual_falls_back_to_always_true(self) -> None:
+        """When task.residual is unbound, return AlwaysTrue for pushdown.
+
+        Unbound filters (e.g., from REST server that doesn't bind filters) cannot
+        be converted to PyArrow expressions, so they would be silently dropped
+        by the reader. Instead, we return AlwaysTrue for pushdown and let the
+        orchestrator's post-filter handle the filtering.
+        """
+        from pyiceberg.execution._orchestrate import _resolve_pushdown_filter
+        from pyiceberg.expressions import AlwaysTrue, GreaterThan
+
+        schema = Schema(
+            NestedField(1, "id", IntegerType(), required=True),
+        )
+        row_filter = GreaterThan("id", 5)
+        task_residual = GreaterThan("id", 5)  # Unbound residual from REST server
+
+        result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
+        # Should return AlwaysTrue because unbound filters can't be pushed down
+        assert isinstance(result, AlwaysTrue)
 
     def test_always_true_residual_returns_always_true(self) -> None:
         """When task.residual is AlwaysTrue, return AlwaysTrue for pushdown.

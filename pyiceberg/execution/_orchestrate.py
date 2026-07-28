@@ -82,25 +82,23 @@ def _resolve_pushdown_filter(
 
     Filter selection priority:
     1. If row_filter is AlwaysTrue → push AlwaysTrue (no filter requested)
-    2. If task.residual is non-trivial → use it (handles schema evolution column renames)
-    3. Otherwise (task.residual is AlwaysTrue) → return AlwaysTrue, let post-filter handle it
+    2. If task.residual is non-trivial and can be converted to PyArrow → use it
+    3. Otherwise → return AlwaysTrue, let post-filter handle it
 
     When task.residual is AlwaysTrue, it means either:
     - The planner evaluated partition filters and there's nothing left for the scanner
     - The REST server didn't compute a residual (residual_filter=None)
 
-    In both cases, we should NOT push down the row_filter to the scanner because:
-    - Partition column filters reference columns not in the data file
-    - The row_filter may be unbound and fail expression conversion
-
-    The orchestrator will apply row_filter via post-filter after schema reconciliation
-    adds partition columns (if applicable).
+    IMPORTANT: We verify the filter can be converted to PyArrow before returning it.
+    Unbound filters or filters referencing columns not in the schema will fail in
+    expression_to_pyarrow(), causing the filter to be dropped silently by the reader.
+    By checking here, we ensure post-filter is used instead.
 
     Args:
         row_filter: The original row filter from the scan (possibly unbound).
         task_residual: The residual filter from the FileScanTask.
-        projected_schema: The projected schema (unused now but kept for API stability).
-        case_sensitive: Case sensitivity for matching (unused now but kept for API stability).
+        projected_schema: The projected schema for binding (if needed).
+        case_sensitive: Case sensitivity for matching.
 
     Returns:
         The filter expression to push down to the Parquet scanner.
@@ -108,11 +106,46 @@ def _resolve_pushdown_filter(
     if isinstance(row_filter, AlwaysTrue):
         return AlwaysTrue()
     elif not isinstance(task_residual, AlwaysTrue):
-        # Planner computed a non-trivial residual - use it for pushdown
-        return task_residual
+        # Planner computed a non-trivial residual - verify it can be pushed down
+        # The residual may be:
+        # 1. Already bound (local planner with schema evolution)
+        # 2. Unbound (REST server returned filter as-is)
+        #
+        # We need to ensure expression_to_pyarrow won't fail, otherwise the filter
+        # is silently dropped by the reader and post-filter doesn't run.
+        if _can_convert_to_pyarrow(task_residual):
+            return task_residual
+        else:
+            # Filter can't be pushed down - use post-filter instead
+            return AlwaysTrue()
     else:
         # task.residual is AlwaysTrue: don't push down, let post-filter handle it
         return AlwaysTrue()
+
+
+def _can_convert_to_pyarrow(expr: BooleanExpression) -> bool:
+    """Check if a BooleanExpression can be successfully converted to a PyArrow expression.
+
+    This checks if expression_to_pyarrow will succeed. It fails for:
+    - Unbound predicates (TypeError: "Not a bound predicate")
+    - Unsupported expression types
+
+    We use a try/except rather than structural checks because expression_to_pyarrow
+    has complex rules about what's supported.
+
+    Args:
+        expr: The expression to check.
+
+    Returns:
+        True if the expression can be converted, False otherwise.
+    """
+    from pyiceberg.io.pyarrow import expression_to_pyarrow
+
+    try:
+        expression_to_pyarrow(expr)
+        return True
+    except (TypeError, ValueError, KeyError, NotImplementedError):
+        return False
 
 
 #: Sentinel object returned by _build_reconcile_fn when the batch's schema already
