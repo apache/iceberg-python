@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
+import json
 import logging
 import os
 import tempfile
@@ -63,6 +64,7 @@ from pyiceberg.expressions import (
 )
 from pyiceberg.expressions.literals import literal
 from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
+from pyiceberg.io.fileformat import FileFormatFactory
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PYARROW_PARQUET_FIELD_ID_KEY,
@@ -114,8 +116,11 @@ from pyiceberg.types import (
     StructType,
     TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
+    UUIDType,
 )
 from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
@@ -2406,6 +2411,49 @@ def test_stats_aggregator_physical_type_does_not_match_expected_raise_error(
 ) -> None:
     with pytest.raises(ValueError, match="Unexpected physical type"):
         StatsAggregator(iceberg_type, physical_type_string)
+
+
+def test_iceberg_types_write_spec_compliant_parquet_types(tmp_path: Path) -> None:
+    """Every Iceberg primitive type must be written with the Parquet types mandated by the spec."""
+    expected_parquet_types: list[tuple[PrimitiveType, str, dict[str, Any]]] = [
+        (BooleanType(), "BOOLEAN", {"Type": "None"}),
+        (IntegerType(), "INT32", {"Type": "None"}),
+        (LongType(), "INT64", {"Type": "None"}),
+        (FloatType(), "FLOAT", {"Type": "None"}),
+        (DoubleType(), "DOUBLE", {"Type": "None"}),
+        (DecimalType(9, 2), "INT32", {"Type": "Decimal", "precision": 9, "scale": 2}),
+        (DecimalType(18, 2), "INT64", {"Type": "Decimal", "precision": 18, "scale": 2}),
+        (DecimalType(38, 2), "FIXED_LEN_BYTE_ARRAY", {"Type": "Decimal", "precision": 38, "scale": 2}),
+        (DateType(), "INT32", {"Type": "Date"}),
+        (TimeType(), "INT64", {"Type": "Time", "isAdjustedToUTC": False, "timeUnit": "microseconds"}),
+        (TimestampType(), "INT64", {"Type": "Timestamp", "isAdjustedToUTC": False, "timeUnit": "microseconds"}),
+        (TimestamptzType(), "INT64", {"Type": "Timestamp", "isAdjustedToUTC": True, "timeUnit": "microseconds"}),
+        (TimestampNanoType(), "INT64", {"Type": "Timestamp", "isAdjustedToUTC": False, "timeUnit": "nanoseconds"}),
+        (TimestamptzNanoType(), "INT64", {"Type": "Timestamp", "isAdjustedToUTC": True, "timeUnit": "nanoseconds"}),
+        (StringType(), "BYTE_ARRAY", {"Type": "String"}),
+        (UUIDType(), "FIXED_LEN_BYTE_ARRAY", {"Type": "UUID"}),
+        (FixedType(16), "FIXED_LEN_BYTE_ARRAY", {"Type": "None"}),
+        (BinaryType(), "BYTE_ARRAY", {"Type": "None"}),
+        (UnknownType(), "INT32", {"Type": "Null"}),
+    ]
+    schema = Schema(
+        *[
+            NestedField(field_id=field_id, name=str(iceberg_type), field_type=iceberg_type)
+            for field_id, (iceberg_type, _, _) in enumerate(expected_parquet_types, 1)
+        ]
+    )
+
+    file_path = str(tmp_path / "all_types.parquet")
+    writer = FileFormatFactory.get(FileFormat.PARQUET).create_writer(PyArrowFileIO().new_output(file_path), schema, {})
+    writer.write(schema_to_pyarrow(schema).empty_table())
+    writer.close()
+
+    parquet_schema = pq.ParquetFile(file_path).schema
+    for pos, (iceberg_type, physical_type, logical_type) in enumerate(expected_parquet_types):
+        column = parquet_schema.column(pos)
+        assert column.physical_type == physical_type, f"{iceberg_type}: {column.physical_type} != {physical_type}"
+        column_logical_type = json.loads(column.logical_type.to_json())
+        assert {key: column_logical_type.get(key) for key in logical_type} == logical_type, str(iceberg_type)
 
 
 def test_bin_pack_arrow_table(arrow_table_with_null: pa.Table) -> None:
