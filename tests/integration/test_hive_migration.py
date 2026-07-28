@@ -21,6 +21,7 @@ import pytest
 from pyspark.sql import SparkSession
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.catalog.hive import HiveCatalog
 
 
 @pytest.mark.integration
@@ -81,3 +82,57 @@ def test_migrate_table(
     assert tbl.scan(row_filter="dt == '2023-01-01'").to_arrow().column(0).combine_chunks().tolist() == [4, 5, 6]
     assert tbl.scan(row_filter="dt == '2022-01-01'").to_arrow().column(0).combine_chunks().tolist() == [1, 2, 3]
     assert tbl.scan(row_filter="dt < '2022-02-01'").to_arrow().column(0).combine_chunks().tolist() == [1, 2, 3]
+
+
+@pytest.mark.integration
+def test_list_views(
+    session_catalog_hive: HiveCatalog,
+    spark: SparkSession,
+) -> None:
+    """
+    Verify that a view created by Spark through the Iceberg Hive catalog
+    can be discovered by PyIceberg HiveCatalog.list_views().
+
+    The test also verifies that:
+    - Iceberg tables are not returned as views.
+    - Multiple views are returned.
+    - Returned identifiers use the expected (namespace, view_name) format.
+    """
+    suffix = int(time.time())
+    catalog_name = "hive"
+    namespace = "default"
+    table_name = f"table_{suffix}"
+    first_view_name = f"first_view_{suffix}"
+    second_view_name = f"second_view_{suffix}"
+    table_identifier = f"{catalog_name}.{namespace}.{table_name}"
+    first_view_identifier = f"{catalog_name}.{namespace}.{first_view_name}"
+    second_view_identifier = f"{catalog_name}.{namespace}.{second_view_name}"
+
+    spark.sql(f"""
+        CREATE TABLE {table_identifier} (
+            id INTEGER,
+            name STRING,
+            dt DATE
+        )
+        USING iceberg
+    """)
+
+    spark.sql(f"""
+        CREATE VIEW {first_view_identifier} AS
+        SELECT id, name
+        FROM {table_identifier}
+    """)
+
+    spark.sql(f"""
+        CREATE VIEW {second_view_identifier} AS
+        SELECT id, name, dt
+        FROM {table_identifier}
+    """)
+
+    views = set(session_catalog_hive.list_views(namespace))
+
+    assert (namespace, first_view_name) in views
+    assert (namespace, second_view_name) in views
+
+    # A table in the same namespace must not be returned as a view.
+    assert (namespace, table_name) not in views
