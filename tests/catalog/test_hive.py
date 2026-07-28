@@ -1176,6 +1176,18 @@ def test_list_views(hive_table: HiveTable) -> None:
     )
 
 
+def test_list_views_to_namespace_does_not_exists(hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_all_tables.side_effect = NoSuchObjectException(message="does_not_exists")
+
+    with pytest.raises(NoSuchNamespaceError) as exc_info:
+        catalog.list_views("database")
+
+    assert "Database does not exists: database" in str(exc_info.value)
+
+
 def test_load_namespace_properties(hive_database: HiveDatabase) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 

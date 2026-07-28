@@ -483,8 +483,6 @@ class HiveCatalog(MetastoreCatalog):
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         """List Iceberg views under the given namespace in the catalog.
 
-        When the database doesn't exist, it will just return an empty list.
-
         Args:
             namespace: Database to list.
 
@@ -495,14 +493,17 @@ class HiveCatalog(MetastoreCatalog):
             NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
-        with self._client as open_client:
-            return [
-                (database_name, table.tableName)
-                for table in open_client.get_table_objects_by_name(
-                    dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
-                )
-                if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG_VIEW
-            ]
+        try:
+            with self._client as open_client:
+                return [
+                    (database_name, table.tableName)
+                    for table in open_client.get_table_objects_by_name(
+                        dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
+                    )
+                    if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG_VIEW
+                ]
+        except (MetaException, NoSuchObjectException) as e:
+            raise NoSuchNamespaceError(f"Database does not exists: {database_name}") from e
 
     @override
     def view_exists(self, identifier: str | Identifier) -> bool:
