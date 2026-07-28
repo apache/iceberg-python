@@ -269,13 +269,17 @@ def drop() -> None:
 
 @drop.command()
 @click.argument("identifier")
+@click.option("--purge", is_flag=True, help="Physically delete all table files.")
 @click.pass_context
 @catch_exception()
-def table(ctx: Context, identifier: str) -> None:  # noqa: F811
+def table(ctx: Context, identifier: str, purge: bool) -> None:  # noqa: F811
     """Drop a table."""
     catalog, output = _catalog_and_output(ctx)
 
-    catalog.drop_table(identifier)
+    if purge:
+        catalog.purge_table(identifier)
+    else:
+        catalog.drop_table(identifier)
     output.text(f"Dropped table: {identifier}")
 
 
