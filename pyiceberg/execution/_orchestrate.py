@@ -81,18 +81,20 @@ def _resolve_pushdown_filter(
     """Determine the filter to push down to the Parquet scanner.
 
     Filter selection priority:
-    1. If row_filter is AlwaysTrue → push AlwaysTrue (no filter requested)
-    2. If task.residual is non-trivial and can be converted to PyArrow → use it
-    3. Otherwise → return AlwaysTrue, let post-filter handle it
+    1. If row_filter is AlwaysTrue → return AlwaysTrue (no filter requested)
+    2. If task.residual is convertible → use it (handles schema evolution)
+    3. If task.residual is unbound but can be bound and converted → bind and use
+    4. If row_filter can be bound and converted → bind and use
+    5. Otherwise → return AlwaysTrue (rely on post-filter)
 
-    When task.residual is AlwaysTrue, it means either:
-    - The planner evaluated partition filters and there's nothing left for the scanner
-    - The REST server didn't compute a residual (residual_filter=None)
+    Scanner pushdown is PREFERRED over post-filter because:
+    - Scanner handles extension types (UUID, fixed) that batch.filter() cannot
+    - Scanner can use Parquet predicate pushdown for performance
+    - The safeguard in read_parquet() checks if filter columns exist in file
 
-    IMPORTANT: We verify the filter can be converted to PyArrow before returning it.
-    Unbound filters or filters referencing columns not in the schema will fail in
-    expression_to_pyarrow(), causing the filter to be dropped silently by the reader.
-    By checking here, we ensure post-filter is used instead.
+    When filter references columns not in the file (e.g., partition columns),
+    read_parquet()'s _extract_filter_columns safeguard sets pa_filter=None,
+    and post-filter applies after schema reconciliation adds the column.
 
     Args:
         row_filter: The original row filter from the scan (possibly unbound).
@@ -103,24 +105,37 @@ def _resolve_pushdown_filter(
     Returns:
         The filter expression to push down to the Parquet scanner.
     """
+    from pyiceberg.expressions.visitors import bind
+
     if isinstance(row_filter, AlwaysTrue):
         return AlwaysTrue()
-    elif not isinstance(task_residual, AlwaysTrue):
-        # Planner computed a non-trivial residual - verify it can be pushed down
-        # The residual may be:
-        # 1. Already bound (local planner with schema evolution)
-        # 2. Unbound (REST server returned filter as-is)
-        #
-        # We need to ensure expression_to_pyarrow won't fail, otherwise the filter
-        # is silently dropped by the reader and post-filter doesn't run.
+
+    # Try task.residual first - it handles schema evolution (old column names)
+    if not isinstance(task_residual, AlwaysTrue):
         if _can_convert_to_pyarrow(task_residual):
-            return task_residual
-        else:
-            # Filter can't be pushed down - use post-filter instead
-            return AlwaysTrue()
-    else:
-        # task.residual is AlwaysTrue: don't push down, let post-filter handle it
-        return AlwaysTrue()
+            return task_residual  # Already bound and convertible - use it
+        # task.residual is non-trivial but not convertible (likely unbound)
+        # Try binding it to the projected schema
+        try:
+            bound_residual = bind(projected_schema, task_residual, case_sensitive)
+            if _can_convert_to_pyarrow(bound_residual):
+                return bound_residual
+        except (TypeError, ValueError):
+            # Binding failed - column not in schema or other issue
+            pass
+
+    # task.residual is AlwaysTrue or not usable - try binding row_filter
+    # This handles cases like REST catalog where residual_filter=None → AlwaysTrue
+    try:
+        bound_row_filter = bind(projected_schema, row_filter, case_sensitive)
+        if _can_convert_to_pyarrow(bound_row_filter):
+            return bound_row_filter
+    except (TypeError, ValueError):
+        # Binding failed - fall back to post-filter
+        pass
+
+    # Can't push down - return AlwaysTrue and rely on post-filter
+    return AlwaysTrue()
 
 
 def _can_convert_to_pyarrow(expr: BooleanExpression) -> bool:

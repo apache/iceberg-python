@@ -1389,52 +1389,78 @@ class TestResolvePushdownFilter:
         result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
         assert result is task_residual
 
-    def test_unbound_residual_falls_back_to_always_true(self) -> None:
-        """When task.residual is unbound, return AlwaysTrue for pushdown.
+    def test_unbound_residual_gets_bound_for_pushdown(self) -> None:
+        """When task.residual is unbound but can be bound, bind it for pushdown.
 
-        Unbound filters (e.g., from REST server that doesn't bind filters) cannot
-        be converted to PyArrow expressions, so they would be silently dropped
-        by the reader. Instead, we return AlwaysTrue for pushdown and let the
-        orchestrator's post-filter handle the filtering.
+        Unbound filters (e.g., from unpartitioned tables using local planning)
+        can still be pushed down if they can be bound to the projected schema.
+        This is important because scanner pushdown handles extension types (UUID)
+        that batch.filter() cannot.
+
+        The binding happens in _resolve_pushdown_filter when:
+        1. task.residual is non-trivial but not convertible (unbound)
+        2. task.residual can be bound to projected_schema
+        3. The bound expression can be converted to PyArrow
         """
         from pyiceberg.execution._orchestrate import _resolve_pushdown_filter
-        from pyiceberg.expressions import AlwaysTrue, GreaterThan
+        from pyiceberg.expressions import BoundGreaterThan, GreaterThan
 
         schema = Schema(
             NestedField(1, "id", IntegerType(), required=True),
         )
         row_filter = GreaterThan("id", 5)
-        task_residual = GreaterThan("id", 5)  # Unbound residual from REST server
+        task_residual = GreaterThan("id", 5)  # Unbound residual (e.g., unpartitioned table)
 
         result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
-        # Should return AlwaysTrue because unbound filters can't be pushed down
-        assert isinstance(result, AlwaysTrue)
+        # Should return a BOUND expression because we bind it for pushdown
+        assert isinstance(result, BoundGreaterThan)
 
-    def test_always_true_residual_returns_always_true(self) -> None:
-        """When task.residual is AlwaysTrue, return AlwaysTrue for pushdown.
+    def test_always_true_residual_with_bindable_filter_binds_for_pushdown(self) -> None:
+        """When task.residual is AlwaysTrue but row_filter can be bound, bind it.
 
-        When the planner returns AlwaysTrue for residual, it means either:
-        1. Partition filters were fully evaluated (nothing left for scanner)
-        2. REST server didn't compute a residual
+        This handles the REST catalog case where residual_filter=None (→ AlwaysTrue)
+        but the row_filter references columns that exist in the projected schema.
+        We bind the filter and push it down for scanner efficiency.
 
-        In both cases, we should NOT push down the row_filter because:
-        - Partition column filters reference columns not in the data file
-        - The row_filter may be unbound and fail expression conversion
-
-        The orchestrator will apply row_filter via post-filter after schema
-        reconciliation adds partition columns (if applicable).
+        The safeguard in read_parquet() checks if filter columns exist in the file
+        and skips pushdown if they don't (e.g., partition columns).
         """
         from pyiceberg.execution._orchestrate import _resolve_pushdown_filter
-        from pyiceberg.expressions import AlwaysTrue, GreaterThan
+        from pyiceberg.expressions import AlwaysTrue, BoundGreaterThan, GreaterThan
 
         schema = Schema(
             NestedField(1, "id", IntegerType(), required=True),
         )
         row_filter = GreaterThan("id", 2)
-        task_residual = AlwaysTrue()  # Partition filter fully evaluated or REST returned None
+        task_residual = AlwaysTrue()  # REST server returned None
 
         result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
-        # Should return AlwaysTrue - no pushdown, post-filter will handle it
+        # Should return bound filter because row_filter can be bound to schema
+        assert isinstance(result, BoundGreaterThan)
+
+    def test_partition_filter_with_column_not_in_schema_returns_always_true(self) -> None:
+        """When row_filter references column not in schema, return AlwaysTrue.
+
+        This handles the partition filter case where:
+        1. Planner evaluates partition filter → task.residual = AlwaysTrue
+        2. row_filter still references partition column
+        3. projected_schema may or may not have partition column
+
+        If binding fails (column not in schema), we return AlwaysTrue for pushdown
+        and let post-filter handle it after schema reconciliation adds the column.
+        """
+        from pyiceberg.execution._orchestrate import _resolve_pushdown_filter
+        from pyiceberg.expressions import AlwaysTrue, GreaterThan
+
+        # Schema only has "other_field", not "partition_id"
+        schema = Schema(
+            NestedField(1, "other_field", StringType(), required=True),
+        )
+        row_filter = GreaterThan("partition_id", 1)  # References column not in schema
+        task_residual = AlwaysTrue()  # Partition filter fully evaluated by planner
+
+        result = _resolve_pushdown_filter(row_filter, task_residual, schema, case_sensitive=True)
+        # Should return AlwaysTrue because binding fails (column not in schema)
         assert isinstance(result, AlwaysTrue)
 
 
