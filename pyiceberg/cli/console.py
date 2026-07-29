@@ -280,7 +280,8 @@ def table(ctx: Context, identifier: str, purge: bool) -> None:  # noqa: F811
         catalog.purge_table(identifier)
     else:
         catalog.drop_table(identifier)
-    output.text(f"Dropped table: {identifier}")
+    purge_message = " (purge requested)" if purge else ""
+    output.text(f"Dropped table: {identifier}{purge_message}")
 
 
 @drop.command()  # type: ignore

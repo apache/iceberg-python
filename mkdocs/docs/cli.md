@@ -252,5 +252,5 @@ To also purge the table files through the configured catalog, pass `--purge`:
 
 ```sh
 ➜  pyiceberg drop table nyc.taxis --purge
-Dropped table: nyc.taxis
+Dropped table: nyc.taxis (purge requested)
 ```

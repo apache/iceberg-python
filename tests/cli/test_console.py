@@ -352,7 +352,7 @@ def test_drop_table_with_purge(catalog: InMemoryCatalog, mocker: MockFixture) ->
     runner = CliRunner()
     result = runner.invoke(run, ["drop", "table", "default.my_table", "--purge"])
     assert result.exit_code == 0
-    assert result.output == """Dropped table: default.my_table\n"""
+    assert result.output == """Dropped table: default.my_table (purge requested)\n"""
     purge_table.assert_called_once_with("default.my_table")
 
 
