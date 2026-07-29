@@ -121,6 +121,7 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
+    _is_windows_drive_letter,
 )
 from pyiceberg.io.fileformat import DataFileStatistics as DataFileStatistics
 from pyiceberg.io.fileformat import FileFormatFactory, FileFormatModel, FileFormatWriter
@@ -404,10 +405,12 @@ class PyArrowFileIO(FileIO):
         """Return (scheme, netloc, path) for the given location.
 
         Uses DEFAULT_SCHEME and DEFAULT_NETLOC if scheme/netloc are missing.
+        On Windows, single-letter schemes (drive letters like 'C') are treated
+        as local file paths rather than URI schemes.
         """
         uri = urlparse(location)
 
-        if not uri.scheme:
+        if not uri.scheme or _is_windows_drive_letter(uri.scheme):
             default_scheme = properties.get("DEFAULT_SCHEME", "file")
             default_netloc = properties.get("DEFAULT_NETLOC", "")
             return default_scheme, default_netloc, os.path.abspath(location)

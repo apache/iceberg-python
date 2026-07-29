@@ -89,6 +89,7 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
+    _is_windows_drive_letter,
 )
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
@@ -480,6 +481,8 @@ class FsspecFileIO(FileIO):
 
     def _get_fs_from_uri(self, uri: "ParseResult") -> AbstractFileSystem:
         """Get a filesystem from a parsed URI, using hostname for ADLS account resolution."""
+        if _is_windows_drive_letter(uri.scheme):
+            return self.get_fs("file")
         if uri.scheme in _ADLS_SCHEMES:
             return self.get_fs(uri.scheme, uri.hostname)
         return self.get_fs(uri.scheme)

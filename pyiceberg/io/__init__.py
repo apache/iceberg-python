@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import sys
 import warnings
 from abc import ABC, abstractmethod
 from io import SEEK_SET
@@ -40,6 +41,17 @@ from urllib.parse import urlparse
 from pyiceberg.typedef import EMPTY_DICT, Properties
 
 logger = logging.getLogger(__name__)
+
+
+def _is_windows_drive_letter(scheme: str) -> bool:
+    r"""Check if a parsed URL scheme is actually a Windows drive letter.
+
+    On Windows, Python's urlparse treats paths like 'C:\\Users\\...' as having
+    scheme='c'. This detects that case so callers can route to the local filesystem.
+    Only returns True on Windows — no behavior change on other platforms.
+    """
+    return sys.platform == "win32" and len(scheme) == 1 and scheme.isalpha()
+
 
 AWS_PROFILE_NAME = "client.profile-name"
 AWS_REGION = "client.region"
@@ -336,13 +348,19 @@ PY_IO_IMPL = "py-io-impl"
 
 def _infer_file_io_from_scheme(path: str, properties: Properties) -> FileIO | None:
     parsed_url = urlparse(path)
-    if parsed_url.scheme:
-        if file_ios := SCHEMA_TO_FILE_IO.get(parsed_url.scheme):
+    scheme = parsed_url.scheme
+
+    if scheme and _is_windows_drive_letter(scheme):
+        # Windows drive letter (e.g. 'C:\...') misidentified as a URL scheme
+        scheme = "file"
+
+    if scheme:
+        if file_ios := SCHEMA_TO_FILE_IO.get(scheme):
             for file_io_path in file_ios:
                 if file_io := _import_file_io(file_io_path, properties):
                     return file_io
         else:
-            warnings.warn(f"No preferred file implementation for scheme: {parsed_url.scheme}", stacklevel=2)
+            warnings.warn(f"No preferred file implementation for scheme: {scheme}", stacklevel=2)
     return None
 
 

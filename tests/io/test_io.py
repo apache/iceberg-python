@@ -17,6 +17,7 @@
 
 import os
 import pickle
+import sys
 import tempfile
 from typing import Any
 
@@ -27,6 +28,7 @@ from pyiceberg.io import (
     PY_IO_IMPL,
     _import_file_io,
     _infer_file_io_from_scheme,
+    _is_windows_drive_letter,
     load_file_io,
 )
 from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -339,3 +341,31 @@ def test_infer_file_io_from_schema_unknown() -> None:
         _infer_file_io_from_scheme("unknown://bucket/path/", {})
 
     assert str(w[0].message) == "No preferred file implementation for scheme: unknown"
+
+
+@pytest.mark.parametrize(
+    "scheme",
+    ["s3", "hdfs", "file", "gs", ""],
+)
+def test_is_windows_drive_letter_false_for_real_schemes(scheme: str) -> None:
+    assert _is_windows_drive_letter(scheme) is False
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
+@pytest.mark.parametrize("scheme", ["c", "D", "z"])
+def test_is_windows_drive_letter_true_on_windows(scheme: str) -> None:
+    assert _is_windows_drive_letter(scheme) is True
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
+def test_infer_file_io_from_scheme_windows_drive_letter() -> None:
+    # A Windows-style path like 'C:\Users\...' should be treated as a local file path,
+    # not as a URL with scheme 'c'
+    result = _infer_file_io_from_scheme(r"C:\Users\test\warehouse", {})
+    assert isinstance(result, PyArrowFileIO)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
+def test_infer_file_io_from_scheme_windows_drive_letter_lowercase() -> None:
+    result = _infer_file_io_from_scheme(r"d:\data\iceberg\table", {})
+    assert isinstance(result, PyArrowFileIO)

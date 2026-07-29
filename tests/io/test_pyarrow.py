@@ -17,6 +17,7 @@
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import logging
 import os
+import sys
 import tempfile
 import uuid
 import warnings
@@ -2324,6 +2325,19 @@ def test_parse_location() -> None:
 
     check_results("/root/foo.txt", "file", "", "/root/foo.txt")
     check_results("/root/tmp/foo.txt", "file", "", "/root/tmp/foo.txt")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
+def test_parse_location_windows_drive_letter() -> None:
+    """Windows drive letters like 'C:' should be treated as local file paths, not URL schemes."""
+    import os
+
+    for drive in ("C", "D", "c", "d"):
+        path = f"{drive}:\\Users\\test\\file.avro"
+        scheme, netloc, result_path = PyArrowFileIO.parse_location(path)
+        assert scheme == "file"
+        assert netloc == ""
+        assert result_path == os.path.abspath(path)
 
 
 def test_make_compatible_name() -> None:
