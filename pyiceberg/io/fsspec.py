@@ -201,7 +201,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
 
-    if _force_virtual_addressing := properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+    if property_as_bool(properties, S3_FORCE_VIRTUAL_ADDRESSING, False):
         config_kwargs["s3"] = {"addressing_style": "virtual"}
 
     if s3_anonymous := properties.get(S3_ANONYMOUS):
