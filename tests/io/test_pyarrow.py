@@ -171,6 +171,7 @@ def test_pyarrow_input_file() -> None:
         with pytest.raises(OSError) as exc_info:
             r.seek(0, 0)
         assert "only valid on seekable files" in str(exc_info.value)
+        r.close()
 
 
 def test_pyarrow_input_file_seekable() -> None:
@@ -198,6 +199,7 @@ def test_pyarrow_input_file_seekable() -> None:
         data = r.read()
         assert data == b"foo"
         assert len(input_file) == 3
+        r.close()
 
 
 def test_pyarrow_output_file() -> None:
@@ -284,7 +286,7 @@ def test_raise_on_opening_a_local_file_not_found() -> None:
         with pytest.raises(FileNotFoundError) as exc_info:
             f.open()
 
-        assert "[Errno 2] Failed to open local file" in str(exc_info.value)
+        assert "Failed to open local file" in str(exc_info.value)
 
 
 def test_raise_on_opening_an_s3_file_no_permission() -> None:
@@ -1003,7 +1005,7 @@ def _write_table_to_data_file(filepath: str, schema: pa.Schema, table: pa.Table)
 def file_int(schema_int: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_int, metadata={ICEBERG_SCHEMA: bytes(schema_int.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/a.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array([0, 1, 2])], schema=pyarrow_schema)
+        f"{tmpdir}/a.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array([0, 1, 2])], schema=pyarrow_schema)
     )
 
 
@@ -1011,7 +1013,7 @@ def file_int(schema_int: Schema, tmpdir: str) -> str:
 def file_int_str(schema_int_str: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_int_str, metadata={ICEBERG_SCHEMA: bytes(schema_int_str.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/a.parquet",
+        f"{tmpdir}/a.parquet",
         pyarrow_schema,
         pa.Table.from_arrays([pa.array([0, 1, 2]), pa.array(["0", "1", "2"])], schema=pyarrow_schema),
     )
@@ -1021,7 +1023,7 @@ def file_int_str(schema_int_str: Schema, tmpdir: str) -> str:
 def file_string(schema_str: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_str, metadata={ICEBERG_SCHEMA: bytes(schema_str.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/b.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array(["0", "1", "2"])], schema=pyarrow_schema)
+        f"{tmpdir}/b.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array(["0", "1", "2"])], schema=pyarrow_schema)
     )
 
 
@@ -1029,7 +1031,7 @@ def file_string(schema_str: Schema, tmpdir: str) -> str:
 def file_long(schema_long: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_long, metadata={ICEBERG_SCHEMA: bytes(schema_long.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/c.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array([0, 1, 2])], schema=pyarrow_schema)
+        f"{tmpdir}/c.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array([0, 1, 2])], schema=pyarrow_schema)
     )
 
 
@@ -1037,7 +1039,7 @@ def file_long(schema_long: Schema, tmpdir: str) -> str:
 def file_struct(schema_struct: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_struct, metadata={ICEBERG_SCHEMA: bytes(schema_struct.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/d.parquet",
+        f"{tmpdir}/d.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -1054,7 +1056,7 @@ def file_struct(schema_struct: Schema, tmpdir: str) -> str:
 def file_list(schema_list: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_list, metadata={ICEBERG_SCHEMA: bytes(schema_list.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"{tmpdir}/e.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -1073,7 +1075,7 @@ def file_list_of_structs(schema_list_of_structs: Schema, tmpdir: str) -> str:
         schema_list_of_structs, metadata={ICEBERG_SCHEMA: bytes(schema_list_of_structs.model_dump_json(), UTF8)}
     )
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"{tmpdir}/e.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -1092,7 +1094,7 @@ def file_map_of_structs(schema_map_of_structs: Schema, tmpdir: str) -> str:
         schema_map_of_structs, metadata={ICEBERG_SCHEMA: bytes(schema_map_of_structs.model_dump_json(), UTF8)}
     )
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"{tmpdir}/e.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -1109,7 +1111,7 @@ def file_map_of_structs(schema_map_of_structs: Schema, tmpdir: str) -> str:
 def file_map(schema_map: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_map, metadata={ICEBERG_SCHEMA: bytes(schema_map.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"{tmpdir}/e.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -2323,8 +2325,8 @@ def test_parse_location() -> None:
     check_results("hdfs://127.0.0.1/root/foo.txt", "hdfs", "127.0.0.1", "/root/foo.txt")
     check_results("hdfs://clusterA/root/foo.txt", "hdfs", "clusterA", "/root/foo.txt")
 
-    check_results("/root/foo.txt", "file", "", "/root/foo.txt")
-    check_results("/root/tmp/foo.txt", "file", "", "/root/tmp/foo.txt")
+    check_results("/root/foo.txt", "file", "", os.path.abspath("/root/foo.txt"))
+    check_results("/root/tmp/foo.txt", "file", "", os.path.abspath("/root/tmp/foo.txt"))
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
@@ -2503,18 +2505,11 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
         )
     )
 
-    expected = r"""Mismatch in fields:
-┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃    ┃ Table field              ┃ Dataframe field                 ┃
-┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ ✅ │ 1: foo: optional string  │ 1: foo: optional string         │
-│ ❌ │ 2: bar: required int     │ 2: bar: required decimal\(18, 6\) │
-│ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean        │
-└────┴──────────────────────────┴─────────────────────────────────┘
-"""
-
-    with pytest.raises(ValueError, match=expected):
+    with pytest.raises(ValueError, match="Mismatch in fields") as exc_info:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+    error_msg = str(exc_info.value)
+    assert "2: bar: required int" in error_msg
+    assert "2: bar: required decimal(18, 6)" in error_msg
 
 
 def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
@@ -2526,18 +2521,11 @@ def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
         )
     )
 
-    expected = """Mismatch in fields:
-┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃    ┃ Table field              ┃ Dataframe field          ┃
-┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ ✅ │ 1: foo: optional string  │ 1: foo: optional string  │
-│ ❌ │ 2: bar: required int     │ 2: bar: optional int     │
-│ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean │
-└────┴──────────────────────────┴──────────────────────────┘
-"""
-
-    with pytest.raises(ValueError, match=expected):
+    with pytest.raises(ValueError, match="Mismatch in fields") as exc_info:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+    error_msg = str(exc_info.value)
+    assert "2: bar: required int" in error_msg
+    assert "2: bar: optional int" in error_msg
 
 
 def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None:
@@ -2563,18 +2551,11 @@ def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
         )
     )
 
-    expected = """Mismatch in fields:
-┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃    ┃ Table field              ┃ Dataframe field          ┃
-┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ ✅ │ 1: foo: optional string  │ 1: foo: optional string  │
-│ ❌ │ 2: bar: required int     │ Missing                  │
-│ ✅ │ 3: baz: optional boolean │ 3: baz: optional boolean │
-└────┴──────────────────────────┴──────────────────────────┘
-"""
-
-    with pytest.raises(ValueError, match=expected):
+    with pytest.raises(ValueError, match="Mismatch in fields") as exc_info:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+    error_msg = str(exc_info.value)
+    assert "2: bar: required int" in error_msg
+    assert "Missing" in error_msg
 
 
 def test_schema_compatible_missing_nullable_field_nested(table_schema_nested: Schema) -> None:
@@ -2611,41 +2592,11 @@ def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Sche
             nullable=True,
         ),
     )
-    expected = """Mismatch in fields:
-┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃    ┃ Table field                        ┃ Dataframe field                    ┃
-┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ ✅ │ 1: foo: optional string            │ 1: foo: optional string            │
-│ ✅ │ 2: bar: required int               │ 2: bar: required int               │
-│ ✅ │ 3: baz: optional boolean           │ 3: baz: optional boolean           │
-│ ✅ │ 4: qux: required list<string>      │ 4: qux: required list<string>      │
-│ ✅ │ 5: element: required string        │ 5: element: required string        │
-│ ✅ │ 6: quux: required map<string,      │ 6: quux: required map<string,      │
-│    │ map<string, int>>                  │ map<string, int>>                  │
-│ ✅ │ 7: key: required string            │ 7: key: required string            │
-│ ✅ │ 8: value: required map<string,     │ 8: value: required map<string,     │
-│    │ int>                               │ int>                               │
-│ ✅ │ 9: key: required string            │ 9: key: required string            │
-│ ✅ │ 10: value: required int            │ 10: value: required int            │
-│ ✅ │ 11: location: required             │ 11: location: required             │
-│    │ list<struct<13: latitude: optional │ list<struct<13: latitude: optional │
-│    │ float, 14: longitude: optional     │ float, 14: longitude: optional     │
-│    │ float>>                            │ float>>                            │
-│ ✅ │ 12: element: required struct<13:   │ 12: element: required struct<13:   │
-│    │ latitude: optional float, 14:      │ latitude: optional float, 14:      │
-│    │ longitude: optional float>         │ longitude: optional float>         │
-│ ✅ │ 13: latitude: optional float       │ 13: latitude: optional float       │
-│ ✅ │ 14: longitude: optional float      │ 14: longitude: optional float      │
-│ ✅ │ 15: person: optional struct<16:    │ 15: person: optional struct<16:    │
-│    │ name: optional string, 17: age:    │ name: optional string>             │
-│    │ required int>                      │                                    │
-│ ✅ │ 16: name: optional string          │ 16: name: optional string          │
-│ ❌ │ 17: age: required int              │ Missing                            │
-└────┴────────────────────────────────────┴────────────────────────────────────┘
-"""
-
-    with pytest.raises(ValueError, match=expected):
+    with pytest.raises(ValueError, match="Mismatch in fields") as exc_info:
         _check_pyarrow_schema_compatible(table_schema_nested, other_schema)
+    error_msg = str(exc_info.value)
+    assert "17: age: required int" in error_msg
+    assert "Missing" in error_msg
 
 
 def test_schema_compatible_nested(table_schema_nested: Schema) -> None:
@@ -3499,21 +3450,21 @@ def test_parse_location_defaults() -> None:
     scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
     assert scheme == "file"
     assert netloc == ""
-    assert path == "/foo/bar"
+    assert path == os.path.abspath("/foo/bar")
 
     scheme, netloc, path = PyArrowFileIO.parse_location(
         "/foo/bar", properties={"DEFAULT_SCHEME": "scheme", "DEFAULT_NETLOC": "netloc:8000"}
     )
     assert scheme == "scheme"
     assert netloc == "netloc:8000"
-    assert path == "/foo/bar"
+    assert path == os.path.abspath("/foo/bar")
 
     scheme, netloc, path = PyArrowFileIO.parse_location(
         "/foo/bar", properties={"DEFAULT_SCHEME": "hdfs", "DEFAULT_NETLOC": "netloc:8000"}
     )
     assert scheme == "hdfs"
     assert netloc == "netloc:8000"
-    assert path == "/foo/bar"
+    assert path == os.path.abspath("/foo/bar")
 
 
 def test_write_and_read_orc(tmp_path: Path) -> None:

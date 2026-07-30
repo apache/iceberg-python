@@ -53,6 +53,7 @@ def test_custom_local_input_file() -> None:
         data = f.read()
         assert data == b"foo"
         assert len(input_file) == 3
+        f.close()
 
 
 def test_custom_local_output_file() -> None:
@@ -91,6 +92,7 @@ def test_pickled_pyarrow_round_trip() -> None:
         data = f.read()
         assert data == b"foo"
         assert len(input_file) == 3
+        f.close()
         deserialized_file_io.delete(location=f"{absolute_file_location}")
 
 
