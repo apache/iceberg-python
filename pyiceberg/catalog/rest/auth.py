@@ -25,8 +25,9 @@ from functools import cache, cached_property
 from typing import Any
 
 import requests
-from requests import HTTPError, PreparedRequest, Session
+from requests import HTTPError, PreparedRequest, Response, Session
 from requests.auth import AuthBase
+from requests.structures import CaseInsensitiveDict
 
 from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_response
 from pyiceberg.exceptions import OAuthError
@@ -363,6 +364,7 @@ class SigV4AuthManager(AuthManager):
         boto_session: Any,
         region: str | None,
         service: str = "execute-api",
+        signing_url_prefix: str | None = None,
     ):
         """Initialize SigV4AuthManager.
 
@@ -371,14 +373,43 @@ class SigV4AuthManager(AuthManager):
             boto_session: A boto3.Session used to resolve AWS credentials.
             region: SigV4 signing region; falls back to the boto session's region.
             service: SigV4 signing service name.
+            signing_url_prefix: When set, only URLs under this prefix are signed;
+                the delegate header still applies everywhere.
         """
         self._delegate = delegate
         self._boto_session = boto_session
         self._region = region
         self._service = service
+        self._signing_url_prefix = signing_url_prefix
+
+    @property
+    def delegate(self) -> AuthManager:
+        """The wrapped header-based AuthManager."""
+        return self._delegate
 
     def auth_header(self) -> str | None:
         return self._delegate.auth_header()
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Serialize without the boto3 session; restored instances refuse to sign."""
+        state = self.__dict__.copy()
+        state["_boto_session"] = None
+        return state
+
+    def _in_signing_scope(self, url: str) -> bool:
+        """Prefix match with normalized scheme/host/default port."""
+        from urllib import parse
+
+        default_ports = {"http": 80, "https": 443}
+
+        def parts(value: str) -> tuple[str, str, int | None, str]:
+            split = parse.urlsplit(value)
+            scheme = split.scheme.lower()
+            return scheme, (split.hostname or "").lower(), split.port or default_ports.get(scheme), split.path.lower()
+
+        p_scheme, p_host, p_port, p_path = parts(self._signing_url_prefix or "")
+        u_scheme, u_host, u_port, u_path = parts(url)
+        return (p_scheme, p_host, p_port) == (u_scheme, u_host, u_port) and u_path.startswith(p_path)
 
     def sign_request(self, request: PreparedRequest) -> PreparedRequest:
         import hashlib
@@ -386,6 +417,22 @@ class SigV4AuthManager(AuthManager):
 
         from botocore.awsrequest import AWSRequest
 
+        # Apply the delegate's own hook first so its mutations are signed too.
+        request = self._delegate.sign_request(request)
+
+        # Only sign catalog requests (case-insensitive, like adapter mounts); a
+        # redirect leaving the signing scope must not keep stale artifacts.
+        if self._signing_url_prefix and not self._in_signing_scope(str(request.url)):
+            if str(request.headers.get("Authorization", "")).startswith("AWS4-HMAC-SHA256"):
+                del request.headers["Authorization"]
+            for header in ("X-Amz-Date", "x-amz-content-sha256", "X-Amz-Security-Token"):
+                request.headers.pop(header, None)
+            for header in [h for h in request.headers if h.lower().startswith("original-")]:
+                del request.headers[header]
+            return request
+
+        if self._boto_session is None:
+            raise ValueError("SigV4AuthManager cannot sign after deserialization: the boto3 session is not serialized")
         credentials = self._boto_session.get_credentials().get_frozen_credentials()
         region = self._region or self._boto_session.region_name
 
@@ -414,22 +461,31 @@ class SigV4AuthManager(AuthManager):
         else:
             content_sha256_header = EMPTY_BODY_SHA256
 
-        signing_headers = dict(request.headers)
+        # Case-insensitive: a plain dict would keep duplicate header spellings and
+        # let the signed canonical headers diverge from what is sent.
+        signing_headers = CaseInsensitiveDict(request.headers)
+        # A previous hop's own SigV4 signature is never a delegate header: discard,
+        # don't relocate.
+        if str(signing_headers.get("Authorization", "")).startswith("AWS4-HMAC-SHA256"):
+            signing_headers.pop("Authorization")
         # Relocate Authorization before signing so it lands in SignedHeaders, like Java.
         if "Authorization" in signing_headers:
             signing_headers["Original-Authorization"] = signing_headers.pop("Authorization")
         signing_headers["x-amz-content-sha256"] = content_sha256_header
 
-        aws_request = AWSRequest(method=request.method, url=url, params=params, data=request.body, headers=signing_headers)
+        aws_request = AWSRequest(method=request.method, url=url, params=params, data=request.body, headers=dict(signing_headers))
 
         _iceberg_sigv4_auth_class()(credentials, self._service, region).add_auth(aws_request)
 
-        original_header = dict(request.headers)
-        signed_headers = dict(aws_request.headers)
+        original_header = CaseInsensitiveDict(request.headers)
+        signed_headers = CaseInsensitiveDict(dict(aws_request.headers))
         relocated_headers = {}
 
-        # relocate headers if there is a conflict with signed headers
+        # Relocate conflicting headers; Authorization/Original-Authorization are
+        # managed above and must never re-relocate into Original-Original-* chains.
         for header, value in original_header.items():
+            if header.lower() in ("authorization", "original-authorization"):
+                continue
             if header in signed_headers and signed_headers[header] != value:
                 relocated_headers[f"Original-{header}"] = value
 
@@ -467,11 +523,76 @@ class AuthManagerAdapter(AuthBase):
         Returns:
             requests.PreparedRequest: The modified request.
         """
+        # Capture tracking before signing: sign_request may return a fresh request.
+        tracked = {str(header) for header in getattr(request, "_auth_applied_headers", ())}
+        before = {key.lower(): value for key, value in request.headers.items()}
         if auth_header := self.auth_manager.auth_header():
             request.headers["Authorization"] = auth_header
         # Header first, then sign: a request-signing AuthManager (e.g. SigV4) must
         # see the Authorization header so it can relocate it before signing.
-        return self.auth_manager.sign_request(request)
+        request = self.auth_manager.sign_request(request)
+        # Union with earlier hops: a stable credential re-applied with an unchanged
+        # value yields an empty diff and would otherwise be forgotten.
+        tracked.update(key for key, value in request.headers.items() if before.get(key.lower()) != value)
+        request._auth_applied_headers = sorted(tracked)  # type: ignore[attr-defined]
+        return request
+
+
+class ReauthenticatingSession(Session):
+    """A Session that re-applies `self.auth` to redirected requests.
+
+    `requests` invokes session auth only on the original request, so a
+    request-signing AuthManager (e.g. SigV4) would send a signature computed for the
+    pre-redirect URL. Auth is re-applied only to `trusted_auth_origin` (the catalog
+    URI): a redirect chain that leaves it stays stripped of all credential-bearing
+    headers, and is re-authenticated only if it returns.
+    """
+
+    # Class-level default: Session pickles only __attrs__; old pickles fall back here.
+    _trusted_auth_origin: str | None = None
+    __attrs__ = [*Session.__attrs__, "_trusted_auth_origin"]
+
+    def __init__(self, trusted_auth_origin: str | None = None) -> None:
+        super().__init__()
+        self._trusted_auth_origin = trusted_auth_origin
+
+    # Stripped on cross-origin redirects (requests strips only Authorization);
+    # relocated credentials are stripped separately by their Original-* prefix.
+    _SIGNING_ARTIFACT_HEADERS = ("X-Amz-Security-Token", "X-Amz-Date", "x-amz-content-sha256")
+
+    def rebuild_auth(self, prepared_request: PreparedRequest, response: Response) -> None:
+        original_url = str(response.request.url)
+        super().rebuild_auth(prepared_request, response)
+        cross_origin_hop = self.should_strip_auth(original_url, str(prepared_request.url))
+        if cross_origin_hop:
+            # Strip whatever auth introduced, plus relocated headers and artifacts.
+            for header in getattr(response.request, "_auth_applied_headers", ()):
+                prepared_request.headers.pop(header, None)
+            for header in [h for h in prepared_request.headers if h.lower().startswith("original-")]:
+                del prepared_request.headers[header]
+            for header in self._SIGNING_ARTIFACT_HEADERS:
+                prepared_request.headers.pop(header, None)
+        if callable(self.auth) and self._may_reapply_auth(response, prepared_request, cross_origin_hop):
+            # copy() drops attributes: carry tracking forward for the adapter's union.
+            if prev_tracked := getattr(response.request, "_auth_applied_headers", ()):
+                prepared_request._auth_applied_headers = list(prev_tracked)  # type: ignore[attr-defined]
+            # prepare_auth honors auth callables that return a replacement request;
+            # a caller-supplied static Authorization survives header-less managers.
+            prepared_request.prepare_auth(self.auth)
+
+    def _may_reapply_auth(self, response: Response, prepared_request: PreparedRequest, cross_origin_hop: bool) -> bool:
+        """Whether re-applying auth on this hop is safe.
+
+        A hop that is same-origin with its predecessor may still sit on a foreign
+        host reached through an earlier cross-origin redirect (A -> B -> B), so the
+        decision is made against the trusted origin, not the previous hop.
+        """
+        if self._trusted_auth_origin is not None:
+            return not self.should_strip_auth(self._trusted_auth_origin, str(prepared_request.url))
+        if cross_origin_hop:
+            return False
+        # No trusted origin: re-apply only if the previous hop still carried auth.
+        return "Authorization" in response.request.headers
 
 
 class AuthManagerFactory:
