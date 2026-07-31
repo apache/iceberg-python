@@ -38,7 +38,11 @@ from pyiceberg.catalog.rest.auth import (
     AuthManagerFactory,
     LegacyOAuth2AuthManager,
     NoopAuthManager,
+    ReauthenticatingSession,
     SigV4AuthManager,
+)
+from pyiceberg.catalog.rest.auth import (
+    EMPTY_BODY_SHA256 as EMPTY_BODY_SHA256,  # public re-export (0.11.x compat)
 )
 from pyiceberg.catalog.rest.response import _handle_non_200_response
 from pyiceberg.catalog.rest.scan_planning import (
@@ -434,7 +438,8 @@ class RestCatalog(Catalog):
 
     def _create_session(self) -> Session:
         """Create a request session with provided catalog configuration."""
-        session = Session()
+        # Re-applies auth on redirects, but only to the catalog's own origin.
+        session = ReauthenticatingSession(trusted_auth_origin=self.uri)
 
         # Set HTTP headers
         self._config_headers(session)
@@ -494,13 +499,24 @@ class RestCatalog(Catalog):
                 # The delegate is configured under auth.sigv4.delegate.*
                 sigv4_config = auth_config.get(SIGV4_AUTH_TYPE, {})
                 delegate_config = sigv4_config.get("delegate")
-                if not delegate_config or "type" not in delegate_config:
-                    # No delegate configured: SigV4-only auth, with no header-based delegate.
+                if not delegate_config:
+                    # Parity with the deprecated rest.sigv4-enabled flag: legacy
+                    # token/credential properties keep their OAuth header auth.
+                    if self.properties.get(TOKEN) or self.properties.get(CREDENTIAL):
+                        return self._create_legacy_oauth2_auth_manager(session)
                     return NoopAuthManager()
+                if "type" not in delegate_config:
+                    raise ValueError("auth.sigv4.delegate.type must be defined")
                 delegate_type = delegate_config["type"]
                 if delegate_type == SIGV4_AUTH_TYPE:
                     raise ValueError("Cannot delegate a SigV4 auth manager to another SigV4 auth manager")
-                return AuthManagerFactory.create(delegate_type, delegate_config.get(delegate_type, {}))
+                # Custom delegates resolve through their impl, like top-level auth.
+                delegate_impl = delegate_config.get("impl")
+                if delegate_type == CUSTOM and not delegate_impl:
+                    raise ValueError("auth.sigv4.delegate.impl must be specified when using custom delegate type")
+                if delegate_type != CUSTOM and delegate_impl:
+                    raise ValueError("auth.sigv4.delegate.impl can only be specified when using custom delegate type")
+                return AuthManagerFactory.create(delegate_impl or delegate_type, delegate_config.get(delegate_type, {}))
 
             auth_type_config = auth_config.get(auth_type, {})
             auth_impl = auth_config.get("impl")
@@ -532,6 +548,8 @@ class RestCatalog(Catalog):
             boto_session=boto_session,
             region=self.properties.get(SIGV4_REGION),
             service=self.properties.get(SIGV4_SERVICE, "execute-api"),
+            # Sign only catalog requests; an external oauth2-server-uri stays unsigned.
+            signing_url_prefix=self.uri,
         )
 
     @staticmethod
@@ -557,7 +575,12 @@ class RestCatalog(Catalog):
     def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
         merged_properties = {**self.properties, **properties}
         if self._auth_manager:
-            merged_properties[AUTH_MANAGER] = self._auth_manager
+            # Propagate the delegate, not the SigV4 wrapper: storage requests are not
+            # catalog-signed, and the wrapper's boto3.Session is not pickleable.
+            auth_manager = self._auth_manager
+            if isinstance(auth_manager, SigV4AuthManager):
+                auth_manager = auth_manager.delegate
+            merged_properties[AUTH_MANAGER] = auth_manager
         return load_file_io(merged_properties, location)
 
     @override
@@ -879,6 +902,9 @@ class RestCatalog(Catalog):
         # instead of retrying on Auth Exceptions. Keeping refresh behavior for the LegacyOAuth2AuthManager
         # for backward compatibility
         auth_manager = self._session.auth.auth_manager  # type: ignore[union-attr]
+        # Unwrap SigV4 so legacy OAuth refresh reaches the delegate.
+        if isinstance(auth_manager, SigV4AuthManager):
+            auth_manager = auth_manager.delegate
         if isinstance(auth_manager, LegacyOAuth2AuthManager):
             auth_manager._refresh_token()
 
