@@ -236,9 +236,26 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def transform_properties_dict_value_to_str(cls, properties: Properties) -> dict[str, str]:
         return transform_dict_value_to_str(properties)
 
+    @property
+    def _lazy_id_to_snapshot(self) -> dict[int, Snapshot]:
+        """Return an index of snapshot ID to Snapshot instance.
+
+        This is calculated once per snapshots list and cached. A plain `cached_property` cannot be
+        used here: `model_copy` carries `__dict__` over to the new instance, so a copy that replaces
+        the snapshots would inherit a stale index. The index is therefore tied to the list it was
+        built from, and recomputed whenever `snapshots` is a different list. Keeping a reference to
+        that list also keeps it alive, so its identity cannot be reused by another object.
+        """
+        cached = self.__dict__.get("_id_to_snapshot")
+        if cached is None or cached[0] is not self.snapshots:
+            cached = (self.snapshots, {snapshot.snapshot_id: snapshot for snapshot in self.snapshots})
+            # The model is frozen, so bypass the pydantic __setattr__ to memoize.
+            object.__setattr__(self, "_id_to_snapshot", cached)
+        return cached[1]
+
     def snapshot_by_id(self, snapshot_id: int) -> Snapshot | None:
         """Get the snapshot by snapshot_id."""
-        return next((snapshot for snapshot in self.snapshots if snapshot.snapshot_id == snapshot_id), None)
+        return self._lazy_id_to_snapshot.get(snapshot_id)
 
     def schema_by_id(self, schema_id: int) -> Schema | None:
         """Get the schema by schema_id."""
