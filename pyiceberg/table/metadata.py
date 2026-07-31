@@ -238,14 +238,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
 
     @property
     def _lazy_id_to_snapshot(self) -> dict[int, Snapshot]:
-        """Return an index of snapshot ID to Snapshot instance.
-
-        This is calculated once per snapshots list and cached. A plain `cached_property` cannot be
-        used here: `model_copy` carries `__dict__` over to the new instance, so a copy that replaces
-        the snapshots would inherit a stale index. The index is therefore tied to the list it was
-        built from, and recomputed whenever `snapshots` is a different list. Keeping a reference to
-        that list also keeps it alive, so its identity cannot be reused by another object.
-        """
+        """Return an index of snapshot ID to Snapshot instance.This is calculated once per snapshots list and cached."""
         cached = self.__dict__.get("_id_to_snapshot")
         if cached is None or cached[0] is not self.snapshots:
             cached = (self.snapshots, {snapshot.snapshot_id: snapshot for snapshot in self.snapshots})
