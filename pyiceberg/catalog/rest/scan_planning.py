@@ -16,9 +16,10 @@
 # under the License.
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Annotated, Generic, Literal, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Annotated, Generic, Literal, TypeAlias, TypeVar
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -27,6 +28,9 @@ from pyiceberg.catalog.rest.response import ErrorResponseMessage
 from pyiceberg.expressions import BooleanExpression, SerializableBooleanExpression
 from pyiceberg.manifest import FileFormat
 from pyiceberg.typedef import IcebergBaseModel
+
+if TYPE_CHECKING:
+    from pyiceberg.table import FileScanTask
 
 # Primitive types that can appear in partition values and bounds
 PrimitiveTypeValue: TypeAlias = bool | int | float | str | Decimal | UUID | date | time | datetime | bytes
@@ -207,3 +211,12 @@ class FetchScanTasksRequest(IcebergBaseModel):
     """Request body for fetching scan tasks endpoint."""
 
     plan_task: str = Field(alias="plan-task")
+
+
+@dataclass(frozen=True)
+class PlannedScanResult:
+    """Result of REST server-side scan planning, including optional storage credentials."""
+
+    tasks: list[FileScanTask]
+    storage_credentials: list[StorageCredential] = field(default_factory=list)
+    plan_id: str | None = None

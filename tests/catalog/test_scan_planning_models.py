@@ -35,6 +35,7 @@ from pyiceberg.catalog.rest.scan_planning import (
     RESTFileScanTask,
     RESTPositionDeleteFile,
     ScanTasks,
+    StorageCredential,
     ValueMap,
 )
 from pyiceberg.expressions import AlwaysTrue, EqualTo, Reference
@@ -52,6 +53,8 @@ def rest_scan_catalog(requests_mock: Mocker) -> RestCatalog:
             "overrides": {},
             "endpoints": [
                 "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan",
+                "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan/{plan-id}",
+                "DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan/{plan-id}",
                 "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/tasks",
             ],
         },
@@ -431,7 +434,7 @@ def test_plan_scan_completed_single_batch(rest_scan_catalog: RestCatalog, reques
     )
 
     request = PlanTableScanRequest()
-    tasks = list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+    tasks = rest_scan_catalog.plan_scan(("db", "tbl"), request)
 
     assert len(tasks) == 1
     assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
@@ -465,7 +468,7 @@ def test_plan_scan_with_pagination(rest_scan_catalog: RestCatalog, requests_mock
 
     request = PlanTableScanRequest()
 
-    tasks = list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+    tasks = rest_scan_catalog.plan_scan(("db", "tbl"), request)
 
     assert len(tasks) == 2
     assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
@@ -493,14 +496,19 @@ def test_plan_scan_with_delete_files(rest_scan_catalog: RestCatalog, requests_mo
     )
 
     request = PlanTableScanRequest()
-    tasks = list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+    tasks = rest_scan_catalog.plan_scan(("db", "tbl"), request)
 
     assert len(tasks) == 1
     assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
     assert len(tasks[0].delete_files) == 1
 
 
-def test_plan_scan_async_not_supported(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+def test_plan_scan_async_poll_completes(
+    rest_scan_catalog: RestCatalog, requests_mock: Mocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file_one = _rest_data_file(file_path="s3://bucket/tbl/data/file1.parquet")
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+
     requests_mock.post(
         f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
         json={
@@ -509,10 +517,128 @@ def test_plan_scan_async_not_supported(rest_scan_catalog: RestCatalog, requests_
         },
         status_code=200,
     )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan/plan-456",
+        [
+            {"json": {"status": "submitted", "plan-id": "plan-456"}, "status_code": 200},
+            {
+                "json": {
+                    "status": "completed",
+                    "plan-id": "plan-456",
+                    "delete-files": [],
+                    "file-scan-tasks": [{"data-file": file_one}],
+                    "plan-tasks": [],
+                    "storage-credentials": [
+                        {
+                            "prefix": "s3://bucket/tbl/data",
+                            "config": {
+                                "s3.access-key-id": "plan-key",
+                                "s3.secret-access-key": "plan-secret",
+                            },
+                        }
+                    ],
+                },
+                "status_code": 200,
+            },
+        ],
+    )
 
     request = PlanTableScanRequest()
-    with pytest.raises(NotImplementedError, match="Async scan planning not yet supported"):
-        list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+    result = rest_scan_catalog._plan_scan_result(("db", "tbl"), request)
+
+    assert len(result.tasks) == 1
+    assert result.tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
+    assert result.plan_id == "plan-456"
+    assert len(result.storage_credentials) == 1
+    assert result.storage_credentials[0].config["s3.access-key-id"] == "plan-key"
+
+
+def test_plan_storage_credentials_keep_scan_io_properties(rest_scan_catalog: RestCatalog) -> None:
+    existing_properties = {"s3.endpoint": "https://minio:9000", "s3.access-key-id": "table-key"}
+    storage_credentials = [
+        StorageCredential(prefix="s3://bucket/tbl/data", config={"s3.access-key-id": "plan-key"}),
+    ]
+
+    plan_io = rest_scan_catalog._file_io_from_plan(
+        existing_properties,
+        storage_credentials,
+        "s3://bucket/tbl/data/file1.parquet",
+    )
+
+    assert plan_io is not None
+    # Plan credentials take precedence, but the load-time IO configuration is retained.
+    assert plan_io.properties["s3.access-key-id"] == "plan-key"
+    assert plan_io.properties["s3.endpoint"] == "https://minio:9000"
+
+
+def test_plan_scan_async_timeout(rest_scan_catalog: RestCatalog, requests_mock: Mocker, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pyiceberg.exceptions import RemotePlanTimeoutError
+
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={"status": "submitted", "plan-id": "plan-timeout"},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan/plan-timeout",
+        json={"status": "submitted", "plan-id": "plan-timeout"},
+        status_code=200,
+    )
+    requests_mock.delete(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan/plan-timeout",
+        status_code=204,
+    )
+
+    import pyiceberg.catalog.rest as rest_module
+
+    monkeypatch.setitem(rest_scan_catalog.properties, "rest-scan-planning.poll-timeout-ms", "1")
+    monkeypatch.setattr(rest_module, "REST_SCAN_PLANNING_POLL_MAX_RETRIES", 0)
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+
+    request = PlanTableScanRequest()
+    with pytest.raises(RemotePlanTimeoutError, match="plan-timeout"):
+        rest_scan_catalog.plan_scan(("db", "tbl"), request)
+
+
+def test_plan_scan_async_failed(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={"status": "submitted", "plan-id": "plan-fail"},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan/plan-fail",
+        json={
+            "status": "failed",
+            "error": {"message": "planning blew up", "type": "PlanningError", "code": 500},
+        },
+        status_code=200,
+    )
+    requests_mock.delete(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan/plan-fail",
+        status_code=204,
+    )
+
+    request = PlanTableScanRequest()
+    with pytest.raises(RuntimeError, match="planning blew up"):
+        rest_scan_catalog.plan_scan(("db", "tbl"), request)
+
+
+def test_plan_scan_async_cancelled(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={"status": "submitted", "plan-id": "plan-cancel"},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan/plan-cancel",
+        json={"status": "cancelled"},
+        status_code=200,
+    )
+
+    request = PlanTableScanRequest()
+    with pytest.raises(RuntimeError, match="cancelled"):
+        rest_scan_catalog.plan_scan(("db", "tbl"), request)
 
 
 def test_plan_scan_empty_result(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
@@ -529,7 +655,7 @@ def test_plan_scan_empty_result(rest_scan_catalog: RestCatalog, requests_mock: M
     )
 
     request = PlanTableScanRequest()
-    tasks = list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+    tasks = rest_scan_catalog.plan_scan(("db", "tbl"), request)
     assert len(tasks) == 0
 
 
@@ -542,7 +668,7 @@ def test_plan_scan_cancelled(rest_scan_catalog: RestCatalog, requests_mock: Mock
 
     request = PlanTableScanRequest()
     with pytest.raises(RuntimeError, match="Received status: cancelled"):
-        list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+        rest_scan_catalog.plan_scan(("db", "tbl"), request)
 
 
 def test_plan_scan_equality_deletes_not_supported(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
@@ -567,4 +693,4 @@ def test_plan_scan_equality_deletes_not_supported(rest_scan_catalog: RestCatalog
 
     request = PlanTableScanRequest()
     with pytest.raises(NotImplementedError, match="PyIceberg does not yet support equality deletes"):
-        list(rest_scan_catalog.plan_scan(("db", "tbl"), request))
+        rest_scan_catalog.plan_scan(("db", "tbl"), request)
