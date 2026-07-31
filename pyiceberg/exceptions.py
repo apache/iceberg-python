@@ -60,6 +60,14 @@ class NoSuchPlanTaskError(Exception):
     """Raised when a scan plan task is not found."""
 
 
+class NoSuchPlanIdError(Exception):
+    """Raised when a scan plan-id is not found."""
+
+
+class RemotePlanTimeoutError(Exception):
+    """Raised when async remote scan planning does not complete within configured limits."""
+
+
 class RESTError(Exception):
     """Raises when there is an unknown response from the REST Catalog."""
 
