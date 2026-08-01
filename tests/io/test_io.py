@@ -17,6 +17,7 @@
 
 import os
 import pickle
+import sys
 import tempfile
 from typing import Any
 
@@ -27,6 +28,7 @@ from pyiceberg.io import (
     PY_IO_IMPL,
     _import_file_io,
     _infer_file_io_from_scheme,
+    _is_local_path,
     load_file_io,
 )
 from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -339,3 +341,23 @@ def test_infer_file_io_from_schema_unknown() -> None:
         _infer_file_io_from_scheme("unknown://bucket/path/", {})
 
     assert str(w[0].message) == "No preferred file implementation for scheme: unknown"
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["s3://bucket/key", "hdfs://cluster/path", "gs://bucket/obj", "/tmp/foo", ""],
+)
+def test_is_local_path_false_for_uris_and_posix(path: str) -> None:
+    assert _is_local_path(path) is False
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
+@pytest.mark.parametrize("path", [r"C:\Users\test", r"D:\data\iceberg", "E:/warehouse"])
+def test_is_local_path_true_on_windows(path: str) -> None:
+    assert _is_local_path(path) is True
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
+def test_infer_file_io_from_scheme_windows_path() -> None:
+    result = _infer_file_io_from_scheme(r"C:\Users\test\warehouse", {})
+    assert isinstance(result, PyArrowFileIO)
