@@ -116,7 +116,37 @@ if TYPE_CHECKING:
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
 
 ALWAYS_TRUE = AlwaysTrue()
+DOWNCAST_NS_TIMESTAMP_TO_US = "downcast-ns-timestamp-to-us"
+# Deprecated: use DOWNCAST_NS_TIMESTAMP_TO_US. The old key said "on-write" but the
+# config also controls read-path downcasting, so the name was misleading.
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
+
+
+def _get_downcast_ns_timestamp_to_us() -> bool:
+    """Return the effective value of the downcast-ns-timestamp-to-us config.
+
+    Checks the new ``downcast-ns-timestamp-to-us`` key first. If not set, falls
+    back to the deprecated ``downcast-ns-timestamp-to-us-on-write`` key and
+    emits a :class:`DeprecationWarning` so callers can migrate their config.
+    """
+    config = Config()
+
+    value = config.get_bool(DOWNCAST_NS_TIMESTAMP_TO_US)
+    if value is not None:
+        return value
+
+    legacy = config.get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
+    if legacy is not None:
+        warnings.warn(
+            f"Config key '{DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE}' (env: PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) "
+            f"is deprecated. Use '{DOWNCAST_NS_TIMESTAMP_TO_US}' "
+            "(env: PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return legacy
+
+    return False
 
 
 @dataclass()
@@ -517,7 +547,7 @@ class Transaction:
         if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
             raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
 
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
         _check_pyarrow_schema_compatible(
             self.table_metadata.schema(),
             provided_schema=df.schema,
@@ -573,7 +603,7 @@ class Transaction:
                     f"in the latest partition spec: {field}"
                 )
 
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
         _check_pyarrow_schema_compatible(
             self.table_metadata.schema(),
             provided_schema=df.schema,
@@ -674,7 +704,7 @@ class Transaction:
         if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
             raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
 
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
         _check_pyarrow_schema_compatible(
             self.table_metadata.schema(),
             provided_schema=df.schema,
@@ -873,7 +903,7 @@ class Transaction:
 
         from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
 
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
         _check_pyarrow_schema_compatible(
             self.table_metadata.schema(),
             provided_schema=df.schema,
@@ -2486,8 +2516,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:
