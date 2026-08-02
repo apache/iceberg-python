@@ -2388,7 +2388,7 @@ def empty_home_dir_path(tmp_path_factory: pytest.TempPathFactory) -> str:
     return home_path
 
 
-RANDOM_LENGTH = 20
+RANDOM_LENGTH = 8  # Keep short to stay within Windows MAX_PATH (260 chars)
 NUM_TABLES = 2
 
 
@@ -2445,15 +2445,15 @@ def hierarchical_namespace_list(hierarchical_namespace_name: str) -> list[str]:
 
 BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
-    r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
-    my_iceberg_table-[a-z]{20}/metadata/
+    r"""s3://test_bucket/my_iceberg_database-[a-z]{8}.db/
+    my_iceberg_table-[a-z]{8}/metadata/
     [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
 )
 
 BQ_TABLE_METADATA_LOCATION_REGEX = re.compile(
-    r"""gs://alexstephen-test-bq-bucket/my_iceberg_database_[a-z]{20}.db/
-    my_iceberg_table-[a-z]{20}/metadata/
+    r"""gs://alexstephen-test-bq-bucket/my_iceberg_database_[a-z]{8}.db/
+    my_iceberg_table-[a-z]{8}/metadata/
     [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
 )
@@ -3138,7 +3138,7 @@ def _create_sql_without_rowcount_catalog(name: str, warehouse: Path) -> Catalog:
     from pyiceberg.catalog.sql import SqlCatalog
 
     props = {
-        "uri": f"sqlite:////{warehouse}/sql-catalog",
+        "uri": f"sqlite:///{warehouse.as_posix()}/sql-catalog",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog(name, **props)

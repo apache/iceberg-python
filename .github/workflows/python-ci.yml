@@ -79,6 +79,30 @@ jobs:
     - name: Generate coverage report (85%) # Coverage threshold should only increase over time — never decrease it!
       run: COVERAGE_FAIL_UNDER=85 make coverage-report
 
+  windows-unit-test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: true
+      matrix:
+        python: ['3.12']
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      with:
+        python-version: ${{ matrix.python }}
+    - name: Install UV
+      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      with:
+        enable-cache: true
+    - name: Install
+      run: uv sync --all-extras --no-extra hive-kerberos
+    - name: Run unit tests
+      run: uv run python -m pytest tests/ -m "(unmarked or parametrize) and not integration" --ignore=tests/integration -v -x
+
   cibw-dev-env-smoke-test:
     runs-on: ubuntu-latest
     steps:

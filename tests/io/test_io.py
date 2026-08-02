@@ -49,10 +49,10 @@ def test_custom_local_input_file() -> None:
         input_file = PyArrowFileIO().new_input(location=f"{absolute_file_location}")
 
         # Test opening and reading the file
-        f = input_file.open()
-        data = f.read()
-        assert data == b"foo"
-        assert len(input_file) == 3
+        with input_file.open() as f:
+            data = f.read()
+            assert data == b"foo"
+            assert len(input_file) == 3
 
 
 def test_custom_local_output_file() -> None:
@@ -87,10 +87,10 @@ def test_pickled_pyarrow_round_trip() -> None:
             f.write(b"foo")
 
         input_file = deserialized_file_io.new_input(location=f"{absolute_file_location}")
-        f = input_file.open()
-        data = f.read()
-        assert data == b"foo"
-        assert len(input_file) == 3
+        with input_file.open() as f:
+            data = f.read()
+            assert data == b"foo"
+            assert len(input_file) == 3
         deserialized_file_io.delete(location=f"{absolute_file_location}")
 
 
