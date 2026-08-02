@@ -1571,7 +1571,7 @@ def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Tab
     tbl_a = _create_table(
         session_catalog,
         "default.merge_manifest_a",
-        {"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        {"commit.manifest.min-count-to-merge": "1", "format-version": format_version},
         [],
     )
     tbl_b = _create_table(
