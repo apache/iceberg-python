@@ -93,8 +93,11 @@ sql-sqlite = ["sqlalchemy>=2.0.18,<3"]
 gcsfs = ["gcsfs>=2023.1.0"]
 rest-sigv4 = ["boto3>=1.24.59"]
 hf = ["huggingface-hub>=0.24.0"]
-pyiceberg-core = ["pyiceberg-core>=0.5.1,<0.10.0"]
-datafusion = ["datafusion>=52,<53"]
+# `pyiceberg-core` bundles a `datafusion-ffi` build, and the DataFusion FFI ABI is not stable
+# across major versions (https://github.com/apache/datafusion/issues/17374). The two ranges below
+# must name the same DataFusion major version: pyiceberg-core 0.10.x bundles datafusion-ffi 53.x.
+pyiceberg-core = ["pyiceberg-core>=0.10.1,<0.11.0"]
+datafusion = ["datafusion>=53,<54"]
 gcp-auth = ["google-auth>=2.4.0"]
 entra-auth = ["azure-identity>=1.25.1"]
 geoarrow = ["geoarrow-pyarrow>=0.2.0"]
