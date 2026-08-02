@@ -103,8 +103,8 @@ Iceberg tables support table properties to configure table behavior.
 
 <!-- prettier-ignore-start -->
 
-!!! note "Append mode"
-    PyIceberg defaults to [merge append](api.md#write-to-a-table). Set `commit.manifest-merge.enabled` to `False` on a table to use fast append instead.
+!!! note "Append modes"
+    PyIceberg defaults to [merge append](api.md#write-to-a-table) to keep manifest metadata compact. Set `commit.manifest-merge.enabled` to `False` on a table to use fast append, which writes less metadata during each commit but accumulates more manifests over time.
 
 <!-- prettier-ignore-end -->
 

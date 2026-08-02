@@ -311,8 +311,8 @@ Next, write the data to the table. Both `append` and `overwrite` produce the sam
 
 <!-- prettier-ignore-start -->
 
-!!! note inline end "Merge append"
-    PyIceberg defaults to [merge append](https://iceberg.apache.org/spec/#snapshots), which automatically merges manifests when the configured threshold is reached. To minimize metadata written during a commit, set the table property `commit.manifest-merge.enabled` to `False` to use fast append instead.
+!!! note inline end "Merge and fast append"
+    PyIceberg defaults to [merge append](https://iceberg.apache.org/spec/#snapshots), which automatically merges manifests when the configured threshold is reached to keep metadata compact and reads performant. Fast append remains available by setting the table property `commit.manifest-merge.enabled` to `False`. Fast append minimizes the metadata written during a commit, enabling faster commits and reducing the possibility of conflicts, but accumulates more manifest metadata over time.
 
 <!-- prettier-ignore-end -->
 
