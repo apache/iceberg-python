@@ -65,6 +65,13 @@ class InspectTable:
         else:
             raise ValueError("Cannot get a snapshot as the table does not have any.")
 
+    def _get_snapshots_by_id(self) -> dict[int, Snapshot]:
+        """Index the snapshots by ID, for methods that look up many of them.
+
+        snapshot_by_id is a linear scan, so calling it once per row is quadratic.
+        """
+        return {snapshot.snapshot_id: snapshot for snapshot in self.tbl.metadata.snapshots}
+
     def snapshots(self) -> pa.Table:
         import pyarrow as pa
 
@@ -310,8 +317,7 @@ class InspectTable:
         )
 
         partitions_map: dict[tuple[str, Any], Any] = {}
-        # snapshot_by_id is a linear scan, and there is one lookup per manifest entry
-        snapshots_by_id = {snapshot.snapshot_id: snapshot for snapshot in self.tbl.metadata.snapshots}
+        snapshots_by_id = self._get_snapshots_by_id()
 
         for entry in itertools.chain.from_iterable(scan._plan_manifest_entries()):
             partition = entry.data_file.partition
@@ -534,8 +540,7 @@ class InspectTable:
 
         history = []
         metadata = self.tbl.metadata
-        # snapshot_by_id is a linear scan, and there is one lookup per snapshot log entry
-        snapshots_by_id = {snapshot.snapshot_id: snapshot for snapshot in metadata.snapshots}
+        snapshots_by_id = self._get_snapshots_by_id()
 
         for snapshot_entry in metadata.snapshot_log:
             snapshot = snapshots_by_id.get(snapshot_entry.snapshot_id)
