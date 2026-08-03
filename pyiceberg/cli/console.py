@@ -327,7 +327,8 @@ def get_namespace(ctx: Context, identifier: str, property_name: str) -> None:
     namespace_properties = catalog.load_namespace_properties(identifier_tuple)
 
     if property_name:
-        if property_value := namespace_properties.get(property_name):
+        property_value = namespace_properties.get(property_name)
+        if property_value is not None:
             output.text(property_value)
         else:
             raise NoSuchPropertyException(f"Could not find property {property_name} on namespace {identifier}")
@@ -348,7 +349,8 @@ def get_table(ctx: Context, identifier: str, property_name: str) -> None:
     metadata = catalog.load_table(identifier_tuple).metadata
 
     if property_name:
-        if property_value := metadata.properties.get(property_name):
+        property_value = metadata.properties.get(property_name)
+        if property_value is not None:
             output.text(property_value)
         else:
             raise NoSuchPropertyException(f"Could not find property {property_name} on table {identifier}")
