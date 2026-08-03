@@ -44,6 +44,7 @@ from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table.delete_file import DeleteFileSet
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
@@ -2058,17 +2059,17 @@ class FileScanTask(ScanTask):
     """Task representing a data file and its corresponding delete files."""
 
     file: DataFile
-    delete_files: set[DataFile]
+    delete_files: DeleteFileSet
     residual: BooleanExpression
 
     def __init__(
         self,
         data_file: DataFile,
-        delete_files: set[DataFile] | None = None,
+        delete_files: Iterable[DataFile] | None = None,
         residual: BooleanExpression = ALWAYS_TRUE,
     ) -> None:
         self.file = data_file
-        self.delete_files = delete_files or set()
+        self.delete_files = DeleteFileSet(delete_files if delete_files is not None else [])
         self.residual = residual
 
     @staticmethod
@@ -2092,7 +2093,7 @@ class FileScanTask(ScanTask):
 
         data_file = _rest_file_to_data_file(rest_task.data_file)
 
-        resolved_deletes: set[DataFile] = set()
+        resolved_deletes = DeleteFileSet()
         if rest_task.delete_file_references:
             for idx in rest_task.delete_file_references:
                 delete_file = delete_files[idx]

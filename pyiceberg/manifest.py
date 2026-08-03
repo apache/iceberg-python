@@ -532,6 +532,18 @@ class DataFile(Record):
     def sort_order_id(self) -> int | None:
         return self._data[15]
 
+    @property
+    def referenced_data_file(self) -> str | None:
+        return self._data[17] if len(self._data) > 17 else None
+
+    @property
+    def content_offset(self) -> int | None:
+        return self._data[18] if len(self._data) > 18 else None
+
+    @property
+    def content_size_in_bytes(self) -> int | None:
+        return self._data[19] if len(self._data) > 19 else None
+
     # Spec ID should not be stored in the file
     _spec_id: int
 
