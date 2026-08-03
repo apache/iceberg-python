@@ -310,13 +310,15 @@ class InspectTable:
         )
 
         partitions_map: dict[tuple[str, Any], Any] = {}
+        # snapshot_by_id is a linear scan, and there is one lookup per manifest entry
+        snapshots_by_id = {snapshot.snapshot_id: snapshot for snapshot in self.tbl.metadata.snapshots}
 
         for entry in itertools.chain.from_iterable(scan._plan_manifest_entries()):
             partition = entry.data_file.partition
             partition_record_dict = {
                 field.name: partition[pos] for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
             }
-            entry_snapshot = self.tbl.snapshot_by_id(entry.snapshot_id) if entry.snapshot_id is not None else None
+            entry_snapshot = snapshots_by_id.get(entry.snapshot_id) if entry.snapshot_id is not None else None
             self._update_partitions_map_from_manifest_entry(
                 partitions_map, entry.data_file, partition_record_dict, entry_snapshot
             )
@@ -532,9 +534,11 @@ class InspectTable:
 
         history = []
         metadata = self.tbl.metadata
+        # snapshot_by_id is a linear scan, and there is one lookup per snapshot log entry
+        snapshots_by_id = {snapshot.snapshot_id: snapshot for snapshot in metadata.snapshots}
 
         for snapshot_entry in metadata.snapshot_log:
-            snapshot = metadata.snapshot_by_id(snapshot_entry.snapshot_id)
+            snapshot = snapshots_by_id.get(snapshot_entry.snapshot_id)
 
             history.append(
                 {

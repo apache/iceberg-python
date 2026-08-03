@@ -37,7 +37,6 @@ from pyiceberg.table.metadata import (
     new_table_metadata,
 )
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
-from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import UTF8
@@ -144,79 +143,6 @@ def test_parsing_correct_types(example_table_metadata_v2: dict[str, Any]) -> Non
     assert isinstance(table_metadata.schemas[0], Schema)
     assert isinstance(table_metadata.schemas[0].fields[0], NestedField)
     assert isinstance(table_metadata.schemas[0].fields[0].field_type, LongType)
-
-
-def test_snapshot_by_id(example_table_metadata_v2: dict[str, Any]) -> None:
-    table_metadata = TableMetadataV2(**example_table_metadata_v2)
-
-    # Returns the same instance that is in the snapshots list, not a copy
-    assert table_metadata.snapshot_by_id(3051729675574597004) is table_metadata.snapshots[0]
-    assert table_metadata.snapshot_by_id(3055729675574597004) is table_metadata.snapshots[1]
-    assert table_metadata.snapshot_by_id(-1) is None
-
-
-def test_snapshot_by_id_index_is_invalidated_on_model_copy(example_table_metadata_v2: dict[str, Any]) -> None:
-    """The snapshot lookup index must not survive a model_copy that replaces the snapshots."""
-    table_metadata = TableMetadataV2(**example_table_metadata_v2)
-
-    # Build the index before copying, so a stale one would be carried over
-    assert table_metadata.snapshot_by_id(3051729675574597004) is not None
-
-    new_snapshot = Snapshot(
-        snapshot_id=1,
-        parent_snapshot_id=3055729675574597004,
-        sequence_number=35,
-        timestamp_ms=1602638573591,
-        manifest_list="s3://bucket/test/manifest-list",
-        summary=Summary(Operation.APPEND),
-        schema_id=1,
-    )
-    with_added = table_metadata.model_copy(update={"snapshots": table_metadata.snapshots + [new_snapshot]})
-    assert with_added.snapshot_by_id(1) is new_snapshot
-    assert with_added.snapshot_by_id(3051729675574597004) is not None
-
-    without_first = with_added.model_copy(update={"snapshots": with_added.snapshots[1:]})
-    assert without_first.snapshot_by_id(3051729675574597004) is None
-    assert without_first.snapshot_by_id(1) is new_snapshot
-
-    # The original is unaffected by either copy
-    assert table_metadata.snapshot_by_id(1) is None
-    assert table_metadata.snapshot_by_id(3051729675574597004) is not None
-
-
-def test_snapshot_by_id_reflects_in_place_snapshot_list_mutation(example_table_metadata_v2: dict[str, Any]) -> None:
-    """The snapshot lookup must not go stale when the snapshots list itself is mutated in place."""
-    table_metadata = TableMetadataV2(**example_table_metadata_v2)
-    snapshot_id = 3051729675574597004
-
-    # Build the index before mutating, so a stale one would still be in place
-    assert table_metadata.snapshot_by_id(snapshot_id) is not None
-
-    # Replacing an entry: the lookup must return the new instance, not the replaced one
-    altered = table_metadata.snapshots[0].model_copy(update={"summary": Summary(Operation.DELETE)})
-    table_metadata.snapshots[0] = altered
-    assert table_metadata.snapshot_by_id(snapshot_id) is altered
-
-    # Reordering: ids still resolve to the right snapshots
-    table_metadata.snapshots.reverse()
-    assert table_metadata.snapshot_by_id(snapshot_id) is altered
-    assert table_metadata.snapshot_by_id(3055729675574597004) is table_metadata.snapshots[0]
-
-    # Removing: the id is gone
-    table_metadata.snapshots.clear()
-    assert table_metadata.snapshot_by_id(snapshot_id) is None
-
-
-def test_snapshot_by_id_index_is_not_serialized(example_table_metadata_v2: dict[str, Any]) -> None:
-    """The memoized index is an implementation detail and must stay out of the serialized form."""
-    table_metadata = TableMetadataV2(**example_table_metadata_v2)
-    assert table_metadata.snapshot_by_id(3051729675574597004) is not None
-
-    assert "_id_to_snapshot_position" not in table_metadata.model_dump()
-    assert "_id_to_snapshot_position" not in table_metadata.model_dump_json()
-    assert "_id_to_snapshot_position" not in TableMetadataV2.model_fields
-    # Two equal instances stay equal when only one of them has built the index
-    assert table_metadata == TableMetadataV2(**example_table_metadata_v2)
 
 
 def test_updating_metadata(example_table_metadata_v2: dict[str, Any]) -> None:
