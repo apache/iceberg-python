@@ -240,14 +240,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     def _lazy_id_to_snapshot_position(self) -> dict[int, int]:
         """Return an index of snapshot ID to its position in the snapshots list.
 
-        Positions are cached rather than Snapshot instances, so that replacing an entry of the list
-        in place is still picked up by the next lookup.
-
-        A plain `cached_property` cannot be used here: `model_copy` carries `__dict__` over to the
-        new instance, so a copy that replaces the snapshots would inherit a stale index. The index is
-        tied to the list it was built from, and rebuilt whenever `snapshots` is a different list.
-        Keeping a reference to that list also keeps it alive, so its identity cannot be reused by
-        another object.
+        This is calculated once per snapshots list and cached.
         """
         cached = self.__dict__.get("_id_to_snapshot_position")
         if cached is None or cached[0] is not self.snapshots:
@@ -265,8 +258,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
         if (position := self._lazy_id_to_snapshot_position.get(snapshot_id)) is not None and position < len(snapshots):
             if (snapshot := snapshots[position]).snapshot_id == snapshot_id:
                 return snapshot
-        # Either the id is absent, or the list was mutated in place and the cached positions
-        # no longer line up. Fall back to a scan, which is always correct.
+        # Absent id, or the list was mutated in place and the cached positions no longer line up.
         return next((snapshot for snapshot in snapshots if snapshot.snapshot_id == snapshot_id), None)
 
     def schema_by_id(self, schema_id: int) -> Schema | None:
