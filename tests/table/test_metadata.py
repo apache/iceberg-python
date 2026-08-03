@@ -184,14 +184,37 @@ def test_snapshot_by_id_index_is_invalidated_on_model_copy(example_table_metadat
     assert table_metadata.snapshot_by_id(3051729675574597004) is not None
 
 
+def test_snapshot_by_id_reflects_in_place_snapshot_list_mutation(example_table_metadata_v2: dict[str, Any]) -> None:
+    """The snapshot lookup must not go stale when the snapshots list itself is mutated in place."""
+    table_metadata = TableMetadataV2(**example_table_metadata_v2)
+    snapshot_id = 3051729675574597004
+
+    # Build the index before mutating, so a stale one would still be in place
+    assert table_metadata.snapshot_by_id(snapshot_id) is not None
+
+    # Replacing an entry: the lookup must return the new instance, not the replaced one
+    altered = table_metadata.snapshots[0].model_copy(update={"summary": Summary(Operation.DELETE)})
+    table_metadata.snapshots[0] = altered
+    assert table_metadata.snapshot_by_id(snapshot_id) is altered
+
+    # Reordering: ids still resolve to the right snapshots
+    table_metadata.snapshots.reverse()
+    assert table_metadata.snapshot_by_id(snapshot_id) is altered
+    assert table_metadata.snapshot_by_id(3055729675574597004) is table_metadata.snapshots[0]
+
+    # Removing: the id is gone
+    table_metadata.snapshots.clear()
+    assert table_metadata.snapshot_by_id(snapshot_id) is None
+
+
 def test_snapshot_by_id_index_is_not_serialized(example_table_metadata_v2: dict[str, Any]) -> None:
     """The memoized index is an implementation detail and must stay out of the serialized form."""
     table_metadata = TableMetadataV2(**example_table_metadata_v2)
     assert table_metadata.snapshot_by_id(3051729675574597004) is not None
 
-    assert "_id_to_snapshot" not in table_metadata.model_dump()
-    assert "_id_to_snapshot" not in table_metadata.model_dump_json()
-    assert "_id_to_snapshot" not in TableMetadataV2.model_fields
+    assert "_id_to_snapshot_position" not in table_metadata.model_dump()
+    assert "_id_to_snapshot_position" not in table_metadata.model_dump_json()
+    assert "_id_to_snapshot_position" not in TableMetadataV2.model_fields
     # Two equal instances stay equal when only one of them has built the index
     assert table_metadata == TableMetadataV2(**example_table_metadata_v2)
 
