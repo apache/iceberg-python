@@ -677,9 +677,11 @@ class RestCatalog(Catalog):
         """Expand a completed plan response into FileScanTask objects, including pagination."""
         tasks: list[FileScanTask] = []
 
+        # Collect tasks from initial response
         for task in response.file_scan_tasks:
             tasks.append(FileScanTask.from_rest_response(task, response.delete_files))
 
+        # Fetch and collect from additional batches
         pending_tasks = deque(response.plan_tasks)
         while pending_tasks:
             plan_task = pending_tasks.popleft()
