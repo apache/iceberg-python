@@ -423,6 +423,8 @@ Legacy OAuth2 Properties will be removed in PyIceberg 1.0 in place of pluggable 
 | rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
 
+SigV4 can also be enabled as `auth.type: sigv4`, which additionally lets you choose the wrapped header-based auth (see the AuthManager section below).
+
 ##### Pluggable Authentication via AuthManager
 
 The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
@@ -435,6 +437,7 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 - `custom`: Custom authentication manager (requires `auth.impl`).
 - `google`: Google Authentication support
 - `entra`: Microsoft Entra ID (Azure AD) authentication support
+- `sigv4`: AWS SigV4 request signing, optionally wrapping a delegate auth type.
 
 ###### Configuration Properties
 
@@ -463,6 +466,7 @@ catalog:
 | `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
 | `auth.google`    | If type is `google` | Block containing `credentials_path` to a service account file (if using). Will default to using Application Default Credentials. |
 | `auth.entra`     | If type is `entra` | Block containing Entra ID configuration. Will default to using DefaultAzureCredential. |
+| `auth.sigv4`     | If type is `sigv4` | Block containing an optional `delegate` auth block whose `Authorization` header is preserved as `Original-Authorization` after signing. Signing region/name come from `rest.signing-region`/`rest.signing-name`; AWS credentials from `client.*` or the standard boto3 chain. |
 
 ###### Examples
 
@@ -506,6 +510,24 @@ auth:
   custom:
     property1: value1
     property2: value2
+```
+
+SigV4 Signing (wrapping OAuth2):
+
+```yaml
+auth:
+  type: sigv4
+  sigv4:
+    delegate:
+      type: oauth2
+      oauth2:
+        client_id: my-client-id
+        client_secret: my-client-secret
+        token_url: https://auth.example.com/oauth/token
+rest.signing-region: us-east-1
+rest.signing-name: execute-api
+client.access-key-id: my-access-key
+client.secret-access-key: my-secret-key
 ```
 
 ###### Notes
