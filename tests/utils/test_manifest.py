@@ -351,7 +351,7 @@ def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
 def test_write_empty_manifest() -> None:
     io = load_file_io()
     test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
-    with TemporaryDirectory() as tmpdir:
+    with TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"
 
         with pytest.raises(ValueError, match="An empty manifest file has been written"):
