@@ -17,7 +17,10 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import os
+import random
+import time
 import uuid
 import warnings
 from abc import ABC, abstractmethod
@@ -31,6 +34,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from pydantic import Field
 
 import pyiceberg.expressions.parser as parser
+from pyiceberg.exceptions import CommitFailedException, ValidationException
 from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
@@ -100,7 +104,7 @@ from pyiceberg.typedef import (
 from pyiceberg.types import strtobool
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
-from pyiceberg.utils.properties import property_as_bool
+from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
     import bodo.pandas as bd
@@ -114,6 +118,9 @@ if TYPE_CHECKING:
 
     from pyiceberg.catalog import Catalog
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
+    from pyiceberg.table.update.snapshot import _SnapshotProducer
+
+logger = logging.getLogger(__name__)
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
@@ -212,6 +219,22 @@ class TableProperties:
     MIN_SNAPSHOTS_TO_KEEP = "history.expire.min-snapshots-to-keep"
     MIN_SNAPSHOTS_TO_KEEP_DEFAULT = 1
 
+    COMMIT_NUM_RETRIES = "commit.retry.num-retries"
+    COMMIT_NUM_RETRIES_DEFAULT = 4
+
+    COMMIT_MIN_RETRY_WAIT_MS = "commit.retry.min-wait-ms"
+    COMMIT_MIN_RETRY_WAIT_MS_DEFAULT = 100
+
+    COMMIT_MAX_RETRY_WAIT_MS = "commit.retry.max-wait-ms"
+    COMMIT_MAX_RETRY_WAIT_MS_DEFAULT = 60000
+
+    COMMIT_TOTAL_RETRY_TIME_MS = "commit.retry.total-timeout-ms"
+    COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT = 1800000  # 30 minutes
+
+    WRITE_DELETE_ISOLATION_LEVEL = "write.delete.isolation-level"
+    WRITE_UPDATE_ISOLATION_LEVEL = "write.update.isolation-level"
+    WRITE_ISOLATION_LEVEL_DEFAULT = "serializable"
+
 
 class Transaction:
     _table: Table
@@ -230,6 +253,8 @@ class Transaction:
         self._autocommit = autocommit
         self._updates = ()
         self._requirements = ()
+        self._snapshot_producers: list[_SnapshotProducer[Any]] = []
+        self._failed = False
 
     @property
     def table_metadata(self) -> TableMetadata:
@@ -271,6 +296,10 @@ class Transaction:
                 self._requirements = self._requirements + (new_requirement,)
 
         return self
+
+    def _register_snapshot_producer(self, producer: _SnapshotProducer[Any]) -> None:
+        """Register a snapshot producer for retry support."""
+        self._snapshot_producers.append(producer)
 
     def _apply(
         self,
@@ -596,7 +625,12 @@ class Transaction:
         delete_filter = self._build_partition_predicate(
             partition_records=partitions_to_overwrite, spec=self.table_metadata.spec(), schema=self.table_metadata.schema()
         )
-        self.delete(delete_filter=delete_filter, snapshot_properties=snapshot_properties, branch=branch)
+        self.delete(
+            delete_filter=delete_filter,
+            snapshot_properties=snapshot_properties,
+            branch=branch,
+            _isolation_operation=Operation.OVERWRITE,
+        )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             append_files.commit_uuid = append_snapshot_commit_uuid
@@ -689,6 +723,7 @@ class Transaction:
                 case_sensitive=case_sensitive,
                 snapshot_properties=snapshot_properties,
                 branch=branch,
+                _isolation_operation=Operation.OVERWRITE,
             )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
@@ -706,6 +741,7 @@ class Transaction:
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
+        _isolation_operation: Operation | None = None,
     ) -> None:
         """
         Shorthand for deleting record from a table.
@@ -733,6 +769,8 @@ class Transaction:
             delete_filter = _parse_row_filter(delete_filter)
 
         with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).delete() as delete_snapshot:
+            if _isolation_operation is not None:
+                delete_snapshot._isolation_operation = _isolation_operation
             delete_snapshot.delete_by_predicate(delete_filter, case_sensitive)
 
         # Check if there are any files that require an actual rewrite of a data file
@@ -788,7 +826,11 @@ class Transaction:
                 with self.update_snapshot(
                     snapshot_properties=snapshot_properties, branch=branch
                 ).overwrite() as overwrite_snapshot:
+                    if _isolation_operation is not None:
+                        overwrite_snapshot._isolation_operation = _isolation_operation
+                    overwrite_snapshot._starting_snapshot_id = delete_snapshot._starting_snapshot_id
                     overwrite_snapshot.commit_uuid = commit_uuid
+                    overwrite_snapshot.delete_by_predicate(delete_filter, case_sensitive)
                     for original_data_file, replaced_data_files in replaced_files:
                         overwrite_snapshot.delete_data_file(original_data_file)
                         for replaced_data_file in replaced_data_files:
@@ -1042,17 +1084,145 @@ class Transaction:
         Returns:
             The table with the updates applied.
         """
+        if self._failed:
+            raise RuntimeError("This transaction failed to commit and cannot be reused; create a new transaction.")
         if len(self._updates) > 0:
-            self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
-            self._table._do_commit(  # pylint: disable=W0212
-                updates=self._updates,
-                requirements=self._requirements,
+            properties = self._table.metadata.properties
+            num_retries: int = max(
+                0,
+                property_as_int(  # type: ignore  # The default is set with non-None value.
+                    properties, TableProperties.COMMIT_NUM_RETRIES, TableProperties.COMMIT_NUM_RETRIES_DEFAULT
+                ),
             )
+            # All retry properties are clamped to non-negative values: a negative wait
+            # would raise ValueError from time.sleep mid-retry and mask the original
+            # CommitFailedException.
+            min_wait_ms: int = max(
+                0,
+                property_as_int(  # type: ignore  # The default is set with non-None value.
+                    properties, TableProperties.COMMIT_MIN_RETRY_WAIT_MS, TableProperties.COMMIT_MIN_RETRY_WAIT_MS_DEFAULT
+                ),
+            )
+            max_wait_ms: int = max(
+                0,
+                property_as_int(  # type: ignore  # The default is set with non-None value.
+                    properties, TableProperties.COMMIT_MAX_RETRY_WAIT_MS, TableProperties.COMMIT_MAX_RETRY_WAIT_MS_DEFAULT
+                ),
+            )
+            total_timeout_ms: int = max(
+                0,
+                property_as_int(  # type: ignore  # The default is set with non-None value.
+                    properties, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS, TableProperties.COMMIT_TOTAL_RETRY_TIME_MS_DEFAULT
+                ),
+            )
+            start_time = time.monotonic()
+            self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
+
+            try:
+                try:
+                    for attempt in range(num_retries + 1):
+                        try:
+                            self._table._do_commit(  # pylint: disable=W0212
+                                updates=self._updates,
+                                requirements=self._requirements,
+                            )
+                            self._cleanup_uncommitted_manifests()
+                            break
+                        except CommitFailedException:
+                            elapsed_ms = (time.monotonic() - start_time) * 1000
+                            if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
+                                raise
+
+                            wait = min(min_wait_ms * (2**attempt), max_wait_ms)
+                            jitter = random.uniform(0, 0.1 * wait)
+                            logger.warning(
+                                "Commit failed due to a concurrent update, retrying (%s/%s) in %s ms",
+                                attempt + 1,
+                                num_retries,
+                                round(wait + jitter),
+                            )
+                            time.sleep((wait + jitter) / 1000.0)
+
+                            self._table.refresh()
+                            if all(
+                                self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None
+                                for producer in self._snapshot_producers
+                            ):
+                                # A previous attempt actually landed even though it was reported as
+                                # failed (for example a lost response that the transport layer retried).
+                                # The snapshot id is stable across attempts, so finding it in the
+                                # refreshed metadata means the commit is already applied. Stop here
+                                # instead of committing the same data again.
+                                self._cleanup_uncommitted_manifests()
+                                break
+                            self._rebuild_snapshot_updates()
+                except (CommitFailedException, ValidationException):
+                    # These exceptions guarantee the commit did not land, so it is safe to delete the
+                    # files written for it. Any other exception (unknown outcome, or a commit that already
+                    # succeeded) is re-raised without deleting, since those files may be referenced by the
+                    # catalog's current snapshot and deleting them would corrupt the table for all readers.
+                    for producer in self._snapshot_producers:
+                        producer._clean_all_uncommitted()
+                    raise
+            except Exception:
+                # Any failure leaves the transaction in an indeterminate state (files deleted, or the
+                # commit outcome unknown), so mark it as failed to refuse reuse.
+                self._failed = True
+                raise
+
+            self._snapshot_producers = []
+
+        elif self._snapshot_producers:
+            # An empty staged output (e.g. a delete whose plan matched nothing) skips the
+            # commit loop above, so run concurrency validation explicitly before reporting success.
+            from pyiceberg.table.update.snapshot import CommitWindow
+
+            try:
+                self._table.refresh()
+                commit_window = CommitWindow.resolve(
+                    self._table.metadata,
+                    self._snapshot_producers[0]._starting_snapshot_id,
+                    self._snapshot_producers[0]._target_branch,
+                )
+                for producer in self._snapshot_producers:
+                    producer._commit_window = commit_window
+                    producer._validate_concurrency()
+            except Exception:
+                for producer in self._snapshot_producers:
+                    producer._clean_all_uncommitted()
+                self._failed = True
+                raise
+
+            self._snapshot_producers = []
 
         self._updates = ()
         self._requirements = ()
 
         return self._table
+
+    def _cleanup_uncommitted_manifests(self) -> None:
+        """Clean up manifests from failed retry attempts after a successful commit."""
+        for producer in self._snapshot_producers:
+            producer._cleanup_uncommitted()
+
+    def _rebuild_snapshot_updates(self) -> None:
+        """Rebuild snapshot updates for retry by re-executing registered producers."""
+        from pyiceberg.table.update import AddSnapshotUpdate, AssertRefSnapshotId, SetSnapshotRefUpdate
+        from pyiceberg.table.update.snapshot import CommitWindow
+
+        self._updates = tuple(u for u in self._updates if not isinstance(u, (AddSnapshotUpdate, SetSnapshotRefUpdate)))
+        self._requirements = tuple(r for r in self._requirements if not isinstance(r, AssertRefSnapshotId))
+
+        starting_id = self._snapshot_producers[0]._starting_snapshot_id if self._snapshot_producers else None
+        target_branch = self._snapshot_producers[0]._target_branch if self._snapshot_producers else None
+        commit_window = CommitWindow.resolve(self._table.metadata, starting_id, target_branch)
+
+        for producer in self._snapshot_producers:
+            producer._commit_window = commit_window
+            producer._refresh_for_retry()
+            producer._validate_concurrency()
+            updates, requirements = producer._commit()
+            self._stage(updates, requirements)
 
 
 class CreateTableTransaction(Transaction):
