@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 import time
+from unittest.mock import patch
 
 import pytest
 from pytest_lazy_fixtures import lf
@@ -24,7 +25,9 @@ from pytest_lazy_fixtures import lf
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.exceptions import NoSuchViewError
 from pyiceberg.schema import Schema
+from pyiceberg.typedef import PaginationList
 from pyiceberg.view.metadata import SQLViewRepresentation, ViewVersion
+from tests.conftest import clean_up
 
 TEST_NAMESPACE_IDENTIFIER = "TEST NS"
 
@@ -110,3 +113,46 @@ def test_load_view_with_table_ident(
     assert catalog.table_exists(table_identifier)
     with pytest.raises(NoSuchViewError):
         catalog.load_view(table_identifier)
+
+
+@pytest.mark.integration
+def test_list_tables_returns_pagination_list(table_schema_nested: Schema, database_name: str, table_list: list[str]) -> None:
+    catalog = RestCatalog("rest", uri="http://localhost:8181", **{"rest-page-size": "1"})
+
+    if not catalog.namespace_exists(database_name):
+        catalog.create_namespace(database_name)
+
+    for table_name in table_list:
+        catalog.create_table((database_name, table_name), table_schema_nested)
+
+    try:
+        with patch.object(catalog._session, "get", wraps=catalog._session.get) as mock_get:
+            result = catalog.list_tables(database_name)
+
+            assert isinstance(result, PaginationList)
+            assert len(result) == len(table_list)
+            for table_name in table_list:
+                assert (database_name, table_name) in result
+            assert mock_get.call_count == len(table_list)
+    finally:
+        clean_up(catalog)
+
+
+@pytest.mark.integration
+def test_list_namespaces_returns_pagination_list(database_list: list[str]) -> None:
+    catalog = RestCatalog("rest", uri="http://localhost:8181", **{"rest-page-size": "1"})
+
+    for namespace in database_list:
+        if not catalog.namespace_exists(namespace):
+            catalog.create_namespace(namespace)
+
+    try:
+        with patch.object(catalog._session, "get", wraps=catalog._session.get) as mock_get:
+            result = catalog.list_namespaces()
+
+            assert isinstance(result, PaginationList)
+            for namespace in database_list:
+                assert (namespace,) in result
+            assert mock_get.call_count == len(result)
+    finally:
+        clean_up(catalog)
