@@ -506,6 +506,17 @@ def test_properties_get_namespace_specific_empty_property(catalog: InMemoryCatal
     assert result.output == "\n"
 
 
+def test_properties_get_namespace_specific_property_that_doesnt_exist(
+    catalog: InMemoryCatalog, namespace_properties: Properties
+) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["properties", "get", "namespace", "default", "doesnotexist"])
+    assert result.exit_code == 1
+    assert result.output == "Could not find property doesnotexist on namespace default\n"
+
+
 def test_properties_get_namespace_does_not_exist(catalog: InMemoryCatalog, namespace_properties: Properties) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
