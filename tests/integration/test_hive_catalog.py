@@ -74,3 +74,15 @@ def test_list_views(
 
     # A table in the same namespace must not be returned as a view.
     assert (namespace, table_name) not in views
+
+
+@pytest.mark.integration
+def test_list_views_non_existent_namespace(
+    session_catalog_hive: HiveCatalog,
+    spark: SparkSession,
+) -> None:
+    database_name = "non_existent_namespace"
+    try:
+        session_catalog_hive.list_views(database_name)
+    except Exception as e:
+        assert f"Namespace does not exist: {database_name}" in str(e)
