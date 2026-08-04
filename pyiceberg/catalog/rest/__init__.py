@@ -16,6 +16,7 @@
 #  under the License.
 from __future__ import annotations
 
+import time
 from collections import deque
 from enum import Enum
 from typing import (
@@ -38,6 +39,7 @@ from pyiceberg.catalog.rest.scan_planning import (
     PlanCancelled,
     PlanCompleted,
     PlanFailed,
+    PlannedScanResult,
     PlanningResponse,
     PlanSubmitted,
     PlanTableScanRequest,
@@ -52,9 +54,11 @@ from pyiceberg.exceptions import (
     NamespaceNotEmptyError,
     NoSuchIdentifierError,
     NoSuchNamespaceError,
+    NoSuchPlanIdError,
     NoSuchPlanTaskError,
     NoSuchTableError,
     NoSuchViewError,
+    RemotePlanTimeoutError,
     TableAlreadyExistsError,
     UnauthorizedError,
     ViewAlreadyExistsError,
@@ -160,6 +164,9 @@ class Endpoints:
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
     plan_table_scan: str = "namespaces/{namespace}/tables/{table}/plan"
+    # Use plan_id (underscore) for str.format; Capability paths use {plan-id} to match the REST spec.
+    fetch_planning_result: str = "namespaces/{namespace}/tables/{table}/plan/{plan_id}"
+    cancel_planning: str = "namespaces/{namespace}/tables/{table}/plan/{plan_id}"
     fetch_scan_tasks: str = "namespaces/{namespace}/tables/{table}/tasks"
 
 
@@ -190,6 +197,13 @@ class Capability:
     V1_REGISTER_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_view}")
     V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
     V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
+    # Spec advertises {plan-id}; must match ConfigResponse endpoint strings from servers.
+    V1_FETCH_TABLE_SCAN_PLAN = Endpoint(
+        http_method=HttpMethod.GET, path=f"{API_PREFIX}/namespaces/{{namespace}}/tables/{{table}}/plan/{{plan-id}}"
+    )
+    V1_CANCEL_TABLE_SCAN_PLAN = Endpoint(
+        http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/namespaces/{{namespace}}/tables/{{table}}/plan/{{plan-id}}"
+    )
     V1_TABLE_SCAN_PLAN_TASKS = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.fetch_scan_tasks}")
 
 
@@ -264,6 +278,12 @@ AUTH = "auth"
 CUSTOM = "custom"
 SCAN_PLANNING_MODE = "scan-planning-mode"
 SCAN_PLANNING_MODE_DEFAULT = ScanPlanningMode.CLIENT.value
+REST_SCAN_PLANNING_POLL_TIMEOUT_MS = "rest-scan-planning.poll-timeout-ms"
+REST_SCAN_PLANNING_POLL_TIMEOUT_MS_DEFAULT = 5 * 60 * 1000  # 5 minutes, matches Java
+REST_SCAN_PLANNING_POLL_MIN_SLEEP_MS = 1000
+REST_SCAN_PLANNING_POLL_MAX_SLEEP_MS = 60 * 1000
+REST_SCAN_PLANNING_POLL_SCALE_FACTOR = 2.0
+REST_SCAN_PLANNING_POLL_MAX_RETRIES = 10
 # for backwards compatibility with older REST servers where it can be assumed that a particular
 # server supports view endpoints but doesn't send the "endpoints" field in the ConfigResponse
 VIEW_ENDPOINTS_SUPPORTED = "view-endpoints-supported"
@@ -551,38 +571,110 @@ class RestCatalog(Catalog):
 
         return ScanTasks.model_validate_json(response.text)
 
-    def plan_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> list[FileScanTask]:
-        """Plan a table scan and return FileScanTasks.
-
-        Handles the full scan planning lifecycle including pagination.
+    @retry(**_RETRY_ARGS)
+    def _fetch_planning_result(self, identifier: str | Identifier, plan_id: str) -> PlanningResponse:
+        """Fetch the result of an async scan plan by plan-id.
 
         Args:
             identifier: Table identifier.
-            request: The scan plan request parameters.
+            plan_id: Plan id returned from a submitted planTableScan response.
 
         Returns:
-            List of FileScanTask objects ready for execution.
+            PlanningResponse with the current plan status.
 
         Raises:
-            RuntimeError: If planning fails, is cancelled, or returns unexpected response.
-            NotImplementedError: If async planning is required but not yet supported.
+            NoSuchPlanIdError: If the plan-id does not exist.
+            NoSuchTableError: If the table does not exist.
         """
-        response = self._plan_table_scan(identifier, request)
+        self._check_endpoint(Capability.V1_FETCH_TABLE_SCAN_PLAN)
+        response = self._session.get(
+            self.url(
+                Endpoints.fetch_planning_result,
+                prefixed=True,
+                plan_id=quote(plan_id, safe=""),
+                **self._split_identifier_for_path(identifier),
+            ),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchPlanIdError})
 
-        if isinstance(response, PlanFailed):
-            error_msg = response.error.message if response.error else "unknown error"
-            raise RuntimeError(f"Received status: failed: {error_msg}")
+        return _PLANNING_RESPONSE_ADAPTER.validate_json(response.text)
 
-        if isinstance(response, PlanCancelled):
-            raise RuntimeError("Received status: cancelled")
+    def _cancel_planning(self, identifier: str | Identifier, plan_id: str) -> bool:
+        """Best-effort cancel of an async scan plan.
 
-        if isinstance(response, PlanSubmitted):
-            # TODO: implement polling for async planning
-            raise NotImplementedError(f"Async scan planning not yet supported for planId: {response.plan_id}")
+        Returns:
+            True if the cancel request was accepted, False otherwise.
+        """
+        if Capability.V1_CANCEL_TABLE_SCAN_PLAN not in self._supported_endpoints:
+            return False
 
-        if not isinstance(response, PlanCompleted):
-            raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
+        try:
+            response = self._session.delete(
+                self.url(
+                    Endpoints.cancel_planning,
+                    prefixed=True,
+                    plan_id=quote(plan_id, safe=""),
+                    **self._split_identifier_for_path(identifier),
+                ),
+            )
+            response.raise_for_status()
+            return True
+        except Exception:
+            # Plan may have already completed, failed, or been cancelled.
+            return False
 
+    def _poll_until_completed(self, identifier: str | Identifier, plan_id: str) -> PlanCompleted:
+        """Poll fetchPlanningResult until the plan completes or times out.
+
+        Uses exponential backoff matching Java RESTTableScan defaults.
+        """
+        max_wait_ms = property_as_int(
+            self.properties,
+            REST_SCAN_PLANNING_POLL_TIMEOUT_MS,
+            REST_SCAN_PLANNING_POLL_TIMEOUT_MS_DEFAULT,
+        )
+        if max_wait_ms is None or max_wait_ms <= 0:
+            raise ValueError(f"Invalid value for {REST_SCAN_PLANNING_POLL_TIMEOUT_MS}: {max_wait_ms} (must be positive)")
+
+        sleep_ms = float(REST_SCAN_PLANNING_POLL_MIN_SLEEP_MS)
+        start = time.monotonic()
+        retries = 0
+
+        while True:
+            response = self._fetch_planning_result(identifier, plan_id)
+
+            if isinstance(response, PlanCompleted):
+                return response
+
+            if isinstance(response, PlanFailed):
+                error_msg = response.error.message if response.error else "unknown error"
+                self._cancel_planning(identifier, plan_id)
+                raise RuntimeError(f"Remote scan planning failed for planId: {plan_id}: {error_msg}")
+
+            if isinstance(response, PlanCancelled):
+                raise RuntimeError(f"Remote scan planning cancelled for planId: {plan_id}")
+
+            if not isinstance(response, PlanSubmitted):
+                self._cancel_planning(identifier, plan_id)
+                raise RuntimeError(f"Invalid planStatus for planId: {plan_id}: {type(response).__name__}")
+
+            elapsed_ms = (time.monotonic() - start) * 1000
+            if retries >= REST_SCAN_PLANNING_POLL_MAX_RETRIES or elapsed_ms >= max_wait_ms:
+                self._cancel_planning(identifier, plan_id)
+                raise RemotePlanTimeoutError(
+                    f"Remote scan planning for planId: {plan_id} did not complete within configured limits "
+                    f"(timeout={max_wait_ms} ms, maxRetries={REST_SCAN_PLANNING_POLL_MAX_RETRIES})"
+                )
+
+            time.sleep(sleep_ms / 1000.0)
+            sleep_ms = min(sleep_ms * REST_SCAN_PLANNING_POLL_SCALE_FACTOR, REST_SCAN_PLANNING_POLL_MAX_SLEEP_MS)
+            retries += 1
+
+    def _expand_plan_tasks(self, identifier: str | Identifier, response: PlanCompleted) -> list[FileScanTask]:
+        """Expand a completed plan response into FileScanTask objects, including pagination."""
         tasks: list[FileScanTask] = []
 
         # Collect tasks from initial response
@@ -599,6 +691,81 @@ class RestCatalog(Catalog):
             pending_tasks.extend(batch.plan_tasks)
 
         return tasks
+
+    def _plan_scan_result(self, identifier: str | Identifier, request: PlanTableScanRequest) -> PlannedScanResult:
+        """Plan a table scan and return tasks with optional plan storage credentials.
+
+        Handles the full scan planning lifecycle including async polling and pagination.
+        """
+        response = self._plan_table_scan(identifier, request)
+
+        if isinstance(response, PlanFailed):
+            error_msg = response.error.message if response.error else "unknown error"
+            raise RuntimeError(f"Received status: failed: {error_msg}")
+
+        if isinstance(response, PlanCancelled):
+            raise RuntimeError("Received status: cancelled")
+
+        if isinstance(response, PlanSubmitted):
+            if not response.plan_id:
+                raise ValueError("Async scan planning submitted without plan-id")
+            response = self._poll_until_completed(identifier, response.plan_id)
+
+        if not isinstance(response, PlanCompleted):
+            raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
+
+        tasks = self._expand_plan_tasks(identifier, response)
+        return PlannedScanResult(
+            tasks=tasks,
+            storage_credentials=list(response.storage_credentials or []),
+            plan_id=response.plan_id,
+        )
+
+    def plan_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> list[FileScanTask]:
+        """Plan a table scan and return FileScanTasks.
+
+        Handles the full scan planning lifecycle including async polling and pagination.
+
+        Args:
+            identifier: Table identifier.
+            request: The scan plan request parameters.
+
+        Returns:
+            List of FileScanTask objects ready for execution.
+
+        Raises:
+            RuntimeError: If planning fails, is cancelled, or returns unexpected response.
+            RemotePlanTimeoutError: If async planning does not complete in time.
+            ValueError: If a submitted plan is missing plan-id.
+        """
+        return self._plan_scan_result(identifier, request).tasks
+
+    def _file_io_from_plan(
+        self,
+        existing_properties: Properties,
+        storage_credentials: list[StorageCredential],
+        location: str | None = None,
+    ) -> FileIO | None:
+        """Build a scan-scoped FileIO from plan storage credentials.
+
+        Layers resolved plan credentials on top of the existing scan FileIO properties so
+        load-time settings (for example custom S3 endpoints) are retained.
+        """
+        if not storage_credentials:
+            return None
+
+        resolve_location = location
+        if resolve_location is None and storage_credentials[0].prefix:
+            resolve_location = storage_credentials[0].prefix
+
+        credential_config = self._resolve_storage_credentials(storage_credentials, resolve_location)
+        if not credential_config and resolve_location is None:
+            credential_config = dict(storage_credentials[0].config)
+
+        if not credential_config:
+            return None
+
+        return self._load_file_io({**existing_properties, **credential_config}, resolve_location)
 
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
         """Create the LegacyOAuth2AuthManager by fetching required properties.

@@ -2274,7 +2274,12 @@ class DataScan(TableScan):
             case_sensitive=self.case_sensitive,
         )
 
-        return self.catalog.plan_scan(self.table_identifier, request)
+        result = self.catalog._plan_scan_result(self.table_identifier, request)
+        location = result.tasks[0].file.file_path if result.tasks else None
+        plan_io = self.catalog._file_io_from_plan(self.io.properties, result.storage_credentials, location)
+        if plan_io is not None:
+            self.io = plan_io
+        return result.tasks
 
     def _plan_files_local(self) -> Iterable[FileScanTask]:
         """Plan files locally by reading manifests."""
