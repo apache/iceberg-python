@@ -67,7 +67,7 @@ deprecation_message(
 
 ### Update Library Version
 
-Update the version in `pyproject.toml` and `pyiceberg/__init__.py` to match the release version. See [#1276](https://github.com/apache/iceberg-python/pull/1276).
+Update the release version by running `uv version <release-version>`, which updates both `pyproject.toml` and `uv.lock`. Then update the version in `pyiceberg/__init__.py` to match.
 
 ## Publishing a Release Candidate (RC)
 
