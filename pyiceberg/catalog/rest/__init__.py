@@ -31,7 +31,14 @@ from typing_extensions import override
 
 from pyiceberg import __version__
 from pyiceberg.catalog import BOTOCORE_SESSION, TOKEN, URI, WAREHOUSE_LOCATION, Catalog, PropertiesUpdateSummary
-from pyiceberg.catalog.rest.auth import AUTH_MANAGER, AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
+from pyiceberg.catalog.rest.auth import (
+    AUTH_MANAGER,
+    AuthManager,
+    AuthManagerAdapter,
+    AuthManagerFactory,
+    LegacyOAuth2AuthManager,
+    _resolve_auth_config,
+)
 from pyiceberg.catalog.rest.response import _handle_non_200_response
 from pyiceberg.catalog.rest.scan_planning import (
     FetchScanTasksRequest,
@@ -260,8 +267,6 @@ SIGV4_MAX_RETRIES_DEFAULT = 10
 EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
-AUTH = "auth"
-CUSTOM = "custom"
 SCAN_PLANNING_MODE = "scan-planning-mode"
 SCAN_PLANNING_MODE_DEFAULT = ScanPlanningMode.CLIENT.value
 # for backwards compatibility with older REST servers where it can be assumed that a particular
@@ -441,20 +446,8 @@ class RestCatalog(Catalog):
                 elif ssl_client_cert := ssl_client.get(CERT):
                     session.cert = ssl_client_cert
 
-        if auth_config := self.properties.get(AUTH):
-            auth_type = auth_config.get("type")
-            if auth_type is None:
-                raise ValueError("auth.type must be defined")
-            auth_type_config = auth_config.get(auth_type, {})
-            auth_impl = auth_config.get("impl")
-
-            if auth_type == CUSTOM and not auth_impl:
-                raise ValueError("auth.impl must be specified when using custom auth.type")
-
-            if auth_type != CUSTOM and auth_impl:
-                raise ValueError("auth.impl can only be specified when using custom auth.type")
-
-            self._auth_manager = AuthManagerFactory.create(auth_impl or auth_type, auth_type_config)
+        if auth_config := _resolve_auth_config(self.properties):
+            self._auth_manager = AuthManagerFactory.create(auth_config.manager, auth_config.properties)
             session.auth = AuthManagerAdapter(self._auth_manager)
         else:
             self._auth_manager = self._create_legacy_oauth2_auth_manager(session)
