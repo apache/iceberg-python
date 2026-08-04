@@ -55,6 +55,7 @@ from typing_extensions import override
 from pyiceberg.catalog import (
     EXTERNAL_TABLE,
     ICEBERG,
+    ICEBERG_VIEW,
     LOCATION,
     METADATA_LOCATION,
     TABLE_TYPE,
@@ -480,7 +481,29 @@ class HiveCatalog(MetastoreCatalog):
 
     @override
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
-        raise NotImplementedError
+        """List Iceberg views under the given namespace in the catalog.
+
+        Args:
+            namespace: Database to list.
+
+        Returns:
+            List[Identifier]: list of views identifiers.
+
+        Raises:
+            NoSuchNamespaceError: If a namespace with the given name does not exist, or the identifier is invalid.
+        """
+        database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
+        if not self.namespace_exists(namespace):
+            raise NoSuchNamespaceError(f"Namespace does not exist: {database_name}")
+
+        with self._client as open_client:
+            return [
+                (database_name, table.tableName)
+                for table in open_client.get_table_objects_by_name(
+                    dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
+                )
+                if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG_VIEW
+            ]
 
     @override
     def view_exists(self, identifier: str | Identifier) -> bool:
