@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from copy import copy
 from enum import Enum
 from types import TracebackType
@@ -859,13 +859,19 @@ class ManifestFile(Record):
     def has_existing_files(self) -> bool:
         return self.existing_files_count is None or self.existing_files_count > 0
 
-    def fetch_manifest_entry(self, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+    def fetch_manifest_entry(
+        self,
+        io: FileIO,
+        discard_deleted: bool = True,
+        entry_filter: Callable[[ManifestEntry], bool] | None = None,
+    ) -> list[ManifestEntry]:
         """
         Read the manifest entries from the manifest file.
 
         Args:
             io: The FileIO to fetch the file.
             discard_deleted: Filter on live entries.
+            entry_filter: Optional predicate to filter manifest entries.
 
         Returns:
             An Iterator of manifest entries.
@@ -877,11 +883,17 @@ class ManifestFile(Record):
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
-            return [
+            result = []
+
+            for entry in reader:
+                if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
+                    continue
                 _inherit_from_manifest(entry, self)
-                for entry in reader
-                if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
-            ]
+
+                if entry_filter is None or entry_filter(entry):
+                    result.append(entry)
+
+            return result
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the ManifestFile class."""
