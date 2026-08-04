@@ -672,6 +672,91 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
             return []
 
 
+class _RewriteFiles(_SnapshotProducer["_RewriteFiles"]):
+    """Rewrites data in the table. This will produce a REPLACE snapshot.
+
+    Data files were logically rearranged, but no new logical records were
+    added or removed (e.g. compaction).
+    """
+
+    def _existing_manifests(self) -> list[ManifestFile]:
+        """Determine if there are any existing manifest files."""
+        existing_files = []
+
+        manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
+            for manifest_file in snapshot.manifests(io=self._io):
+                # Manifest does not contain rows that match the files to delete partitions
+                if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
+                    existing_files.append(manifest_file)
+                    continue
+
+                entries_to_write: set[ManifestEntry] = set()
+                found_deleted_entries: set[ManifestEntry] = set()
+
+                for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
+                    if entry.data_file in self._deleted_data_files:
+                        found_deleted_entries.add(entry)
+                    else:
+                        entries_to_write.add(entry)
+
+                # Is the intercept the empty set?
+                if len(found_deleted_entries) == 0:
+                    existing_files.append(manifest_file)
+                    continue
+
+                # Delete all files from manifest
+                if len(entries_to_write) == 0:
+                    continue
+
+                # We have to rewrite the manifest file without the deleted data files
+                with self.new_manifest_writer(self.spec(manifest_file.partition_spec_id)) as writer:
+                    for entry in entries_to_write:
+                        writer.add_entry(
+                            ManifestEntry.from_args(
+                                status=ManifestEntryStatus.EXISTING,
+                                snapshot_id=entry.snapshot_id,
+                                sequence_number=entry.sequence_number,
+                                file_sequence_number=entry.file_sequence_number,
+                                data_file=entry.data_file,
+                            )
+                        )
+                existing_files.append(writer.to_manifest_file())
+
+        return existing_files
+
+    def _deleted_entries(self) -> list[ManifestEntry]:
+        """To determine if we need to record any deleted entries."""
+        if self._parent_snapshot_id is not None:
+            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+            if previous_snapshot is None:
+                raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
+
+            executor = ExecutorFactory.get_or_create()
+            manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
+
+            def _get_entries(manifest: ManifestFile) -> list[ManifestEntry]:
+                if not manifest_evaluators[manifest.partition_spec_id](manifest):
+                    return []
+
+                return [
+                    ManifestEntry.from_args(
+                        status=ManifestEntryStatus.DELETED,
+                        snapshot_id=entry.snapshot_id,
+                        sequence_number=entry.sequence_number,
+                        file_sequence_number=entry.file_sequence_number,
+                        data_file=entry.data_file,
+                    )
+                    for entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True)
+                    if entry.data_file.content == DataFileContent.DATA and entry.data_file in self._deleted_data_files
+                ]
+
+            list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._io))
+            return list(itertools.chain(*list_of_entries))
+        else:
+            return []
+
+
 class UpdateSnapshot:
     _transaction: Transaction
     _io: FileIO
@@ -714,6 +799,16 @@ class UpdateSnapshot:
             operation=Operation.OVERWRITE
             if self._transaction.table_metadata.snapshot_by_name(name=self._branch) is not None
             else Operation.APPEND,
+            transaction=self._transaction,
+            io=self._io,
+            branch=self._branch,
+            snapshot_properties=self._snapshot_properties,
+        )
+
+    def replace(self, commit_uuid: uuid.UUID | None = None) -> _RewriteFiles:
+        return _RewriteFiles(
+            commit_uuid=commit_uuid,
+            operation=Operation.REPLACE,
             transaction=self._transaction,
             io=self._io,
             branch=self._branch,
