@@ -2601,6 +2601,7 @@ class ManifestGroupPlanner:
         # this filter depends on the partition spec used to write the manifest file
 
         partition_evaluators: dict[int, Callable[[DataFile], bool]] = KeyDefaultDict(self._build_partition_evaluator)
+        metrics_evaluator = self._build_metrics_evaluator()
 
         min_sequence_number = _min_sequence_number(manifests)
 
@@ -2612,7 +2613,7 @@ class ManifestGroupPlanner:
                     self.io,
                     manifest,
                     partition_evaluators[manifest.partition_spec_id],
-                    self._build_metrics_evaluator(),
+                    metrics_evaluator,
                 )
                 for manifest in manifests
                 if self._check_sequence_number(min_sequence_number, manifest)
@@ -2689,15 +2690,14 @@ class ManifestGroupPlanner:
         schema = self.table_metadata.schema()
         include_empty_files = strtobool(self.options.get("include_empty_files", "false"))
 
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _InclusiveMetricsEvaluator methods bound to a single
-        # shared instance across multiple threads.
-        return lambda data_file: _InclusiveMetricsEvaluator(
+        # Metrics evaluators keep file-specific state local to each call, so one
+        # prepared evaluator can be shared across all manifest tasks in this plan.
+        return _InclusiveMetricsEvaluator(
             schema,
             self.row_filter,
             self.case_sensitive,
             include_empty_files,
-        ).eval(data_file)
+        ).eval
 
     def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
         spec = self.table_metadata.specs()[spec_id]
