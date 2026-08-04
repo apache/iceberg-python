@@ -248,7 +248,7 @@ You can drop a table from the catalog:
 Dropped table: nyc.taxis
 ```
 
-To also purge the table files through the configured catalog, pass `--purge`:
+To request purge for the underlying table files through the configured catalog, pass `--purge`:
 
 ```sh
 ➜  pyiceberg drop table nyc.taxis --purge
