@@ -54,6 +54,15 @@ def _is_local_path(path: str) -> bool:
     return drive != ""
 
 
+@runtime_checkable
+class CredentialsProviderProtocol(Protocol):
+    """Protocol for objects that can resolve credential properties for a file location."""
+
+    def properties_for(self, location: str) -> Properties:
+        """Return the credential properties that apply to the given location."""
+        ...
+
+
 AWS_PROFILE_NAME = "client.profile-name"
 AWS_REGION = "client.region"
 AWS_ACCESS_KEY_ID = "client.access-key-id"
@@ -67,6 +76,7 @@ S3_ENDPOINT = "s3.endpoint"
 S3_ACCESS_KEY_ID = "s3.access-key-id"
 S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
 S3_SESSION_TOKEN = "s3.session-token"
+S3_SESSION_TOKEN_EXPIRES_AT_MS = "s3.session-token-expires-at-ms"
 S3_REGION = "s3.region"
 S3_RESOLVE_REGION = "s3.resolve-region"
 S3_PROXY_URI = "s3.proxy-uri"
@@ -271,6 +281,7 @@ class FileIO(ABC):
     """A base class for FileIO implementations."""
 
     properties: Properties
+    _credentials_provider: CredentialsProviderProtocol | None = None
 
     def __init__(self, properties: Properties = EMPTY_DICT):
         self.properties = properties
@@ -303,6 +314,18 @@ class FileIO(ABC):
             PermissionError: If the file at location cannot be accessed due to a permission error.
             FileNotFoundError: When the file at the provided location does not exist.
         """
+
+    def set_credentials_provider(self, provider: CredentialsProviderProtocol) -> None:
+        """Inject a credentials provider for refreshing vended storage credentials.
+
+        Backends that support credential refresh (e.g. S3) consult the provider at file-access
+        time and rebuild their underlying filesystem when credentials change. Backends that do
+        not support refresh simply hold the reference without using it.
+
+        Args:
+            provider (CredentialsProviderProtocol): Resolves credential properties for a file location.
+        """
+        self._credentials_provider = provider
 
 
 LOCATION = "location"
