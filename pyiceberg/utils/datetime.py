@@ -218,6 +218,26 @@ def to_human_timestamp(timestamp_micros: int) -> str:
     return (EPOCH_TIMESTAMP + timedelta(microseconds=timestamp_micros)).isoformat()
 
 
+def to_human_timestamp_ns(timestamp_nanos: int) -> str:
+    """Convert a TimestampNanoType value to human string with nanosecond precision."""
+    # Python datetime only supports microsecond precision, so render the
+    # microsecond timestamp with a fixed 6 fractional digits and append the
+    # remaining 3 sub-microsecond nanosecond digits for full 9-digit precision.
+    micros = nanos_to_micros(timestamp_nanos)
+    sub_micros = timestamp_nanos - micros * 1_000
+    return (EPOCH_TIMESTAMP + timedelta(microseconds=micros)).isoformat(timespec="microseconds") + f"{sub_micros:03d}"
+
+
+def to_human_timestamptz_ns(timestamp_nanos: int) -> str:
+    """Convert a TimestamptzNanoType value to human string with nanosecond precision."""
+    micros = nanos_to_micros(timestamp_nanos)
+    sub_micros = timestamp_nanos - micros * 1_000
+    iso = (EPOCH_TIMESTAMPTZ + timedelta(microseconds=micros)).isoformat(timespec="microseconds")
+    # Insert the sub-microsecond nanosecond digits before the "+00:00" zone offset.
+    timestamp_part, _, offset = iso.rpartition("+")
+    return f"{timestamp_part}{sub_micros:03d}+{offset}"
+
+
 def micros_to_hours(micros: int) -> int:
     """Convert a timestamp in microseconds to hours from 1970-01-01T00:00."""
     return micros // 3_600_000_000
