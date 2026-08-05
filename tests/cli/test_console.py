@@ -18,6 +18,7 @@ import datetime
 import os
 import uuid
 from pathlib import PosixPath
+from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -28,6 +29,7 @@ from pytest_mock import MockFixture
 from pyiceberg import __version__
 from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.cli.console import run
+from pyiceberg.exceptions import NoSuchTableError, NoSuchViewError
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -35,6 +37,8 @@ from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Properties
 from pyiceberg.types import LongType, NestedField
 from pyiceberg.utils.config import Config
+from pyiceberg.view import View
+from pyiceberg.view.metadata import ViewMetadata
 
 
 def test_missing_uri(mocker: MockFixture, empty_home_dir_path: str) -> None:
@@ -219,7 +223,7 @@ def test_describe_table_does_not_exists(catalog: InMemoryCatalog) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["describe", "default.doesnotexist"])
     assert result.exit_code == 1
-    assert result.output == "Table or namespace does not exist: default.doesnotexist\n"
+    assert result.output == "Table, view, or namespace does not exist: default.doesnotexist\n"
 
 
 def test_schema(catalog: InMemoryCatalog) -> None:
@@ -690,7 +694,7 @@ def test_json_describe_table_does_not_exists(catalog: InMemoryCatalog) -> None:
     assert result.exit_code == 1
     assert (
         result.output
-        == """{"type": "NoSuchTableError", "message": "Table or namespace does not exist: default.doesnotexist"}\n"""
+        == """{"type": "NoSuchTableError", "message": "Table, view, or namespace does not exist: default.doesnotexist"}\n"""
     )
 
 
@@ -1124,3 +1128,136 @@ def test_warehouse_cli_option_forwarded_to_catalog(mocker: MockFixture) -> None:
     assert result.exit_code == 0
     mock_basicConfig.assert_called_once()
     mock_load_catalog.assert_called_once_with("rest", uri="https://catalog.service", warehouse="example-warehouse")
+
+
+TEST_VIEW_IDENTIFIER = ("default", "my_view")
+TEST_VIEW_METADATA: dict[str, Any] = {
+    "view-uuid": "b30125c8-7284-442c-9aea-15fee620737c",
+    "format-version": 1,
+    "location": "s3://warehouse/default/my_view",
+    "current-version-id": 1,
+    "versions": [
+        {
+            "version-id": 1,
+            "timestamp-ms": 1602638573874,
+            "schema-id": 1,
+            "summary": {},
+            "representations": [{"type": "sql", "sql": "SELECT * FROM my_table", "dialect": "spark"}],
+            "default-namespace": ["default"],
+        }
+    ],
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 1,
+            "fields": [
+                {"id": 1, "name": "x", "required": True, "type": "long"},
+            ],
+        }
+    ],
+    "version-log": [{"timestamp-ms": 1602638573874, "version-id": 1}],
+    "properties": {},
+}
+
+
+@pytest.fixture(name="catalog_with_view")
+def fixture_catalog_with_view(mocker: MockFixture, catalog: InMemoryCatalog) -> tuple[InMemoryCatalog, View]:
+    view = View(TEST_VIEW_IDENTIFIER, ViewMetadata.model_validate(TEST_VIEW_METADATA))
+    catalog.list_views = MagicMock(return_value=[TEST_VIEW_IDENTIFIER])  # type: ignore
+    catalog.load_view = MagicMock(return_value=view)  # type: ignore
+    catalog.drop_view = MagicMock()  # type: ignore
+    return catalog, view
+
+
+def test_list_views(catalog_with_view: tuple[InMemoryCatalog, View]) -> None:
+    catalog, _ = catalog_with_view
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["list-views", "default"])
+    assert result.exit_code == 0
+    assert "default.my_view" in result.output
+
+
+def test_list_views_does_not_exist(catalog: InMemoryCatalog) -> None:
+    catalog.list_views = MagicMock(side_effect=NoSuchViewError("Namespace does not exist: doesnotexist"))  # type: ignore
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["list-views", "doesnotexist"])
+    assert result.exit_code == 1
+    assert "Namespace does not exist: doesnotexist" in result.output
+
+
+def test_describe_view(catalog_with_view: tuple[InMemoryCatalog, View]) -> None:
+    runner = CliRunner()
+    result = runner.invoke(run, ["describe", "--entity=view", "default.my_view"])
+    assert result.exit_code == 0
+    assert "b30125c8-7284-442c-9aea-15fee620737c" in result.output
+    assert "SELECT * FROM my_table" in result.output
+
+
+def test_describe_view_does_not_exist(catalog: InMemoryCatalog) -> None:
+    catalog.load_view = MagicMock(side_effect=NoSuchViewError("View does not exist: default.doesnotexist"))  # type: ignore
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["describe", "--entity=view", "default.doesnotexist"])
+    assert result.exit_code == 1
+    assert "View does not exist: default.doesnotexist" in result.output
+
+
+def test_describe_any_falls_through_to_view(catalog_with_view: tuple[InMemoryCatalog, View]) -> None:
+    catalog, _ = catalog_with_view
+    catalog.load_table = MagicMock(side_effect=NoSuchTableError("Table does not exist: default.my_view"))  # type: ignore
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["describe", "default.my_view"])
+    assert result.exit_code == 0
+    assert "b30125c8-7284-442c-9aea-15fee620737c" in result.output
+
+
+def test_drop_view(catalog_with_view: tuple[InMemoryCatalog, View]) -> None:
+    catalog, _ = catalog_with_view
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["drop", "view", "default.my_view"])
+    assert result.exit_code == 0
+    assert result.output == "Dropped view: default.my_view\n"
+    catalog.drop_view.assert_called_once_with("default.my_view")  # type: ignore
+
+
+def test_drop_view_does_not_exist(catalog: InMemoryCatalog) -> None:
+    catalog.drop_view = MagicMock(side_effect=NoSuchViewError("View does not exist: default.doesnotexist"))  # type: ignore
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["drop", "view", "default.doesnotexist"])
+    assert result.exit_code == 1
+    assert "View does not exist: default.doesnotexist" in result.output
+
+
+def test_json_list_views(catalog_with_view: tuple[InMemoryCatalog, View]) -> None:
+    runner = CliRunner()
+    result = runner.invoke(run, ["--output=json", "list-views", "default"])
+    assert result.exit_code == 0
+    assert result.output == '["default.my_view"]\n'
+
+
+def test_json_describe_view(catalog_with_view: tuple[InMemoryCatalog, View]) -> None:
+    runner = CliRunner()
+    result = runner.invoke(run, ["--output=json", "describe", "--entity=view", "default.my_view"])
+    assert result.exit_code == 0
+    assert "b30125c8-7284-442c-9aea-15fee620737c" in result.output
+
+
+def test_json_drop_view(catalog_with_view: tuple[InMemoryCatalog, View]) -> None:
+    runner = CliRunner()
+    result = runner.invoke(run, ["--output=json", "drop", "view", "default.my_view"])
+    assert result.exit_code == 0
+    assert result.output == '"Dropped view: default.my_view"\n'
+
+
+def test_json_drop_view_does_not_exist(catalog: InMemoryCatalog) -> None:
+    catalog.drop_view = MagicMock(side_effect=NoSuchViewError("View does not exist: default.doesnotexist"))  # type: ignore
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["--output=json", "drop", "view", "default.doesnotexist"])
+    assert result.exit_code == 1
+    assert result.output == '{"type": "NoSuchViewError", "message": "View does not exist: default.doesnotexist"}\n'
