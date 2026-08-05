@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Mapping
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
@@ -25,9 +26,11 @@ from typing import (
 from urllib.parse import quote, unquote
 
 from pydantic import ConfigDict, Field, TypeAdapter, field_validator
-from requests import HTTPError, Session
+from requests import HTTPError, PreparedRequest, Response, Session
+from requests.adapters import HTTPAdapter
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 from typing_extensions import override
+from urllib3.util.retry import Retry
 
 from pyiceberg import __version__
 from pyiceberg.catalog import BOTOCORE_SESSION, TOKEN, URI, WAREHOUSE_LOCATION, Catalog, PropertiesUpdateSummary
@@ -257,6 +260,14 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 SIGV4_MAX_RETRIES = "rest.sigv4.max-retries"
 SIGV4_MAX_RETRIES_DEFAULT = 10
+CONNECTION = "connection"
+CONNECTION_TIMEOUT = "timeout"
+CONNECTION_RETRIES = "retries"
+CONNECTION_BACKOFF_FACTOR = "backoff-factor"
+# Hard-coded internally so users cannot misconfigure the retry policy
+# (e.g. setting raise_on_status=False would swallow 4xx errors silently).
+_CONNECTION_RETRY_STATUS_FORCELIST = (429, 500, 502, 503, 504)
+_CONNECTION_RETRY_ALLOWED_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
@@ -402,6 +413,92 @@ class ListViewsResponse(IcebergBaseModel):
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
+class _RetryTimeoutHTTPAdapter(HTTPAdapter):
+    """HTTPAdapter that applies a default per-request timeout.
+
+    requests does not provide a way to set a default timeout on a Session;
+    without this adapter, every call would have to thread `timeout=` through.
+    The adapter applies `self._timeout` whenever a per-call timeout is not set.
+    """
+
+    def __init__(self, timeout: float | None = None, max_retries: Retry | int | None = None) -> None:
+        self._timeout = timeout
+        if max_retries is not None:
+            super().__init__(max_retries=max_retries)
+        else:
+            super().__init__()
+
+    def send(
+        self,
+        request: PreparedRequest,
+        stream: bool = False,
+        timeout: None | float | tuple[float, float] | tuple[float, None] = None,
+        verify: bool | str = True,
+        cert: None | bytes | str | tuple[bytes | str, bytes | str] = None,
+        proxies: Mapping[str, str] | None = None,
+    ) -> Response:
+        if timeout is None:
+            timeout = self._timeout
+        return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+
+
+def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapter | None:
+    """Build a connection adapter from the optional `connection.*` properties.
+
+    Returns None when no `connection` block is supplied, leaving the default
+    Session behavior unchanged. Raises ValueError on invalid input.
+    """
+    connection_config = properties.get(CONNECTION)
+    if not connection_config:
+        return None
+    if not isinstance(connection_config, dict):
+        raise ValueError(f"`{CONNECTION}` must be a mapping, got: {type(connection_config).__name__}")
+
+    timeout: float | None = None
+    if (raw_timeout := connection_config.get(CONNECTION_TIMEOUT)) is not None:
+        try:
+            timeout = float(raw_timeout)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_TIMEOUT}` must be a number, got: {raw_timeout!r}") from e
+        if timeout <= 0:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_TIMEOUT}` must be a positive number, got: {timeout}")
+
+    # `retries` and `backoff_factor` default to 0 (a no-op Retry) so the user can set only
+    # one or the other without forcing the rest of the policy to be specified explicitly.
+    retries = 0
+    if (raw_retries := connection_config.get(CONNECTION_RETRIES)) is not None:
+        try:
+            retries = int(raw_retries)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_RETRIES}` must be an integer, got: {raw_retries!r}") from e
+        if retries < 0:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_RETRIES}` must be non-negative, got: {retries}")
+
+    backoff_factor = 0.0
+    if (raw_backoff := connection_config.get(CONNECTION_BACKOFF_FACTOR)) is not None:
+        try:
+            backoff_factor = float(raw_backoff)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_BACKOFF_FACTOR}` must be a number, got: {raw_backoff!r}") from e
+        if backoff_factor < 0:
+            raise ValueError(f"`{CONNECTION}.{CONNECTION_BACKOFF_FACTOR}` must be non-negative, got: {backoff_factor}")
+
+    return _RetryTimeoutHTTPAdapter(
+        timeout=timeout,
+        max_retries=Retry(
+            total=retries,
+            backoff_factor=backoff_factor,
+            status_forcelist=list(_CONNECTION_RETRY_STATUS_FORCELIST),
+            allowed_methods=_CONNECTION_RETRY_ALLOWED_METHODS,
+            # Return the final response on retry exhaustion (instead of raising MaxRetryError)
+            # so `_handle_non_200_response` can map the 5xx status to a typed exception
+            # (ServiceUnavailableError, etc.). 4xx codes are not in status_forcelist and are
+            # never retried, so they reach the same mapping unchanged.
+            raise_on_status=False,
+        ),
+    )
+
+
 class RestCatalog(Catalog):
     uri: str
     _session: Session
@@ -427,6 +524,12 @@ class RestCatalog(Catalog):
     def _create_session(self) -> Session:
         """Create a request session with provided catalog configuration."""
         session = Session()
+
+        # Mount the retry/timeout adapter when `connection.*` properties are set.
+        # SigV4's adapter mounted below at `self.uri` is a longer prefix and still wins for that host.
+        if (connection_adapter := _create_connection_adapter(self.properties)) is not None:
+            session.mount("http://", connection_adapter)
+            session.mount("https://", connection_adapter)
 
         # Set HTTP headers
         self._config_headers(session)
@@ -773,8 +876,6 @@ class RestCatalog(Catalog):
         import boto3
         from botocore.auth import SigV4Auth
         from botocore.awsrequest import AWSRequest
-        from requests import PreparedRequest
-        from requests.adapters import HTTPAdapter
 
         class SigV4Adapter(HTTPAdapter):
             def __init__(self, **properties: str):
