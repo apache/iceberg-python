@@ -145,12 +145,17 @@ def _pyiceberg_transform_wrapper(
             else:
                 return arr
 
+        def _decode_if_dict(arr: "pa.Array") -> "pa.Array":
+            if isinstance(arr.type, pa.DictionaryType):
+                return arr.dictionary_decode()
+            return arr
+
         if isinstance(array, pa.Array):
-            return _cast_if_needed(transform_func(array, *args))
+            return _cast_if_needed(transform_func(_decode_if_dict(array), *args))
         elif isinstance(array, pa.ChunkedArray):
             result_chunks = []
             for arr in array.iterchunks():
-                result_chunks.append(_cast_if_needed(transform_func(arr, *args)))
+                result_chunks.append(_cast_if_needed(transform_func(_decode_if_dict(arr), *args)))
             return pa.chunked_array(result_chunks)
         else:
             raise ValueError(f"PyArrow array can only be of type pa.Array or pa.ChunkedArray, but found {type(array)}")
