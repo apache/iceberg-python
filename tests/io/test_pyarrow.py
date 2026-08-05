@@ -1211,6 +1211,42 @@ location: struct<lat: double, lon: double>
     )
 
 
+def test_arrowscan_to_table_mixed_dictionary_and_plain_string_batches() -> None:
+    schema = Schema(NestedField(field_id=1, name="col", field_type=StringType(), required=False))
+
+    scan = ArrowScan(
+        table_metadata=TableMetadataV2(
+            location="file://a/b/",
+            last_column_id=1,
+            format_version=2,
+            schemas=[schema],
+            partition_specs=[PartitionSpec()],
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+        case_sensitive=True,
+    )
+
+    plain_string = pa.array(["a"], type=pa.string())
+    dictionary_string = plain_string.dictionary_encode()
+
+    with patch.object(
+        ArrowScan,
+        "to_record_batches",
+        return_value=iter(
+            [
+                pa.record_batch([plain_string], names=["col"]),
+                pa.record_batch([dictionary_string], names=["col"]),
+            ]
+        ),
+    ):
+        result = scan.to_table(tasks=[])
+
+    assert result.schema.field("col").type == pa.string()
+    assert result.column("col").to_pylist() == ["a", "a"]
+
+
 def test_read_list(schema_list: Schema, file_list: str) -> None:
     result_table = project(schema_list, [file_list])
 
