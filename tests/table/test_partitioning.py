@@ -22,7 +22,12 @@ from uuid import UUID
 import pytest
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
+from pyiceberg.partitioning import (
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionField,
+    PartitionSpec,
+    _to_partition_representation,
+)
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -45,7 +50,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UnknownType,
@@ -251,6 +258,30 @@ def test_transform_consistency_with_pyarrow_transform(source_type: PrimitiveType
     for t in all_transforms:
         if t.can_transform(source_type):
             assert t.transform(source_type)(value) == t.pyarrow_transform(source_type)(pa.array([value])).to_pylist()[0]
+
+
+@pytest.mark.parametrize(
+    "timestamp_type",
+    [TimestampType(), TimestamptzType()],
+)
+def test_to_partition_representation_timestamp(timestamp_type: PrimitiveType) -> None:
+    value = datetime.datetime(2020, 1, 1, 12, 30, 45, 123456)
+
+    assert _to_partition_representation(timestamp_type, value) == 1577881845123456
+    assert _to_partition_representation(timestamp_type, 1577881845123456) == 1577881845123456
+    assert _to_partition_representation(timestamp_type, None) is None
+
+
+@pytest.mark.parametrize(
+    "timestamp_nano_type",
+    [TimestampNanoType(), TimestamptzNanoType()],
+)
+def test_to_partition_representation_timestamp_nano(timestamp_nano_type: PrimitiveType) -> None:
+    value = datetime.datetime(2020, 1, 1, 12, 30, 45, 123456)
+
+    assert _to_partition_representation(timestamp_nano_type, value) == 1577881845123456000
+    assert _to_partition_representation(timestamp_nano_type, 1577881845123456789) == 1577881845123456789
+    assert _to_partition_representation(timestamp_nano_type, None) is None
 
 
 def test_deserialize_partition_field_v2() -> None:
