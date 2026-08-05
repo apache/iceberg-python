@@ -154,6 +154,18 @@ class TableProperties:
 
     PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX = "write.parquet.bloom-filter-enabled.column"
 
+    PARQUET_CDC_ENABLED = "write.parquet.content-defined-chunking.enabled"
+    PARQUET_CDC_ENABLED_DEFAULT = False
+
+    PARQUET_CDC_MIN_CHUNK_SIZE = "write.parquet.content-defined-chunking.min-chunk-size"
+    PARQUET_CDC_MIN_CHUNK_SIZE_DEFAULT = 256 * 1024  # 256 KiB
+
+    PARQUET_CDC_MAX_CHUNK_SIZE = "write.parquet.content-defined-chunking.max-chunk-size"
+    PARQUET_CDC_MAX_CHUNK_SIZE_DEFAULT = 1024 * 1024  # 1 MiB
+
+    PARQUET_CDC_NORM_LEVEL = "write.parquet.content-defined-chunking.norm-level"
+    PARQUET_CDC_NORM_LEVEL_DEFAULT = 0
+
     WRITE_TARGET_FILE_SIZE_BYTES = "write.target-file-size-bytes"
     WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024  # 512 MB
 
