@@ -394,11 +394,23 @@ class PyArrowFile(InputFile, OutputFile):
 
 
 class PyArrowFileIO(FileIO):
-    fs_by_scheme: Callable[[str, str | None], FileSystem]
+    fs_by_scheme: Callable[..., FileSystem]
 
     def __init__(self, properties: Properties = EMPTY_DICT):
-        self.fs_by_scheme: Callable[[str, str | None], FileSystem] = lru_cache(self._initialize_fs)
+        self.fs_by_scheme: Callable[..., FileSystem] = lru_cache(self._initialize_fs)
         super().__init__(properties=properties)
+
+    def _fs_for_location(self, location: str, scheme: str, netloc: str | None = None) -> FileSystem:
+        """Return the filesystem for a location, folding vended credentials into the cache key.
+
+        When a credentials provider is attached, its resolved (and possibly refreshed) credential
+        properties become part of the 'fs_by_scheme' cache key, so rotated credentials build a
+        new filesystem while unchanged credentials reuse the cached one.
+        """
+        creds_key: frozenset[tuple[str, str]] = frozenset()
+        if provider := self._credentials_provider:
+            creds_key = frozenset(provider.properties_for(location).items())
+        return self.fs_by_scheme(scheme, netloc, creds_key)
 
     @staticmethod
     def parse_location(location: str, properties: Properties = EMPTY_DICT) -> tuple[str, str, str]:
@@ -424,22 +436,26 @@ class PyArrowFileIO(FileIO):
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
-    def _initialize_fs(self, scheme: str, netloc: str | None = None) -> FileSystem:
+    def _initialize_fs(
+        self, scheme: str, netloc: str | None = None, creds_key: frozenset[tuple[str, str]] = frozenset()
+    ) -> FileSystem:
         """Initialize FileSystem for different scheme."""
+        props = {**self.properties, **dict(creds_key)}
+
         if scheme in {"oss"}:
-            return self._initialize_oss_fs()
+            return self._initialize_oss_fs(props)
 
         elif scheme in {"s3", "s3a", "s3n"}:
-            return self._initialize_s3_fs(netloc)
+            return self._initialize_s3_fs(netloc, props)
 
         elif scheme in {"hdfs", "viewfs"}:
             return self._initialize_hdfs_fs(scheme, netloc)
 
         elif scheme in {"gs", "gcs"}:
-            return self._initialize_gcs_fs()
+            return self._initialize_gcs_fs(props)
 
         elif scheme in {"abfs", "abfss", "wasb", "wasbs"}:
-            return self._initialize_azure_fs()
+            return self._initialize_azure_fs(props)
 
         elif scheme in {"file"}:
             return self._initialize_local_fs()
@@ -447,45 +463,45 @@ class PyArrowFileIO(FileIO):
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
-    def _initialize_oss_fs(self) -> FileSystem:
+    def _initialize_oss_fs(self, properties: Properties) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
         client_kwargs: dict[str, Any] = {
-            "endpoint_override": self.properties.get(S3_ENDPOINT),
-            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
-            "region": get_first_property_value(self.properties, S3_REGION, AWS_REGION),
-            "force_virtual_addressing": property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, True),
+            "endpoint_override": properties.get(S3_ENDPOINT),
+            "access_key": get_first_property_value(properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "region": get_first_property_value(properties, S3_REGION, AWS_REGION),
+            "force_virtual_addressing": property_as_bool(properties, S3_FORCE_VIRTUAL_ADDRESSING, True),
         }
 
-        if proxy_uri := self.properties.get(S3_PROXY_URI):
+        if proxy_uri := properties.get(S3_PROXY_URI):
             client_kwargs["proxy_options"] = proxy_uri
 
-        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
+        if connect_timeout := properties.get(S3_CONNECT_TIMEOUT):
             client_kwargs["connect_timeout"] = float(connect_timeout)
 
-        if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
+        if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
             client_kwargs["request_timeout"] = float(request_timeout)
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+        if role_arn := get_first_property_value(properties, S3_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
 
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+        if session_name := get_first_property_value(properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
 
-        if s3_anonymous := self.properties.get(S3_ANONYMOUS):
+        if s3_anonymous := properties.get(S3_ANONYMOUS):
             client_kwargs["anonymous"] = strtobool(s3_anonymous)
 
         return S3FileSystem(**client_kwargs)
 
-    def _initialize_s3_fs(self, netloc: str | None) -> FileSystem:
+    def _initialize_s3_fs(self, netloc: str | None, properties: Properties) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
-        provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
+        provided_region = get_first_property_value(properties, S3_REGION, AWS_REGION)
 
         # Do this when we don't provide the region at all, or when we explicitly enable it
-        if provided_region is None or property_as_bool(self.properties, S3_RESOLVE_REGION, False) is True:
+        if provided_region is None or property_as_bool(properties, S3_RESOLVE_REGION, False) is True:
             # Resolve region from netloc(bucket), fallback to user-provided region
             # Only supported by buckets hosted by S3
             bucket_region = _cached_resolve_s3_region(bucket=netloc) or provided_region
@@ -498,42 +514,42 @@ class PyArrowFileIO(FileIO):
             bucket_region = provided_region
 
         client_kwargs: dict[str, Any] = {
-            "endpoint_override": self.properties.get(S3_ENDPOINT),
-            "access_key": get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
-            "secret_key": get_first_property_value(self.properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
-            "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
+            "endpoint_override": properties.get(S3_ENDPOINT),
+            "access_key": get_first_property_value(properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
+            "secret_key": get_first_property_value(properties, S3_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
+            "session_token": get_first_property_value(properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
             "region": bucket_region,
         }
 
-        if proxy_uri := self.properties.get(S3_PROXY_URI):
+        if proxy_uri := properties.get(S3_PROXY_URI):
             client_kwargs["proxy_options"] = proxy_uri
 
-        if connect_timeout := self.properties.get(S3_CONNECT_TIMEOUT):
+        if connect_timeout := properties.get(S3_CONNECT_TIMEOUT):
             client_kwargs["connect_timeout"] = float(connect_timeout)
 
-        if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
+        if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
             client_kwargs["request_timeout"] = float(request_timeout)
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+        if role_arn := get_first_property_value(properties, S3_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
 
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+        if session_name := get_first_property_value(properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
             client_kwargs["session_name"] = session_name
 
-        if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
-            client_kwargs["force_virtual_addressing"] = property_as_bool(self.properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
+        if properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
+            client_kwargs["force_virtual_addressing"] = property_as_bool(properties, S3_FORCE_VIRTUAL_ADDRESSING, False)
 
-        if (retry_strategy_impl := self.properties.get(S3_RETRY_STRATEGY_IMPL)) and (
+        if (retry_strategy_impl := properties.get(S3_RETRY_STRATEGY_IMPL)) and (
             retry_instance := _import_retry_strategy(retry_strategy_impl)
         ):
             client_kwargs["retry_strategy"] = retry_instance
 
-        if s3_anonymous := self.properties.get(S3_ANONYMOUS):
+        if s3_anonymous := properties.get(S3_ANONYMOUS):
             client_kwargs["anonymous"] = strtobool(s3_anonymous)
 
         return S3FileSystem(**client_kwargs)
 
-    def _initialize_azure_fs(self) -> FileSystem:
+    def _initialize_azure_fs(self, properties: Properties) -> FileSystem:
         # https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html
         from packaging import version
 
@@ -548,32 +564,32 @@ class PyArrowFileIO(FileIO):
 
         client_kwargs: dict[str, str] = {}
 
-        if account_name := self.properties.get(ADLS_ACCOUNT_NAME):
+        if account_name := properties.get(ADLS_ACCOUNT_NAME):
             client_kwargs["account_name"] = account_name
 
-        if account_key := self.properties.get(ADLS_ACCOUNT_KEY):
+        if account_key := properties.get(ADLS_ACCOUNT_KEY):
             client_kwargs["account_key"] = account_key
 
-        if blob_storage_authority := self.properties.get(ADLS_BLOB_STORAGE_AUTHORITY):
+        if blob_storage_authority := properties.get(ADLS_BLOB_STORAGE_AUTHORITY):
             client_kwargs["blob_storage_authority"] = blob_storage_authority
 
-        if dfs_storage_authority := self.properties.get(ADLS_DFS_STORAGE_AUTHORITY):
+        if dfs_storage_authority := properties.get(ADLS_DFS_STORAGE_AUTHORITY):
             client_kwargs["dfs_storage_authority"] = dfs_storage_authority
 
-        if blob_storage_scheme := self.properties.get(ADLS_BLOB_STORAGE_SCHEME):
+        if blob_storage_scheme := properties.get(ADLS_BLOB_STORAGE_SCHEME):
             client_kwargs["blob_storage_scheme"] = blob_storage_scheme
 
-        if dfs_storage_scheme := self.properties.get(ADLS_DFS_STORAGE_SCHEME):
+        if dfs_storage_scheme := properties.get(ADLS_DFS_STORAGE_SCHEME):
             client_kwargs["dfs_storage_scheme"] = dfs_storage_scheme
 
-        if sas_token := self.properties.get(ADLS_SAS_TOKEN):
+        if sas_token := properties.get(ADLS_SAS_TOKEN):
             client_kwargs["sas_token"] = sas_token
 
-        if client_id := self.properties.get(ADLS_CLIENT_ID):
+        if client_id := properties.get(ADLS_CLIENT_ID):
             client_kwargs["client_id"] = client_id
-        if client_secret := self.properties.get(ADLS_CLIENT_SECRET):
+        if client_secret := properties.get(ADLS_CLIENT_SECRET):
             client_kwargs["client_secret"] = client_secret
-        if tenant_id := self.properties.get(ADLS_TENANT_ID):
+        if tenant_id := properties.get(ADLS_TENANT_ID):
             client_kwargs["tenant_id"] = tenant_id
 
         # Validate that all three are provided together for ClientSecretCredential
@@ -607,17 +623,17 @@ class PyArrowFileIO(FileIO):
 
         return HadoopFileSystem(**hdfs_kwargs)
 
-    def _initialize_gcs_fs(self) -> FileSystem:
+    def _initialize_gcs_fs(self, properties: Properties) -> FileSystem:
         from pyarrow.fs import GcsFileSystem
 
         gcs_kwargs: dict[str, Any] = {}
-        if access_token := self.properties.get(GCS_TOKEN):
+        if access_token := properties.get(GCS_TOKEN):
             gcs_kwargs["access_token"] = access_token
-        if expiration := self.properties.get(GCS_TOKEN_EXPIRES_AT_MS):
+        if expiration := properties.get(GCS_TOKEN_EXPIRES_AT_MS):
             gcs_kwargs["credential_token_expiration"] = millis_to_datetime(int(expiration))
-        if bucket_location := self.properties.get(GCS_DEFAULT_LOCATION):
+        if bucket_location := properties.get(GCS_DEFAULT_LOCATION):
             gcs_kwargs["default_bucket_location"] = bucket_location
-        if endpoint := self.properties.get(GCS_SERVICE_HOST):
+        if endpoint := properties.get(GCS_SERVICE_HOST):
             url_parts = urlparse(endpoint)
             gcs_kwargs["scheme"] = url_parts.scheme
             gcs_kwargs["endpoint_override"] = url_parts.netloc
@@ -639,7 +655,7 @@ class PyArrowFileIO(FileIO):
         """
         scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=self._fs_for_location(location, scheme, netloc),
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
@@ -657,7 +673,7 @@ class PyArrowFileIO(FileIO):
         """
         scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=self._fs_for_location(location, scheme, netloc),
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
@@ -679,7 +695,7 @@ class PyArrowFileIO(FileIO):
         """
         str_location = location.location if isinstance(location, (InputFile, OutputFile)) else location
         scheme, netloc, path = self.parse_location(str_location, self.properties)
-        fs = self.fs_by_scheme(scheme, netloc)
+        fs = self._fs_for_location(str_location, scheme, netloc)
 
         try:
             fs.delete_file(path)
