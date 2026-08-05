@@ -245,13 +245,13 @@ def _added_delete_files(
         DeleteFileIndex
     """
     if parent_snapshot is None or table.format_version < 2:
-        return DeleteFileIndex()
+        return DeleteFileIndex(table.schema())
 
     manifests, snapshot_ids = _validation_history(
         table, parent_snapshot, starting_snapshot, VALIDATE_ADDED_DELETE_FILES_OPERATIONS, ManifestContent.DELETES
     )
 
-    dfi = DeleteFileIndex()
+    dfi = DeleteFileIndex(table.schema())
 
     for manifest in manifests:
         for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
