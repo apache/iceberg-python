@@ -1861,10 +1861,10 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     def visit_not_nan(self, term: BoundTerm) -> BooleanExpression:
         val = term.eval(self.struct)
-        if isinstance(val, SupportsFloat) and not math.isnan(val):
-            return self.visit_true()
-        else:
+        if isinstance(val, SupportsFloat) and math.isnan(val):
             return self.visit_false()
+        else:
+            return self.visit_true()
 
     def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) < literal.value:
