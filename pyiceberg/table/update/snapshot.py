@@ -1131,3 +1131,131 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             if snapshot.timestamp_ms < expire_from and snapshot.snapshot_id not in protected_ids:
                 self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
         return self
+
+
+class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
+    """Rewrite the current snapshot's data manifests without changing data.
+
+    Live entries from the rewritten data manifests are regrouped into new
+    manifests sized by `commit.manifest.target-size-bytes`, written as EXISTING
+    entries that keep their sequence numbers. Entries with status DELETED are
+    dropped, matching the reference implementation, which rewrites live entries
+    only. Delete manifests are kept as-is. The result is committed as a
+    `replace` snapshot; if no manifests need merging, no snapshot is committed.
+    """
+
+    _computed_manifests: list[ManifestFile] | None
+
+    _rewritten_count: int
+    _created_count: int
+    _kept_count: int
+    _entries_processed: int
+
+    def __init__(
+        self,
+        transaction: Transaction,
+        io: FileIO,
+        commit_uuid: uuid.UUID | None = None,
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+    ) -> None:
+        super().__init__(Operation.REPLACE, transaction, io, commit_uuid, snapshot_properties, branch)
+        if transaction.table_metadata.format_version >= 3:
+            raise NotImplementedError(
+                "Rewriting manifests is not yet supported for V3 tables: "
+                "the first-row-id of rewritten manifests must be preserved, "
+                "see: https://github.com/apache/iceberg-python/issues/3621"
+            )
+        self._rewritten_count = 0
+        self._created_count = 0
+        self._kept_count = 0
+        self._entries_processed = 0
+        self._computed_manifests = None
+
+    def _deleted_entries(self) -> list[ManifestEntry]:
+        return []
+
+    def _target_size_bytes(self) -> int:
+        from pyiceberg.table import TableProperties
+
+        return property_as_int(  # type: ignore
+            self._transaction.table_metadata.properties,
+            TableProperties.MANIFEST_TARGET_SIZE_BYTES,
+            TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
+        )
+
+    def _group_by_target_size(self, manifests: list[ManifestFile]) -> list[list[ManifestFile]]:
+        """Pack manifests into groups whose source sizes add up to roughly the target size."""
+        target_size = self._target_size_bytes()
+        groups: list[list[ManifestFile]] = []
+        current_group: list[ManifestFile] = []
+        current_size = 0
+        for manifest in manifests:
+            if current_group and current_size + manifest.manifest_length > target_size:
+                groups.append(current_group)
+                current_group = []
+                current_size = 0
+            current_group.append(manifest)
+            current_size += manifest.manifest_length
+        if current_group:
+            groups.append(current_group)
+        return groups
+
+    def _existing_manifests(self) -> list[ManifestFile]:
+        if self._computed_manifests is not None:
+            return self._computed_manifests
+
+        snapshot = self._transaction.table_metadata.snapshot_by_name(self._target_branch or MAIN_BRANCH)
+        if snapshot is None:
+            self._computed_manifests = []
+            return self._computed_manifests
+
+        data_manifests_by_spec: defaultdict[int, list[ManifestFile]] = defaultdict(list)
+        kept_manifests: list[ManifestFile] = []
+        for manifest in snapshot.manifests(self._io):
+            if manifest.content == ManifestContent.DATA:
+                data_manifests_by_spec[manifest.partition_spec_id].append(manifest)
+            else:
+                kept_manifests.append(manifest)
+
+        new_manifests: list[ManifestFile] = []
+        for spec_id, manifests in data_manifests_by_spec.items():
+            for group in self._group_by_target_size(manifests):
+                if len(group) == 1:
+                    # nothing to merge; keep the manifest as-is
+                    kept_manifests.append(group[0])
+                    continue
+                with self.new_manifest_writer(self.spec(spec_id)) as writer:
+                    for manifest in group:
+                        for entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True):
+                            writer.existing(entry)
+                            self._entries_processed += 1
+                new_manifests.append(writer.to_manifest_file())
+                self._rewritten_count += len(group)
+                self._created_count += 1
+
+        self._kept_count = len(kept_manifests)
+        self.snapshot_properties = {
+            **self.snapshot_properties,
+            "manifests-created": str(self._created_count),
+            "manifests-kept": str(self._kept_count),
+            "manifests-replaced": str(self._rewritten_count),
+            "entries-processed": str(self._entries_processed),
+        }
+        self._computed_manifests = new_manifests + kept_manifests
+        return self._computed_manifests
+
+    def _commit(self) -> UpdatesAndRequirements:
+        self._existing_manifests()
+        if self._created_count == 0:
+            # nothing was merged; committing would only produce a pointless replace snapshot
+            return (), ()
+        return super()._commit()
+
+    def rewrites_needed(self) -> bool:
+        """Return whether the current snapshot has more than one data manifest to merge."""
+        snapshot = self._transaction.table_metadata.snapshot_by_name(self._target_branch or MAIN_BRANCH)
+        if snapshot is None:
+            return False
+        data_manifests = [m for m in snapshot.manifests(self._io) if m.content == ManifestContent.DATA]
+        return len(data_manifests) > 1
