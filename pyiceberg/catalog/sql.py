@@ -24,6 +24,7 @@ from typing import (
 )
 
 from sqlalchemy import (
+    ColumnElement,
     String,
     create_engine,
     delete,
@@ -84,6 +85,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_ECHO_VALUE = "false"
 DEFAULT_POOL_PRE_PING_VALUE = "false"
 DEFAULT_INIT_CATALOG_TABLES = "true"
+ICEBERG_TABLE_TYPE = "TABLE"
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -209,8 +211,15 @@ class SqlCatalog(MetastoreCatalog):
             "previous_metadata_location": None,
         }
         if self._schema_version == "v1":
-            row["iceberg_type"] = "TABLE"
+            row["iceberg_type"] = ICEBERG_TABLE_TYPE
         return row
+
+    def _iceberg_type_filter(self) -> ColumnElement[bool] | None:
+        # Excludes non-table rows (e.g. views written by iceberg-java or iceberg-rust) from table
+        # lookups. None on v0 schemas, where the iceberg_type column doesn't exist to filter on.
+        if self._schema_version != "v1":
+            return None
+        return (IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE) | (IcebergTables.iceberg_type.is_(None))
 
     def _convert_orm_to_iceberg(self, orm_table: IcebergTables) -> Table:
         # Check for expected properties.
@@ -349,6 +358,8 @@ class SqlCatalog(MetastoreCatalog):
                 IcebergTables.table_namespace == namespace,
                 IcebergTables.table_name == table_name,
             )
+            if (type_filter := self._iceberg_type_filter()) is not None:
+                stmt = stmt.where(type_filter)
             result = session.scalar(stmt)
         if result:
             return self._convert_orm_to_iceberg(result)
@@ -367,20 +378,22 @@ class SqlCatalog(MetastoreCatalog):
         namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier)
+        type_filter = self._iceberg_type_filter()
         with Session(self.engine) as session:
             if self.engine.dialect.supports_sane_rowcount:
-                res = session.execute(
-                    delete(IcebergTables).where(
-                        IcebergTables.catalog_name == self.name,
-                        IcebergTables.table_namespace == namespace,
-                        IcebergTables.table_name == table_name,
-                    )
+                stmt = delete(IcebergTables).where(
+                    IcebergTables.catalog_name == self.name,
+                    IcebergTables.table_namespace == namespace,
+                    IcebergTables.table_name == table_name,
                 )
+                if type_filter is not None:
+                    stmt = stmt.where(type_filter)
+                res = session.execute(stmt)
                 if res.rowcount < 1:
                     raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}")
             else:
                 try:
-                    tbl = (
+                    query = (
                         session.query(IcebergTables)
                         .with_for_update(of=IcebergTables)
                         .filter(
@@ -388,8 +401,10 @@ class SqlCatalog(MetastoreCatalog):
                             IcebergTables.table_namespace == namespace,
                             IcebergTables.table_name == table_name,
                         )
-                        .one()
                     )
+                    if type_filter is not None:
+                        query = query.filter(type_filter)
+                    tbl = query.one()
                     session.delete(tbl)
                 except NoResultFound as e:
                     raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}") from e
@@ -419,6 +434,7 @@ class SqlCatalog(MetastoreCatalog):
         to_table_name = Catalog.table_name_from(to_identifier)
         if not self.namespace_exists(to_namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {to_namespace}")
+        type_filter = self._iceberg_type_filter()
         with Session(self.engine) as session:
             try:
                 if self.engine.dialect.supports_sane_rowcount:
@@ -431,12 +447,14 @@ class SqlCatalog(MetastoreCatalog):
                         )
                         .values(table_namespace=to_namespace, table_name=to_table_name)
                     )
+                    if type_filter is not None:
+                        stmt = stmt.where(type_filter)
                     result = session.execute(stmt)
                     if result.rowcount < 1:
                         raise NoSuchTableError(f"Table does not exist: {from_table_name}")
                 else:
                     try:
-                        tbl = (
+                        query = (
                             session.query(IcebergTables)
                             .with_for_update(of=IcebergTables)
                             .filter(
@@ -444,8 +462,10 @@ class SqlCatalog(MetastoreCatalog):
                                 IcebergTables.table_namespace == from_namespace,
                                 IcebergTables.table_name == from_table_name,
                             )
-                            .one()
                         )
+                        if type_filter is not None:
+                            query = query.filter(type_filter)
+                        tbl = query.one()
                         tbl.table_namespace = to_namespace
                         tbl.table_name = to_table_name
                     except NoResultFound as e:
@@ -656,9 +676,8 @@ class SqlCatalog(MetastoreCatalog):
             IcebergTables.table_namespace == namespace,
         )
 
-        # Filter out views only if schema_version is v1
-        if self._schema_version == "v1":
-            stmt = stmt.where((IcebergTables.iceberg_type == "TABLE") | (IcebergTables.iceberg_type.is_(None)))
+        if (type_filter := self._iceberg_type_filter()) is not None:
+            stmt = stmt.where(type_filter)
 
         with Session(self.engine) as session:
             result = session.scalars(stmt)
