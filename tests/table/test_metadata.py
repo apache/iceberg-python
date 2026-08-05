@@ -145,6 +145,24 @@ def test_parsing_correct_types(example_table_metadata_v2: dict[str, Any]) -> Non
     assert isinstance(table_metadata.schemas[0].fields[0].field_type, LongType)
 
 
+def test_last_updated_ms_before_snapshot_log(example_table_metadata_v2: dict[str, Any]) -> None:
+    metadata = copy(example_table_metadata_v2)
+    last_entry_ms = metadata["snapshot-log"][-1]["timestamp-ms"]
+    metadata["last-updated-ms"] = last_entry_ms - 60_001
+
+    with pytest.raises(ValidationError, match="Invalid last updated timestamp"):
+        TableMetadataV2(**metadata)
+
+
+def test_last_updated_ms_within_clock_drift(example_table_metadata_v2: dict[str, Any]) -> None:
+    metadata = copy(example_table_metadata_v2)
+    last_entry_ms = metadata["snapshot-log"][-1]["timestamp-ms"]
+    metadata["last-updated-ms"] = last_entry_ms - 60_000
+
+    table_metadata = TableMetadataV2(**metadata)
+    assert table_metadata.last_updated_ms == last_entry_ms - 60_000
+
+
 def test_updating_metadata(example_table_metadata_v2: dict[str, Any]) -> None:
     """Test creating a new TableMetadata instance that's an updated version of
     an existing TableMetadata instance"""

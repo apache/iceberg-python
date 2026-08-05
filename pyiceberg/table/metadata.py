@@ -68,6 +68,10 @@ DEFAULT_SCHEMA_ID = 0
 
 SUPPORTED_TABLE_FORMAT_VERSION = 2
 
+# Tolerance for clock drift when validating that last-updated-ms is not
+# before the most recent snapshot log entry. Matches the Java implementation.
+ONE_MINUTE_MS = 60_000
+
 
 def cleanup_snapshot_id(data: dict[str, Any]) -> dict[str, Any]:
     """Run before validation."""
@@ -112,6 +116,22 @@ def check_sort_orders(table_metadata: TableMetadata) -> TableMetadata:
                 return table_metadata
 
         raise ValidationError(f"default-sort-order-id {default_sort_order_id} can't be found in {sort_orders}")
+    return table_metadata
+
+
+def check_last_updated_ms(table_metadata: TableMetadata) -> TableMetadata:
+    """Check that last-updated-ms is not before the most recent snapshot log entry.
+
+    A one minute tolerance is allowed because commits can happen concurrently
+    from different machines with small clock skew.
+    """
+    if snapshot_log := table_metadata.snapshot_log:
+        last_entry = snapshot_log[-1]
+        if table_metadata.last_updated_ms - last_entry.timestamp_ms < -ONE_MINUTE_MS:
+            raise ValidationError(
+                f"Invalid last updated timestamp {table_metadata.last_updated_ms}: "
+                f"before last snapshot log entry at {last_entry.timestamp_ms}"
+            )
     return table_metadata
 
 
@@ -378,6 +398,10 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
     def construct_refs(self) -> TableMetadataV1:
         return construct_refs(self)
 
+    @model_validator(mode="after")
+    def check_last_updated_ms(self) -> TableMetadataV1:
+        return check_last_updated_ms(self)
+
     @model_validator(mode="before")
     def set_v2_compatible_defaults(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Set default values to be compatible with the format v2.
@@ -519,6 +543,10 @@ class TableMetadataV2(TableMetadataCommonFields, IcebergBaseModel):
     def construct_refs(self) -> TableMetadata:
         return construct_refs(self)
 
+    @model_validator(mode="after")
+    def check_last_updated_ms(self) -> TableMetadata:
+        return check_last_updated_ms(self)
+
     format_version: Literal[2] = Field(alias="format-version", default=2)
     """An integer version number for the format. Implementations must throw
     an exception if a table’s version is higher than the supported version."""
@@ -562,6 +590,10 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     @model_validator(mode="after")
     def construct_refs(self) -> TableMetadata:
         return construct_refs(self)
+
+    @model_validator(mode="after")
+    def check_last_updated_ms(self) -> TableMetadata:
+        return check_last_updated_ms(self)
 
     format_version: Literal[3] = Field(alias="format-version", default=3)
     """An integer version number for the format. Implementations must throw

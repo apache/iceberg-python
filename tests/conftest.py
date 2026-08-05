@@ -833,7 +833,7 @@ def example_table_metadata_v2_with_extensive_snapshots() -> dict[str, Any]:
         "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
         "location": "s3://bucket/test/location",
         "last-sequence-number": 34,
-        "last-updated-ms": 1602638573590,
+        "last-updated-ms": max(entry["timestamp-ms"] for entry in snapshot_log),
         "last-column-id": 3,
         "current-schema-id": 1,
         "schemas": [
