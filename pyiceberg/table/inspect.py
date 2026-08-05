@@ -352,7 +352,7 @@ class InspectTable:
         partition_row = partitions_map[partition_record_key]
 
         if snapshot is not None:
-            if partition_row["last_updated_at"] is None or partition_row["last_updated_snapshot_id"] < snapshot.timestamp_ms:
+            if partition_row["last_updated_at"] is None or partition_row["last_updated_at"] < snapshot.timestamp_ms:
                 partition_row["last_updated_at"] = snapshot.timestamp_ms
                 partition_row["last_updated_snapshot_id"] = snapshot.snapshot_id
 
