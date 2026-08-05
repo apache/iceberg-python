@@ -16,6 +16,8 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 import json
+import ntpath
+import os
 import uuid
 from copy import copy
 from typing import Any
@@ -587,6 +589,53 @@ def test_static_table_version_hint_same_as_table(
         static_table = StaticTable.from_metadata(table_location)
         assert isinstance(static_table, Table)
         assert static_table.metadata == table_v2.metadata
+
+
+@pytest.mark.parametrize(
+    "version_hint_content, expected_metadata_file",
+    [
+        ("v3.metadata.json", "v3.metadata.json"),
+        ("3", "v3.metadata.json"),
+        ("some-uuid", "some-uuid.metadata.json"),
+    ],
+)
+def test_static_table_version_hint_location_uses_forward_slashes(
+    version_hint_content: str, expected_metadata_file: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Iceberg locations are URIs and must always be forward-slash separated, regardless of the
+    # host OS. Swapping in the Windows path join makes an OS-separator join emit backslashes, so
+    # this asserts the resolved metadata location stays a valid forward-slash URI on any platform.
+    monkeypatch.setattr(os.path, "join", ntpath.join)
+
+    table_root = "s3://warehouse/wh/nyc.db/taxis"
+    requested_locations: list[str] = []
+
+    class _FakeStream:
+        def __enter__(self) -> "_FakeStream":
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            return None
+
+        def read(self, size: int = 0) -> bytes:
+            return version_hint_content.encode("utf-8")
+
+    class _FakeInputFile:
+        def open(self, seekable: bool = True) -> "_FakeStream":
+            return _FakeStream()
+
+    class _FakeFileIO:
+        def new_input(self, location: str) -> "_FakeInputFile":
+            requested_locations.append(location)
+            return _FakeInputFile()
+
+    monkeypatch.setattr("pyiceberg.table.load_file_io", lambda *args, **kwargs: _FakeFileIO())
+
+    resolved_location = StaticTable._metadata_location_from_version_hint(table_root)
+
+    assert requested_locations == [f"{table_root}/metadata/version-hint.text"]
+    assert resolved_location == f"{table_root}/metadata/{expected_metadata_file}"
+    assert "\\" not in resolved_location
 
 
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
