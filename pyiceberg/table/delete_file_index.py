@@ -54,6 +54,13 @@ class PositionDeletes:
         start_idx = bisect_left(self._seqs, seq)
         return [delete_file for delete_file, _ in self._files[start_idx:]]
 
+    def filter_by_seq_paired(self, seq: int) -> list[tuple[DataFile, int]]:
+        self._ensure_indexed()
+        if not self._files:
+            return []
+        start_idx = bisect_left(self._seqs, seq)
+        return self._files[start_idx:]
+
     def referenced_delete_files(self) -> list[DataFile]:
         self._ensure_indexed()
         return [data_file for data_file, _ in self._files]
@@ -126,8 +133,20 @@ class DeleteFileIndex:
             deletes.add(delete_file, seq)
 
     def for_data_file(self, seq_num: int, data_file: DataFile, partition_key: Record | None = None) -> set[DataFile]:
+        """Find all delete files that apply to a given data file.
+
+        Applies Iceberg spec sequence number gating:
+        - Position deletes: apply when delete.seq >= data.seq
+        - Equality deletes: apply when delete.seq > data.seq (strictly greater)
+
+        This distinction is mandated by the Iceberg spec (§5.5.2): an equality
+        delete written in the same snapshot as the data file does NOT apply to
+        that data file (it targets only previously-committed data).
+        """
         if self.is_empty():
             return set()
+
+        from pyiceberg.manifest import DataFileContent
 
         deletes: set[DataFile] = set()
         spec_id = data_file.spec_id or 0
@@ -135,13 +154,20 @@ class DeleteFileIndex:
         key = _partition_key(spec_id, partition_key)
         partition_deletes = self._by_partition.get(key)
         if partition_deletes:
-            for delete_file in partition_deletes.filter_by_seq(seq_num):
+            for delete_file, delete_seq in partition_deletes.filter_by_seq_paired(seq_num):
                 if _applies_to_data_file(delete_file, data_file):
+                    # Equality deletes require strictly greater sequence number
+                    if delete_file.content == DataFileContent.EQUALITY_DELETES and delete_seq <= seq_num:
+                        continue
                     deletes.add(delete_file)
 
         path_deletes = self._by_path.get(data_file.file_path)
         if path_deletes:
-            deletes.update(path_deletes.filter_by_seq(seq_num))
+            for delete_file, delete_seq in path_deletes.filter_by_seq_paired(seq_num):
+                # Equality deletes require strictly greater sequence number
+                if delete_file.content == DataFileContent.EQUALITY_DELETES and delete_seq <= seq_num:
+                    continue
+                deletes.add(delete_file)
 
         return deletes
 

@@ -71,6 +71,467 @@ The memory used by this cache depends on the size and number of distinct manifes
 if you want a tighter memory bound, or call `clear_manifest_cache()` to proactively release cached manifest metadata in
 long-lived processes.
 
+## Execution Backends
+
+PyIceberg separates Iceberg spec logic (scan planning, commits, schema evolution) from
+data execution (reading Parquet, writing Parquet, sorting, joining, filtering). The
+execution layer is built on a pluggable backend architecture with three independent axes:
+
+- **Read**: Decodes Parquet files into Arrow RecordBatches
+- **Write**: Encodes Arrow RecordBatches into Parquet files
+- **Compute**: Sort, join, filter, and delete resolution
+
+Each axis can use a different engine. Arrow RecordBatch is the interchange format at
+every boundary, so backends are freely composable. Any library that can produce or
+consume Arrow data can implement the backend protocols defined in
+`pyiceberg.execution` (protocols in `pyiceberg.execution.protocol`, resolution in
+`pyiceberg.execution.engine`).
+
+By default, PyArrow handles all three axes in-memory.
+
+### Bounded-Memory Execution with DataFusion
+
+For tables with large data files or many delete files, in-memory operations can
+run out of memory. Installing DataFusion enables spill-to-disk execution:
+
+```sh
+pip install 'pyiceberg[datafusion]'
+```
+
+Once installed, DataFusion is automatically used for compute operations:
+
+- Equality delete resolution (anti-join with Grace Hash Join)
+- Sort-on-write (external merge sort)
+- Copy-on-write delete rewrite (filter + rewrite large files without OOM)
+- Positional delete resolution (shared implementation, benefits from planner at scale)
+
+**Note on equality deletes:** PyIceberg now supports reading tables with equality
+delete files (Iceberg spec v2, section 5.5). Previously, scanning a table with equality
+deletes raised a `ValueError`. Equality delete resolution uses IS NOT DISTINCT FROM
+semantics (NULL matches NULL) per the Iceberg specification. For best performance on
+tables with many equality delete files, install DataFusion for bounded-memory anti-join
+execution.
+
+**Multi-column equality deletes:** When equality delete files reference multiple
+columns, the PyArrow backend uses composite-key hashing with `is_in()` for O(n + m) hash
+lookup, correctly implementing IS NOT DISTINCT FROM semantics (NULL matches NULL).
+Both single-column and multi-column anti-joins complete in linear time regardless
+of delete set size. DataFusion provides the same performance with the additional
+benefit of spill-to-disk for result sets exceeding available memory.
+
+Planned operations that will benefit from DataFusion in future releases:
+
+- Orphan file deletion ([#1200](https://github.com/apache/iceberg-python/issues/1200))
+- Compaction ([#1092](https://github.com/apache/iceberg-python/issues/1092))
+- Position delete compaction ([#1092](https://github.com/apache/iceberg-python/issues/1092))
+
+#### Sort-on-Write (Best-Effort)
+
+Sort-on-write is a **best-effort performance optimization**, not a correctness
+guarantee. When a table defines a sort order and DataFusion is installed, PyIceberg
+sorts data before writing to produce optimally ordered Parquet files. Sorted files
+improve read performance through better row group pruning and data locality.
+
+If DataFusion is **not** installed, sort-on-write is silently skipped. The resulting
+data files are still valid and queryable -- the Iceberg specification defines sort
+order as advisory, not mandatory. No error is raised because unsorted data is never
+incorrect; it simply lacks the read-path performance benefit of sorted layout.
+
+This means the output of a write operation may differ depending on whether DataFusion
+is installed:
+
+- **With DataFusion**: data files are sorted per the table's sort order.
+- **Without DataFusion**: data files retain their input order (unsorted).
+
+Both produce valid, spec-compliant Iceberg tables. Applications that require sorted
+output should ensure DataFusion is installed (`pip install 'pyiceberg[datafusion]'`).
+
+DataFusion also enables a bounded-memory scan planner for tables with >100K delete
+files. Scan planning remains owned by PyIceberg -- the planner enhancement uses
+DataFusion as an implementation detail when the default in-memory index would exceed
+available RAM. This allows planning tables with millions of delete files without OOM.
+
+No configuration is needed -- PyIceberg detects DataFusion on import and promotes
+it as the compute backend. PyArrow remains the default read and write backend.
+
+### Available Backends
+
+| Backend | Bounded Memory | License | Install |
+|---------|---------------|---------|---------|
+| PyArrow (default) | No | Apache 2.0 | Always available |
+| DataFusion | Yes (spill-to-disk) | Apache 2.0 | `pip install 'pyiceberg[datafusion]'` |
+
+PyArrow is always available and handles all three axes by default. DataFusion is
+auto-promoted for compute when installed. The protocol-based architecture supports
+additional backends in the future -- see [Implementing a Custom Backend](#implementing-a-custom-backend).
+
+### Execution Configuration
+
+The full execution configuration in `.pyiceberg.yaml`:
+
+```yaml
+execution:
+  # Compute backend for sort, join, filter, and delete resolution.
+  # Options: pyarrow, datafusion
+  # Default: datafusion (if installed), otherwise pyarrow
+  compute-backend: datafusion
+
+  # Read backend for decoding Parquet files.
+  # Options: pyarrow, datafusion-experimental
+  # Default: pyarrow
+  # Note: 'datafusion' (without '-experimental') is rejected with an error.
+  # The DataFusion read backend materializes full file results in memory
+  # (no streaming advantage over pyarrow) due to credential scoping limitations.
+  # Use 'datafusion-experimental' only for testing or benchmarking DataFusion reads.
+  # This limitation will be resolved when datafusion-python supports per-session
+  # object store configuration (https://github.com/apache/datafusion-python/issues/1624).
+  read-backend: pyarrow
+
+  # Write backend for encoding Parquet files.
+  # Options: pyarrow (only option currently)
+  # Default: pyarrow
+  # PyArrow is currently the only write backend. Additional implementations
+  # require integration work to extract Parquet FileMetaData (column sizes,
+  # bounds, null counts, split offsets) from each engine's write path:
+  #   - DataFusion: https://github.com/apache/datafusion/issues/23472
+  # See pyiceberg.execution.protocol.WriteBackend for the full contract.
+  write-backend: pyarrow
+
+  # Whether to auto-detect DataFusion when installed.
+  # Set to false to force PyArrow even when DataFusion is available.
+  # Default: true
+  auto-detect: true
+
+  # Delete file count threshold for bounded-memory scan planning.
+  # Tables with more delete files than this use DataFusion SQL joins
+  # for delete-to-data file assignment instead of in-memory dicts.
+  # Counts files (not rows) because planning memory is proportional to
+  # the number of DataFile objects held in the index (~200-500 bytes each).
+  # Default: 100000
+  planning-threshold: 100000
+
+  # Memory budget (bytes) for bounded-memory compute operations (sort, join).
+  # DataFusion uses this as its spill threshold via FairSpillPool.
+  # Operations exceeding this budget spill intermediate state to local SSD.
+  # Default: 536870912 (512 MB)
+  memory-limit: 536870912
+
+  # OOM warning threshold: compressed Parquet size (bytes) above which a
+  # ResourceWarning is emitted when calling to_arrow(). Suggests using
+  # to_arrow_batch_reader() instead for streaming access.
+  # Raise this on high-memory machines to reduce noise for moderate scans.
+  # Default: 2147483648 (2 GB)
+  oom-warning-threshold: 2147483648
+
+  # CoW delete threshold: compressed file size (bytes) below which the
+  # single-pass materialization path is used. Files at or above this size
+  # use two-pass streaming (O(batch_size) memory, but 2x network I/O).
+  # Tune based on your compression ratio and available memory:
+  #   - Low compression (numeric data, 2-3x): default 64 MB is safe
+  #   - High compression (dictionary-encoded strings, 10-50x): lower to 16-32 MB
+  #   - High-memory machines: raise to 128-256 MB for fewer network round-trips
+  # Default: 67108864 (64 MB)
+  cow-threshold: 67108864
+
+  # Positional delete routing threshold: total compressed size (bytes) of
+  # position delete files below which the PyArrow set-based approach is used
+  # (O(num_positions) memory, zero temp disk I/O). Above this threshold, the
+  # DataFusion bounded-memory path is used (spill-to-disk for millions of
+  # position entries). 1 MB compressed ~ 500K positions.
+  # Default: 1048576 (1 MB)
+  pos-delete-threshold: 1048576
+
+  # Streaming spill threshold: per-task batch count above which results from
+  # to_arrow_batch_reader() are written to temp Parquet and streamed back at
+  # O(batch_size) memory. Below this threshold, results are yielded from memory
+  # directly (disk round-trip overhead exceeds memory savings for small results).
+  # The key scenario: large files (2+ GB) with multi-threaded prefetch. Without
+  # spill, the thread pool accumulates completed file results faster than the
+  # caller consumes them, exhausting RAM.
+  # Raise on high-memory machines (less disk I/O). Lower on constrained envs.
+  # Only affects to_arrow_batch_reader() (the streaming path). Has no effect on
+  # to_arrow() (which materializes everything anyway) or direct orchestrate_scan()
+  # calls (which yield batches without spill regardless of this setting).
+  # Default: 4
+  spill-batch-threshold: 4
+
+  # Materialization warning threshold: Arrow result size (bytes) above which a
+  # ResourceWarning is emitted when DataFusion materializes a result into Python
+  # memory. This is a reminder that the compute was bounded-memory (spilled to
+  # disk), but result delivery to Python requires full materialization due to
+  # credential scoping limitations.
+  # Set to 0 to disable the warning entirely.
+  # Raise on high-memory machines to reduce noise for moderate results.
+  # Default: 1073741824 (1 GB)
+  materialization-warning-threshold: 1073741824
+
+  # Scanner batch readahead: number of batches PyArrow prefetches per file during
+  # scanning. This is a low-level I/O tuning parameter. Total prefetch memory is
+  # batch_readahead × batch_size × num_concurrent_tasks. Higher values improve
+  # throughput on fast storage (NVMe, fast object stores) but increase per-file
+  # memory. Lower values reduce memory in concurrent-scan or memory-constrained
+  # environments. PyArrow's default is 16; we default to 2 for predictable memory.
+  # Default: 2
+  scanner-batch-readahead: 2
+```
+
+#### CoW Delete: Column Statistics Short-Circuit
+
+Before reading any file data, the CoW delete path uses Parquet column statistics
+(min/max bounds, null counts) stored in the DataFile metadata to classify files
+into three categories without any I/O:
+
+1. **All rows match the delete filter** (e.g., `DELETE WHERE id > 5` on a file
+   where `id.min = 10`): the file is dropped entirely. Zero reads.
+2. **No rows can match the delete filter** (e.g., `DELETE WHERE id > 100` on a file
+   where `id.max = 50`): the file is skipped. Zero reads.
+3. **Inconclusive** (bounds straddle the delete predicate): falls through to the
+   threshold-based read path (single-pass or two-pass depending on `cow-threshold`).
+
+This optimization is especially effective for range deletes on sorted or clustered
+columns (e.g., time-based retention policies like `DELETE WHERE timestamp < '2024-01-01'`),
+where 80-95% of files can be classified without reading data. Files with missing
+statistics are always treated as inconclusive (conservative, correct behavior).
+
+No configuration is required -- the short-circuit is always active and has zero cost
+for files that cannot be classified (it falls through to the existing path).
+
+Environment variable equivalents:
+
+| YAML Key | Environment Variable | Example |
+|----------|---------------------|---------|
+| `execution.compute-backend` | `PYICEBERG_EXECUTION__COMPUTE_BACKEND` | `datafusion` |
+| `execution.read-backend` | `PYICEBERG_EXECUTION__READ_BACKEND` | `pyarrow` or `datafusion-experimental` |
+| `execution.write-backend` | N/A (config file only) | `pyarrow` |
+| `execution.auto-detect` | `PYICEBERG_EXECUTION__AUTO_DETECT` | `false` |
+| `execution.planning-threshold` | `PYICEBERG_EXECUTION__PLANNING_THRESHOLD` | `100000` |
+| `execution.memory-limit` | `PYICEBERG_EXECUTION__MEMORY_LIMIT` | `536870912` |
+| `execution.oom-warning-threshold` | `PYICEBERG_EXECUTION__OOM_WARNING_THRESHOLD` | `2147483648` |
+| `execution.cow-threshold` | `PYICEBERG_EXECUTION__COW_THRESHOLD` | `67108864` |
+| `execution.pos-delete-threshold` | `PYICEBERG_EXECUTION__POS_DELETE_THRESHOLD` | `1048576` |
+| `execution.spill-batch-threshold` | `PYICEBERG_EXECUTION__SPILL_BATCH_THRESHOLD` | `4` |
+| `execution.materialization-warning-threshold` | `PYICEBERG_EXECUTION__MATERIALIZATION_WARNING_THRESHOLD` | `1073741824` |
+| `execution.scanner-batch-readahead` | `PYICEBERG_EXECUTION__SCANNER_BATCH_READAHEAD` | `2` |
+
+Resolution priority (highest to lowest):
+
+1. Environment variable
+2. `.pyiceberg.yaml` config file
+3. Auto-detection (DataFusion if installed, otherwise PyArrow)
+
+#### Disabling Auto-Detection
+
+If DataFusion is installed but you want to force PyArrow for all operations
+(e.g., for benchmarking or debugging), disable auto-detection:
+
+```yaml
+execution:
+  auto-detect: false
+```
+
+Or via environment variable:
+
+```sh
+export PYICEBERG_EXECUTION__AUTO_DETECT=false
+```
+
+With auto-detection disabled, PyArrow handles all three axes even when DataFusion
+is installed. You can still explicitly select DataFusion for specific axes:
+
+```yaml
+execution:
+  auto-detect: false
+  compute-backend: datafusion  # explicit override still works
+```
+
+#### Refreshing Backend Detection in Long-Lived Processes
+
+Backend detection results are cached for the process lifetime. If you install
+DataFusion into a running process (e.g., in a Jupyter notebook), call
+`clear_config_cache()` to pick up the newly installed package:
+
+```python
+from pyiceberg.execution import clear_config_cache
+
+# After: pip install 'pyiceberg[datafusion]'
+clear_config_cache()
+
+# Subsequent operations will now use DataFusion
+table.scan().to_arrow()
+```
+
+This is only needed when installing packages at runtime. Normal usage (packages
+installed before process start) requires no cache management.
+
+### Implementing a Custom Backend
+
+The backend protocols are defined as Python `typing.Protocol` classes in
+`pyiceberg.execution.protocol`. To add a new engine, implement one or more of:
+
+| Protocol | Purpose | Key Method |
+|----------|---------|------------|
+| `ReadBackend` | Decode Parquet to Arrow | `read_parquet()` |
+| `WriteBackend` | Execute file writes via FileFormatModel | `write_data_file()` |
+| `ComputeBackend` | Sort, join, filter, delete resolution | `sort_from_files()`, `anti_join_from_files()`, `filter()`, `apply_positional_deletes()` |
+
+Most custom backends only need to implement `ReadBackend` and/or `ComputeBackend`.
+Here is a minimal custom `ReadBackend` implementation:
+
+```python
+from collections.abc import Iterator
+from pyiceberg.execution.protocol import ReadBackend
+from pyiceberg.expressions import BooleanExpression
+from pyiceberg.schema import Schema
+from pyiceberg.typedef import Properties
+import pyarrow as pa
+import pyarrow.dataset as ds
+
+
+class MyCustomReadBackend:
+    """Example custom ReadBackend using pyarrow.dataset with custom options."""
+
+    def read_parquet(
+        self,
+        location: str,
+        projected_schema: Schema,
+        row_filter: BooleanExpression,
+        io_properties: Properties,
+        dictionary_columns: tuple[str, ...] = (),
+    ) -> Iterator[pa.RecordBatch]:
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        pa_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
+        columns = [field.name for field in pa_schema]
+        dataset = ds.dataset(location, format="parquet")
+        scanner = dataset.scanner(columns=columns)
+        return scanner.to_batches()
+```
+
+`WriteBackend` composes with PyIceberg's `FileFormatModel` abstraction. The write
+backend controls HOW to execute the write (which engine), while the format model
+controls WHAT format to write (Parquet, ORC, etc.). The composition is:
+
+```text
+WriteBackend.write_data_file(output_file, file_schema, properties, arrow_table, format_model)
+    +-- format_model.create_writer(output_file, file_schema, properties) -> FileFormatWriter
+            +-- writer.write(arrow_table) -> DataFileStatistics
+```
+
+The default `PyArrowWriteBackend` delegates directly to the format model's writer.
+A future `DataFusionWriteBackend` could intercept this to use DataFusion's
+ParquetSink for single-pass bounded-memory writes while still respecting the
+format model's statistical contract (`DataFileStatistics`).
+
+`ComputeBackend` exposes both in-memory methods (`sort()`, `anti_join()`) and
+file-based methods (`sort_from_files()`, `anti_join_from_files()`). File-based
+methods let the backend control the full read lifecycle -- reading directly from
+Parquet with spill-to-disk. In-memory methods receive pre-materialized Arrow data
+for cases where the data is already in Python (e.g., user-provided DataFrames).
+
+The `supports_bounded_memory` property advertises whether a backend can spill to
+disk. PyIceberg uses this flag to gate best-effort optimizations that would be unsafe
+with in-memory backends (e.g., sort-on-write for multi-GB files). This is a capability
+advertisement: all backends must produce identical results for the same input, but
+backends without bounded memory will skip certain optimizations (see
+[Sort-on-Write](#sort-on-write-best-effort) above).
+
+To use a custom backend programmatically, pass instances directly to `build_backends()`
+or `Backends.resolve()`:
+
+```python
+from pyiceberg.execution.protocol import (
+    ReadBackend,
+    WriteBackend,
+    ComputeBackend,
+)
+from pyiceberg.execution import build_backends
+
+# Use your custom read backend with default compute and write
+backends = build_backends(table.io.properties, read=MyCustomReadBackend())
+
+# Alternatively, use the Backends.resolve() classmethod (equivalent):
+from pyiceberg.execution.protocol import Backends
+
+backends = Backends.resolve(table.io.properties, compute="pyarrow")
+```
+
+See `pyiceberg.execution.protocol` for full method signatures and the
+`pyiceberg.execution` package for the public API.
+
+### Migrating from ArrowScan
+
+If you previously used `ArrowScan` directly (e.g., in custom tooling or downstream
+libraries), note that `ArrowScan` is deprecated and emits a `DeprecationWarning`.
+All scan operations now route through the pluggable execution backend automatically.
+
+**Before** (deprecated):
+
+```python
+from pyiceberg.io.pyarrow import ArrowScan
+
+scan = ArrowScan(table_metadata, io, projected_schema, row_filter, case_sensitive, limit)
+result = scan.to_table(tasks)
+```
+
+**After** (recommended):
+
+```python
+# Use the table API (handles everything automatically)
+result = table.scan(row_filter=my_filter).to_arrow()
+
+# For streaming access (O(batch_size) memory):
+reader = table.scan(row_filter=my_filter).to_arrow_batch_reader()
+for batch in reader:
+    process(batch)
+```
+
+No code changes are needed for users who only use `table.scan().to_arrow()` or
+`table.scan().to_arrow_batch_reader()` -- these automatically use the pluggable backend.
+
+### Known Limitations
+
+The pluggable backend architecture has the following known limitations:
+
+**Credential scoping via environment variables.** DataFusion reads cloud storage
+credentials from `os.environ` (no per-session object store API exists yet in
+`datafusion-python`). This single root cause produces two visible effects:
+
+1. *Result materialization*: File-based compute operations (`sort_from_files`,
+   `anti_join_from_files`) materialize their full result into Python memory via
+   `to_arrow_table()` before returning. The computation itself is bounded-memory
+   (DataFusion spills to disk), but delivering results to Python requires full
+   materialization while credentials remain set. Python-side memory usage is
+   O(result_size), not O(batch_size). Lazy evaluation (`execute_stream()`) would
+   restore environment variables before data is actually read, breaking auth.
+
+2. *Serialized parallelism*: Multiple concurrent DataFusion file-based operations
+   are serialized by a global lock protecting credential environment variables.
+   DataFusion uses internal parallelism (rayon thread pool), so individual
+   operations are still parallel internally, but multiple Python-level DataFusion
+   calls cannot overlap. This primarily affects tables with many equality delete
+   files scanned in parallel.
+
+Both effects will be resolved when `datafusion-python` supports per-session object
+store configuration ([#1624](https://github.com/apache/datafusion-python/issues/1624)).
+The backend architecture is designed so that only the internal implementation changes
+when this lands — no user-facing API changes required.
+
+**Sort-on-write is best-effort.** When a table defines a sort order but DataFusion
+is not installed, sort-on-write is silently skipped. The resulting data files are
+valid and queryable but lack the read-path performance benefit of sorted layout.
+No error or warning is emitted because the Iceberg specification defines sort
+order as advisory.
+
+**Equality delete support is new.** Reading tables with equality delete files
+(Iceberg spec v2) is newly enabled in this release. Previously, scanning a table
+with equality deletes raised a `ValueError`. The implementation uses IS NOT
+DISTINCT FROM semantics (NULL matches NULL) per the Iceberg specification. If
+equality delete files reference columns that were dropped via schema evolution,
+a warning is emitted and those delete files are skipped (results may include rows
+that should have been deleted). Run compaction to resolve orphaned equality delete
+files after schema evolution. If you encounter unexpected results with equality
+deletes, please report them upstream.
+
 ## Tables
 
 Iceberg tables support table properties to configure table behavior.

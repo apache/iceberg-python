@@ -187,3 +187,122 @@ def test_record_equality_for_partition_lookup() -> None:
 
     assert len(index.for_data_file(1, data_file, partition_b)) == 1
     assert len(index.for_data_file(1, data_file, partition_c)) == 0
+
+
+def _create_equality_delete(sequence_number: int = 1, spec_id: int = 0, partition: Record | None = None) -> ManifestEntry:
+    delete_file = DataFile.from_args(
+        content=DataFileContent.EQUALITY_DELETES,
+        file_path=f"s3://bucket/eq-delete-{sequence_number}.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=partition or Record(),
+        record_count=10,
+        file_size_in_bytes=100,
+        equality_ids=[1],
+    )
+    delete_file._spec_id = spec_id
+    return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=sequence_number, data_file=delete_file)
+
+
+class TestFilterBySeqPaired:
+    """Tests for PositionDeletes.filter_by_seq_paired."""
+
+    def test_returns_tuples_with_sequence_numbers(self) -> None:
+        group = PositionDeletes()
+        df1 = _create_positional_delete(sequence_number=2).data_file
+        df2 = _create_positional_delete(sequence_number=5).data_file
+        group.add(df1, 2)
+        group.add(df2, 5)
+
+        result = group.filter_by_seq_paired(1)
+        assert len(result) == 2
+        assert result[0] == (df1, 2)
+        assert result[1] == (df2, 5)
+
+    def test_filters_by_sequence_number_gte(self) -> None:
+        group = PositionDeletes()
+        df1 = _create_positional_delete(sequence_number=2).data_file
+        df2 = _create_positional_delete(sequence_number=4).data_file
+        df3 = _create_positional_delete(sequence_number=6).data_file
+        group.add(df1, 2)
+        group.add(df2, 4)
+        group.add(df3, 6)
+
+        # seq=3: returns files with seq >= 3 (seq 4 and 6)
+        result = group.filter_by_seq_paired(3)
+        assert len(result) == 2
+        assert result[0][1] == 4
+        assert result[1][1] == 6
+
+    def test_boundary_includes_exact_match(self) -> None:
+        group = PositionDeletes()
+        df = _create_positional_delete(sequence_number=5).data_file
+        group.add(df, 5)
+
+        # seq=5: includes file at seq 5 (>= semantics)
+        result = group.filter_by_seq_paired(5)
+        assert len(result) == 1
+        assert result[0] == (df, 5)
+
+    def test_empty_group_returns_empty(self) -> None:
+        group = PositionDeletes()
+        result = group.filter_by_seq_paired(1)
+        assert result == []
+
+    def test_all_filtered_returns_empty(self) -> None:
+        group = PositionDeletes()
+        df = _create_positional_delete(sequence_number=2).data_file
+        group.add(df, 2)
+
+        # seq=10: no files have seq >= 10
+        result = group.filter_by_seq_paired(10)
+        assert result == []
+
+
+class TestEqualityDeleteSequenceGating:
+    """Tests for the equality delete seq > (strictly greater) gating in DeleteFileIndex.for_data_file."""
+
+    def test_equality_delete_same_seq_not_applied(self) -> None:
+        """Equality delete written in same snapshot as data does NOT apply (spec mandate)."""
+        index = DeleteFileIndex()
+        partition = Record()
+        index.add_delete_file(_create_equality_delete(sequence_number=5, partition=partition), partition)
+
+        data_file = _create_data_file()
+        # Data file at seq 5, equality delete at seq 5: strictly > fails
+        result = index.for_data_file(5, data_file, partition)
+        assert len(result) == 0
+
+    def test_equality_delete_higher_seq_applied(self) -> None:
+        """Equality delete with seq > data.seq applies normally."""
+        index = DeleteFileIndex()
+        partition = Record()
+        index.add_delete_file(_create_equality_delete(sequence_number=6, partition=partition), partition)
+
+        data_file = _create_data_file()
+        # Data file at seq 5, equality delete at seq 6: strictly > passes
+        result = index.for_data_file(5, data_file, partition)
+        assert len(result) == 1
+
+    def test_position_delete_same_seq_still_applied(self) -> None:
+        """Position delete at same seq as data file still applies (>= semantics)."""
+        index = DeleteFileIndex()
+        partition = Record()
+        index.add_delete_file(_create_partition_delete(sequence_number=5, partition=partition), partition)
+
+        data_file = _create_data_file()
+        # Data file at seq 5, position delete at seq 5: >= passes
+        result = index.for_data_file(5, data_file, partition)
+        assert len(result) == 1
+
+    def test_mixed_equality_and_position_at_same_seq(self) -> None:
+        """At the same seq, position delete applies but equality delete does not."""
+        index = DeleteFileIndex()
+        partition = Record()
+        index.add_delete_file(_create_equality_delete(sequence_number=5, partition=partition), partition)
+        index.add_delete_file(_create_partition_delete(sequence_number=5, partition=partition), partition)
+
+        data_file = _create_data_file()
+        # Data file at seq 5: only the position delete applies
+        result = index.for_data_file(5, data_file, partition)
+        assert len(result) == 1
+        assert list(result)[0].content == DataFileContent.POSITION_DELETES
