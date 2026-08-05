@@ -273,6 +273,52 @@ def test_deserialize_partition_field_empty_source_ids_rejected() -> None:
         PartitionField.model_validate_json(json_partition_spec)
 
 
+def test_deserialize_partition_field_multi_arg() -> None:
+    import json as json_lib
+
+    from pyiceberg.transforms import UnknownTransform
+
+    json_partition_spec = """{"source-ids": [1, 2], "field-id": 1000, "transform": "bucket[4]", "name": "multi_bucket"}"""
+    field = PartitionField.model_validate_json(json_partition_spec)
+
+    # v3 readers must read tables with multi-argument transforms, treating them as unknown
+    assert isinstance(field.transform, UnknownTransform)
+    assert field.source_id == 1
+    assert field.source_ids == [1, 2]
+
+    # the field must round-trip: source-ids only, with the original transform name
+    serialized = json_lib.loads(field.model_dump_json())
+    assert serialized["source-ids"] == [1, 2]
+    assert "source-id" not in serialized
+    assert serialized["transform"] == "bucket[4]"
+
+    assert str(field) == "1000: multi_bucket: bucket[4](1, 2)"
+
+
+def test_serialize_partition_field_single_source_id_only() -> None:
+    import json as json_lib
+
+    json_partition_spec = """{"source-ids": [1], "field-id": 1000, "transform": "truncate[19]", "name": "str_truncate"}"""
+    field = PartitionField.model_validate_json(json_partition_spec)
+    serialized = json_lib.loads(field.model_dump_json())
+    assert serialized["source-id"] == 1
+    assert "source-ids" not in serialized
+    # a single-element source-ids is normalized onto source-id
+    assert field.source_ids is None
+
+
+def test_partition_type_with_multi_arg_field() -> None:
+    from pyiceberg.types import StringType
+
+    schema = Schema(NestedField(1, "a", IntegerType()), NestedField(2, "b", IntegerType()))
+    field = PartitionField.model_validate_json(
+        """{"source-ids": [1, 2], "field-id": 1000, "transform": "bucket[4]", "name": "m"}"""
+    )
+    spec = PartitionSpec(field)
+    struct = spec.partition_type(schema)
+    assert struct.fields[0].field_type == StringType()
+
+
 def test_incompatible_source_column_not_found() -> None:
     schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
 
@@ -304,3 +350,9 @@ def test_incompatible_transform_source_type() -> None:
         spec.check_compatible(schema)
 
     assert "Invalid source field foo with type int for transform: year" in str(exc.value)
+
+
+def test_deserialize_partition_field_multi_arg_requires_transform() -> None:
+    json_partition_spec = """{"source-ids": [1, 2], "field-id": 1000, "name": "m"}"""
+    with pytest.raises(Exception, match="Transform is required for a multi-argument field"):
+        PartitionField.model_validate_json(json_partition_spec)
