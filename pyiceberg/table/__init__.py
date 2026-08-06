@@ -2210,6 +2210,21 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
         dictionary_columns=dictionary_columns,
     ).to_record_batches(tasks)
 
+    if dictionary_columns:
+        # schema_to_pyarrow returns plain types, but ArrowScan yields dictionary-encoded
+        # batches for the requested columns. Peek at the first batch to pick up the actual
+        # dictionary field Arrow produced, rather than assuming an index type, and put the
+        # batch back on the stream. Without this, .cast(target_schema) would silently
+        # convert the dictionary arrays back to their plain value type and erase the encoding.
+        dict_col_set = set(dictionary_columns)
+        first_batch = next(batches, None)
+        if first_batch is not None:
+            batches = chain([first_batch], batches)
+            target_schema = pa.schema(
+                [first_batch.schema.field(field.name) if field.name in dict_col_set else field for field in target_schema],
+                metadata=target_schema.metadata,
+            )
+
     return pa.RecordBatchReader.from_batches(target_schema, batches).cast(target_schema)
 
 
@@ -2668,11 +2683,11 @@ class ManifestGroupPlanner:
         partition_type = spec.partition_type(self.table_metadata.schema())
         partition_schema = Schema(*partition_type.fields)
         partition_expr = self.partition_filters[spec_id]
+        evaluator = expression_evaluator(partition_schema, partition_expr, self.case_sensitive)
 
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _EvaluatorExpression methods bound to a single
-        # shared instance across multiple threads.
-        return lambda data_file: expression_evaluator(partition_schema, partition_expr, self.case_sensitive)(data_file.partition)
+        # Expression evaluators keep input-specific state local to each call, so the
+        # prepared evaluator can be shared by every manifest using this spec.
+        return lambda data_file: evaluator(data_file.partition)
 
     def _build_metrics_evaluator(self) -> Callable[[DataFile], bool]:
         schema = self.table_metadata.schema()

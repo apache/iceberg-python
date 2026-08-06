@@ -89,6 +89,7 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
+    _is_local_path,
 )
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
@@ -443,7 +444,7 @@ class FsspecFileIO(FileIO):
             FsspecInputFile: An FsspecInputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self._get_fs_from_uri(uri)
+        fs = self._get_fs_from_uri(uri, location)
         return FsspecInputFile(location=location, fs=fs)
 
     @override
@@ -457,7 +458,7 @@ class FsspecFileIO(FileIO):
             FsspecOutputFile: An FsspecOutputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self._get_fs_from_uri(uri)
+        fs = self._get_fs_from_uri(uri, location)
         return FsspecOutputFile(location=location, fs=fs)
 
     @override
@@ -475,11 +476,13 @@ class FsspecFileIO(FileIO):
             str_location = location
 
         uri = urlparse(str_location)
-        fs = self._get_fs_from_uri(uri)
+        fs = self._get_fs_from_uri(uri, str_location)
         fs.rm(str_location)
 
-    def _get_fs_from_uri(self, uri: "ParseResult") -> AbstractFileSystem:
+    def _get_fs_from_uri(self, uri: "ParseResult", location: str = "") -> AbstractFileSystem:
         """Get a filesystem from a parsed URI, using hostname for ADLS account resolution."""
+        if _is_local_path(location):
+            return self.get_fs("file")
         if uri.scheme in _ADLS_SCHEMES:
             return self.get_fs(uri.scheme, uri.hostname)
         return self.get_fs(uri.scheme)

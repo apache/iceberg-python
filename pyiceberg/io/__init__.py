@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import warnings
 from abc import ABC, abstractmethod
 from io import SEEK_SET
@@ -40,6 +41,18 @@ from urllib.parse import urlparse
 from pyiceberg.typedef import EMPTY_DICT, Properties
 
 logger = logging.getLogger(__name__)
+
+
+def _is_local_path(path: str) -> bool:
+    r"""Check if a path is a local filesystem path rather than a URI.
+
+    Uses os.path.splitdrive to detect Windows drive letters (e.g. 'C:\\...')
+    in a platform-aware way. On non-Windows systems, splitdrive always returns
+    an empty drive component, so this only triggers on Windows.
+    """
+    drive, _ = os.path.splitdrive(path)
+    return drive != ""
+
 
 AWS_PROFILE_NAME = "client.profile-name"
 AWS_REGION = "client.region"
@@ -335,14 +348,19 @@ PY_IO_IMPL = "py-io-impl"
 
 
 def _infer_file_io_from_scheme(path: str, properties: Properties) -> FileIO | None:
-    parsed_url = urlparse(path)
-    if parsed_url.scheme:
-        if file_ios := SCHEMA_TO_FILE_IO.get(parsed_url.scheme):
+    if _is_local_path(path):
+        scheme = "file"
+    else:
+        parsed_url = urlparse(path)
+        scheme = parsed_url.scheme
+
+    if scheme:
+        if file_ios := SCHEMA_TO_FILE_IO.get(scheme):
             for file_io_path in file_ios:
                 if file_io := _import_file_io(file_io_path, properties):
                     return file_io
         else:
-            warnings.warn(f"No preferred file implementation for scheme: {parsed_url.scheme}", stacklevel=2)
+            warnings.warn(f"No preferred file implementation for scheme: {scheme}", stacklevel=2)
     return None
 
 

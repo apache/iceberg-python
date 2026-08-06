@@ -454,16 +454,25 @@ def expression_evaluator(schema: Schema, unbound: BooleanExpression, case_sensit
     return _ExpressionEvaluator(schema, unbound, case_sensitive).eval
 
 
-class _ExpressionEvaluator(BoundBooleanExpressionVisitor[bool]):
+class _ExpressionEvaluator:
+    """An evaluator that binds an expression once and keeps evaluation state local to each call."""
+
     bound: BooleanExpression
-    struct: StructProtocol
 
     def __init__(self, schema: Schema, unbound: BooleanExpression, case_sensitive: bool):
         self.bound = bind(schema, unbound, case_sensitive)
 
     def eval(self, struct: StructProtocol) -> bool:
+        return visit(self.bound, _ExpressionEvaluationVisitor(struct))
+
+
+class _ExpressionEvaluationVisitor(BoundBooleanExpressionVisitor[bool]):
+    """Evaluate a bound expression against one struct."""
+
+    struct: StructProtocol
+
+    def __init__(self, struct: StructProtocol):
         self.struct = struct
-        return visit(self.bound, self)
 
     def visit_in(self, term: BoundTerm, literals: set[L]) -> bool:
         return term.eval(self.struct) in literals

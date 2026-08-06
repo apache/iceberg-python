@@ -326,13 +326,15 @@ def get_namespace(ctx: Context, identifier: str, property_name: str) -> None:
 
     namespace_properties = catalog.load_namespace_properties(identifier_tuple)
 
-    if property_name:
-        if property_value := namespace_properties.get(property_name):
-            output.text(property_value)
-        else:
-            raise NoSuchPropertyException(f"Could not find property {property_name} on namespace {identifier}")
-    else:
+    if not property_name:
         output.describe_properties(namespace_properties)
+        return
+
+    property_value = namespace_properties.get(property_name)
+    if property_value is None:
+        raise NoSuchPropertyException(f"Could not find property {property_name} on namespace {identifier}")
+
+    output.text(property_value)
 
 
 @get.command("table")
@@ -347,13 +349,15 @@ def get_table(ctx: Context, identifier: str, property_name: str) -> None:
 
     metadata = catalog.load_table(identifier_tuple).metadata
 
-    if property_name:
-        if property_value := metadata.properties.get(property_name):
-            output.text(property_value)
-        else:
-            raise NoSuchPropertyException(f"Could not find property {property_name} on table {identifier}")
-    else:
+    if not property_name:
         output.describe_properties(metadata.properties)
+        return
+
+    property_value = metadata.properties.get(property_name)
+    if property_value is None:
+        raise NoSuchPropertyException(f"Could not find property {property_name} on table {identifier}")
+
+    output.text(property_value)
 
 
 @properties.group()

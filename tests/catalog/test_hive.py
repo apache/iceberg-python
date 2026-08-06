@@ -18,6 +18,7 @@
 import base64
 import copy
 import struct
+import sys
 import threading
 import uuid
 from collections.abc import Generator
@@ -300,7 +301,7 @@ def test_create_table(
     # it to construct the assert_called_with
     metadata_location: str = called_hive_table.parameters["metadata_location"]
     assert metadata_location.endswith(".metadata.json")
-    assert "/database/table/metadata/" in metadata_location
+    assert "/database/table/metadata/" in metadata_location.replace("\\", "/")
     catalog._client.__enter__().create_table.assert_called_with(
         HiveTable(
             tableName="table",
@@ -481,7 +482,7 @@ def test_create_table_with_given_location_removes_trailing_slash(
     # it to construct the assert_called_with
     metadata_location: str = called_hive_table.parameters["metadata_location"]
     assert metadata_location.endswith(".metadata.json")
-    assert "/database/table-given-location/metadata/" in metadata_location
+    assert "/database/table-given-location/metadata/" in metadata_location.replace("\\", "/")
     catalog._client.__enter__().create_table.assert_called_with(
         HiveTable(
             tableName="table",
@@ -1369,6 +1370,7 @@ def test_create_hive_client_failure() -> None:
         assert mock_hive_client.call_count == 2
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Kerberos/puresasl not available on Windows")
 def test_create_hive_client_with_kerberos(
     kerberized_hive_metastore_fake_url: str,
 ) -> None:
@@ -1381,6 +1383,7 @@ def test_create_hive_client_with_kerberos(
     assert client is not None
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Kerberos/puresasl not available on Windows")
 def test_create_hive_client_with_kerberos_using_context_manager(
     kerberized_hive_metastore_fake_url: str,
 ) -> None:
@@ -1412,6 +1415,7 @@ def test_create_hive_client_with_kerberos_using_context_manager(
             assert open_client._iprot.trans.isOpen()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Kerberos/puresasl not available on Windows")
 def test_kerberized_client_uses_fresh_transport_on_reuse(
     kerberized_hive_metastore_fake_url: str,
 ) -> None:

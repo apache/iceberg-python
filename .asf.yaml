@@ -31,6 +31,7 @@ github:
   enabled_merge_buttons:
     merge: false
     squash: true
+    squash_commit_message: PR_TITLE_AND_COMMIT_DETAILS
     rebase: true
   protected_branches:
     main:
@@ -55,6 +56,10 @@ github:
     - rambleraptor
   ghp_branch: gh-pages
   ghp_path: /
+  copilot_code_review:
+    enabled: true
+    review_drafts: false
+    review_on_push: false
 
 notifications:
     commits:      commits@iceberg.apache.org

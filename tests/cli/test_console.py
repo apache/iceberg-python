@@ -440,6 +440,21 @@ def test_properties_get_table_specific_property(catalog: InMemoryCatalog) -> Non
     assert result.output == "134217728\n"
 
 
+def test_properties_get_table_specific_empty_property(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties={"empty": ""},
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["properties", "get", "table", "default.my_table", "empty"])
+    assert result.exit_code == 0
+    assert result.output == "\n"
+
+
 def test_properties_get_table_specific_property_that_doesnt_exist(catalog: InMemoryCatalog) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE)
     catalog.create_table(
@@ -480,6 +495,26 @@ def test_properties_get_namespace_specific_property(catalog: InMemoryCatalog, na
     result = runner.invoke(run, ["properties", "get", "namespace", "default", "location"])
     assert result.exit_code == 0
     assert result.output == "s3://warehouse/database/location\n"
+
+
+def test_properties_get_namespace_specific_empty_property(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE, {"empty": ""})
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["properties", "get", "namespace", "default", "empty"])
+    assert result.exit_code == 0
+    assert result.output == "\n"
+
+
+def test_properties_get_namespace_specific_property_that_doesnt_exist(
+    catalog: InMemoryCatalog, namespace_properties: Properties
+) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["properties", "get", "namespace", "default", "doesnotexist"])
+    assert result.exit_code == 1
+    assert result.output == "Could not find property doesnotexist on namespace default\n"
 
 
 def test_properties_get_namespace_does_not_exist(catalog: InMemoryCatalog, namespace_properties: Properties) -> None:
