@@ -654,6 +654,23 @@ def test_rest_create_view(
 
 
 @pytest.mark.integration
+def test_rest_create_sql_view(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    view = View(identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    assert not rest_catalog.view_exists(identifier)
+
+    rest_catalog.create_sql_view(identifier, view.schema(), "spark", "SELECT * FROM prod.db.table", "default")
+
+    assert rest_catalog.view_exists(identifier)
+    assert rest_catalog.load_view(identifier).schema() == view.schema()
+
+
+@pytest.mark.integration
 def test_rest_drop_view(
     rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
 ) -> None:
