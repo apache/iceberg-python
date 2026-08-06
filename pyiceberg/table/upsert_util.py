@@ -53,17 +53,47 @@ def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
     return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
 
 
-def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
+def validate_difference_cols(column_names: list[str], join_cols: list[str], difference_cols: list[str] | None) -> None:
+    """Validate the columns used to detect changes in matched rows.
+
+    Raises:
+        ValueError: If `difference_cols` is empty, contains columns that are not present
+            in `column_names`, or overlaps with `join_cols`.
+    """
+    if difference_cols is None:
+        return
+
+    difference_cols_set = set(difference_cols)
+
+    if not difference_cols_set:
+        raise ValueError("difference_cols cannot be empty, use None to compare all non-key columns")
+
+    if unknown_cols := difference_cols_set - set(column_names):
+        raise ValueError(f"Columns in difference_cols could not be found in the source table: {sorted(unknown_cols)}")
+
+    if key_cols := difference_cols_set & set(join_cols):
+        raise ValueError(f"Columns in difference_cols cannot be join columns: {sorted(key_cols)}")
+
+
+def get_rows_to_update(
+    source_table: pa.Table, target_table: pa.Table, join_cols: list[str], difference_cols: list[str] | None = None
+) -> pa.Table:
     """
     Return a table with rows that need to be updated in the target table based on the join columns.
 
     The table is joined on the identifier columns, and then checked if there are any updated rows.
     Those are selected and everything is renamed correctly.
+
+    When `difference_cols` is provided, only those columns are compared to detect changes in
+    matched rows, instead of all non-key columns. This only affects change *detection*: rows
+    that are detected as changed are still returned with all of their columns.
     """
     all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
 
-    non_key_cols = list(all_columns - join_cols_set)
+    validate_difference_cols(source_table.column_names, join_cols, difference_cols)
+
+    non_key_cols = list(all_columns - join_cols_set) if difference_cols is None else difference_cols
 
     if has_duplicate_rows(target_table, join_cols):
         raise ValueError("Target table has duplicate rows, aborting upsert")

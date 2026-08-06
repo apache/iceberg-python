@@ -29,7 +29,7 @@ from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
-from pyiceberg.table.upsert_util import create_match_filter
+from pyiceberg.table.upsert_util import create_match_filter, get_rows_to_update
 from pyiceberg.types import IntegerType, NestedField, StringType, StructType
 from tests.catalog.test_base import InMemoryCatalog
 
@@ -888,3 +888,112 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+def test_get_rows_to_update_with_difference_cols() -> None:
+    """
+    Change detection is limited to difference_cols, but detected rows are returned with all columns.
+    """
+    schema = pa.schema([pa.field("id", pa.int32()), pa.field("val", pa.string()), pa.field("meta", pa.string())])
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "val": "a", "meta": "m1"},
+            {"id": 2, "val": "b", "meta": "m2"},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "val": "a", "meta": "changed"},  # differs only in a column outside difference_cols
+            {"id": 2, "val": "B", "meta": "m2"},  # differs in a difference_cols column
+        ],
+        schema=schema,
+    )
+
+    # Without difference_cols, both rows are detected as changed
+    assert len(get_rows_to_update(source, target, ["id"])) == 2
+
+    # With difference_cols, only the row with a change in "val" is detected,
+    # and it is returned with all of its columns
+    rows = get_rows_to_update(source, target, ["id"], difference_cols=["val"])
+    assert rows.to_pylist() == [{"id": 2, "val": "B", "meta": "m2"}]
+
+
+def test_get_rows_to_update_difference_cols_validation() -> None:
+    schema = pa.schema([pa.field("id", pa.int32()), pa.field("val", pa.string())])
+    table = pa.Table.from_pylist([{"id": 1, "val": "a"}], schema=schema)
+
+    with pytest.raises(ValueError, match="could not be found in the source table"):
+        get_rows_to_update(table, table, ["id"], difference_cols=["nonexistent"])
+
+    with pytest.raises(ValueError, match="cannot be join columns"):
+        get_rows_to_update(table, table, ["id"], difference_cols=["id"])
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        get_rows_to_update(table, table, ["id"], difference_cols=[])
+
+
+def test_upsert_with_difference_cols(catalog: Catalog) -> None:
+    """
+    Upsert with difference_cols skips matched rows whose changes are outside the listed columns,
+    while updated rows are written with all of their columns.
+    """
+    identifier = "default.test_upsert_with_difference_cols"
+    _drop_table(catalog, identifier)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+            pa.field("notes", pa.string(), nullable=False),
+        ]
+    )
+
+    tbl = catalog.create_table(identifier, arrow_schema)
+    tbl.append(
+        pa.Table.from_pylist(
+            [
+                {"city": "Amsterdam", "population": 921402, "notes": "old"},
+                {"city": "San Francisco", "population": 808988, "notes": "old"},
+            ],
+            schema=arrow_schema,
+        )
+    )
+
+    source_df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 921402, "notes": "new"},  # change outside difference_cols -> skipped
+            {"city": "San Francisco", "population": 810000, "notes": "new"},  # change in difference_cols -> updated
+            {"city": "Drachten", "population": 45019, "notes": "new"},  # unmatched -> inserted
+        ],
+        schema=arrow_schema,
+    )
+
+    res = tbl.upsert(source_df, join_cols=["city"], difference_cols=["population"])
+
+    assert_upsert_result(res, expected_updated=1, expected_inserted=1)
+
+    result = {row["city"]: row for row in tbl.scan().to_arrow().to_pylist()}
+    # The skipped row is untouched, including the column that differed
+    assert result["Amsterdam"] == {"city": "Amsterdam", "population": 921402, "notes": "old"}
+    # The updated row is written with all columns, not only the difference_cols
+    assert result["San Francisco"] == {"city": "San Francisco", "population": 810000, "notes": "new"}
+    assert result["Drachten"] == {"city": "Drachten", "population": 45019, "notes": "new"}
+
+
+def test_upsert_with_invalid_difference_cols(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_invalid_difference_cols"
+    _drop_table(catalog, identifier)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+        ]
+    )
+
+    tbl = catalog.create_table(identifier, arrow_schema)
+    df = pa.Table.from_pylist([{"city": "Amsterdam", "population": 921402}], schema=arrow_schema)
+
+    with pytest.raises(ValueError, match="could not be found in the source table"):
+        tbl.upsert(df, join_cols=["city"], difference_cols=["nonexistent"])
