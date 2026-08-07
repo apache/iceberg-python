@@ -26,7 +26,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
-from pyiceberg.expressions import AlwaysFalse, BooleanExpression, Or
+from pyiceberg.expressions import AlwaysFalse, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
     ROWS_MUST_MATCH,
@@ -89,6 +89,30 @@ def _new_manifest_list_file_name(snapshot_id: int, attempt: int, commit_uuid: uu
     # Mimics the behavior in Java:
     # https://github.com/apache/iceberg/blob/c862b9177af8e2d83122220764a056f3b96fd00c/core/src/main/java/org/apache/iceberg/SnapshotProducer.java#L491
     return f"snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
+
+
+def _partition_records_filter(spec: PartitionSpec, partition_records: set[Record]) -> BooleanExpression:
+    """Build a filter over the partition fields matching any of the given partition records.
+
+    The returned expression references partition field names and transformed values, so it is
+    already in the domain a manifest evaluator binds against. It must not be projected through
+    `inclusive_projection`, which expects a predicate on the source columns instead.
+    """
+    partition_names = [field.name for field in spec.fields]
+    if not partition_records or not partition_names:
+        return AlwaysFalse()
+
+    per_record_exprs: list[BooleanExpression] = []
+    for partition_record in partition_records:
+        predicates: list[BooleanExpression] = [
+            EqualTo(Reference(partition_name), partition_record[pos])
+            if partition_record[pos] is not None
+            else IsNull(Reference(partition_name))
+            for pos, partition_name in enumerate(partition_names)
+        ]
+        per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
+
+    return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
 
 
 class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
@@ -211,9 +235,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 return deleted_manifests
             else:
                 return []
-
-        # Updates self._predicate with computed partition predicate for manifest pruning
-        self._build_delete_files_partition_predicate()
 
         executor = ExecutorFactory.get_or_create()
 
@@ -372,20 +393,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def delete_by_predicate(self, predicate: BooleanExpression, case_sensitive: bool = True) -> None:
         self._predicate = Or(self._predicate, predicate)
         self._case_sensitive = case_sensitive
-
-    def _build_delete_files_partition_predicate(self) -> None:
-        """Build BooleanExpression based on deleted data files partitions."""
-        partition_to_overwrite: dict[int, set[Record]] = {}
-        for data_file in self._deleted_data_files:
-            group = partition_to_overwrite.setdefault(data_file.spec_id, set())
-            group.add(data_file.partition)
-
-        for spec_id, partition_records in partition_to_overwrite.items():
-            self.delete_by_predicate(
-                self._transaction._build_partition_predicate(
-                    partition_records=partition_records, schema=self.schema(), spec=self.spec(spec_id)
-                )
-            )
 
 
 class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
@@ -587,6 +594,32 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
 
     Data and delete files were added and removed in a logical overwrite operation.
     """
+
+    @cached_property
+    def _deleted_files_partition_filters(self) -> dict[int, BooleanExpression]:
+        """Per-spec filters matching the partitions of the data files being replaced.
+
+        A data file records its partition values already transformed, so these reference the
+        partition fields. Deriving them from a source-column predicate instead would mean
+        projecting it onto the spec, which applies the transform a second time.
+        """
+        partition_to_overwrite: dict[int, set[Record]] = defaultdict(set)
+        for data_file in self._deleted_data_files:
+            partition_to_overwrite[data_file.spec_id].add(data_file.partition)
+
+        return {
+            spec_id: _partition_records_filter(self.spec(spec_id), partition_records)
+            for spec_id, partition_records in partition_to_overwrite.items()
+        }
+
+    def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
+        """Prune manifests that cannot hold any of the data files being replaced.
+
+        An overwrite never carries a row-level predicate, so the partitions of those files are
+        the only thing to match on.
+        """
+        partition_filter = self._deleted_files_partition_filters.get(spec_id, AlwaysFalse())
+        return manifest_evaluator(self.spec(spec_id), self.schema(), partition_filter, self._case_sensitive)
 
     def _existing_manifests(self) -> list[ManifestFile]:
         """Determine if there are any existing manifest files."""

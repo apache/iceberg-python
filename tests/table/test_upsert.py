@@ -14,7 +14,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from datetime import datetime
 from pathlib import PosixPath
+from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -26,11 +28,22 @@ from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
-from pyiceberg.types import IntegerType, NestedField, StringType, StructType
+from pyiceberg.transforms import (
+    BucketTransform,
+    DayTransform,
+    HourTransform,
+    IdentityTransform,
+    MonthTransform,
+    Transform,
+    TruncateTransform,
+    YearTransform,
+)
+from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -888,3 +901,59 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+@pytest.mark.parametrize(
+    "transform, source_id, kept_key, updated_key",
+    [
+        # Identity and truncate already behaved: re-applying either to a value it has
+        # produced is a no-op, so they are controls rather than regression cases.
+        (IdentityTransform(), 3, "a", "b"),
+        (TruncateTransform(1), 1, "aa", "ab"),
+        (YearTransform(), 3, "a", "b"),
+        (MonthTransform(), 3, "a", "b"),
+        (DayTransform(), 3, "a", "b"),
+        (HourTransform(), 3, "a", "b"),
+        # keys chosen to collide, so that one data file holds both rows
+        (BucketTransform(4), 1, "k0", "k1"),
+    ],
+)
+def test_upsert_partial_rewrite_of_partitioned_file(
+    catalog: Catalog, transform: Transform[Any, Any], source_id: int, kept_key: str, updated_key: str
+) -> None:
+    """Upsert a row out of a data file that also holds a row it must leave alone.
+
+    Both rows land in the same partition, so the file is rewritten rather than dropped. The
+    manifest holding it has to be rewritten too — see https://github.com/apache/iceberg-python/issues/3758,
+    where the manifest was instead carried over whole and the superseded rows stayed visible.
+    """
+    identifier = "default.test_upsert_partial_rewrite_of_partitioned_file"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "key", StringType(), required=False),
+        NestedField(2, "value", IntegerType(), required=False),
+        NestedField(3, "event_ts", TimestampType(), required=False),
+    )
+    tbl = catalog.create_table(
+        identifier,
+        schema=schema,
+        partition_spec=PartitionSpec(PartitionField(source_id=source_id, field_id=1000, transform=transform, name="part")),
+    )
+
+    arrow_schema = schema_to_pyarrow(schema)
+    event_ts = datetime(2026, 1, 6, 12)
+
+    def rows(*pairs: tuple[str, int]) -> pa_table:
+        return pa.Table.from_pylist(
+            [{"key": key, "value": value, "event_ts": event_ts} for key, value in pairs], schema=arrow_schema
+        )
+
+    tbl.append(rows((updated_key, 1), (kept_key, 1)))
+    assert len(tbl.inspect.files()) == 1, "both rows must share a data file to exercise a partial rewrite"
+
+    assert_upsert_result(tbl.upsert(rows((updated_key, 2)), join_cols=["key"]), expected_updated=1, expected_inserted=0)
+
+    result = tbl.scan().to_arrow()
+    actual = zip(result["key"].to_pylist(), result["value"].to_pylist(), strict=True)
+    assert sorted(actual) == sorted([(updated_key, 2), (kept_key, 1)])
