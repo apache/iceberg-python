@@ -25,12 +25,13 @@ from pyspark.sql import SparkSession
 from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, EqualTo, LessThanOrEqual
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.manifest import ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation, Summary
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import FloatType, IntegerType, LongType, NestedField, StringType, TimestampType
 
 
@@ -1024,3 +1025,40 @@ def test_manifest_entry_snapshot_id_after_partial_deletes(session_catalog: RestC
             f"DELETED entry snapshot_id should be {after_delete_snapshot.snapshot_id} "
             f"(the deleting snapshot), but was {entry.snapshot_id}"
         )
+
+
+@pytest.mark.integration
+def test_delete_partial_rewrite_of_transformed_partition(session_catalog: RestCatalog) -> None:
+    """Delete part of a data file in a partition whose values are transformed.
+
+    The file is rewritten rather than dropped, so the manifest referencing it has to be
+    rewritten too. Pruning used to compare the source column against the transformed
+    partition value, which never selected that manifest, and it was carried over whole
+    beside the rewritten file — see https://github.com/apache/iceberg-python/issues/3758.
+    """
+    identifier = "default.test_delete_partial_rewrite_of_transformed_partition"
+
+    try:
+        session_catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass
+
+    schema = Schema(
+        NestedField(1, "idx", IntegerType()),
+        NestedField(2, "event_ts", TimestampType()),
+    )
+    tbl = session_catalog.create_table(
+        identifier,
+        schema=schema,
+        partition_spec=PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=DayTransform(), name="ts_day")),
+    )
+
+    event_ts = datetime(2026, 1, 6, 12)
+    rows = [{"idx": 1, "event_ts": event_ts}, {"idx": 2, "event_ts": event_ts}]
+    tbl.append(pa.Table.from_pylist(rows, schema=schema_to_pyarrow(schema)))
+    assert len(tbl.inspect.files()) == 1, "both rows must share a data file to exercise a partial rewrite"
+
+    tbl.delete(EqualTo("idx", 1))
+
+    assert [snapshot.summary.operation for snapshot in tbl.snapshots()] == [Operation.APPEND, Operation.OVERWRITE]
+    assert tbl.scan().to_arrow()["idx"].to_pylist() == [2]
