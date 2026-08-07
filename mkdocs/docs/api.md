@@ -1511,9 +1511,10 @@ table.manage_snapshots().cherry_pick_snapshot(staged).commit()
 The published snapshot records `source-snapshot-id`, and `published-wap-id` when the staged
 snapshot carried a `wap.id`. A given `wap.id` can only be published once.
 
-If the table has not changed since the branch was cut, the branch is fast-forwarded rather than
-replayed. Picking a snapshot that is already an ancestor of the current state does nothing. Only
-append snapshots can be replayed; anything else raises.
+Append snapshots are always replayed, so the wap trail is recorded even when the table has not
+changed since the branch was cut. A snapshot with any other operation is fast-forwarded to when
+its parent is already the current snapshot, and raises otherwise. Picking a snapshot that is
+already an ancestor of the current state does nothing.
 
 ## Table Maintenance
 
