@@ -14,8 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import time
 import uuid
 from collections.abc import Generator
+from datetime import datetime, timedelta, timezone
 
 import pyarrow as pa
 import pytest
@@ -332,3 +334,66 @@ def test_rollback_to_timestamp_chained_with_tag(table_with_snapshots: Table) -> 
     assert table_with_snapshots.metadata.refs[tag_name] == SnapshotRef(
         snapshot_id=current_snapshot.snapshot_id, snapshot_ref_type="tag"
     )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_remove_expired_refs(catalog: Catalog) -> None:
+    """An expired branch is removed, and the snapshot it pinned becomes expirable."""
+    catalog.create_namespace_if_not_exists("default")
+    identifier = f"default.test_expire_refs_{uuid.uuid4().hex[:8]}"
+    arrow_schema = pa.schema([pa.field("id", pa.int64(), nullable=False)])
+    tbl = catalog.create_table(identifier=identifier, schema=arrow_schema)
+
+    for i in range(3):
+        tbl.append(pa.Table.from_pylist([{"id": i}], schema=arrow_schema))
+    tbl = catalog.load_table(identifier)
+
+    pinned_snapshot_id = tbl.metadata.snapshots[0].snapshot_id
+    tbl.manage_snapshots().create_branch(
+        snapshot_id=pinned_snapshot_id,
+        branch_name="audit",
+        max_ref_age_ms=1,
+    ).commit()
+
+    tbl = catalog.load_table(identifier)
+    assert "audit" in tbl.metadata.refs
+    time.sleep(0.05)
+
+    tbl.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(timezone.utc) + timedelta(days=1)).commit()
+
+    tbl = catalog.load_table(identifier)
+    assert "audit" not in tbl.metadata.refs
+    assert tbl.snapshot_by_id(pinned_snapshot_id) is None
+
+    catalog.drop_table(identifier)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_remove_expired_refs_keeps_unexpired_branch(catalog: Catalog) -> None:
+    """A branch inside its retention window survives and keeps protecting its snapshot."""
+    catalog.create_namespace_if_not_exists("default")
+    identifier = f"default.test_expire_refs_keep_{uuid.uuid4().hex[:8]}"
+    arrow_schema = pa.schema([pa.field("id", pa.int64(), nullable=False)])
+    tbl = catalog.create_table(identifier=identifier, schema=arrow_schema)
+
+    for i in range(3):
+        tbl.append(pa.Table.from_pylist([{"id": i}], schema=arrow_schema))
+    tbl = catalog.load_table(identifier)
+
+    pinned_snapshot_id = tbl.metadata.snapshots[0].snapshot_id
+    tbl.manage_snapshots().create_branch(
+        snapshot_id=pinned_snapshot_id,
+        branch_name="audit",
+        max_ref_age_ms=7 * 24 * 60 * 60 * 1000,
+    ).commit()
+
+    tbl = catalog.load_table(identifier)
+    tbl.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(timezone.utc) + timedelta(days=1)).commit()
+
+    tbl = catalog.load_table(identifier)
+    assert "audit" in tbl.metadata.refs
+    assert tbl.snapshot_by_id(pinned_snapshot_id) is not None
+
+    catalog.drop_table(identifier)

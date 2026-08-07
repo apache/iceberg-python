@@ -212,6 +212,10 @@ class TableProperties:
     MIN_SNAPSHOTS_TO_KEEP = "history.expire.min-snapshots-to-keep"
     MIN_SNAPSHOTS_TO_KEEP_DEFAULT = 1
 
+    MAX_REF_AGE_MS = "history.expire.max-ref-age-ms"
+    # sys.maxsize would be 2**31-1 on a 32-bit build, silently expiring refs after ~25 days.
+    MAX_REF_AGE_MS_DEFAULT = 2**63 - 1
+
 
 class Transaction:
     _table: Table
