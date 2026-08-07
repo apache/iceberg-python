@@ -332,3 +332,48 @@ def test_rollback_to_timestamp_chained_with_tag(table_with_snapshots: Table) -> 
     assert table_with_snapshots.metadata.refs[tag_name] == SnapshotRef(
         snapshot_id=current_snapshot.snapshot_id, snapshot_ref_type="tag"
     )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_cherry_pick_snapshot_publishes_staged_write(catalog: Catalog) -> None:
+    """Publish a branch-staged write onto a main that has moved on since the branch was cut."""
+    catalog.create_namespace_if_not_exists("default")
+    identifier = f"default.test_cherry_pick_{uuid.uuid4().hex[:8]}"
+    arrow_schema = pa.schema([pa.field("id", pa.int64(), nullable=False)])
+    tbl = catalog.create_table(identifier=identifier, schema=arrow_schema)
+
+    tbl.append(pa.Table.from_pylist([{"id": 1}], schema=arrow_schema))
+    tbl = catalog.load_table(identifier)
+    current_snapshot_id = tbl.metadata.current_snapshot_id
+    assert current_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=current_snapshot_id, branch_name="audit").commit()
+
+    tbl = catalog.load_table(identifier)
+    tbl.append(
+        pa.Table.from_pylist([{"id": 2}, {"id": 3}], schema=arrow_schema),
+        branch="audit",
+        snapshot_properties={"wap.id": "etl-001"},
+    )
+    tbl = catalog.load_table(identifier)
+    staged = tbl.metadata.refs["audit"].snapshot_id
+
+    # main advances independently, so this is a replay rather than a fast-forward
+    tbl.append(pa.Table.from_pylist([{"id": 9}], schema=arrow_schema))
+    tbl = catalog.load_table(identifier)
+    assert sorted(tbl.scan().to_arrow().column("id").to_pylist()) == [1, 9]
+
+    tbl.manage_snapshots().cherry_pick_snapshot(staged).commit()
+
+    tbl = catalog.load_table(identifier)
+    assert sorted(tbl.scan().to_arrow().column("id").to_pylist()) == [1, 2, 3, 9]
+    published = tbl.current_snapshot()
+    assert published is not None and published.summary is not None
+    summary = published.summary.additional_properties
+    assert summary["source-snapshot-id"] == str(staged)
+    assert summary["published-wap-id"] == "etl-001"
+
+    with pytest.raises(ValueError, match="Duplicate request to cherry pick wap id"):
+        tbl.manage_snapshots().cherry_pick_snapshot(staged).commit()
+
+    catalog.drop_table(identifier)
