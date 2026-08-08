@@ -14,7 +14,6 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 from pathlib import PosixPath
 from typing import Any
 
@@ -29,7 +28,7 @@ from pyiceberg.table.inspect import InspectTable, _readable_bound
 from pyiceberg.table.snapshots import Snapshot
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import NestedField, StringType
+from pyiceberg.types import DoubleType, LongType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -106,3 +105,16 @@ def test_inspect_manifests_preserves_empty_string_bounds(catalog: InMemoryCatalo
     partition_summary = tbl.inspect.manifests().to_pydict()["partition_summaries"][0][0]
     assert partition_summary["lower_bound"] == ""
     assert partition_summary["upper_bound"] == ""
+
+def test_readable_bound_type_promotions() -> None:
+    # 4-byte LE representation of integer 10 -> b'\x0a\x00\x00\x00'
+    four_byte_int_bound = b"\x0a\x00\x00\x00"
+
+    # 4-byte LE representation of float 10.0 -> b'\x00\x00\x20\x41'
+    four_byte_float_bound = b"\x00\x00\x20\x41"
+
+    # Test int -> long promotion decoding
+    assert _readable_bound(LongType(), four_byte_int_bound) == 10
+
+    # Test float -> double promotion decoding
+    assert _readable_bound(DoubleType(), four_byte_float_bound) == 10.0
