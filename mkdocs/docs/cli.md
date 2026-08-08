@@ -43,19 +43,20 @@ Options:
   --help                Show this message and exit.
 
 Commands:
-  create      Operation to create a namespace.
-  describe    Describe a namespace or a table.
-  drop        Operations to drop a namespace or table.
-  files       List all the files of the table.
-  list        List tables or namespaces.
-  list-refs   List all the refs in the provided table.
-  location    Return the location of the table.
-  properties  Properties on tables/namespaces.
-  rename      Rename a table.
-  schema      Get the schema of the table.
-  spec        Return the partition spec of the table.
-  uuid        Return the UUID of the table.
-  version     Print pyiceberg version.
+  create            Operation to create a namespace.
+  describe          Describe a namespace or a table.
+  drop              Operations to drop a namespace or table.
+  expire-snapshots  Expire snapshots from a table by ID or age.
+  files             List all the files of the table.
+  list              List tables or namespaces.
+  list-refs         List all the refs in the provided table.
+  location          Return the location of the table.
+  properties        Properties on tables/namespaces.
+  rename            Rename a table.
+  schema            Get the schema of the table.
+  spec              Return the partition spec of the table.
+  uuid              Return the UUID of the table.
+  version           Print pyiceberg version.
 ```
 
 This example assumes that you have a default catalog set. If you want to load another catalog, for example, the rest example above. Then you need to set `--catalog rest`.
@@ -239,4 +240,27 @@ Property write.metadata.delete-after-commit.enabled removed from nyc.taxis
 
 ➜  pyiceberg properties get table nyc.taxis write.metadata.delete-after-commit.enabled
 Could not find property write.metadata.delete-after-commit.enabled on nyc.taxis
+```
+
+## Expire snapshots
+
+`expire-snapshots` removes snapshots from a table. Snapshots that are the HEAD of a branch or that are referenced by a tag are protected and will be skipped.
+
+Pass `--snapshot-id` one or more times to expire snapshots by ID, and/or `--older-than <ISO datetime>` to expire all unprotected snapshots older than the given timestamp. At least one of the two options is required.
+
+```sh
+➜  pyiceberg expire-snapshots nyc.taxis --snapshot-id 5937117119577207079
+Expired snapshots on nyc.taxis
+```
+
+```sh
+➜  pyiceberg expire-snapshots nyc.taxis \
+    --snapshot-id 5937117119577207079 \
+    --snapshot-id 4123987645210000000
+Expired snapshots on nyc.taxis
+```
+
+```sh
+➜  pyiceberg expire-snapshots nyc.taxis --older-than 2024-01-01T00:00:00
+Expired snapshots on nyc.taxis
 ```
