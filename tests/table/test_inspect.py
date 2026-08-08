@@ -14,7 +14,6 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 from pathlib import PosixPath
 
 import pyarrow as pa
@@ -23,7 +22,7 @@ import pytest
 from pyiceberg.conversions import to_bytes
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import _readable_bound
-from pyiceberg.types import NestedField, StringType
+from pyiceberg.types import DoubleType, LongType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -68,3 +67,17 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
     files_metrics = tbl.inspect.files().to_pydict()["readable_metrics"][0]["s"]
     assert files_metrics["lower_bound"] is None
     assert files_metrics["upper_bound"] is None
+
+
+def test_readable_bound_type_promotions() -> None:
+    # 4-byte LE representation of integer 10 -> b'\x0a\x00\x00\x00'
+    four_byte_int_bound = b"\x0a\x00\x00\x00"
+
+    # 4-byte LE representation of float 10.0 -> b'\x00\x00\x20\x41'
+    four_byte_float_bound = b"\x00\x00\x20\x41"
+
+    # Test int -> long promotion decoding
+    assert _readable_bound(LongType(), four_byte_int_bound) == 10
+
+    # Test float -> double promotion decoding
+    assert _readable_bound(DoubleType(), four_byte_float_bound) == 10.0
