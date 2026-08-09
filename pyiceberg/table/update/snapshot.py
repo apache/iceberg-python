@@ -71,6 +71,7 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT, KeyDefaultDict, Record
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
@@ -595,8 +596,15 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
         if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
             for manifest_file in snapshot.manifests(io=self._io):
+                spec = self.spec(manifest_file.partition_spec_id)
+
+                # Optimization: only use manifest evaluator pruning for identity-only transforms
+                # to avoid false negatives with non-identity transforms (#3758).
+                # For non-identity transforms, fall back to always checking exact file identity.
+                spec_is_identity_only = all(isinstance(field.transform, IdentityTransform) for field in spec.fields)
+
                 # Manifest does not contain rows that match the files to delete partitions
-                if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
+                if spec_is_identity_only and not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
                     existing_files.append(manifest_file)
                     continue
 
@@ -651,7 +659,14 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
             manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
 
             def _get_entries(manifest: ManifestFile) -> list[ManifestEntry]:
-                if not manifest_evaluators[manifest.partition_spec_id](manifest):
+                spec = self.spec(manifest.partition_spec_id)
+
+                # Optimization: only use manifest evaluator pruning for identity-only transforms
+                # to avoid false negatives with non-identity transforms (#3758).
+                # For non-identity transforms, fall back to always checking exact file identity.
+                spec_is_identity_only = all(isinstance(field.transform, IdentityTransform) for field in spec.fields)
+
+                if spec_is_identity_only and not manifest_evaluators[manifest.partition_spec_id](manifest):
                     return []
 
                 return [

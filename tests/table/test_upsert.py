@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import datetime as dt
 from pathlib import PosixPath
 
 import pyarrow as pa
@@ -26,11 +27,21 @@ from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
-from pyiceberg.types import IntegerType, NestedField, StringType, StructType
+from pyiceberg.transforms import (
+    BucketTransform,
+    DayTransform,
+    HourTransform,
+    IdentityTransform,
+    MonthTransform,
+    Transform,
+    YearTransform,
+)
+from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -888,3 +899,86 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+@pytest.mark.parametrize(
+    "transform",
+    [
+        IdentityTransform(),
+        DayTransform(),
+        MonthTransform(),
+        YearTransform(),
+        HourTransform(),
+        BucketTransform(4),
+    ],
+)
+def test_upsert_temporal_partitioned(catalog: Catalog, transform: Transform[object, object]) -> None:
+    """Test upsert on a table with temporal partition transforms (issue #3758).
+
+    Regression test for: https://github.com/apache/iceberg-python/issues/3758
+    On a partitioned table where the join column is not a partition field,
+    upsert was leaving replaced rows intact and duplicating untouched rows
+    for temporal transforms (day/month/year/hour). This test ensures:
+    - No stale rows remain after upsert
+    - No unmodified rows are duplicated
+    - Works correctly for all transform types (identity, temporal, truncate, bucket)
+    """
+    identifier = f"default.test_upsert_temporal_partition_{transform.__class__.__name__}"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "k", StringType(), required=False),
+        NestedField(2, "v", IntegerType(), required=False),
+        NestedField(3, "ts", TimestampType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(3, 1000, transform, "ts_partition"))
+
+    table = catalog.create_table(
+        identifier,
+        schema=schema,
+        partition_spec=partition_spec,
+        properties={"format-version": "2"},
+    )
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("k", pa.string()),
+            pa.field("v", pa.int32()),
+            pa.field("ts", pa.timestamp("us")),
+        ]
+    )
+    when = dt.datetime(2026, 1, 6, 12)
+
+    # Append 2 rows sharing one partition: both have same timestamp
+    initial_data = pa.table(
+        {
+            "k": ["a", "b"],
+            "v": pa.array([1, 1], type=pa.int32()),
+            "ts": [when, when],
+        },
+        schema=arrow_schema,
+    )
+    table.append(initial_data)
+    table.refresh()
+
+    # Upsert: update one of them (join on k, not a partition field)
+    upsert_data = pa.table(
+        {
+            "k": ["a"],
+            "v": pa.array([2], type=pa.int32()),
+            "ts": [when],
+        },
+        schema=arrow_schema,
+    )
+    table.upsert(upsert_data, join_cols=["k"])
+    table.refresh()
+
+    # Scan result and verify correctness
+    result = table.scan().to_arrow()
+    result_rows = sorted(zip(result["k"].to_pylist(), result["v"].to_pylist(), strict=True))
+
+    # Expected: 2 rows total, ("a", 2) (updated) and ("b", 1) (untouched)
+    # Bug would produce: 4 rows, ("a", 1), ("a", 2), ("b", 1), ("b", 1)
+    expected = [("a", 2), ("b", 1)]
+    assert result_rows == expected, f"Expected {expected}, got {result_rows} for transform {transform}"
+    assert len(result_rows) == 2, f"Expected 2 rows after upsert, got {len(result_rows)}"
