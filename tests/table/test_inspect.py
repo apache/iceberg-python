@@ -118,3 +118,52 @@ def test_readable_bound_type_promotions() -> None:
 
     # Test float -> double promotion decoding
     assert _readable_bound(DoubleType(), four_byte_float_bound) == 10.0
+
+
+def test_inspect_files_type_promoted_bounds_e2e() -> None:
+    import shutil
+    import tempfile
+
+    import pyarrow as pa
+
+    from pyiceberg.catalog.sql import SqlCatalog
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import IntegerType, LongType, NestedField, StringType
+
+    warehouse = tempfile.mkdtemp(prefix="iceberg_test_e2e_")
+    try:
+        catalog = SqlCatalog("test_e2e", uri=f"sqlite:///{warehouse}/catalog.db", warehouse=f"file://{warehouse}")
+        catalog.create_namespace("ns")
+
+        tbl = catalog.create_table(
+            "ns.t",
+            schema=Schema(
+                NestedField(1, "name", StringType(), required=False),
+                NestedField(2, "qty", IntegerType(), required=False),
+            ),
+        )
+
+        tbl.append(
+            pa.Table.from_pylist(
+                [{"name": "a", "qty": 10}],
+                schema=pa.schema([pa.field("name", pa.string()), pa.field("qty", pa.int32())]),
+            )
+        )
+
+        # Promote int -> long
+        with tbl.update_schema() as update:
+            update.update_column("qty", field_type=LongType())
+
+        tbl = catalog.load_table("ns.t")
+
+        # Test metadata inspection tables
+        files_df = tbl.inspect.files()
+        assert files_df.num_rows == 1
+
+        entries_df = tbl.inspect.entries()
+        assert entries_df.num_rows == 1
+
+        manifests_df = tbl.inspect.manifests()
+        assert manifests_df.num_rows >= 1
+    finally:
+        shutil.rmtree(warehouse, ignore_errors=True)
