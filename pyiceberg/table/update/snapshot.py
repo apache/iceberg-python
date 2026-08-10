@@ -51,7 +51,6 @@ from pyiceberg.manifest import (
     write_manifest_list,
 )
 from pyiceberg.partitioning import PartitionSpec
-from pyiceberg.schema import Schema
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
@@ -74,7 +73,7 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
-from pyiceberg.typedef import EMPTY_DICT, KeyDefaultDict, Record
+from pyiceberg.typedef import EMPTY_DICT, KeyDefaultDict
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.datetime import datetime_to_millis
@@ -229,8 +228,13 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _manifests(self) -> list[ManifestFile]:
         def _write_added_manifest() -> list[ManifestFile]:
             if self._added_data_files:
-                with self.new_manifest_writer(
+                with write_manifest(
+                    format_version=self._transaction.table_metadata.format_version,
                     spec=self._transaction.table_metadata.spec(),
+                    schema=self._transaction.table_metadata.schema(),
+                    output_file=self.new_manifest_output(),
+                    snapshot_id=self._snapshot_id,
+                    avro_compression=self._compression,
                 ) as writer:
                     for data_file in self._added_data_files:
                         writer.add(
@@ -255,16 +259,20 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 for deleted_entry in deleted_entries:
                     partition_groups[deleted_entry.data_file.spec_id].append(deleted_entry)
                 for spec_id, entries in partition_groups.items():
-                    with self.new_manifest_writer(self.spec(spec_id)) as writer:
+                    with write_manifest(
+                        format_version=self._transaction.table_metadata.format_version,
+                        spec=self._transaction.table_metadata.specs()[spec_id],
+                        schema=self._transaction.table_metadata.schema(),
+                        output_file=self.new_manifest_output(),
+                        snapshot_id=self._snapshot_id,
+                        avro_compression=self._compression,
+                    ) as writer:
                         for entry in entries:
                             writer.add_entry(entry)
                     deleted_manifests.append(writer.to_manifest_file())
                 return deleted_manifests
             else:
                 return []
-
-        # Updates self._predicate with computed partition predicate for manifest pruning
-        self._build_delete_files_partition_predicate()
 
         executor = ExecutorFactory.get_or_create()
 
@@ -385,9 +393,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def snapshot_id(self) -> int:
         return self._snapshot_id
 
-    def schema(self) -> Schema:
-        return self._transaction.table_metadata.schema()
-
     def spec(self, spec_id: int) -> PartitionSpec:
         return self._transaction.table_metadata.specs()[spec_id]
 
@@ -395,7 +400,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return write_manifest(
             format_version=self._transaction.table_metadata.format_version,
             spec=spec,
-            schema=self.schema(),
+            schema=self._transaction.table_metadata.schema(),
             output_file=self.new_manifest_output(),
             snapshot_id=self._snapshot_id,
             avro_compression=self._compression,
@@ -506,7 +511,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             )
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.schema(), self.spec(spec_id), self._case_sensitive)
+        schema = self._transaction.table_metadata.schema()
+        project = inclusive_projection(schema, self.spec(spec_id), self._case_sensitive)
         return project(self._predicate)
 
     @cached_property
@@ -514,26 +520,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return KeyDefaultDict(self._build_partition_projection)
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
-        return manifest_evaluator(self.spec(spec_id), self.schema(), self.partition_filters[spec_id], self._case_sensitive)
+        schema = self._transaction.table_metadata.schema()
+        return manifest_evaluator(self.spec(spec_id), schema, self.partition_filters[spec_id], self._case_sensitive)
 
     def delete_by_predicate(self, predicate: BooleanExpression, case_sensitive: bool = True) -> None:
         self._predicate = Or(self._predicate, predicate)
         self._case_sensitive = case_sensitive
-
-    def _build_delete_files_partition_predicate(self) -> None:
-        """Build BooleanExpression based on deleted data files partitions."""
-        partition_to_overwrite: dict[int, set[Record]] = {}
-        for data_file in self._deleted_data_files:
-            group = partition_to_overwrite.setdefault(data_file.spec_id, set())
-            group.add(data_file.partition)
-
-        for spec_id, partition_records in partition_to_overwrite.items():
-            self.delete_by_predicate(
-                self._transaction._build_partition_predicate(
-                    partition_records=partition_records, schema=self.schema(), spec=self.spec(spec_id)
-                ),
-                self._case_sensitive,
-            )
 
 
 class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
@@ -637,7 +629,14 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
                                 # Rewrite the manifest
                                 if len(existing_entries) > 0:
-                                    with self.new_manifest_writer(spec=self.spec(manifest_file.partition_spec_id)) as writer:
+                                    with write_manifest(
+                                        format_version=self._transaction.table_metadata.format_version,
+                                        spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                                        schema=self._transaction.table_metadata.schema(),
+                                        output_file=self.new_manifest_output(),
+                                        snapshot_id=self._snapshot_id,
+                                        avro_compression=self._compression,
+                                    ) as writer:
                                         for existing_entry in existing_entries:
                                             writer.add_entry(existing_entry)
                                     existing_manifests.append(writer.to_manifest_file())
@@ -772,46 +771,36 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         """Determine if there are any existing manifest files."""
         existing_files = []
 
-        manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
         if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
             for manifest_file in snapshot.manifests(io=self._io):
-                # Manifest does not contain rows that match the files to delete partitions
-                if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
+                entries = manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True)
+                found_deleted_data_files = [entry.data_file for entry in entries if entry.data_file in self._deleted_data_files]
+
+                if len(found_deleted_data_files) == 0:
                     existing_files.append(manifest_file)
-                    continue
-
-                entries_to_write: set[ManifestEntry] = set()
-                found_deleted_entries: set[ManifestEntry] = set()
-
-                for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
-                    if entry.data_file in self._deleted_data_files:
-                        found_deleted_entries.add(entry)
-                    else:
-                        entries_to_write.add(entry)
-
-                # Is the intercept the empty set?
-                if len(found_deleted_entries) == 0:
-                    existing_files.append(manifest_file)
-                    continue
-
-                # Delete all files from manifest
-                if len(entries_to_write) == 0:
-                    continue
-
-                # We have to rewrite the manifest file without the deleted data files
-                with self.new_manifest_writer(self.spec(manifest_file.partition_spec_id)) as writer:
-                    for entry in entries_to_write:
-                        writer.add_entry(
-                            ManifestEntry.from_args(
-                                status=ManifestEntryStatus.EXISTING,
-                                snapshot_id=entry.snapshot_id,
-                                sequence_number=entry.sequence_number,
-                                file_sequence_number=entry.file_sequence_number,
-                                data_file=entry.data_file,
-                            )
-                        )
-                existing_files.append(writer.to_manifest_file())
-
+                else:
+                    # We have to rewrite the manifest file without the deleted data files
+                    if any(entry.data_file not in found_deleted_data_files for entry in entries):
+                        with write_manifest(
+                            format_version=self._transaction.table_metadata.format_version,
+                            spec=self._transaction.table_metadata.specs()[manifest_file.partition_spec_id],
+                            schema=self._transaction.table_metadata.schema(),
+                            output_file=self.new_manifest_output(),
+                            snapshot_id=self._snapshot_id,
+                            avro_compression=self._compression,
+                        ) as writer:
+                            for entry in entries:
+                                if entry.data_file not in found_deleted_data_files:
+                                    writer.add_entry(
+                                        ManifestEntry.from_args(
+                                            status=ManifestEntryStatus.EXISTING,
+                                            snapshot_id=entry.snapshot_id,
+                                            sequence_number=entry.sequence_number,
+                                            file_sequence_number=entry.file_sequence_number,
+                                            data_file=entry.data_file,
+                                        )
+                                    )
+                        existing_files.append(writer.to_manifest_file())
         return existing_files
 
     def _deleted_entries(self) -> list[ManifestEntry]:
@@ -828,12 +817,8 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                 raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
 
             executor = ExecutorFactory.get_or_create()
-            manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
 
             def _get_entries(manifest: ManifestFile) -> list[ManifestEntry]:
-                if not manifest_evaluators[manifest.partition_spec_id](manifest):
-                    return []
-
                 return [
                     ManifestEntry.from_args(
                         status=ManifestEntryStatus.DELETED,

@@ -1982,11 +1982,7 @@ def test_check_uuid_passes_when_match(table_v2: Table, example_table_metadata_v2
 
 def test_build_large_partition_predicate(table_v2: Table) -> None:
     with table_v2.transaction() as tx:
-        expr = tx._build_partition_predicate(
-            partition_records={Record(i) for i in range(5000)},
-            spec=table_v2.metadata.spec(),
-            schema=table_v2.metadata.schema(),
-        )
+        expr = tx._build_partition_predicate(partition_records={Record(i) for i in range(5000)})
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
 
