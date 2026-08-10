@@ -1527,6 +1527,35 @@ def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
 cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 ```
 
+### Expiring Branches and Tags
+
+A branch or tag protects the snapshot it points at from expiration, along with that snapshot's
+ancestors. A ref left behind by a failed job therefore pins storage indefinitely unless it is
+removed.
+
+`remove_expired_refs()` drops refs whose retention period has elapsed, using the ref's own
+`max-ref-age-ms` when set and the `history.expire.max-ref-age-ms` table property otherwise.
+The `main` branch never expires.
+
+```python
+from datetime import datetime, timedelta, timezone
+
+# Give an audit branch a one-day lifetime
+table.manage_snapshots().create_branch(
+    snapshot_id=table.metadata.current_snapshot_id,
+    branch_name="audit-2024-01-15",
+    max_ref_age_ms=24 * 60 * 60 * 1000,
+).commit()
+
+# Later: drop expired refs, then reclaim the snapshots they were pinning
+table.maintenance.expire_snapshots().remove_expired_refs().older_than(
+    datetime.now(timezone.utc) - timedelta(days=3)
+).commit()
+```
+
+Call `remove_expired_refs()` and `older_than()` in either order. Snapshots released by the
+removed refs are eligible for expiration in the same commit.
+
 ## Views
 
 If PyIceberg is unable to automatically determine view support on your REST Catalog, you can manually specify, `"view-endpoints-supported": "true"`:

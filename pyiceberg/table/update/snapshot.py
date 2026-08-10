@@ -21,7 +21,7 @@ import uuid
 from abc import abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
@@ -1040,12 +1040,16 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     _updates: tuple[TableUpdate, ...]
     _requirements: tuple[TableRequirement, ...]
     _snapshot_ids_to_expire: set[int]
+    _ref_names_to_remove: set[str]
+    _expire_older_than_ms: int | None
 
     def __init__(self, transaction: Transaction) -> None:
         super().__init__(transaction)
         self._updates = ()
         self._requirements = ()
         self._snapshot_ids_to_expire = set()
+        self._ref_names_to_remove = set()
+        self._expire_older_than_ms = None
 
     def _commit(self) -> UpdatesAndRequirements:
         """
@@ -1057,9 +1061,18 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             Tuple of updates and requirements to be committed,
             as required by the calling parent apply functions.
         """
-        # Remove any protected snapshot IDs from the set to expire, just in case
+        # Resolved here rather than in older_than() so that snapshots released by
+        # remove_expired_refs() are expirable no matter which order the two were called in.
         protected_ids = self._get_protected_snapshot_ids()
+        if self._expire_older_than_ms is not None:
+            for snapshot in self._transaction.table_metadata.snapshots:
+                if snapshot.timestamp_ms < self._expire_older_than_ms and snapshot.snapshot_id not in protected_ids:
+                    self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
+
+        # Remove any protected snapshot IDs from the set to expire, just in case
         self._snapshot_ids_to_expire -= protected_ids
+        for ref_name in self._ref_names_to_remove:
+            self._updates += (RemoveSnapshotRefUpdate(ref_name=ref_name),)
         update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)
         self._updates += (update,)
         return self._updates, self._requirements
@@ -1069,15 +1082,57 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         Get the IDs of protected snapshots.
 
         These are the HEAD snapshots of all branches and all tagged snapshots.  These ids are to be excluded from expiration.
+        Refs staged for removal by :meth:`remove_expired_refs` do not protect anything.
 
         Returns:
             Set of protected snapshot IDs to exclude from expiration.
         """
         return {
             ref.snapshot_id
-            for ref in self._transaction.table_metadata.refs.values()
+            for ref_name, ref in self._transaction.table_metadata.refs.items()
             if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]
+            and ref_name not in self._ref_names_to_remove
         }
+
+    def remove_expired_refs(self) -> ExpireSnapshots:
+        """
+        Remove branches and tags whose retention period has elapsed.
+
+        A ref's age is measured from the timestamp of the snapshot it points at, against its own
+        ``max-ref-age-ms`` when set, otherwise the ``history.expire.max-ref-age-ms`` table property.
+        The ``main`` branch never expires. A ref pointing at a snapshot that no longer exists is also
+        removed, since it can no longer be resolved.
+
+        This is step 2 of the snapshot retention policy in the Iceberg spec:
+        https://iceberg.apache.org/spec/#snapshot-retention-policy
+
+        Returns:
+            This for method chaining.
+        """
+        from pyiceberg.table import TableProperties
+
+        metadata = self._transaction.table_metadata
+        default_max_ref_age_ms = property_as_int(
+            metadata.properties,
+            TableProperties.MAX_REF_AGE_MS,
+            TableProperties.MAX_REF_AGE_MS_DEFAULT,
+        )
+        now_ms = datetime_to_millis(datetime.now(timezone.utc))
+
+        for ref_name, ref in metadata.refs.items():
+            if ref_name == MAIN_BRANCH:
+                continue
+
+            snapshot = metadata.snapshot_by_id(ref.snapshot_id)
+            if snapshot is None:
+                self._ref_names_to_remove.add(ref_name)
+                continue
+
+            max_ref_age_ms = ref.max_ref_age_ms if ref.max_ref_age_ms is not None else default_max_ref_age_ms
+            if max_ref_age_ms is not None and now_ms - snapshot.timestamp_ms > max_ref_age_ms:
+                self._ref_names_to_remove.add(ref_name)
+
+        return self
 
     def by_id(self, snapshot_id: int) -> ExpireSnapshots:
         """
@@ -1125,9 +1180,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         Returns:
             This for method chaining.
         """
-        protected_ids = self._get_protected_snapshot_ids()
         expire_from = datetime_to_millis(dt)
-        for snapshot in self._transaction.table_metadata.snapshots:
-            if snapshot.timestamp_ms < expire_from and snapshot.snapshot_id not in protected_ids:
-                self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
+        if self._expire_older_than_ms is None or expire_from > self._expire_older_than_ms:
+            self._expire_older_than_ms = expire_from
         return self
