@@ -35,6 +35,12 @@ Release announcements include links to the following:
 
 After downloading the source tarball, signature, checksum, and KEYS file, here are instructions on how to verify signatures, checksums, and documentation.
 
+All of the steps below are also available as a single script:
+
+```sh
+./dev/release/verify_rc.sh 0.6.1rc3
+```
+
 ## Verifying signatures
 
 First, import the keys.
