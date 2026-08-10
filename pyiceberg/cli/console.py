@@ -269,7 +269,7 @@ def drop() -> None:
 
 @drop.command()
 @click.argument("identifier")
-@click.option("--purge", is_flag=True, help="Physically delete all table files.", default=False)
+@click.option("--purge", is_flag=True, help="Request that the catalog purge all table files.", default=False)
 @click.pass_context
 @catch_exception()
 def table(ctx: Context, identifier: str, purge: bool) -> None:  # noqa: F811
