@@ -114,7 +114,7 @@ dev = [
     "moto[server]>=5.0.2",
     "typing-extensions==4.16.0",
     "pytest-mock==3.15.1",
-    "pyspark[connect]==4.0.1",
+    "pyspark[connect]==4.2.0",
     "protobuf==7.35.1", # match Spark Connect's gencode
     "cython>=3.0.0",
     "deptry>=0.14",
