@@ -26,7 +26,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, BooleanExpression, Or
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
     ROWS_MUST_MATCH,
@@ -71,7 +71,6 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
-from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT, KeyDefaultDict, Record
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
@@ -104,6 +103,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _compression: AvroCompressionCodec
     _target_branch: str | None
     _predicate: BooleanExpression
+    _delete_files_partition_filters: dict[int, BooleanExpression]
     _case_sensitive: bool
 
     def __init__(
@@ -134,6 +134,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
         )
         self._predicate = AlwaysFalse()
+        self._delete_files_partition_filters = {}
         self._case_sensitive = True
 
     def _validate_target_branch(self, branch: str | None) -> str | None:
@@ -368,30 +369,43 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return KeyDefaultDict(self._build_partition_projection)
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
-        return manifest_evaluator(self.spec(spec_id), self.schema(), self.partition_filters[spec_id], self._case_sensitive)
+        partition_filter = self.partition_filters[spec_id]
+        if delete_files_partition_filter := self._delete_files_partition_filters.get(spec_id):
+            partition_filter = Or(partition_filter, delete_files_partition_filter)
+        return manifest_evaluator(self.spec(spec_id), self.schema(), partition_filter, self._case_sensitive)
 
     def delete_by_predicate(self, predicate: BooleanExpression, case_sensitive: bool = True) -> None:
         self._predicate = Or(self._predicate, predicate)
         self._case_sensitive = case_sensitive
 
     def _build_delete_files_partition_predicate(self) -> None:
-        """Build BooleanExpression based on deleted data files partitions."""
+        """Build a partition-domain predicate per spec for deleted data files, used to prune manifests."""
         partition_to_overwrite: dict[int, set[Record]] = {}
         for data_file in self._deleted_data_files:
             group = partition_to_overwrite.setdefault(data_file.spec_id, set())
             group.add(data_file.partition)
 
-        for spec_id in partition_to_overwrite:
-            if any(not isinstance(field.transform, IdentityTransform) for field in self.spec(spec_id).fields):
-                self.delete_by_predicate(AlwaysTrue())
-                return
-
         for spec_id, partition_records in partition_to_overwrite.items():
-            self.delete_by_predicate(
-                self._transaction._build_partition_predicate(
-                    partition_records=partition_records, schema=self.schema(), spec=self.spec(spec_id)
-                )
+            # Bound against the partition struct (field.name), not the row schema, so this works for any transform.
+            partition_field_names = [field.name for field in self.spec(spec_id).fields]
+            per_record_exprs = [
+                self._build_partition_record_predicate(partition_field_names, partition_record)
+                for partition_record in partition_records
+            ]
+            self._delete_files_partition_filters[spec_id] = (
+                Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
             )
+
+    @staticmethod
+    def _build_partition_record_predicate(partition_field_names: list[str], partition_record: Record) -> BooleanExpression:
+        predicates: list[BooleanExpression] = [
+            EqualTo(Reference(name), partition_record[pos]) if partition_record[pos] is not None else IsNull(Reference(name))
+            for pos, name in enumerate(partition_field_names)
+        ]
+        if not predicates:
+            # Unpartitioned spec: nothing to filter on, so the (single, empty) partition always matches.
+            return AlwaysTrue()
+        return And(*predicates) if len(predicates) > 1 else predicates[0]
 
 
 class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):

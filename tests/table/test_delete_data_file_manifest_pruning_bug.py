@@ -25,11 +25,11 @@ from pyiceberg.types import IntegerType, NestedField, StringType
 
 
 def test_delete_data_file_manifest_pruning_bucket_transform_succeeds(catalog: Catalog) -> None:
-    """delete_data_file should work for non-identity specs via non-pruning fallback.
+    """delete_data_file should work for non-identity specs.
 
-    For bucket-partitioned tables, the stored partition value is a bucket id and cannot
-    be safely mapped back to a source-column predicate. The fallback should therefore
-    disable pruning and still apply delete by exact DataFile identity.
+    Manifest-pruning predicates are built against the partition struct (using the
+    partition field name, e.g. the bucket id) rather than the source column, so this
+    works regardless of the partition transform.
     """
     catalog.create_namespace_if_not_exists("default")
     identifier = f"default.bucket_delete_bug_{catalog.name}"
