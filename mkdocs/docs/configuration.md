@@ -242,6 +242,21 @@ Tencent Cloud Object Storage (COS) is S3-compatible and can be used with PyIcebe
 
 <!-- markdown-link-check-enable -->
 
+### SeaweedFS
+
+<!-- markdown-link-check-disable -->
+
+[SeaweedFS](https://github.com/seaweedfs/seaweedfs) is S3-compatible and can be used with PyIceberg using the existing S3FileIO / PyArrowFileIO implementation.
+
+| Key                  | Example                 | Description                       |
+| -------------------- | ----------------------- | --------------------------------- |
+| s3.endpoint          | <http://localhost:8333> | SeaweedFS S3 gateway endpoint     |
+| s3.access-key-id     | admin                   | Configured S3 access key          |
+| s3.secret-access-key | password                | Configured S3 secret key          |
+| s3.path-style-access | true                    | SeaweedFS serves path-style URLs  |
+
+<!-- markdown-link-check-enable -->
+
 ### Hugging Face
 
 <!-- markdown-link-check-disable -->
@@ -652,6 +667,23 @@ catalog:
 !!! Note "OneLake Authentication"
     Use the `entra` auth type for Entra ID (Azure AD) authentication via [DefaultAzureCredential](https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains?tabs=dac#defaultazurecredential-overview), which supports environment variables, managed identity, Azure CLI, and more. Install with `pip install pyiceberg[entra-auth]`.
 <!-- prettier-ignore-end -->
+
+##### SeaweedFS
+
+[SeaweedFS](https://github.com/seaweedfs/seaweedfs) table buckets serve an Iceberg REST catalog for table metadata and store the table data as Parquet files behind the same S3 gateway:
+
+```yaml
+catalog:
+  seaweedfs_catalog:
+    type: rest
+    uri: http://<seaweedfs-host>:8181
+    warehouse: s3://<table-bucket-name>
+    credential: <access-key>:<secret-key>
+    s3.endpoint: http://<seaweedfs-host>:8333
+    s3.access-key-id: <access-key>
+    s3.secret-access-key: <secret-key>
+    s3.path-style-access: true
+```
 
 ### SQL Catalog
 
