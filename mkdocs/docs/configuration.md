@@ -668,7 +668,7 @@ catalog:
     Use the `entra` auth type for Entra ID (Azure AD) authentication via [DefaultAzureCredential](https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains?tabs=dac#defaultazurecredential-overview), which supports environment variables, managed identity, Azure CLI, and more. Install with `pip install pyiceberg[entra-auth]`.
 <!-- prettier-ignore-end -->
 
-##### SeaweedFS
+##### SeaweedFS Table Buckets
 
 [SeaweedFS](https://github.com/seaweedfs/seaweedfs) table buckets serve an Iceberg REST catalog for table metadata and store the table data as Parquet files behind the same S3 gateway:
 
