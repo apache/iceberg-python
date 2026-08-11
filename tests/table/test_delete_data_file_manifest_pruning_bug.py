@@ -18,6 +18,7 @@
 import pyarrow as pa
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.expressions import EqualTo, Reference
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import BucketTransform
@@ -81,3 +82,55 @@ def test_delete_data_file_manifest_pruning_bucket_transform_succeeds(catalog: Ca
 
     assert existing_file.file_path not in remaining_paths
     assert after.num_rows < before.num_rows
+
+
+def test_delete_data_file_manifest_pruning_predicate_uses_partition_field(catalog: Catalog) -> None:
+    """The manifest-pruning predicate must reference the partition field, not the source column.
+
+    `_OverwriteFiles` deletes by exact `DataFile` identity regardless of this predicate, so an
+    end-to-end delete would still succeed even if pruning silently degraded back to a
+    non-discriminating fallback. This test guards the pruning predicate itself.
+    """
+    catalog.create_namespace_if_not_exists("default")
+    identifier = f"default.bucket_delete_pruning_predicate_{catalog.name}"
+
+    schema = Schema(
+        NestedField(1, "tenant_id", StringType(), required=True),
+        NestedField(2, "value", IntegerType(), required=True),
+    )
+    spec = PartitionSpec(
+        PartitionField(
+            source_id=1,
+            field_id=1000,
+            transform=BucketTransform(8),
+            name="tenant_id_bucket",
+        ),
+        spec_id=0,
+    )
+    table = catalog.create_table(
+        identifier=identifier,
+        schema=schema,
+        partition_spec=spec,
+        properties={"format-version": "2"},
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [{"tenant_id": "tenant-a", "value": 1}],
+            schema=pa.schema(
+                [
+                    pa.field("tenant_id", pa.string(), nullable=False),
+                    pa.field("value", pa.int32(), nullable=False),
+                ]
+            ),
+        )
+    )
+    existing_file = next(iter(table.scan().plan_files())).file
+    expected_bucket_id = BucketTransform(8).transform(StringType())("tenant-a")
+
+    with table.transaction() as txn:
+        with txn.update_snapshot().overwrite() as overwrite:
+            overwrite.delete_data_file(existing_file)
+            overwrite._build_delete_files_partition_predicate()
+            predicate = overwrite._delete_files_partition_filters[existing_file.spec_id]
+
+    assert predicate == EqualTo(Reference("tenant_id_bucket"), expected_bucket_id)
