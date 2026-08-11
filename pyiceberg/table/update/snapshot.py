@@ -383,6 +383,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         for spec_id in partition_to_overwrite:
             if any(not isinstance(field.transform, IdentityTransform) for field in self.spec(spec_id).fields):
+                # Disables the manifest-pruning optimization (not correctness): deletion of the
+                # specific data files still happens by exact DataFile identity in _OverwriteFiles.
                 self.delete_by_predicate(AlwaysTrue())
                 return
 

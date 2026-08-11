@@ -70,6 +70,7 @@ def test_delete_data_file_manifest_pruning_bucket_transform_succeeds(catalog: Ca
     )
 
     before = table.scan().to_arrow()
+    before_paths = {task.file.file_path for task in table.scan().plan_files()}
     existing_file = next(iter(table.scan().plan_files())).file
 
     with table.transaction() as txn:
@@ -77,7 +78,9 @@ def test_delete_data_file_manifest_pruning_bucket_transform_succeeds(catalog: Ca
             overwrite.delete_data_file(existing_file)
 
     after = table.scan().to_arrow()
-    remaining_paths = {task.file.file_path for task in table.scan().plan_files()}
+    after_paths = {task.file.file_path for task in table.scan().plan_files()}
 
-    assert existing_file.file_path not in remaining_paths
+    assert existing_file.file_path not in after_paths
+    assert before_paths - after_paths == {existing_file.file_path}
+    assert len(after_paths) == len(before_paths) - 1
     assert after.num_rows < before.num_rows
