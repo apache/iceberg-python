@@ -26,7 +26,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
-from pyiceberg.expressions import AlwaysFalse, BooleanExpression, Or
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, BooleanExpression, Or
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
     ROWS_MUST_MATCH,
@@ -71,6 +71,7 @@ from pyiceberg.table.update import (
     UpdatesAndRequirements,
     UpdateTableMetadata,
 )
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT, KeyDefaultDict, Record
 from pyiceberg.utils.bin_packing import ListPacker
 from pyiceberg.utils.concurrent import ExecutorFactory
@@ -379,6 +380,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         for data_file in self._deleted_data_files:
             group = partition_to_overwrite.setdefault(data_file.spec_id, set())
             group.add(data_file.partition)
+
+        for spec_id in partition_to_overwrite:
+            if any(not isinstance(field.transform, IdentityTransform) for field in self.spec(spec_id).fields):
+                self.delete_by_predicate(AlwaysTrue())
+                return
 
         for spec_id, partition_records in partition_to_overwrite.items():
             self.delete_by_predicate(
