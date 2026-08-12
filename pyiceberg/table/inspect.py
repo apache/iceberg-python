@@ -92,7 +92,7 @@ class InspectTable:
                     "committed_at": datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0, tz=timezone.utc),
                     "snapshot_id": snapshot.snapshot_id,
                     "parent_id": snapshot.parent_snapshot_id,
-                    "operation": str(operation),
+                    "operation": operation,
                     "manifest_list": snapshot.manifest_list,
                     "summary": additional_properties,
                 }
