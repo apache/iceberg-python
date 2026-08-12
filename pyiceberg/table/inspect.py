@@ -423,7 +423,7 @@ class InspectTable:
                             partition_field_type, from_bytes(partition_field_type, field_summary.lower_bound)
                         )
                     )
-                    if field_summary.lower_bound
+                    if field_summary.lower_bound is not None
                     else None
                 )
                 upper_bound = (
@@ -432,7 +432,7 @@ class InspectTable:
                             partition_field_type, from_bytes(partition_field_type, field_summary.upper_bound)
                         )
                     )
-                    if field_summary.upper_bound
+                    if field_summary.upper_bound is not None
                     else None
                 )
                 rows.append(
