@@ -30,7 +30,7 @@ from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec, assi
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table.name_mapping import NameMapping, parse_mapping_from_json
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
-from pyiceberg.table.snapshots import MetadataLogEntry, Snapshot, SnapshotLogEntry
+from pyiceberg.table.snapshots import IsolationLevel, MetadataLogEntry, Operation, Snapshot, SnapshotLogEntry
 from pyiceberg.table.sorting import (
     UNSORTED_SORT_ORDER,
     UNSORTED_SORT_ORDER_ID,
@@ -308,6 +308,16 @@ class TableMetadataCommonFields(IcebergBaseModel):
         if ref := self.refs.get(name):
             return self.snapshot_by_id(ref.snapshot_id)
         return None
+
+    def isolation_level(self, operation: Operation) -> IsolationLevel:
+        """Resolve the isolation level for the given operation from the table properties."""
+        from pyiceberg.table import TableProperties
+
+        if operation == Operation.OVERWRITE:
+            property_name = TableProperties.WRITE_UPDATE_ISOLATION_LEVEL
+        else:
+            property_name = TableProperties.WRITE_DELETE_ISOLATION_LEVEL
+        return IsolationLevel(self.properties.get(property_name, TableProperties.WRITE_ISOLATION_LEVEL_DEFAULT))
 
     def current_snapshot(self) -> Snapshot | None:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
