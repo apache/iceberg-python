@@ -66,10 +66,7 @@ class InspectTable:
             raise ValueError("Cannot get a snapshot as the table does not have any.")
 
     def _get_snapshots_by_id(self) -> dict[int, Snapshot]:
-        """Index the snapshots by ID, for methods that look up many of them.
-
-        snapshot_by_id is a linear scan, so calling it once per row is quadratic.
-        """
+        """Index the snapshots by ID"""
         return {snapshot.snapshot_id: snapshot for snapshot in self.tbl.metadata.snapshots}
 
     def snapshots(self) -> pa.Table:
