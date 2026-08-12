@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import os
 import uuid
 import warnings
@@ -114,9 +115,12 @@ if TYPE_CHECKING:
 
     from pyiceberg.catalog import Catalog
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
+    from pyiceberg.execution.protocol import Backends
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass()
@@ -407,6 +411,75 @@ class Transaction:
         update_snapshot = self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch)
         return update_snapshot.merge_append() if manifest_merge_enabled else update_snapshot.fast_append()
 
+    def _prepare_write(
+        self, df: pa.Table | pa.RecordBatchReader, operation: str
+    ) -> tuple[pa.Table | pa.RecordBatchReader, Backends, int | None]:
+        """Resolve backends, apply sort-on-write, and determine sort_order_id.
+
+        Consolidates the repeated pattern across append/overwrite: resolve backends,
+        optionally sort data (best-effort, requires bounded-memory backend), and
+        determine the sort_order_id to record on written DataFiles.
+
+        Args:
+            df: Input data to prepare for writing.
+            operation: Name of the write operation (for backend resolution context).
+
+        Returns:
+            A tuple of (possibly-sorted data, resolved backends, sort_order_id or None).
+        """
+        from pyiceberg.execution._orchestrate import _get_sort_order
+        from pyiceberg.execution.protocol import Backends
+
+        backends = Backends.resolve(self._table.io.properties, operation=operation)
+        df = self._apply_sort_order(df, backends)
+
+        # Determine sort_order_id: set when sort was actually applied (table has a
+        # sort order AND backend supports bounded memory — same conditions _apply_sort_order checks).
+        sort_order_id: int | None = None
+        if _get_sort_order(self.table_metadata) is not None and backends.supports_bounded_memory:
+            sort_order_id = self.table_metadata.default_sort_order_id
+
+        return df, backends, sort_order_id
+
+    def _apply_sort_order(self, df: pa.Table | pa.RecordBatchReader, backends: Backends) -> pa.Table | pa.RecordBatchReader:
+        """Sort data before writing if table has a sort order and a bounded-memory backend is available.
+
+        Sort-on-write is a **best-effort** performance optimization, not a correctness
+        requirement. The Iceberg spec defines sort order as advisory -- data files are valid
+        and queryable regardless of whether they are sorted.
+        """
+        import pyarrow as pa
+
+        from pyiceberg.execution._orchestrate import _get_sort_order
+
+        sort_order = _get_sort_order(self.table_metadata)
+        if sort_order is None:
+            return df
+
+        if not backends.supports_bounded_memory:
+            return df
+
+        from pyiceberg.execution._sorted_reader import _SortedRecordBatchReader
+        from pyiceberg.execution.materialize import materialize_batches_to_parquet, materialize_to_parquet
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        io_properties = self._table.io.properties
+        arrow_schema = schema_to_pyarrow(self.table_metadata.schema(), include_field_ids=False)
+
+        if isinstance(df, pa.RecordBatchReader):
+            reader_schema = df.schema
+            return _SortedRecordBatchReader.create(
+                materialize_fn=lambda: materialize_batches_to_parquet(df, reader_schema),
+                sort_fn=lambda path: backends.compute.sort_from_files([path], sort_order, io_properties),
+                schema=arrow_schema,
+            )
+        else:
+            return _SortedRecordBatchReader.create(
+                materialize_fn=lambda: materialize_to_parquet(df),
+                sort_fn=lambda path: backends.compute.sort_from_files([path], sort_order, io_properties),
+                schema=arrow_schema,
+            )
+
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 
@@ -532,8 +605,15 @@ class Transaction:
             # data files (the snapshot is still committed for symmetry with the
             # pa.Table case where empty inputs also produce a snapshot).
             if isinstance(df, pa.RecordBatchReader) or df.shape[0] > 0:
+                df, backends, sort_order_id = self._prepare_write(df, operation="append")
+
                 data_files = _dataframe_to_data_files(
-                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                    table_metadata=self.table_metadata,
+                    write_uuid=append_files.commit_uuid,
+                    df=df,
+                    io=self._table.io,
+                    write_backend=backends.write,
+                    sort_order_id=sort_order_id,
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
@@ -586,9 +666,16 @@ class Transaction:
             return
 
         append_snapshot_commit_uuid = uuid.uuid4()
+
+        df, backends, sort_order_id = self._prepare_write(df, operation="dynamic_partition_overwrite")
         data_files: list[DataFile] = list(
             _dataframe_to_data_files(
-                table_metadata=self._table.metadata, write_uuid=append_snapshot_commit_uuid, df=df, io=self._table.io
+                table_metadata=self._table.metadata,
+                write_uuid=append_snapshot_commit_uuid,
+                df=df,
+                io=self._table.io,
+                write_backend=backends.write,
+                sort_order_id=sort_order_id,
             )
         )
 
@@ -694,8 +781,15 @@ class Transaction:
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             # See append() for the empty-input handling rationale.
             if isinstance(df, pa.RecordBatchReader) or df.shape[0] > 0:
+                df, backends, sort_order_id = self._prepare_write(df, operation="overwrite")
+
                 data_files = _dataframe_to_data_files(
-                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+                    table_metadata=self.table_metadata,
+                    write_uuid=append_files.commit_uuid,
+                    df=df,
+                    io=self._table.io,
+                    write_backend=backends.write,
+                    sort_order_id=sort_order_id,
                 )
                 for data_file in data_files:
                     append_files.append_data_file(data_file)
@@ -721,7 +815,7 @@ class Transaction:
             case_sensitive: A bool determine if the provided `delete_filter` is case-sensitive
             branch: Branch Reference to run the delete operation
         """
-        from pyiceberg.io.pyarrow import ArrowScan, _dataframe_to_data_files, _expression_to_complementary_pyarrow
+        from pyiceberg.io.pyarrow import _dataframe_to_data_files, _expression_to_complementary_pyarrow
 
         if (
             self.table_metadata.properties.get(TableProperties.DELETE_MODE, TableProperties.DELETE_MODE_DEFAULT)
@@ -737,6 +831,18 @@ class Transaction:
 
         # Check if there are any files that require an actual rewrite of a data file
         if delete_snapshot.rewrites_needed is True:
+            import pyarrow as pa
+
+            from pyiceberg.execution.engine import COW_THRESHOLD_DEFAULT, get_execution_config_int
+            from pyiceberg.execution.protocol import Backends
+            from pyiceberg.expressions.visitors import (
+                ROWS_CANNOT_MATCH,
+                ROWS_MUST_MATCH,
+                _InclusiveMetricsEvaluator,
+                _StrictMetricsEvaluator,
+            )
+            from pyiceberg.io.pyarrow import schema_to_pyarrow
+
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
 
@@ -748,41 +854,124 @@ class Transaction:
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
 
-            replaced_files: list[tuple[DataFile, list[DataFile]]] = []
-            # This will load the Parquet file into memory, including:
-            #   - Filter out the rows based on the delete filter
-            #   - Projecting it to the current schema
-            #   - Applying the positional deletes if they are there
-            # When writing
-            #   - Apply the latest partition-spec
-            #   - And sort order when added
-            for original_file in files:
-                df = ArrowScan(
-                    table_metadata=self.table_metadata,
-                    io=self._table.io,
-                    projected_schema=self.table_metadata.schema(),
-                    row_filter=AlwaysTrue(),
-                ).to_table(tasks=[original_file])
-                filtered_df = df.filter(preserve_row_filter)
+            backends = Backends.resolve(self._table.io.properties, operation="cow_rewrite")
+            projected_schema = self.table_metadata.schema()
 
-                # Only rewrite if there are records being deleted
-                if len(filtered_df) == 0:
+            # Statistics-based short-circuit: classify files without reading data.
+            strict_metrics_eval = _StrictMetricsEvaluator(projected_schema, delete_filter, case_sensitive=case_sensitive).eval
+            inclusive_metrics_eval = _InclusiveMetricsEvaluator(
+                projected_schema, delete_filter, case_sensitive=case_sensitive
+            ).eval
+
+            replaced_files: list[tuple[DataFile, list[DataFile]]] = []
+            cow_threshold = get_execution_config_int("cow-threshold", COW_THRESHOLD_DEFAULT)
+
+            def _read_live_rows(task: FileScanTask) -> Iterator[pa.RecordBatch]:
+                """Read a data file with existing deletes (pos + eq) applied and schema reconciled."""
+                from pyiceberg.execution._orchestrate import orchestrate_scan
+
+                # Use orchestrate_scan to properly handle:
+                # 1. Schema reconciliation (column renames, type promotions)
+                # 2. Positional deletes
+                # 3. Equality deletes
+                return orchestrate_scan(
+                    backends=backends,
+                    tasks=iter([task]),
+                    table_metadata=self.table_metadata,
+                    projected_schema=projected_schema,
+                    row_filter=AlwaysTrue(),
+                    case_sensitive=case_sensitive,
+                )
+
+            for original_file in files:
+                if strict_metrics_eval(original_file.file) == ROWS_MUST_MATCH:
                     replaced_files.append((original_file.file, []))
-                elif len(df) != len(filtered_df):
-                    replaced_files.append(
-                        (
-                            original_file.file,
-                            list(
-                                _dataframe_to_data_files(
-                                    io=self._table.io,
-                                    df=filtered_df,
-                                    table_metadata=self.table_metadata,
-                                    write_uuid=commit_uuid,
-                                    counter=counter,
-                                )
-                            ),
+                    continue
+
+                if inclusive_metrics_eval(original_file.file) == ROWS_CANNOT_MATCH:
+                    continue
+
+                original_row_count = original_file.file.record_count
+                file_size = original_file.file.file_size_in_bytes
+
+                if original_row_count == 0:
+                    continue
+
+                if file_size < cow_threshold:
+                    # --- SMALL FILE: single-pass materialization ---
+                    # One read, O(file_size) memory. Acceptable because
+                    # file_size < threshold (default 64 MB) → Arrow representation < ~320 MB.
+                    batches = list(_read_live_rows(original_file))
+                    if not batches:
+                        continue
+                    table = pa.Table.from_batches(batches)
+                    filtered_table = table.filter(preserve_row_filter)
+
+                    if filtered_table.num_rows == 0:
+                        # All rows deleted -- drop the file entirely
+                        replaced_files.append((original_file.file, []))
+                    elif filtered_table.num_rows < table.num_rows:
+                        # Some rows deleted -- rewrite with kept rows only
+                        replaced_files.append(
+                            (
+                                original_file.file,
+                                list(
+                                    _dataframe_to_data_files(
+                                        io=self._table.io,
+                                        df=filtered_table,
+                                        table_metadata=self.table_metadata,
+                                        write_uuid=commit_uuid,
+                                        counter=counter,
+                                        write_backend=backends.write,
+                                    )
+                                ),
+                            )
                         )
-                    )
+                    # else: all rows kept → no rewrite needed, skip
+                else:
+                    # Two-pass streaming: count first, rewrite only if needed.
+                    batches_pass1 = _read_live_rows(original_file)
+                    kept_row_count = 0
+                    for batch in batches_pass1:
+                        filtered = batch.filter(preserve_row_filter)
+                        kept_row_count += filtered.num_rows
+
+                    if kept_row_count == 0:
+                        replaced_files.append((original_file.file, []))
+                    elif kept_row_count < original_row_count:
+                        # Re-read and stream filtered batches to writer.
+                        # TOCTOU note: between pass 1 and pass 2, concurrent compaction
+                        # may delete or replace this file. Both cases are handled safely:
+                        #   - Deleted file → IOError propagates, transaction aborts.
+                        #   - Replaced file → pass 2 reads stale data, but the OCC commit
+                        #     will detect that the original file was removed from metadata
+                        #     and fail with a ConflictException (retry resolves this).
+                        # Correctness is guaranteed by optimistic concurrency control,
+                        # not by the two-pass read being atomic.
+                        batches_pass2 = _read_live_rows(original_file)
+
+                        arrow_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
+
+                        filtered_reader = pa.RecordBatchReader.from_batches(
+                            arrow_schema,
+                            (filtered for batch in batches_pass2 if (filtered := batch.filter(preserve_row_filter)).num_rows > 0),
+                        )
+
+                        replaced_files.append(
+                            (
+                                original_file.file,
+                                list(
+                                    _dataframe_to_data_files(
+                                        io=self._table.io,
+                                        df=filtered_reader,
+                                        table_metadata=self.table_metadata,
+                                        write_uuid=commit_uuid,
+                                        counter=counter,
+                                        write_backend=backends.write,
+                                    )
+                                ),
+                            )
+                        )
 
             if len(replaced_files) > 0:
                 with self.update_snapshot(
@@ -850,7 +1039,6 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import expression_to_pyarrow
         from pyiceberg.table import upsert_util
 
         if join_cols is None:
@@ -881,10 +1069,37 @@ class Transaction:
             format_version=self.table_metadata.format_version,
         )
 
-        # get list of rows that exist so we don't have to load the entire target table
-        matched_predicate = upsert_util.create_match_filter(df, join_cols)
+        # The upsert algorithm is O(source_size) in memory -- which is already the
+        # minimum since the user passes df: pa.Table (fully materialized).
+        # The in-memory path iterates target batches one at a time and accumulates
+        # only the matching updates (always ≤ source_size).
+        return self._upsert_in_memory(
+            df,
+            join_cols,
+            when_matched_update_all,
+            when_not_matched_insert_all,
+            case_sensitive,
+            branch,
+            snapshot_properties,
+        )
 
-        # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
+    def _upsert_in_memory(
+        self,
+        df: pa.Table,
+        join_cols: list[str],
+        when_matched_update_all: bool,
+        when_not_matched_insert_all: bool,
+        case_sensitive: bool,
+        branch: str | None,
+        snapshot_properties: dict[str, str],
+    ) -> UpsertResult:
+        """Original in-memory upsert algorithm (fallback when no bounded-memory backend)."""
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import expression_to_pyarrow
+        from pyiceberg.table import upsert_util
+
+        matched_predicate = upsert_util.create_match_filter(df, join_cols)
 
         matched_iceberg_record_batches_scan = DataScan(
             table_metadata=self.table_metadata,
@@ -906,16 +1121,10 @@ class Transaction:
             rows = pa.Table.from_batches([batch])
 
             if when_matched_update_all:
-                # function get_rows_to_update is doing a check on non-key columns to see if any of the
-                # values have actually changed. We don't want to do just a blanket overwrite for matched
-                # rows if the actual non-key column data hasn't changed.
-                # this extra step avoids unnecessary IO and writes
                 rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
 
                 if len(rows_to_update) > 0:
-                    # build the match predicate filter
                     overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
-
                     batches_to_overwrite.append(rows_to_update)
                     overwrite_predicates.append(overwrite_mask_predicate)
 
@@ -923,8 +1132,6 @@ class Transaction:
                 expr_match = upsert_util.create_match_filter(rows, join_cols)
                 expr_match_bound = bind(self.table_metadata.schema(), expr_match, case_sensitive=case_sensitive)
                 expr_match_arrow = expression_to_pyarrow(expr_match_bound)
-
-                # Filter rows per batch.
                 rows_to_insert = rows_to_insert.filter(~expr_match_arrow)
 
         update_row_cnt = 0
@@ -2173,38 +2380,140 @@ def _min_sequence_number(manifests: list[ManifestFile]) -> int:
 def _to_arrow_via_file_scan_tasks(
     scan: BaseScan, projected_schema: Schema, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
 ) -> pa.Table:
-    """Materialize a scan into an Arrow table given its planned ``FileScanTask``s."""
-    from pyiceberg.io.pyarrow import ArrowScan
+    """Materialize a scan into an Arrow table via the resolved backends.
 
-    return ArrowScan(
-        scan.table_metadata,
-        scan.io,
-        projected_schema,
-        scan.row_filter,
-        scan.case_sensitive,
-        scan.limit,
+    When scan.limit is set, the generator is consumed only until enough rows
+    are collected -- avoiding full materialization of the entire scan result.
+
+    Emits a ResourceWarning if the estimated result size exceeds 2 GB,
+    suggesting to_arrow_batch_reader() as a streaming alternative.
+    """
+    import pyarrow as pa
+
+    from pyiceberg.execution._orchestrate import orchestrate_scan
+    from pyiceberg.execution.protocol import Backends
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    # Proactive OOM warning: estimate result size from file metadata
+    tasks_list = list(tasks)
+    _warn_if_large_result(tasks_list, scan.table_metadata)
+
+    backends = Backends.resolve(scan.io.properties)
+    batches = orchestrate_scan(
+        backends=backends,
+        tasks=iter(tasks_list),
+        table_metadata=scan.table_metadata,
+        projected_schema=projected_schema,
+        row_filter=scan.row_filter,
+        case_sensitive=scan.case_sensitive,
         dictionary_columns=dictionary_columns,
-    ).to_table(tasks)
+    )
+
+    # Backends operate on column names, not Iceberg field IDs -- exclude field ID metadata
+    arrow_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
+
+    if scan.limit is not None:
+        # Consume only enough batches to satisfy the limit
+        collected: list[pa.RecordBatch] = []
+        rows_collected = 0
+        for batch in batches:
+            collected.append(batch)
+            rows_collected += batch.num_rows
+            if rows_collected >= scan.limit:
+                break
+        if not collected:
+            return arrow_schema.empty_table()
+        table = pa.concat_tables(
+            (pa.Table.from_batches([batch]) for batch in collected),
+            promote_options="permissive",
+        )
+        return table.slice(0, scan.limit)
+    else:
+        try:
+            all_batches = list(batches)
+            if not all_batches:
+                return arrow_schema.empty_table()
+            # Combine batches from potentially different files using permissive
+            # promotion to handle string/large_string differences between files.
+            return pa.concat_tables(
+                (pa.Table.from_batches([batch]) for batch in all_batches),
+                promote_options="permissive",
+            )
+        except (MemoryError, pa.lib.ArrowMemoryError) as e:
+            raise MemoryError(
+                "Ran out of memory while materializing scan results into a PyArrow Table. "
+                "Alternatives:\n"
+                "  1. Use to_arrow_batch_reader() for streaming access (O(batch_size) memory)\n"
+                "  2. Add a limit() to reduce the result set\n"
+                "  3. Add a filter() to narrow the scan\n"
+                "  4. Install DataFusion: pip install 'pyiceberg[datafusion]'"
+            ) from e
+
+
+def _warn_if_large_result(tasks: list[FileScanTask], table_metadata: TableMetadata) -> None:
+    """Emit a ResourceWarning if the estimated materialized result is large."""
+    from pyiceberg.execution.engine import OOM_WARNING_THRESHOLD_BYTES, get_execution_config_int
+
+    total_file_bytes = sum(task.file.file_size_in_bytes for task in tasks)
+    threshold = get_execution_config_int("oom-warning-threshold", OOM_WARNING_THRESHOLD_BYTES)
+
+    if total_file_bytes > threshold:
+        compressed_gb = total_file_bytes / (1024 * 1024 * 1024)
+        warnings.warn(
+            f"Scan references {compressed_gb:.1f} GB of compressed Parquet data. "
+            f"In-memory Arrow representation may be 2-5x larger ({compressed_gb * 2:.0f}-{compressed_gb * 5:.0f} GB). "
+            f"This may cause an out-of-memory error. Consider using "
+            f"to_arrow_batch_reader() for streaming access, or add a limit() / filter() "
+            f"to reduce the result set.",
+            ResourceWarning,
+            stacklevel=4,
+        )
 
 
 def _to_arrow_batch_reader_via_file_scan_tasks(
     scan: BaseScan, projected_schema: Schema, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
 ) -> pa.RecordBatchReader:
-    """Stream a scan into an Arrow ``RecordBatchReader`` given its planned ``FileScanTask``s."""
+    """Stream a scan into an Arrow ``RecordBatchReader`` via resolved backends."""
     import pyarrow as pa
 
-    from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+    from pyiceberg.execution._orchestrate import orchestrate_scan
+    from pyiceberg.execution.protocol import Backends
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
 
-    target_schema = schema_to_pyarrow(projected_schema)
-    batches = ArrowScan(
-        scan.table_metadata,
-        scan.io,
-        projected_schema,
-        scan.row_filter,
-        scan.case_sensitive,
-        scan.limit,
+    backends = Backends.resolve(scan.io.properties)
+    # Backends operate on column names, not Iceberg field IDs -- exclude field ID metadata
+    target_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
+    batches = orchestrate_scan(
+        backends=backends,
+        tasks=iter(tasks),
+        table_metadata=scan.table_metadata,
+        projected_schema=projected_schema,
+        row_filter=scan.row_filter,
+        case_sensitive=scan.case_sensitive,
         dictionary_columns=dictionary_columns,
-    ).to_record_batches(tasks)
+        streaming=True,
+    )
+
+    # Apply limit if specified
+    if scan.limit is not None:
+        limit = scan.limit
+
+        def _limited_batches() -> Iterator[pa.RecordBatch]:
+            rows_yielded = 0
+            for batch in batches:
+                if rows_yielded >= limit:
+                    break
+                remaining = limit - rows_yielded
+                if batch.num_rows <= remaining:
+                    yield batch
+                    rows_yielded += batch.num_rows
+                else:
+                    # Slice the batch to return only the remaining rows needed
+                    yield batch.slice(0, remaining)
+                    rows_yielded += remaining
+                    break
+
+        return pa.RecordBatchReader.from_batches(target_schema, _limited_batches()).cast(target_schema)
 
     if dictionary_columns:
         # schema_to_pyarrow returns plain types, but ArrowScan yields dictionary-encoded
@@ -2277,11 +2586,52 @@ class DataScan(TableScan):
         return self.catalog.plan_scan(self.table_identifier, request)
 
     def _plan_files_local(self) -> Iterable[FileScanTask]:
-        """Plan files locally by reading manifests."""
+        """Plan files locally, auto-switching to bounded-memory planner for extreme-scale tables."""
         snapshot = self.snapshot()
         if not snapshot:
             return []
-        return self._manifest_planner.plan_files(snapshot.manifests(self.io))
+
+        manifests = snapshot.manifests(self.io)
+
+        # Check if the table has enough delete files to warrant bounded-memory planning.
+        # Manifest metadata includes file counts -- no I/O needed for this check.
+        # Count both existing and added files (a manifest may have files in either state).
+        # We use FILE counts (not row counts) because planning memory is proportional to
+        # the number of DataFile objects held in the DeleteFileIndex -- roughly 200-500
+        # bytes per file. Row counts would over-trigger for tables with few large position
+        # delete files (e.g., 10 files × 50K rows = 500K rows but only 10 index entries).
+        from pyiceberg.execution.engine import BOUNDED_PLANNER_THRESHOLD, get_execution_config_int
+        from pyiceberg.manifest import ManifestContent
+
+        delete_manifests = [m for m in manifests if m.content == ManifestContent.DELETES]
+        total_delete_files = sum((m.existing_files_count or 0) + (m.added_files_count or 0) for m in delete_manifests)
+
+        # Configurable threshold: execution.planning-threshold in .pyiceberg.yaml
+        # or PYICEBERG_EXECUTION__PLANNING_THRESHOLD env var. Default: 100,000.
+        planning_threshold = get_execution_config_int("planning-threshold", BOUNDED_PLANNER_THRESHOLD)
+
+        if total_delete_files > planning_threshold:
+            try:
+                from pyiceberg.execution.planning import BoundedMemoryPlanner
+
+                return BoundedMemoryPlanner().plan_files(
+                    manifests=manifests,
+                    table_metadata=self.table_metadata,
+                    row_filter=self.row_filter,
+                    io=self.io,
+                    case_sensitive=self.case_sensitive,
+                )
+            except ImportError:
+                warnings.warn(
+                    f"Table has {total_delete_files:,} delete files which may cause high memory usage "
+                    f"during scan planning. Install DataFusion for bounded-memory planning: "
+                    f"pip install 'pyiceberg[datafusion]'",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        # Default: in-memory planning (fast for most tables)
+        return self._manifest_planner.plan_files(manifests)
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files by filtering on the PartitionSpecs.
@@ -2339,31 +2689,38 @@ class DataScan(TableScan):
         )
 
     def count(self) -> int:
-        from pyiceberg.io.pyarrow import ArrowScan
+        from pyiceberg.execution._orchestrate import orchestrate_scan
+        from pyiceberg.execution.protocol import Backends
 
-        # Usage: Calculates the total number of records in a Scan that haven't had positional deletes.
-        res = 0
-        # every task is a FileScanTask
-        tasks = self.plan_files()
+        # Calculates the total number of records in a Scan that haven't had deletes applied.
+        # Separates tasks into two groups:
+        # 1. Tasks with no filter residual and no deletes -- use file metadata record_count (O(1))
+        # 2. Tasks needing reads -- batch into a single orchestrate_scan call for parallel execution
+        tasks_list = list(self.plan_files())
 
-        for task in tasks:
-            # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
-            # partition value and task.delete_files represents that positional delete haven't been merged yet
-            # hence those files have to read as a pyarrow table applying the filter and deletes
-            if task.residual == AlwaysTrue() and len(task.delete_files) == 0:
-                # Every File has a metadata stat that stores the file record count
-                res += task.file.record_count
-            else:
-                arrow_scan = ArrowScan(
-                    table_metadata=self.table_metadata,
-                    io=self.io,
-                    projected_schema=self.projection(),
-                    row_filter=self.row_filter,
-                    case_sensitive=self.case_sensitive,
-                )
-                tbl = arrow_scan.to_table([task])
-                res += len(tbl)
-        return res
+        # Fast path: sum record counts from tasks that can be answered from metadata alone
+        metadata_count = sum(
+            task.file.record_count for task in tasks_list if task.residual == AlwaysTrue() and len(task.delete_files) == 0
+        )
+
+        # Slow path: batch all tasks needing reads into a single orchestrate_scan call.
+        # This leverages the thread pool's parallelism across all tasks at once,
+        # rather than creating per-task orchestrate_scan calls with single-item iterators.
+        tasks_needing_read = [task for task in tasks_list if not (task.residual == AlwaysTrue() and len(task.delete_files) == 0)]
+
+        read_count = 0
+        if tasks_needing_read:
+            for batch in orchestrate_scan(
+                backends=Backends.resolve(self.io.properties),
+                tasks=iter(tasks_needing_read),
+                table_metadata=self.table_metadata,
+                projected_schema=self.projection(),
+                row_filter=self.row_filter,
+                case_sensitive=self.case_sensitive,
+            ):
+                read_count += batch.num_rows
+
+        return metadata_count + read_count
 
 
 IAS = TypeVar("IAS", bound="IncrementalAppendScan", covariant=True)
@@ -2486,8 +2843,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:
@@ -2647,7 +3005,7 @@ class ManifestGroupPlanner:
             elif data_file.content == DataFileContent.POSITION_DELETES:
                 delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
             elif data_file.content == DataFileContent.EQUALITY_DELETES:
-                raise ValueError("PyIceberg does not yet support equality deletes: https://github.com/apache/iceberg/issues/6568")
+                delete_index.add_delete_file(manifest_entry, partition_key=data_file.partition)
             else:
                 raise ValueError(f"Unknown DataFileContent ({data_file.content}): {manifest_entry}")
 
