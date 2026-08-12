@@ -533,7 +533,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 self._transaction._build_partition_predicate(
                     partition_records=partition_records,
                     partition_fields=[field.name for field in self.spec(spec_id).fields],
-                )
+                ),
             )
 
 
