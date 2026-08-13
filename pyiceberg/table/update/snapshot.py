@@ -17,16 +17,19 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import uuid
 from abc import abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, BooleanExpression, Or
+from pyiceberg.exceptions import ValidationException
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
     ROWS_MUST_MATCH,
@@ -80,6 +83,9 @@ from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 if TYPE_CHECKING:
     from pyiceberg.table import Transaction
+    from pyiceberg.table.metadata import TableMetadata
+
+logger = logging.getLogger(__name__)
 
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
@@ -92,12 +98,43 @@ def _new_manifest_list_file_name(snapshot_id: int, attempt: int, commit_uuid: uu
     return f"snap-{snapshot_id}-{attempt}-{commit_uuid}.avro"
 
 
+@dataclass(frozen=True)
+class CommitWindow:
+    """Tracks the commit range to validate against during retry.
+
+    base: The snapshot when the operation began (exclusive lower bound, fixed across retries).
+    head: The branch HEAD snapshot after metadata refresh (inclusive upper bound).
+    """
+
+    base: Snapshot | None
+    head: Snapshot | None
+
+    @classmethod
+    def resolve(cls, metadata: TableMetadata, base_id: int | None, branch: str | None) -> CommitWindow:
+        """Resolve a CommitWindow from metadata, starting snapshot ID, and target branch."""
+        head = metadata.snapshot_by_name(branch)
+        base = metadata.snapshot_by_id(base_id) if base_id is not None else None
+        if base_id is not None and base is None:
+            raise ValidationException(f"Cannot find starting snapshot {base_id}")
+        return cls(base=base, head=head)
+
+    def is_empty(self) -> bool:
+        """Return True if no concurrent commits occurred (validation can be skipped).
+
+        A None base means the operation started on a table with no snapshots. If a head
+        exists, another writer landed the first snapshot concurrently, so the window is not
+        empty and validation must run against the whole history.
+        """
+        return self.head is None or (self.base is not None and self.base.snapshot_id == self.head.snapshot_id)
+
+
 class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     commit_uuid: uuid.UUID
     _io: FileIO
     _operation: Operation
     _snapshot_id: int
     _parent_snapshot_id: int | None
+    _starting_snapshot_id: int | None
     _added_data_files: list[DataFile]
     _manifest_num_counter: itertools.count[int]
     _deleted_data_files: set[DataFile]
@@ -105,6 +142,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _target_branch: str | None
     _predicate: BooleanExpression
     _case_sensitive: bool
+    _commit_window: CommitWindow | None
+    _written_manifests: list[str]
+    _uncommitted_manifests: list[str]
+    _written_manifest_lists: list[str]
+    _isolation_operation: Operation
 
     def __init__(
         self,
@@ -124,17 +166,21 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._deleted_data_files = set()
         self.snapshot_properties = snapshot_properties
         self._manifest_num_counter = itertools.count(0)
+        self._written_manifests = []
+        self._uncommitted_manifests = []
+        self._written_manifest_lists = []
         from pyiceberg.table import TableProperties
 
         self._compression = self._transaction.table_metadata.properties.get(  # type: ignore
             TableProperties.WRITE_AVRO_COMPRESSION, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT
         )
         self._target_branch = self._validate_target_branch(branch=branch)
-        self._parent_snapshot_id = (
-            snapshot.snapshot_id if (snapshot := self._transaction.table_metadata.snapshot_by_name(self._target_branch)) else None
-        )
+        self._parent_snapshot_id = self._current_branch_head_id()
+        self._starting_snapshot_id = self._parent_snapshot_id
         self._predicate = AlwaysFalse()
         self._case_sensitive = True
+        self._commit_window = None
+        self._isolation_operation: Operation = Operation.DELETE
 
     def _validate_target_branch(self, branch: str | None) -> str | None:
         # if branch is none, write will be written into a staging snapshot
@@ -144,6 +190,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
                     raise ValueError(f"{branch} is a tag, not a branch. Tags cannot be targets for producing snapshots")
         return branch
+
+    def _current_branch_head_id(self) -> int | None:
+        """Return the snapshot id at the head of the target branch, or None if the branch has no snapshot."""
+        snapshot = self._transaction.table_metadata.snapshot_by_name(self._target_branch)
+        return snapshot.snapshot_id if snapshot else None
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
         self._added_data_files.append(data_file)
@@ -276,6 +327,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
         location_provider = self._transaction._table.location_provider()
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
+        self._written_manifest_lists.append(manifest_list_file_path)
 
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
@@ -354,10 +406,105 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         location_provider = self._transaction._table.location_provider()
         file_name = _new_manifest_file_name(num=next(self._manifest_num_counter), commit_uuid=self.commit_uuid)
         file_path = location_provider.new_metadata_location(file_name)
+        self._written_manifests.append(file_path)
         return self._io.new_output(file_path)
 
     def fetch_manifest_entry(self, manifest: ManifestFile, discard_deleted: bool = True) -> list[ManifestEntry]:
         return manifest.fetch_manifest_entry(io=self._io, discard_deleted=discard_deleted)
+
+    def commit(self) -> None:
+        self._transaction._register_snapshot_producer(self)
+        super().commit()
+
+    def _cleanup_uncommitted(self) -> None:
+        """Delete manifest files and manifest lists from failed retry attempts."""
+        for path in self._uncommitted_manifests:
+            try:
+                self._io.delete(path)
+            except Exception:
+                logger.warning("Failed to delete uncommitted manifest: %s", path, exc_info=True)
+        self._uncommitted_manifests.clear()
+        # Delete all manifest lists except the last one (which the committed snapshot references)
+        if len(self._written_manifest_lists) > 1:
+            for path in self._written_manifest_lists[:-1]:
+                try:
+                    self._io.delete(path)
+                except Exception:
+                    logger.warning("Failed to delete uncommitted manifest list: %s", path, exc_info=True)
+            self._written_manifest_lists = self._written_manifest_lists[-1:]
+
+    def _clean_all_uncommitted(self) -> None:
+        """Clean up all manifests and manifest lists on abort."""
+        for path in itertools.chain(self._uncommitted_manifests, self._written_manifests):
+            try:
+                self._io.delete(path)
+            except Exception:
+                logger.warning("Failed to delete uncommitted manifest: %s", path, exc_info=True)
+        for path in self._written_manifest_lists:
+            try:
+                self._io.delete(path)
+            except Exception:
+                logger.warning("Failed to delete uncommitted manifest list: %s", path, exc_info=True)
+        self._uncommitted_manifests.clear()
+        self._written_manifests.clear()
+        self._written_manifest_lists.clear()
+
+    def _refresh_for_retry(self) -> None:
+        """Reset state for a retry attempt with refreshed metadata."""
+        self._uncommitted_manifests.extend(self._written_manifests)
+        self._written_manifests.clear()
+        self._parent_snapshot_id = self._current_branch_head_id()
+        # The snapshot id is kept stable across attempts so it acts as an idempotency key: if a
+        # previous attempt actually landed but its response was lost, the id can be found in the
+        # refreshed metadata and the commit is not repeated.
+        self._manifest_num_counter = itertools.count(0)
+        self.commit_uuid = uuid.uuid4()
+
+    def _validate_concurrency(self) -> None:
+        """Validate that concurrent changes do not conflict with this operation.
+
+        Uses the CommitWindow to determine which catalog commits to validate against.
+        The window spans from base (when the operation began) to head (latest branch
+        HEAD), covering all external concurrent commits.
+
+        Subclasses that do not require validation (e.g. fast append) should override
+        with a no-op.
+        """
+        from pyiceberg.table.snapshots import IsolationLevel
+        from pyiceberg.table.update.validate import (
+            _validate_added_data_files,
+            _validate_deleted_data_files,
+            _validate_no_new_delete_files,
+            _validate_no_new_deletes_for_data_files,
+        )
+
+        if self._commit_window is None or self._commit_window.is_empty():
+            return
+
+        catalog_head = self._commit_window.head
+        starting_snapshot = self._commit_window.base
+
+        if catalog_head is None:
+            return
+
+        table = self._transaction._table
+        isolation_level = table.metadata.isolation_level(self._isolation_operation)
+        conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
+
+        if isolation_level == IsolationLevel.SERIALIZABLE:
+            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+
+        if self._predicate != AlwaysFalse():
+            # partition_set is None, so any concurrently committed delete file counts as
+            # a conflict even in unrelated partitions. Scope this via partition projection
+            # (as Java does) when delete-file write support lands.
+            _validate_no_new_delete_files(table, catalog_head, conflict_detection_filter, None, starting_snapshot)
+            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+
+        if self._deleted_data_files:
+            _validate_no_new_deletes_for_data_files(
+                table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
+            )
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.schema(), self.spec(spec_id), self._case_sensitive)
@@ -392,7 +539,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             self.delete_by_predicate(
                 self._transaction._build_partition_predicate(
                     partition_records=partition_records, schema=self.schema(), spec=self.spec(spec_id)
-                )
+                ),
+                self._case_sensitive,
             )
 
 
@@ -405,6 +553,10 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
     From the specification
     """
+
+    # The set of data files this delete was planned to drop, frozen at first plan.
+    # Reused across retries so the delete is not replanned against a newer head.
+    _planned_delete_files: set[DataFile] | None = None
 
     def _commit(self) -> UpdatesAndRequirements:
         # Only produce a commit when there is something to delete
@@ -465,14 +617,27 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                             deleted_entries = []
                             existing_entries = []
                             for entry in manifest_file.fetch_manifest_entry(io=self._io, discard_deleted=True):
-                                if strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH:
+                                # On the first plan the predicate decides which files are dropped. On a
+                                # retry the planned set is frozen, so a file is dropped only if it was
+                                # planned for deletion originally. This keeps concurrently added files
+                                # (which the writer never saw) from being dropped when the delete is
+                                # replanned against a newer head under snapshot isolation.
+                                if self._planned_delete_files is not None:
+                                    should_delete = entry.data_file in self._planned_delete_files
+                                else:
+                                    should_delete = strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH
+
+                                if should_delete:
                                     # Based on the metadata, it can be dropped right away
                                     deleted_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.DELETED))
                                     self._deleted_data_files.add(entry.data_file)
                                 else:
                                     # Based on the metadata, we cannot determine if it can be deleted
                                     existing_entries.append(_copy_with_new_status(entry, ManifestEntryStatus.EXISTING))
-                                    if inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH:
+                                    if (
+                                        self._planned_delete_files is None
+                                        and inclusive_metrics_evaluator(entry.data_file) != ROWS_MIGHT_NOT_MATCH
+                                    ):
                                         partial_rewrites_needed = True
 
                             if len(deleted_entries) > 0:
@@ -488,6 +653,10 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                                 existing_manifests.append(manifest_file)
                     else:
                         existing_manifests.append(manifest_file)
+
+        if self._planned_delete_files is None:
+            # Freeze the set of files this delete operates on so retries reuse it instead of replanning.
+            self._planned_delete_files = set(self._deleted_data_files)
 
         return existing_manifests, total_deleted_entries, partial_rewrites_needed
 
@@ -507,8 +676,19 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         """Indicate if any manifest-entries can be dropped."""
         return len(self._deleted_entries()) > 0
 
+    def _refresh_for_retry(self) -> None:
+        """Reset state for a retry attempt, clearing the cached delete computation."""
+        super()._refresh_for_retry()
+        # Clear @cached_property by removing it from the instance __dict__.
+        # _compute_deletes depends on _parent_snapshot_id which changes on retry.
+        if "_compute_deletes" in self.__dict__:
+            del self.__dict__["_compute_deletes"]
+
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
+    def _validate_concurrency(self) -> None:
+        """Skip validation; appends do not conflict with other operations."""
+
     def _existing_manifests(self) -> list[ManifestFile]:
         """To determine if there are any existing manifest files.
 
