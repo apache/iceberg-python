@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.exceptions import ValidationException
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, BooleanExpression, Or, build_records_predicate
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
     ROWS_MUST_MATCH,
@@ -265,7 +265,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             else:
                 return []
 
-        # Updates self._predicate with computed partition predicate for manifest pruning
+        # Populates self._delete_files_partition_filters for manifest pruning; does not touch self._predicate
         self._build_delete_files_partition_predicate()
 
         executor = ExecutorFactory.get_or_create()
@@ -527,6 +527,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
     def _build_delete_files_partition_predicate(self) -> None:
         """Build a partition-domain predicate per spec for deleted data files, used to prune manifests."""
+        self._delete_files_partition_filters = {}
         partition_to_overwrite: dict[int, set[Record]] = {}
         for data_file in self._deleted_data_files:
             group = partition_to_overwrite.setdefault(data_file.spec_id, set())
@@ -535,24 +536,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         for spec_id, partition_records in partition_to_overwrite.items():
             # Bound against the partition struct (field.name), not the row schema, so this works for any transform.
             partition_field_names = [field.name for field in self.spec(spec_id).fields]
-            per_record_exprs = [
-                self._build_partition_record_predicate(partition_field_names, partition_record)
-                for partition_record in partition_records
-            ]
-            self._delete_files_partition_filters[spec_id] = (
-                Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
-            )
-
-    @staticmethod
-    def _build_partition_record_predicate(partition_field_names: list[str], partition_record: Record) -> BooleanExpression:
-        predicates: list[BooleanExpression] = [
-            EqualTo(Reference(name), partition_record[pos]) if partition_record[pos] is not None else IsNull(Reference(name))
-            for pos, name in enumerate(partition_field_names)
-        ]
-        if not predicates:
-            # Unpartitioned spec: nothing to filter on, so the (single, empty) partition always matches.
-            return AlwaysTrue()
-        return And(*predicates) if len(predicates) > 1 else predicates[0]
+            if not partition_field_names:
+                # Unpartitioned spec: nothing to filter on, so the (single, empty) partition always matches.
+                self._delete_files_partition_filters[spec_id] = AlwaysTrue()
+            else:
+                self._delete_files_partition_filters[spec_id] = build_records_predicate(partition_field_names, partition_records)
 
 
 class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):

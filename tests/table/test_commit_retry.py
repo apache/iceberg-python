@@ -457,7 +457,8 @@ def test_concurrent_deletes_on_different_partitions_succeed(catalog: Catalog) ->
 def test_concurrent_partial_deletes_on_different_partitions_succeed(catalog: Catalog) -> None:
     """Concurrent partial deletes (CoW rewrite) on different partitions should succeed.
 
-    This tests the auto-computed partition predicate from _build_delete_files_partition_predicate.
+    Conflict detection for this path uses the user's delete filter directly (matching Java),
+    not an auto-computed partition predicate.
     """
     from pyiceberg.partitioning import PartitionField, PartitionSpec
     from pyiceberg.transforms import IdentityTransform

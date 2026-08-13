@@ -29,7 +29,7 @@ from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 
 from pyiceberg.expressions.literals import AboveMax, BelowMin, Literal, literal
 from pyiceberg.schema import Accessor, Schema
-from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, LiteralValue, StructProtocol
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, LiteralValue, Record, StructProtocol
 from pyiceberg.types import DoubleType, FloatType, NestedField
 from pyiceberg.utils.singleton import Singleton
 
@@ -1119,3 +1119,32 @@ class NotStartsWith(LiteralPredicate):
     @property
     def as_bound(self) -> type[BoundNotStartsWith]:  # type: ignore
         return BoundNotStartsWith
+
+
+def build_field_value_predicate(field_names: list[str], field_values: Record) -> BooleanExpression:
+    """Build a predicate matching a single record via per-field EqualTo/IsNull, ANDed together.
+
+    Args:
+        field_names: The name to reference for each position in field_values.
+        field_values: The values to match, one per field name, by position.
+
+    Raises:
+        IndexError: If field_names is empty.
+    """
+    predicates: list[BooleanExpression] = [
+        EqualTo(Reference(name), field_values[pos]) if field_values[pos] is not None else IsNull(Reference(name))
+        for pos, name in enumerate(field_names)
+    ]
+    return And(*predicates) if len(predicates) > 1 else predicates[0]
+
+
+def build_records_predicate(field_names: list[str], records: set[Record]) -> BooleanExpression:
+    """Build a predicate matching any of the given records, ORing together per-record predicates.
+
+    Returns AlwaysFalse() if there are no fields or no records to match.
+    """
+    if not records or not field_names:
+        return AlwaysFalse()
+
+    per_record_exprs = [build_field_value_predicate(field_names, record) for record in records]
+    return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]

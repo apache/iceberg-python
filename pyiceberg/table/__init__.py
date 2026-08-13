@@ -35,7 +35,7 @@ from pydantic import Field
 
 import pyiceberg.expressions.parser as parser
 from pyiceberg.exceptions import CommitFailedException, ValidationException
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, Or, build_records_predicate
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
     _InclusiveMetricsEvaluator,
@@ -403,20 +403,7 @@ class Transaction:
             A predicate matching any of the input partition records.
         """
         partition_fields = [schema.find_field(field.source_id).name for field in spec.fields]
-        if not partition_records or not partition_fields:
-            return AlwaysFalse()
-
-        per_record_exprs: list[BooleanExpression] = []
-        for partition_record in partition_records:
-            predicates: list[BooleanExpression] = [
-                EqualTo(Reference(partition_field), partition_record[pos])
-                if partition_record[pos] is not None
-                else IsNull(Reference(partition_field))
-                for pos, partition_field in enumerate(partition_fields)
-            ]
-            per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
-
-        return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
+        return build_records_predicate(partition_fields, partition_records)
 
     def _append_snapshot_producer(
         self, snapshot_properties: dict[str, str], branch: str | None = MAIN_BRANCH
