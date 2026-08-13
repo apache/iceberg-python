@@ -28,8 +28,8 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, BooleanExpression, Or
 from pyiceberg.exceptions import ValidationException
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, BooleanExpression, Or
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
     ROWS_MUST_MATCH,
