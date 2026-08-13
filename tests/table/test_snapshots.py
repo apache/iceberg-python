@@ -645,12 +645,7 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
         spy.reset_mock()
         _MergeAppendFiles(operation=Operation.APPEND, transaction=txn, io=table_v2.io)
         merge_init = spy.call_count
-        # Upper bound, not equality: `Transaction.table_metadata` caches on the identity of
-        # its inputs, so the second construction reads the same staged state and adds 0 calls.
-        # The trade-off is that this assertion no longer catches an un-hoisting of
-        # `_MergeAppendFiles.__init__` on its own — repeated reads of an unchanged state are
-        # free either way. What it still pins is that constructing the producer cannot start
-        # replaying updates per access again.
+        # Upper bound, not equality: the cache absorbs this access when the staged state is unchanged.
         assert merge_init - fast_init <= 1, (
             f"_MergeAppendFiles.__init__ made {merge_init - fast_init} extra update_table_metadata "
             "calls over its superclass; expected at most 1"
