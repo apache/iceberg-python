@@ -21,7 +21,7 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.expressions import EqualTo, Reference
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import BucketTransform
+from pyiceberg.transforms import BucketTransform, IdentityTransform
 from pyiceberg.types import IntegerType, NestedField, StringType
 
 
@@ -140,15 +140,12 @@ def test_delete_data_file_manifest_pruning_predicate_uses_partition_field(catalo
 
 
 def test_delete_data_file_manifest_pruning_bucket_on_same_result_type_succeeds(catalog: Catalog) -> None:
-    """delete_data_file must not silently skip a manifest when the bucket id happens to share the source column's type.
+    """delete_data_file correctly removes the file for a bucket-partitioned integer column.
 
-    Pre-fix, the buggy predicate compared the source column (an int) against the bucket id
-    (also an int), so binding succeeded instead of raising. The manifest's min/max stats for
-    that column then incorrectly ruled out the manifest containing the target file, so the
-    whole manifest was skipped and the file was silently never deleted - no exception, no
-    error, just a delete that quietly did nothing. A string source column can't hit this path
-    since it would fail to bind (see the other tests here), so this needs a same-result-type
-    source to catch a regression back to the source-column domain.
+    Guards against a regression where the pruning predicate is built from the source column
+    instead of the partition field: for an integer source, such a predicate would still bind
+    (unlike the string-column case above), but in the wrong domain, so pruning would incorrectly
+    rule out the file's manifest and leave it undeleted.
     """
     catalog.create_namespace_if_not_exists("default")
     identifier = "default.bucket_delete_same_result_type"
@@ -172,6 +169,60 @@ def test_delete_data_file_manifest_pruning_bucket_on_same_result_type_succeeds(c
         pa.Table.from_pylist(
             [{"value": 42}],
             schema=pa.schema([pa.field("value", pa.int32(), nullable=False)]),
+        )
+    )
+
+    before_paths = {task.file.file_path for task in table.scan().plan_files()}
+    existing_file = next(iter(table.scan().plan_files())).file
+
+    with table.transaction() as txn:
+        with txn.update_snapshot().overwrite() as overwrite:
+            overwrite.delete_data_file(existing_file)
+
+    after_paths = {task.file.file_path for task in table.scan().plan_files()}
+
+    assert before_paths - after_paths == {existing_file.file_path}
+
+
+def test_delete_data_file_manifest_pruning_identity_transform_succeeds(catalog: Catalog) -> None:
+    """delete_data_file works for identity-transform specs.
+
+    A baseline alongside the bucket-transform tests above, confirming the partition-domain
+    predicate construction also handles identity transforms correctly.
+    """
+    catalog.create_namespace_if_not_exists("default")
+    identifier = "default.identity_delete"
+
+    schema = Schema(
+        NestedField(1, "tenant_id", StringType(), required=True),
+        NestedField(2, "value", IntegerType(), required=True),
+    )
+    spec = PartitionSpec(
+        PartitionField(
+            source_id=1,
+            field_id=1000,
+            transform=IdentityTransform(),
+            name="tenant_id",
+        ),
+        spec_id=0,
+    )
+    table = catalog.create_table(
+        identifier=identifier,
+        schema=schema,
+        partition_spec=spec,
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"tenant_id": "tenant-a", "value": 1},
+                {"tenant_id": "tenant-b", "value": 2},
+            ],
+            schema=pa.schema(
+                [
+                    pa.field("tenant_id", pa.string(), nullable=False),
+                    pa.field("value", pa.int32(), nullable=False),
+                ]
+            ),
         )
     )
 
