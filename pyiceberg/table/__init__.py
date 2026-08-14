@@ -35,7 +35,7 @@ from pydantic import Field
 
 import pyiceberg.expressions.parser as parser
 from pyiceberg.exceptions import CommitFailedException, ValidationException
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, Or, build_records_predicate
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, Or
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
     _InclusiveMetricsEvaluator,
@@ -46,7 +46,13 @@ from pyiceberg.expressions.visitors import (
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
-from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
+from pyiceberg.partitioning import (
+    PARTITION_FIELD_ID_START,
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionKey,
+    PartitionSpec,
+    build_records_predicate,
+)
 from pyiceberg.schema import Schema
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable

@@ -33,6 +33,7 @@ from pydantic import (
 )
 
 from pyiceberg.exceptions import ValidationError
+from pyiceberg.expressions import AlwaysFalse, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -550,3 +551,32 @@ def _(type: IcebergType, value: uuid.UUID | int | bytes | None) -> bytes | int |
 @_to_partition_representation.register(PrimitiveType)
 def _(type: IcebergType, value: Any | None) -> Any | None:
     return value
+
+
+def build_field_value_predicate(field_names: list[str], field_values: Record) -> BooleanExpression:
+    """Build a predicate matching a single record via per-field EqualTo/IsNull, ANDed together.
+
+    Args:
+        field_names: The name to reference for each position in field_values.
+        field_values: The values to match, one per field name, by position.
+
+    Raises:
+        IndexError: If field_names is empty.
+    """
+    predicates: list[BooleanExpression] = [
+        EqualTo(Reference(name), field_values[pos]) if field_values[pos] is not None else IsNull(Reference(name))
+        for pos, name in enumerate(field_names)
+    ]
+    return And(*predicates) if len(predicates) > 1 else predicates[0]
+
+
+def build_records_predicate(field_names: list[str], records: set[Record]) -> BooleanExpression:
+    """Build a predicate matching any of the given records, ORing together per-record predicates.
+
+    Returns AlwaysFalse() if there are no fields or no records to match.
+    """
+    if not records or not field_names:
+        return AlwaysFalse()
+
+    per_record_exprs = [build_field_value_predicate(field_names, record) for record in records]
+    return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.exceptions import ValidationException
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, BooleanExpression, Or, build_records_predicate
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, BooleanExpression, Or
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
     ROWS_MUST_MATCH,
@@ -50,7 +50,7 @@ from pyiceberg.manifest import (
     write_manifest,
     write_manifest_list,
 )
-from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.partitioning import PartitionSpec, build_records_predicate
 from pyiceberg.schema import Schema
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRefType
 from pyiceberg.table.snapshots import (
