@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import os
 import pickle
 import tempfile
@@ -23,6 +24,7 @@ import uuid
 from unittest import mock
 
 import pytest
+from botocore import UNSIGNED
 from botocore.awsrequest import AWSRequest
 from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
@@ -875,6 +877,51 @@ def _test_fsspec_pickle_round_trip(fsspec_fileio: FsspecFileIO, location: str) -
 
 
 TEST_URI = "https://iceberg-test-signer"
+
+
+def test_s3v4_rest_signer_registered_on_session(requests_mock: Mocker) -> None:
+    """Signer must be registered on the session, which every client the filesystem creates inherits."""
+    new_uri = "https://other-bucket/metadata/snap-8048355899640248710-1-a5c8ea2d-aa1f-48e8-89f4-1fa69db8c742.avro"
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={
+            "uri": new_uri,
+            "headers": {"Authorization": ["AWS4-HMAC-SHA256 Credential=ASIAQPRZZYGHUT57DL3I/20221017/us-west-2/s3/aws4_request"]},
+            "extensions": {},
+        },
+        status_code=200,
+    )
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = FsspecFileIO(properties={"s3.signer": "S3V4RestSigner", "uri": TEST_URI, "token": "abc"})
+        s3_fileio.new_input(location="s3://warehouse/foo")
+
+    session = mock_s3fs.call_args.kwargs["session"]
+
+    request = AWSRequest(
+        method="HEAD",
+        url="https://bucket/metadata/snap-8048355899640248710-1-a5c8ea2d-aa1f-48e8-89f4-1fa69db8c742.avro",
+        headers={},
+        data=b"",
+        params={},
+        auth_path="/metadata/snap-8048355899640248710-1-a5c8ea2d-aa1f-48e8-89f4-1fa69db8c742.avro",
+    )
+    request.context = {"client_region": "us-west-2"}
+
+    asyncio.run(
+        session.get_component("event_emitter").emit(
+            "before-sign.s3",
+            request=request,
+            signing_name="s3",
+            region_name="us-west-2",
+            signature_version=UNSIGNED,
+            request_signer=None,
+            operation_name="HeadObject",
+        )
+    )
+
+    assert request.url == new_uri
+    assert dict(request.headers)["Authorization"].startswith("AWS4-HMAC-SHA256")
 
 
 def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
