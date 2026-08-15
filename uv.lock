@@ -3610,14 +3610,14 @@ wheels = [
 
 [[package]]
 name = "mypy-boto3-glue"
-version = "1.43.59"
+version = "1.43.65"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.12'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1d/18/e8723d05395328f8963f8ca72ad010beef48b4b24ee466f75542f030ec4c/mypy_boto3_glue-1.43.59.tar.gz", hash = "sha256:4dd08040c9356b080816d8b5060747c9be36ef33b59bf4e4f0d6afb017d6fe61", size = 151671, upload-time = "2026-07-29T19:55:16.386Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4d/52/b597e840005a6c6c4a635f0e80a4831912fd05b04661610688ed8d3172b4/mypy_boto3_glue-1.43.65.tar.gz", hash = "sha256:3c605de06158d39b964aefc53f29f9c917a0b63ff3dceb35c11b174bcd7ba3ca", size = 152401, upload-time = "2026-08-05T20:40:14.656Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/83/1f/dc36a75fcfad9bb623a13729a72d3ad8d7f3d943bff999331ed456031a80/mypy_boto3_glue-1.43.59-py3-none-any.whl", hash = "sha256:a3c31f64c436fb27099e24a76e29d207e76b19112a2642c41e3c9c702e763c60", size = 153384, upload-time = "2026-07-29T19:55:14.15Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/78/b702772c3a199fc28244bf3d46841793b18089950cbe74185c2870653a09/mypy_boto3_glue-1.43.65-py3-none-any.whl", hash = "sha256:d90818287dfaaff0f1e056ad196ac7a60978b4c9e9e78f2e4fc5248255e9b2c0", size = 154120, upload-time = "2026-08-05T20:40:12.007Z" },
 ]
 
 [[package]]
