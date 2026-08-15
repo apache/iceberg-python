@@ -356,7 +356,8 @@ class InspectTable:
                 ``last_updated_at``, and ``last_updated_snapshot_id``.
 
         Raises:
-            ValueError: If the specified snapshot does not exist.
+            ValueError: If the specified snapshot does not exist, or if the
+                table has no snapshots and snapshot_id is None.
         """
         import pyarrow as pa
 
