@@ -30,7 +30,7 @@ def property_as_int(
     property_name: str,
     default: int | None = None,
 ) -> int | None:
-    if value := properties.get(property_name):
+    if (value := properties.get(property_name)) is not None:
         try:
             return int(value)
         except ValueError as e:
@@ -44,7 +44,7 @@ def property_as_float(
     property_name: str,
     default: float | None = None,
 ) -> float | None:
-    if value := properties.get(property_name):
+    if (value := properties.get(property_name)) is not None:
         try:
             return float(value)
         except ValueError as e:
@@ -58,7 +58,7 @@ def property_as_bool(
     property_name: str,
     default: bool,
 ) -> bool:
-    if value := properties.get(property_name):
+    if (value := properties.get(property_name)) is not None:
         try:
             return strtobool(value)
         except ValueError as e:
@@ -71,7 +71,7 @@ def get_first_property_value(
     *property_names: str,
 ) -> Any | None:
     for property_name in property_names:
-        if property_value := properties.get(property_name):
+        if (property_value := properties.get(property_name)) is not None:
             return property_value
     return None
 
