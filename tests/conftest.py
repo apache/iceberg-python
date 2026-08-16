@@ -27,7 +27,6 @@ retrieved using `request.getfixturevalue(fixture_name)`.
 
 import os
 import re
-import socket
 import string
 import time
 import uuid
@@ -2341,14 +2340,14 @@ def fixture_aws_credentials() -> Generator[None, None, None]:
 
 
 @pytest.fixture(scope="session")
-def moto_server() -> "ThreadedMotoServer":
+def moto_server() -> Generator["ThreadedMotoServer", None, None]:
     from moto.server import ThreadedMotoServer
 
-    server = ThreadedMotoServer(ip_address="localhost", port=5001)
-
-    # this will throw an exception if the port is already in use
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((server._ip_address, server._port))
+    # Bind to port 0 so the OS assigns a free ephemeral port. A hardcoded port
+    # collides when tests run in parallel (e.g. on shared CI agents) or when a
+    # previous run leaves the port in TIME_WAIT, raising
+    # "OSError: [Errno 98] Address already in use".
+    server = ThreadedMotoServer(ip_address="localhost", port=0)
 
     server.start()
     yield server
@@ -2357,7 +2356,8 @@ def moto_server() -> "ThreadedMotoServer":
 
 @pytest.fixture(scope="session")
 def moto_endpoint_url(moto_server: "ThreadedMotoServer") -> str:
-    _url = f"http://{moto_server._ip_address}:{moto_server._port}"
+    host, port = moto_server.get_host_and_port()
+    _url = f"http://{host}:{port}"
     return _url
 
 

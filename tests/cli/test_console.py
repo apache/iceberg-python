@@ -340,6 +340,22 @@ def test_drop_table(catalog: InMemoryCatalog) -> None:
     assert result.output == """Dropped table: default.my_table\n"""
 
 
+def test_drop_table_with_purge(catalog: InMemoryCatalog, mocker: MockFixture) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+    purge_table = mocker.spy(catalog, "purge_table")
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["drop", "table", "default.my_table", "--purge"])
+    assert result.exit_code == 0
+    assert result.output == """Dropped table: default.my_table (purge requested)\n"""
+    purge_table.assert_called_once_with("default.my_table")
+
+
 def test_drop_table_does_not_exists(catalog: InMemoryCatalog) -> None:
     # pylint: disable=unused-argument
 

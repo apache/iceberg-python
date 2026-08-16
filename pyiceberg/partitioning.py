@@ -500,7 +500,7 @@ def _to_partition_representation(type: IcebergType, value: Any) -> Any:
     can return date that still needs to be transformed into an int (days
     since epoch).
     """
-    return TypeError(f"Unsupported partition field type: {type}")
+    raise TypeError(f"Unsupported partition field type: {type}")
 
 
 @_to_partition_representation.register(TimestampType)

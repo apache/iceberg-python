@@ -106,6 +106,7 @@ geoarrow = ["geoarrow-pyarrow>=0.2.0"]
 dev = [
     "pytest==9.1.1",
     "pytest-checkdocs==2.14.0",
+    "setuptools>=83.0.0",
     "prek>=0.2.1",
     "pytest-lazy-fixtures==1.4.0",
     "fastavro==1.12.2",
@@ -115,7 +116,7 @@ dev = [
     "typing-extensions==4.16.0",
     "pytest-mock==3.15.1",
     "pyspark[connect]==4.0.1",
-    "protobuf==6.33.5", # match Spark Connect's gencode
+    "protobuf==7.35.1", # match Spark Connect's gencode
     "cython>=3.0.0",
     "deptry>=0.14",
     "docutils!=0.21.post1",
@@ -153,7 +154,7 @@ default-groups = [
 ]
 
 [build-system]
-requires = ["setuptools>=80", "wheel", "Cython>=3.0.0"]
+requires = ["setuptools>=83.0.0", "wheel", "Cython>=3.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
