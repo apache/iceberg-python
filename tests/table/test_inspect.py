@@ -106,6 +106,7 @@ def test_inspect_manifests_preserves_empty_string_bounds(catalog: InMemoryCatalo
     assert partition_summary["lower_bound"] == ""
     assert partition_summary["upper_bound"] == ""
 
+
 def test_readable_bound_type_promotions() -> None:
     # 4-byte LE representation of integer 10 -> b'\x0a\x00\x00\x00'
     four_byte_int_bound = b"\x0a\x00\x00\x00"
