@@ -31,6 +31,7 @@ from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.refs import SnapshotRefType
 from pyiceberg.typedef import IcebergBaseModel, Identifier, Properties
+from pyiceberg.view import View
 
 
 class Output(ABC):
@@ -44,6 +45,9 @@ class Output(ABC):
 
     @abstractmethod
     def describe_table(self, table: Table) -> None: ...
+
+    @abstractmethod
+    def describe_view(self, view: View) -> None: ...
 
     @abstractmethod
     def files(self, table: Table, history: bool) -> None: ...
@@ -121,6 +125,31 @@ class ConsoleOutput(Output):
         output_table.add_row("Current snapshot", str(table.current_snapshot()))
         output_table.add_row("Snapshots", snapshot_tree)
         output_table.add_row("Properties", table_properties)
+        Console().print(output_table)
+
+    def describe_view(self, view: View) -> None:
+        metadata = view.metadata
+        view_properties = self._table
+        for key, value in metadata.properties.items():
+            view_properties.add_row(key, value)
+
+        schema_tree = Tree(f"Schema, id={view.current_version().schema_id}")
+        for field in view.schema().fields:
+            schema_tree.add(str(field))
+
+        current_version = view.current_version()
+        representations_tree = Tree("SQL representations")
+        for repr in current_version.representations:
+            representations_tree.add(f"[{repr.root.dialect}] {repr.root.sql}")
+
+        output_table = self._table
+        output_table.add_row("View format version", str(metadata.format_version))
+        output_table.add_row("View UUID", str(metadata.view_uuid))
+        output_table.add_row("Location", metadata.location)
+        output_table.add_row("Current version", str(metadata.current_version_id))
+        output_table.add_row("Current schema", schema_tree)
+        output_table.add_row("SQL", representations_tree)
+        output_table.add_row("Properties", view_properties)
         Console().print(output_table)
 
     def files(self, table: Table, history: bool) -> None:
@@ -215,6 +244,9 @@ class JsonOutput(Output):
                 identifier=table.name(), metadata=table.metadata, metadata_location=table.metadata_location
             ).model_dump_json()
         )
+
+    def describe_view(self, view: View) -> None:
+        print(view.metadata.model_dump_json())
 
     def describe_properties(self, properties: Properties) -> None:
         self._out(properties)
