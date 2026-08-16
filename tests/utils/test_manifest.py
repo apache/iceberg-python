@@ -192,6 +192,34 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
     assert data_file.sort_order_id == 0
 
 
+def test_fetch_manifest_entry_with_filter(generated_manifest_entry_file: str) -> None:
+    manifest = ManifestFile.from_args(
+        manifest_path=generated_manifest_entry_file,
+        manifest_length=0,
+        partition_spec_id=0,
+        added_snapshot_id=0,
+        sequence_number=0,
+        partitions=[],
+    )
+
+    all_entries = manifest.fetch_manifest_entry(PyArrowFileIO())
+    assert len(all_entries) == 2
+
+    # Entry 1 has tpep_pickup_day=1925 & entry 2 has tpep_pickup_day=None
+    matched = manifest.fetch_manifest_entry(
+        PyArrowFileIO(),
+        entry_filter=lambda e: e.data_file.partition[1] == 1925,
+    )
+    assert len(matched) == 1
+    assert matched[0].data_file.record_count == 19513
+
+    no_match = manifest.fetch_manifest_entry(
+        PyArrowFileIO(),
+        entry_filter=lambda e: e.data_file.partition[1] == 9999,
+    )
+    assert len(no_match) == 0
+
+
 def test_read_manifest_list(generated_manifest_file_file_v1: str) -> None:
     input_file = PyArrowFileIO().new_input(generated_manifest_file_file_v1)
     manifest_list = list(read_manifest_list(input_file))[0]
