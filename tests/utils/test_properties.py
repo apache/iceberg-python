@@ -118,13 +118,7 @@ def test_property_as_float_with_empty_string() -> None:
 
 
 def test_property_as_bool_with_empty_string() -> None:
-    properties = {
-        "some_bool_prop": "",
-    }
-
-    with pytest.raises(ValueError) as exc:
-        property_as_bool(properties, "some_bool_prop", default=True)
-    assert "Could not parse table property some_bool_prop to a boolean: " in str(exc.value)
+    assert property_as_bool({"some_bool_prop": ""}, "some_bool_prop", default=True) is True
 
 
 def test_get_first_property_value() -> None:

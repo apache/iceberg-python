@@ -58,7 +58,7 @@ def property_as_bool(
     property_name: str,
     default: bool,
 ) -> bool:
-    if (value := properties.get(property_name)) is not None:
+    if (value := properties.get(property_name)) not in (None, ""):
         try:
             return strtobool(str(value))
         except ValueError as e:
