@@ -54,13 +54,13 @@ def property_as_float(
 
 
 def property_as_bool(
-    properties: dict[str, str],
+    properties: Properties,
     property_name: str,
     default: bool,
 ) -> bool:
     if (value := properties.get(property_name)) is not None:
         try:
-            return strtobool(value)
+            return strtobool(str(value))
         except ValueError as e:
             raise ValueError(f"Could not parse table property {property_name} to a boolean: {value}") from e
     return default
