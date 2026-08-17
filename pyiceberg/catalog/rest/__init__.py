@@ -16,6 +16,7 @@
 #  under the License.
 from __future__ import annotations
 
+import logging
 import time
 from collections import deque
 from enum import Enum
@@ -99,6 +100,8 @@ from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+logger = logging.getLogger(__name__)
 
 
 class HttpMethod(str, Enum):
@@ -293,6 +296,23 @@ PAGE_SIZE = "rest-page-size"
 
 NAMESPACE_SEPARATOR_PROPERTY = "namespace-separator"
 DEFAULT_NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
+
+
+def _parse_scan_planning_mode(properties: Properties, *, strict: bool = True) -> ScanPlanningMode | None:
+    """Read the scan planning mode from a set of properties, returning None when it is not set.
+
+    When ``strict`` is False, an unrecognized value is logged and treated as unset so a higher-priority
+    source (for example a loadTable override) or the default mode can still decide.
+    """
+    if (mode := properties.get(SCAN_PLANNING_MODE)) is None:
+        return None
+    try:
+        return ScanPlanningMode(str(mode).strip().lower())
+    except ValueError as exc:
+        if strict:
+            raise ValueError(f"Invalid {SCAN_PLANNING_MODE}: {mode}") from exc
+        logger.warning("Ignoring invalid %s=%r", SCAN_PLANNING_MODE, mode)
+        return None
 
 
 def _retry_hook(retry_state: RetryCallState) -> None:
@@ -512,11 +532,31 @@ class RestCatalog(Catalog):
             merged_properties[AUTH_MANAGER] = self._auth_manager
         return load_file_io(merged_properties, location)
 
+    def _effective_scan_planning_mode(self, table_config: Properties) -> ScanPlanningMode:
+        """Resolve the scan planning mode, where a loadTable override wins over the catalog property.
+
+        An invalid catalog-level value is ignored (with a warning) so it cannot block a valid
+        loadTable override or the default client-side mode. An invalid loadTable value still fails.
+        """
+        # Parse the table override first so a valid loadTable value is not blocked by a bad catalog property.
+        table_mode = _parse_scan_planning_mode(table_config)
+        catalog_mode = _parse_scan_planning_mode(self.properties, strict=False)
+
+        if catalog_mode is not None and table_mode is not None and catalog_mode != table_mode:
+            logger.warning(
+                "Scan planning mode mismatch: client config=%s, server config=%s. Server config takes precedence.",
+                catalog_mode.value,
+                table_mode.value,
+            )
+
+        return table_mode or catalog_mode or ScanPlanningMode(SCAN_PLANNING_MODE_DEFAULT)
+
     @override
-    def supports_server_side_planning(self) -> bool:
-        """Check if the catalog supports server-side scan planning."""
-        scan_planning_mode = ScanPlanningMode(self.properties.get(SCAN_PLANNING_MODE, SCAN_PLANNING_MODE_DEFAULT))
-        return Capability.V1_SUBMIT_TABLE_SCAN_PLAN in self._supported_endpoints and scan_planning_mode == ScanPlanningMode.SERVER
+    def supports_server_side_planning(self, table_config: Properties = EMPTY_DICT) -> bool:
+        """Check if server-side scan planning should be used, honoring a per-table loadTable override."""
+        if Capability.V1_SUBMIT_TABLE_SCAN_PLAN not in self._supported_endpoints:
+            return False
+        return self._effective_scan_planning_mode(table_config) == ScanPlanningMode.SERVER
 
     @retry(**_RETRY_ARGS)
     def _plan_table_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> PlanningResponse:

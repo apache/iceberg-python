@@ -52,6 +52,7 @@ def rest_scan_catalog(requests_mock: Mocker) -> RestCatalog:
             "defaults": {"scan-planning-mode": "server"},
             "overrides": {},
             "endpoints": [
+                "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}",
                 "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan",
                 "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan/{plan-id}",
                 "DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan/{plan-id}",
@@ -66,6 +67,28 @@ def rest_scan_catalog(requests_mock: Mocker) -> RestCatalog:
         uri=TEST_URI,
         **{"scan-planning-mode": "server"},
     )
+
+
+@pytest.fixture
+def rest_client_planning_catalog(requests_mock: Mocker) -> RestCatalog:
+    """A catalog that advertises the plan endpoints but leaves the mode at the client-side default."""
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={
+            "defaults": {},
+            "overrides": {},
+            "endpoints": [
+                "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}",
+                "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan",
+                "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan/{plan-id}",
+                "DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan/{plan-id}",
+                "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/tasks",
+            ],
+        },
+        status_code=200,
+    )
+
+    return RestCatalog("test", uri=TEST_URI)
 
 
 def _rest_data_file(
@@ -694,3 +717,102 @@ def test_plan_scan_equality_deletes_not_supported(rest_scan_catalog: RestCatalog
     request = PlanTableScanRequest()
     with pytest.raises(NotImplementedError, match="PyIceberg does not yet support equality deletes"):
         rest_scan_catalog.plan_scan(("db", "tbl"), request)
+
+
+def _mock_load_table(requests_mock: Mocker, metadata: dict[str, Any], config: dict[str, str]) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl",
+        json={
+            "metadata-location": "s3://bucket/tbl/metadata/00000.metadata.json",
+            "metadata": metadata,
+            "config": config,
+        },
+        status_code=200,
+    )
+
+
+def test_scan_uses_server_side_planning_from_load_table_config(
+    rest_client_planning_catalog: RestCatalog, requests_mock: Mocker, example_table_metadata_v2: dict[str, Any]
+) -> None:
+    _mock_load_table(requests_mock, example_table_metadata_v2, {"scan-planning-mode": "server"})
+    plan_mock = requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [],
+            "file-scan-tasks": [{"data-file": _rest_data_file(file_path="s3://bucket/tbl/data/file1.parquet")}],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    table = rest_client_planning_catalog.load_table(("db", "tbl"))
+    scan = table.scan()
+
+    assert scan._should_use_server_side_planning() is True
+
+    tasks = list(scan.plan_files())
+    assert [task.file.file_path for task in tasks] == ["s3://bucket/tbl/data/file1.parquet"]
+    assert plan_mock.call_count == 1
+
+
+def test_scan_keeps_client_side_planning_without_load_table_config(
+    rest_client_planning_catalog: RestCatalog, requests_mock: Mocker, example_table_metadata_v2: dict[str, Any]
+) -> None:
+    _mock_load_table(requests_mock, example_table_metadata_v2, {})
+
+    table = rest_client_planning_catalog.load_table(("db", "tbl"))
+
+    assert table.scan()._should_use_server_side_planning() is False
+
+
+def test_scan_load_table_config_overrides_catalog_property(
+    rest_scan_catalog: RestCatalog, requests_mock: Mocker, example_table_metadata_v2: dict[str, Any]
+) -> None:
+    _mock_load_table(requests_mock, example_table_metadata_v2, {"scan-planning-mode": "client"})
+
+    table = rest_scan_catalog.load_table(("db", "tbl"))
+
+    assert table.scan()._should_use_server_side_planning() is False
+
+
+def test_scan_load_table_override_survives_invalid_catalog_mode(
+    requests_mock: Mocker, example_table_metadata_v2: dict[str, Any]
+) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={
+            "defaults": {},
+            "overrides": {},
+            "endpoints": [
+                "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}",
+                "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan",
+                "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan/{plan-id}",
+                "DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan/{plan-id}",
+                "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/tasks",
+            ],
+        },
+        status_code=200,
+    )
+    catalog = RestCatalog("test", uri=TEST_URI, **{"scan-planning-mode": "servr"})
+    _mock_load_table(requests_mock, example_table_metadata_v2, {"scan-planning-mode": "server"})
+    plan_mock = requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [],
+            "file-scan-tasks": [{"data-file": _rest_data_file(file_path="s3://bucket/tbl/data/file1.parquet")}],
+            "plan-tasks": [],
+        },
+        status_code=200,
+    )
+
+    assert catalog.supports_server_side_planning() is False
+
+    table = catalog.load_table(("db", "tbl"))
+    scan = table.scan()
+    assert scan._should_use_server_side_planning() is True
+    assert [task.file.file_path for task in scan.plan_files()] == ["s3://bucket/tbl/data/file1.parquet"]
+    assert plan_mock.call_count == 1
