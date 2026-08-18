@@ -29,6 +29,7 @@ from pyiceberg.manifest import ManifestContent, ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file
 from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.table.snapshots import Operation, Summary
 from pyiceberg.transforms import IdentityTransform
@@ -1081,10 +1082,10 @@ def test_read_spark_written_puffin_dv(spark: SparkSession, session_catalog: Rest
     assert "referenced-data-file" in blob.properties
     assert blob.properties["cardinality"] == "4"
 
-    dv_dict = puffin.to_vector()
-    assert len(dv_dict) == 1, "Expected one data file's deletions"
+    dvs = deletion_vectors_from_puffin_file(puffin)
+    assert len(dvs) == 1, "Expected one data file's deletions"
 
-    for _data_file_path, chunked_array in dv_dict.items():
-        positions = chunked_array.to_pylist()
+    for dv in dvs:
+        positions = dv.to_vector().to_pylist()
         assert len(positions) == 4, f"Expected 4 deleted positions, got {len(positions)}"
         assert sorted(positions) == [9, 19, 29, 39], f"Unexpected positions: {positions}"
