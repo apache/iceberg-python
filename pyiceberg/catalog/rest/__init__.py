@@ -150,6 +150,7 @@ class Endpoints:
     load_credentials: str = "namespaces/{namespace}/tables/{table}/credentials"
     update_table: str = "namespaces/{namespace}/tables/{table}"
     drop_table: str = "namespaces/{namespace}/tables/{table}"
+    unregister_table: str = "namespaces/{namespace}/tables/{table}/unregister"
     table_exists: str = "namespaces/{namespace}/tables/{table}"
     get_token: str = "oauth/tokens"
     rename_table: str = "tables/rename"
@@ -182,6 +183,7 @@ class Capability:
     V1_DELETE_TABLE = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_table}")
     V1_RENAME_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.rename_table}")
     V1_REGISTER_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_table}")
+    V1_UNREGISTER_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.unregister_table}")
     V1_LOAD_CREDENTIALS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_credentials}")
 
     V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_views}")
@@ -336,6 +338,16 @@ class RegisterTableRequest(IcebergBaseModel):
     name: str
     metadata_location: str = Field(..., alias="metadata-location")
     overwrite: bool
+
+
+class UnregisterTableResult(IcebergBaseModel):
+    """Result of unregistering a table.
+
+    Contains the last metadata location and table metadata at the time of unregistration.
+    """
+
+    metadata_location: str = Field(..., alias="metadata-location")
+    metadata: TableMetadata
 
 
 class RegisterViewRequest(IcebergBaseModel):
@@ -1041,6 +1053,32 @@ class RestCatalog(Catalog):
 
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
+
+    @retry(**_RETRY_ARGS)
+    def unregister_table(self, identifier: str | Identifier) -> tuple[str, TableMetadata]:
+        """Unregister a table from the catalog without removing data or metadata files.
+
+        Args:
+            identifier (Union[str, Identifier]): Table identifier for the table
+
+        Returns:
+            tuple[str, TableMetadata]: The last metadata location and corresponding table metadata
+
+        Raises:
+            NoSuchTableError: If the table does not exist
+        """
+        self._check_endpoint(Capability.V1_UNREGISTER_TABLE)
+        namespace_and_table = self._split_identifier_for_path(identifier)
+        response = self._session.post(
+            self.url(Endpoints.unregister_table, prefixed=True, **namespace_and_table),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchTableError})
+
+        result = UnregisterTableResult.model_validate_json(response.content)
+        return (result.metadata_location, result.metadata)
 
     @retry(**_RETRY_ARGS)
     @override
