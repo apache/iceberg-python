@@ -197,17 +197,17 @@ def _validate_deleted_data_files(
 
 def _validate_data_files_exist(
     table: Table,
-    starting_snapshot: Snapshot,
+    to_snapshot: Snapshot,
     data_files: set[DataFile],
-    parent_snapshot: Snapshot | None,
+    from_snapshot: Snapshot | None,
 ) -> None:
     """Validate that explicitly replaced data files have not been concurrently deleted.
 
     Args:
         table: Table to validate
-        starting_snapshot: Snapshot current at the start of the operation
+        to_snapshot: Current branch head to scan from
         data_files: Data files that must still exist
-        parent_snapshot: Ending snapshot on the branch being validated
+        from_snapshot: Snapshot where the scan stops, excluding this snapshot
     """
     partition_set: dict[int, set[Record]] = {}
     for data_file in data_files:
@@ -215,7 +215,7 @@ def _validate_data_files_exist(
 
     conflicting_paths = {
         entry.data_file.file_path
-        for entry in _deleted_data_files(table, starting_snapshot, None, partition_set, parent_snapshot)
+        for entry in _deleted_data_files(table, to_snapshot, None, partition_set, from_snapshot)
         if entry.data_file in data_files
     }
     if conflicting_paths:

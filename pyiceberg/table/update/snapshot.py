@@ -502,7 +502,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
 
         if self._deleted_data_files:
-            _validate_data_files_exist(table, catalog_head, self._deleted_data_files, starting_snapshot)
+            _validate_data_files_exist(
+                table=table,
+                to_snapshot=catalog_head,
+                data_files=self._deleted_data_files,
+                from_snapshot=starting_snapshot,
+            )
             _validate_no_new_deletes_for_data_files(
                 table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
             )
