@@ -472,6 +472,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         from pyiceberg.table.snapshots import IsolationLevel
         from pyiceberg.table.update.validate import (
             _validate_added_data_files,
+            _validate_data_files_exist,
             _validate_deleted_data_files,
             _validate_no_new_delete_files,
             _validate_no_new_deletes_for_data_files,
@@ -501,6 +502,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
 
         if self._deleted_data_files:
+            _validate_data_files_exist(table, catalog_head, self._deleted_data_files, starting_snapshot)
             _validate_no_new_deletes_for_data_files(
                 table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
             )
