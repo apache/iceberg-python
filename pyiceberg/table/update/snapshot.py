@@ -528,11 +528,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             group.add(data_file.partition)
 
         for spec_id, partition_records in partition_to_overwrite.items():
-            self.delete_by_predicate(
+            self.partition_filters[spec_id] = Or(
+                self.partition_filters[spec_id],
                 self._transaction._build_partition_predicate(
-                    partition_records=partition_records, schema=self.schema(), spec=self.spec(spec_id)
+                    partition_records=partition_records,
+                    partition_fields=[field.name for field in self.spec(spec_id).fields],
                 ),
-                self._case_sensitive,
             )
 
 
