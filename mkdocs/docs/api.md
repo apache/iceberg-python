@@ -365,6 +365,34 @@ for buf in tbl.scan().to_arrow_batch_reader():
     print(f"Buffer contains {len(buf)} rows")
 ```
 
+### Write API modes: `Table` and `Transaction`
+
+Every write operation is available through two APIs.
+
+The **`Table` API** exposes each operation directly on the table object: `tbl.append(...)`, `tbl.overwrite(...)`, `tbl.delete(...)`, `tbl.dynamic_partition_overwrite(...)` and `tbl.upsert(...)`. Each call opens a transaction, applies the single operation, and commits it as one atomic snapshot. This is the simplest mode and the right default when you only need a single write.
+
+The **`Transaction` API** exposes the same operations on a transaction object obtained from `tbl.transaction()`. It batches multiple operations into a single atomic commit: either every operation becomes visible together, or, on failure, none of them do, and readers never observe an intermediate state.
+
+```python
+with tbl.transaction() as txn:
+    txn.delete(delete_filter="city == 'Paris'")
+    txn.append(df_new_cities)
+    # both changes commit together when the block exits
+```
+
+A transaction can also combine data and metadata changes, for example evolving the schema and writing in the same commit:
+
+```python
+from pyiceberg.types import LongType
+
+with tbl.transaction() as txn:
+    with txn.update_schema() as update_schema:
+        update_schema.add_column("population", LongType())
+    txn.append(df_with_population)
+```
+
+If any statement inside the block raises, the whole transaction is discarded and the table is left untouched. The examples in the rest of this section use the `Table` API for brevity; each one has an equivalent method on the transaction object.
+
 ### Streaming writes from a `RecordBatchReader`
 
 `tbl.append()` and `tbl.overwrite()` also accept a `pyarrow.RecordBatchReader` directly, which lets you write datasets that don't fit in memory without materialising them as a `pa.Table` first. PyIceberg consumes the reader once and microbatches it into Parquet files of approximately `write.target-file-size-bytes` (default 512 MiB), keeping memory usage bounded by the target size. All files are committed in a single snapshot.
@@ -385,6 +413,8 @@ df = pa.Table.from_pylist(
 
 tbl.append(df)
 ```
+
+### Delete
 
 You can delete some of the data from the table by calling `tbl.delete()` with a desired `delete_filter`. This will use the Iceberg metadata to only open up the Parquet files that contain relevant information.
 
