@@ -44,6 +44,8 @@ github:
 
       required_linear_history: true
   pull_requests:
+    # allow pull requests to merge automatically once all requirements are met
+    allow_auto_merge: true
     # auto-delete head branches after being merged
     del_branch_on_merge: true
   features:
