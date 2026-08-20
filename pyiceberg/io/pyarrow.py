@@ -1815,10 +1815,24 @@ class ArrowScan:
             # Empty
             return arrow_schema.empty_table()
 
+        def _normalize_dictionary_columns(batch: pa.RecordBatch) -> pa.RecordBatch:
+            arrays = []
+            has_dictionary = False
+
+            for name, array in zip(batch.schema.names, batch.columns, strict=True):
+                if pa.types.is_dictionary(array.type) and name not in self._dictionary_columns:
+                    arrays.append(array.dictionary_decode())
+                    has_dictionary = True
+                else:
+                    arrays.append(array)
+
+            return pa.record_batch(arrays, names=batch.schema.names) if has_dictionary else batch
+
         # Note: cannot use pa.Table.from_batches(itertools.chain([first_batch], batches)))
         #       as different batches can use different schema's (due to large_ types)
         result = pa.concat_tables(
-            (pa.Table.from_batches([batch]) for batch in itertools.chain([first_batch], batches)), promote_options="permissive"
+            (pa.Table.from_batches([_normalize_dictionary_columns(batch)]) for batch in itertools.chain([first_batch], batches)),
+            promote_options="permissive",
         )
 
         return result
