@@ -64,10 +64,10 @@ def bytes_required(value: int | Decimal) -> int:
     else:
         raise ValueError(f"Unsupported value: {value}")
 
-    # bit_length() overcounts negatives equal to -2**(8k-1) (e.g. -128, -32768) by one byte;
-    # using (unscaled + 1) for negatives yields the true minimum, matching the Iceberg spec.
-    n_bits = unscaled.bit_length() if unscaled >= 0 else (unscaled + 1).bit_length()
-    return (n_bits + 8) // 8
+    # bit_length() ignores the sign, so -128 appears to need 9 signed bits instead of 8.
+    # Adding 1 before counting avoids the extra byte at negative boundaries.
+    num_bits = unscaled.bit_length() if unscaled >= 0 else (unscaled + 1).bit_length()
+    return (num_bits + 8) // 8
 
 
 def decimal_to_bytes(value: Decimal, byte_length: int | None = None) -> bytes:
