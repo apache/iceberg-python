@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import uuid
 from typing import Any
 from unittest.mock import patch
 
@@ -338,8 +339,6 @@ def test_file_overwrite_validates_concurrent_file_delete(
     expected_values: list[int],
 ) -> None:
     """A file replacement must fail only when its target file was concurrently deleted."""
-    import uuid
-
     import pyarrow as pa
 
     from pyiceberg.io.pyarrow import _dataframe_to_data_files

@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from collections import defaultdict
 from collections.abc import Iterator
 
 from pyiceberg.exceptions import ValidationException
@@ -209,9 +210,9 @@ def _validate_data_files_exist(
         data_files: Data files that must still exist
         parent_snapshot: Snapshot at the start of the validation window, excluded from the scan
     """
-    partition_set: dict[int, set[Record]] = {}
+    partition_set: dict[int, set[Record]] = defaultdict(set)
     for data_file in data_files:
-        partition_set.setdefault(data_file.spec_id, set()).add(data_file.partition)
+        partition_set[data_file.spec_id].add(data_file.partition)
 
     conflicting_paths = {
         entry.data_file.file_path
