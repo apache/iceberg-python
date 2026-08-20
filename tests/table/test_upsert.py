@@ -30,7 +30,6 @@ from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
-from pyiceberg.table.refs import MAIN_BRANCH
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.transforms import DayTransform
@@ -392,9 +391,50 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
     assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
 
 
-@pytest.mark.parametrize("branch", [MAIN_BRANCH, "test_branch"])
-def test_upsert_after_schema_evolution(catalog: Catalog, branch: str) -> None:
+def test_upsert_after_schema_evolution(catalog: Catalog) -> None:
     identifier = "default.test_upsert_after_schema_evolution"
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+    initial_arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+        ]
+    )
+    tbl.append(pa.Table.from_pylist([{"city": "Amsterdam", "population": 921402}], schema=initial_arrow_schema))
+
+    snapshot_before_schema_update = tbl.current_snapshot()
+    assert snapshot_before_schema_update is not None
+
+    with tbl.update_schema() as update:
+        update.add_column("country", StringType())
+
+    assert tbl.schema().schema_id != snapshot_before_schema_update.schema_id
+    assert tbl.metadata.current_snapshot_id == snapshot_before_schema_update.snapshot_id
+
+    evolved_arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+            pa.field("country", pa.string()),
+        ]
+    )
+    source = pa.Table.from_pylist(
+        [{"city": "Amsterdam", "population": 934927, "country": "Netherlands"}], schema=evolved_arrow_schema
+    )
+
+    result = tbl.upsert(source)
+
+    assert_upsert_result(result, expected_updated=1, expected_inserted=0)
+    assert tbl.scan().to_arrow().to_pylist() == [{"city": "Amsterdam", "population": 934927, "country": "Netherlands"}]
+
+
+def test_upsert_to_branch_after_schema_evolution(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_to_branch_after_schema_evolution"
     schema = Schema(
         NestedField(1, "city", StringType(), required=True),
         NestedField(2, "population", IntegerType(), required=True),
@@ -412,9 +452,9 @@ def test_upsert_after_schema_evolution(catalog: Catalog, branch: str) -> None:
     initial_snapshot = tbl.current_snapshot()
     assert initial_snapshot is not None
 
-    if branch != MAIN_BRANCH:
-        tbl.manage_snapshots().create_branch(snapshot_id=initial_snapshot.snapshot_id, branch_name=branch).commit()
-        tbl.delete("city == 'Amsterdam'")
+    branch = "test_branch"
+    tbl.manage_snapshots().create_branch(snapshot_id=initial_snapshot.snapshot_id, branch_name=branch).commit()
+    tbl.delete("city == 'Amsterdam'")
 
     snapshot_before_schema_update = tbl.current_snapshot()
     assert snapshot_before_schema_update is not None
@@ -439,10 +479,10 @@ def test_upsert_after_schema_evolution(catalog: Catalog, branch: str) -> None:
     result = tbl.upsert(source, branch=branch)
 
     assert_upsert_result(result, expected_updated=1, expected_inserted=0)
-    result_scan = tbl.scan() if branch == MAIN_BRANCH else tbl.scan().use_ref(branch)
-    assert result_scan.to_arrow().to_pylist() == [{"city": "Amsterdam", "population": 934927, "country": "Netherlands"}]
-    if branch != MAIN_BRANCH:
-        assert tbl.scan().to_arrow().to_pylist() == []
+    assert tbl.scan().use_ref(branch).to_arrow().to_pylist() == [
+        {"city": "Amsterdam", "population": 934927, "country": "Netherlands"}
+    ]
+    assert tbl.scan().to_arrow().to_pylist() == []
 
 
 def test_upsert_into_empty_table(catalog: Catalog) -> None:
