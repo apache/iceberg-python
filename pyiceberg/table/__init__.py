@@ -892,7 +892,7 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import expression_to_pyarrow
+        from pyiceberg.io.pyarrow import ArrowScan, expression_to_pyarrow
         from pyiceberg.table import upsert_util
 
         if join_cols is None:
@@ -926,19 +926,20 @@ class Transaction:
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
 
-        # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
-
-        matched_iceberg_record_batches_scan = DataScan(
-            table_metadata=self.table_metadata,
-            io=self._table.io,
-            row_filter=matched_predicate,
-            case_sensitive=case_sensitive,
-        )
+        matched_iceberg_file_scan = self._scan(row_filter=matched_predicate, case_sensitive=case_sensitive)
 
         if branch in self.table_metadata.refs:
-            matched_iceberg_record_batches_scan = matched_iceberg_record_batches_scan.use_ref(branch)
+            matched_iceberg_file_scan = matched_iceberg_file_scan.use_ref(branch)
 
-        matched_iceberg_record_batches = matched_iceberg_record_batches_scan.to_arrow_batch_reader()
+        # The target branch determines which files to read; the transaction schema determines how to project their rows.
+        # These can differ because schema updates do not create snapshots.
+        matched_iceberg_record_batches = ArrowScan(
+            table_metadata=self.table_metadata,
+            io=self._table.io,
+            projected_schema=self.table_metadata.schema(),
+            row_filter=matched_predicate,
+            case_sensitive=case_sensitive,
+        ).to_record_batches(matched_iceberg_file_scan.plan_files())
 
         batches_to_overwrite = []
         overwrite_predicates = []
