@@ -187,6 +187,7 @@ def test_bucket_hash_values(test_input: Any, test_type: PrimitiveType, expected:
         (BucketTransform(100).transform(TimeType()), 81068000000, 59),
         (BucketTransform(100).transform(TimestampType()), 1510871468000000, 7),
         (BucketTransform(100).transform(DecimalType(9, 2)), Decimal("14.20"), 59),
+        (BucketTransform(16).transform(DecimalType(5, 2)), Decimal("-1.28"), 13),
         (BucketTransform(100).transform(StringType()), "iceberg", 89),
         (
             BucketTransform(100).transform(UUIDType()),
