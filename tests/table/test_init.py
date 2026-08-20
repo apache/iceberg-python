@@ -84,6 +84,7 @@ from pyiceberg.table.update import (
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SetStatisticsUpdate,
+    UpgradeFormatVersionUpdate,
     _apply_table_update,
     _TableMetadataUpdateContext,
     update_table_metadata,
@@ -1241,6 +1242,60 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     assert new_metadata.properties == {"owner": "test", "test_a": "test_a1"}
 
 
+def test_update_metadata_upgrade_to_v3(table_v2: Table) -> None:
+    from pyiceberg.table.metadata import TableMetadataV3
+
+    new_metadata = update_table_metadata(table_v2.metadata, (UpgradeFormatVersionUpdate(format_version=3),))
+    assert isinstance(new_metadata, TableMetadataV3)
+    assert new_metadata.format_version == 3
+    assert new_metadata.next_row_id == 0
+
+    # rebuild the metadata to trigger validation
+    validated = TableMetadataUtil.parse_obj(copy(new_metadata.model_dump()))
+    assert validated.format_version == 3
+    assert validated.next_row_id == 0
+
+
+def test_update_metadata_upgrade_v1_to_v3(table_v1: Table) -> None:
+    from pyiceberg.table.metadata import TableMetadataV3
+
+    new_metadata = update_table_metadata(table_v1.metadata, (UpgradeFormatVersionUpdate(format_version=3),))
+    assert isinstance(new_metadata, TableMetadataV3)
+    assert new_metadata.format_version == 3
+    assert new_metadata.next_row_id == 0
+
+    # rebuild the metadata to trigger validation
+    validated = TableMetadataUtil.parse_obj(copy(new_metadata.model_dump()))
+    assert validated.format_version == 3
+    assert validated.next_row_id == 0
+
+
+def test_update_metadata_upgrade_same_version_is_noop(table_v2: Table) -> None:
+    new_metadata = update_table_metadata(table_v2.metadata, (UpgradeFormatVersionUpdate(format_version=2),))
+    assert new_metadata == table_v2.metadata
+    assert new_metadata.format_version == 2
+
+
+def test_set_properties_format_version_upgrades(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    transaction.set_properties({"format-version": "3", "owner": "test"})
+
+    assert transaction.table_metadata.format_version == 3
+    assert transaction.table_metadata.next_row_id == 0
+    assert transaction.table_metadata.properties["owner"] == "test"
+    assert "format-version" not in transaction.table_metadata.properties
+    assert UpgradeFormatVersionUpdate(format_version=3) in transaction._updates
+
+
+def test_set_properties_same_format_version_is_noop(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    transaction.set_properties({"format-version": "2"})
+
+    assert transaction.table_metadata.format_version == 2
+    assert "format-version" not in transaction.table_metadata.properties
+    assert transaction._updates == ()
+
+
 def test_update_metadata_schema_immutability(
     table_v2_with_fixed_and_decimal_types: TableMetadataV2,
 ) -> None:
@@ -2036,3 +2091,10 @@ def test_static_table_forwards_location_to_table_file_io(metadata_location: str,
 
     assert seen_locations, "expected at least one load_file_io call"
     assert all(loc is not None for loc in seen_locations), f"load_file_io called without a location: {seen_locations}"
+
+
+def test_set_properties_invalid_format_version_rejected(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    for invalid in ("3.0", "three", "-1"):
+        with pytest.raises(ValueError, match="Invalid format-version"):
+            transaction.set_properties({"format-version": invalid})
