@@ -898,7 +898,7 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import ArrowScan, expression_to_pyarrow
+        from pyiceberg.io.pyarrow import expression_to_pyarrow
         from pyiceberg.table import upsert_util
 
         if join_cols is None:
@@ -934,15 +934,13 @@ class Transaction:
 
         matched_iceberg_file_scan = self._scan(row_filter=matched_predicate, case_sensitive=case_sensitive, branch=branch)
 
-        # The target branch determines which files to read; the transaction schema determines how to project their rows.
-        # These can differ because schema updates do not create snapshots.
-        matched_iceberg_record_batches = ArrowScan(
-            table_metadata=self.table_metadata,
-            io=self._table.io,
-            projected_schema=self.table_metadata.schema(),
-            row_filter=matched_predicate,
-            case_sensitive=case_sensitive,
-        ).to_record_batches(matched_iceberg_file_scan.plan_files())
+        # Plan files from the target branch, but read them using the transaction's current schema.
+        # A schema update does not create a snapshot, so the branch snapshot may use an older schema.
+        matched_iceberg_record_batches = _to_arrow_batch_reader_via_file_scan_tasks(
+            matched_iceberg_file_scan,
+            self.table_metadata.schema(),
+            matched_iceberg_file_scan.plan_files(),
+        )
 
         batches_to_overwrite = []
         overwrite_predicates = []
