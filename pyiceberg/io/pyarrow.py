@@ -2957,6 +2957,11 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
             property_name=TableProperties.PARQUET_PAGE_ROW_LIMIT,
             default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
         ),
+        "write_page_index": property_as_bool(
+            properties=table_properties,
+            property_name=TableProperties.PARQUET_PAGE_INDEX_ENABLED,
+            default=TableProperties.PARQUET_PAGE_INDEX_ENABLED_DEFAULT,
+        ),
     }
 
 
