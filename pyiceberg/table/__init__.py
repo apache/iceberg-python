@@ -100,6 +100,7 @@ from pyiceberg.typedef import (
 from pyiceberg.types import strtobool
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
+from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import property_as_bool
 
 if TYPE_CHECKING:
@@ -122,7 +123,7 @@ DOWNCAST_NS_TIMESTAMP_TO_US = "downcast-ns-timestamp-to-us"
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 
 
-def _get_downcast_ns_timestamp_to_us() -> bool:
+def get_downcast_ns_timestamp_to_us() -> bool:
     """Return the effective value of the downcast-ns-timestamp-to-us config.
 
     Checks the new ``downcast-ns-timestamp-to-us`` key first. If not set, falls
@@ -137,12 +138,11 @@ def _get_downcast_ns_timestamp_to_us() -> bool:
 
     legacy = config.get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
     if legacy is not None:
-        warnings.warn(
-            f"Config key '{DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE}' (env: PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) "
-            f"is deprecated. Use '{DOWNCAST_NS_TIMESTAMP_TO_US}' "
-            "(env: PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US) instead.",
-            DeprecationWarning,
-            stacklevel=2,
+        deprecation_message(
+            deprecated_in="0.9.0",
+            removed_in="0.10.0",
+            help_message="Config key 'downcast-ns-timestamp-to-us-on-write' is deprecated. "
+            "Use 'downcast-ns-timestamp-to-us' (env: PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US) instead.",
         )
         return legacy
 
@@ -547,7 +547,7 @@ class Transaction:
         if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
             raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
 
-        downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
+        downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
         _check_pyarrow_schema_compatible(
             self.table_metadata.schema(),
             provided_schema=df.schema,
@@ -603,7 +603,7 @@ class Transaction:
                     f"in the latest partition spec: {field}"
                 )
 
-        downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
+        downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
         _check_pyarrow_schema_compatible(
             self.table_metadata.schema(),
             provided_schema=df.schema,
@@ -704,7 +704,7 @@ class Transaction:
         if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
             raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
 
-        downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
+        downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
         _check_pyarrow_schema_compatible(
             self.table_metadata.schema(),
             provided_schema=df.schema,
@@ -903,7 +903,7 @@ class Transaction:
 
         from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
 
-        downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
+        downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
         _check_pyarrow_schema_compatible(
             self.table_metadata.schema(),
             provided_schema=df.schema,
