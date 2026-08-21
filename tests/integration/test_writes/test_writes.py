@@ -669,6 +669,7 @@ def test_write_parquet_compression_properties(
     [
         ({"write.parquet.page-size-bytes": "42"}, {"data_page_size": 42}),
         ({"write.parquet.dict-size-bytes": "42"}, {"dictionary_pagesize_limit": 42}),
+        ({"write.parquet.page-index-enabled": "true"}, {"write_page_index": True}),
     ],
 )
 def test_write_parquet_other_properties(
