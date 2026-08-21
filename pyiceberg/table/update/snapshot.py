@@ -850,9 +850,27 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                 ]
 
             list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._io))
-            return list(itertools.chain(*list_of_entries))
+            deleted_entries = list(itertools.chain(*list_of_entries))
         else:
-            return []
+            deleted_entries = []
+
+        self._validate_required_deletes(deleted_entries)
+
+        return deleted_entries
+
+    def _validate_required_deletes(self, deleted_entries: list[ManifestEntry]) -> None:
+        """Validate that every explicitly deleted data file is present in the current manifests.
+
+        A data file that was passed to `delete_data_file` can already be absent from the base
+        snapshot, for example when it was removed by an earlier commit. Committing anyway would
+        silently reintroduce the data of its replacement files, and skew the snapshot summary.
+
+        Raises:
+            ValidationException: If a data file to delete is missing from the current manifests.
+        """
+        found_data_files = {entry.data_file for entry in deleted_entries}
+        if missing := [data_file.file_path for data_file in self._deleted_data_files if data_file not in found_data_files]:
+            raise ValidationException(f"Missing required files to delete: {', '.join(sorted(missing))}")
 
 
 class UpdateSnapshot:
