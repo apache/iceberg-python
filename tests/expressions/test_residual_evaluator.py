@@ -213,6 +213,9 @@ def test_is_not_nan() -> None:
     residual = res_eval.residual_for(Record(None))
     assert residual == AlwaysTrue()
 
+    residual = res_eval.residual_for(Record(float("nan")))
+    assert residual == AlwaysFalse()
+
     residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysTrue()
 
@@ -224,6 +227,9 @@ def test_is_not_nan() -> None:
 
     residual = res_eval.residual_for(Record(None))
     assert residual == AlwaysTrue()
+
+    residual = res_eval.residual_for(Record(float("nan")))
+    assert residual == AlwaysFalse()
 
     residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysTrue()
