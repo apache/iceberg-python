@@ -24,13 +24,12 @@ from pydantic import (
     Field,
     PlainSerializer,
     WithJsonSchema,
-    model_serializer,
     model_validator,
 )
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import IdentityTransform, Transform, UnknownTransform, parse_transform
+from pyiceberg.transforms import IdentityTransform, Transform, TransformSourceMixin, parse_transform
 from pyiceberg.typedef import IcebergBaseModel
 from pyiceberg.types import IcebergType
 
@@ -61,11 +60,12 @@ class NullOrder(Enum):
         return f"NullOrder.{self.name}"
 
 
-class SortField(IcebergBaseModel):
+class SortField(TransformSourceMixin):
     """Sort order field.
 
+    The source columns are carried by `TransformSourceMixin`.
+
     Args:
-      source_id (int): Source column id from the table’s schema.
       transform (str): Transform that is used to produce values to be sorted on from the source column.
                        This is the same transform as described in partition transforms.
       direction (SortDirection): Sort direction, that can only be either asc or desc.
@@ -98,39 +98,6 @@ class SortField(IcebergBaseModel):
             values["null-order"] = NullOrder.NULLS_FIRST if values["direction"] == SortDirection.ASC else NullOrder.NULLS_LAST
         return values
 
-    @model_validator(mode="before")
-    @classmethod
-    def map_source_ids_onto_source_id(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            if "source-id" not in data and "source-ids" in data:
-                source_ids = data["source-ids"]
-                if isinstance(source_ids, list):
-                    if len(source_ids) == 0:
-                        raise ValueError("Empty source-ids is not allowed")
-                    if len(source_ids) > 1:
-                        if data.get("transform") is None:
-                            raise ValueError("Transform is required for a multi-argument field")
-                        # Multi-argument transforms cannot be evaluated; per the spec, v3 readers
-                        # must read tables with such transforms, ignoring them
-                        data["transform"] = UnknownTransform(transform=str(data["transform"]))
-                    else:
-                        data.pop("source-ids", None)
-                    data["source-id"] = source_ids[0]
-        return data
-
-    @model_serializer(mode="wrap")
-    def _serialize_source_ids(self, handler: Any) -> Any:
-        serialized = handler(self)
-        # Per the spec, single-argument transforms write only source-id and
-        # multi-argument transforms write only source-ids
-        if self.source_ids is not None and len(self.source_ids) > 1:
-            serialized.pop("source-id", None)
-        else:
-            serialized.pop("source-ids", None)
-        return serialized
-
-    source_id: int = Field(alias="source-id")
-    source_ids: list[int] | None = Field(alias="source-ids", default=None, repr=False)
     transform: Annotated[  # type: ignore
         Transform,
         BeforeValidator(parse_transform),
@@ -145,10 +112,7 @@ class SortField(IcebergBaseModel):
         if isinstance(self.transform, IdentityTransform):
             # In the case of an identity transform, we can omit the transform
             return f"{self.source_id} {self.direction} {self.null_order}"
-        if self.source_ids is not None and len(self.source_ids) > 1:
-            sources = ", ".join(str(s) for s in self.source_ids)
-        else:
-            sources = str(self.source_id)
+        sources = ", ".join(str(source_id) for source_id in self.transform_arguments)
         return f"{self.transform}({sources}) {self.direction} {self.null_order}"
 
 

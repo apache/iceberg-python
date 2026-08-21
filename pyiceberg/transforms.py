@@ -29,7 +29,7 @@ from typing import Literal as LiteralType
 from uuid import UUID
 
 import mmh3
-from pydantic import Field, PositiveInt, PrivateAttr
+from pydantic import Field, PositiveInt, PrivateAttr, model_serializer, model_validator
 
 from pyiceberg.exceptions import NotInstalledError, ValidationError
 from pyiceberg.expressions import (
@@ -67,7 +67,7 @@ from pyiceberg.expressions.literals import (
     TimestampLiteral,
     literal,
 )
-from pyiceberg.typedef import IcebergRootModel, L
+from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L
 from pyiceberg.types import (
     BinaryType,
     DateType,
@@ -1052,6 +1052,73 @@ class VoidTransform(Transform[S, None], Singleton):
             raise ModuleNotFoundError("For partition transforms, PyArrow needs to be installed") from e
 
         return lambda arr: pa.nulls(len(arr), type=arr.type)
+
+
+class TransformSourceMixin(IcebergBaseModel):
+    """Shared `source-id` and `source-ids` handling for fields that apply a transform to source columns.
+
+    Both partition fields and sort fields carry this pair, and the spec writes only one of the
+    two: `source-id` for a transform with a single argument, `source-ids` for a multi-argument
+    transform. This mixin owns reading, serializing and reporting them, so that neither field
+    type has to reach into the raw keys.
+
+    Attributes:
+        source_id(int): The source column id of the table's schema.
+        source_ids(list[int] | None): The source column ids of a multi-argument transform.
+    """
+
+    source_id: int = Field(alias="source-id")
+    source_ids: list[int] | None = Field(alias="source-ids", default=None, repr=False)
+
+    @property
+    def transform_arguments(self) -> list[int]:
+        """Return the source column ids that the transform is applied to."""
+        source_ids = self.source_ids
+        if source_ids is not None and len(source_ids) > 1:
+            return list(source_ids)
+        return [self.source_id]
+
+    @property
+    def is_multi_argument(self) -> bool:
+        """Return True if the transform takes more than one source column."""
+        return len(self.transform_arguments) > 1
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_source_ids_onto_source_id(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or "source-ids" not in data:
+            return data
+
+        source_ids = data["source-ids"]
+        if not isinstance(source_ids, list):
+            return data
+        if len(source_ids) == 0:
+            raise ValueError("Empty source-ids is not allowed")
+
+        # The spec writes only one of the two keys, so a source-id next to source-ids comes
+        # from a non-conformant writer; source-ids is the one that carries the arity
+        data["source-id"] = source_ids[0]
+        if len(source_ids) == 1:
+            data.pop("source-ids", None)
+            return data
+
+        if data.get("transform") is None:
+            raise ValueError("Transform is required for a multi-argument field")
+        # Multi-argument transforms cannot be evaluated; per the spec, v3 readers
+        # must read tables with such transforms, ignoring them
+        data["transform"] = UnknownTransform(transform=str(data["transform"]))
+        return data
+
+    @model_serializer(mode="wrap")
+    def _serialize_source_ids(self, handler: Any) -> Any:
+        serialized = handler(self)
+        # Per the spec, single-argument transforms write only source-id and
+        # multi-argument transforms write only source-ids
+        if self.is_multi_argument:
+            serialized.pop("source-id", None)
+        else:
+            serialized.pop("source-ids", None)
+        return serialized
 
 
 def _truncate_number(

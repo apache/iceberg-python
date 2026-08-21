@@ -200,3 +200,43 @@ def test_deserialize_sort_field_multi_arg_requires_transform() -> None:
     payload = '{"source-ids":[19,20],"direction":"asc","null-order":"nulls-first"}'
     with pytest.raises(Exception, match="Transform is required for a multi-argument field"):
         SortField.model_validate_json(payload)
+
+
+def test_deserialize_sort_field_both_source_id_and_source_ids_multi_arg() -> None:
+    from pyiceberg.transforms import UnknownTransform
+
+    # a non-conformant writer emitted both keys; source-ids carries the arity, so it wins
+    payload = '{"source-id":9,"source-ids":[19,20],"transform":"bucket[4]","direction":"asc","null-order":"nulls-first"}'
+    field = SortField.model_validate_json(payload)
+
+    assert isinstance(field.transform, UnknownTransform)
+    assert field.source_id == 19
+    assert field.source_ids == [19, 20]
+
+    serialized = json.loads(field.model_dump_json())
+    assert serialized["source-ids"] == [19, 20]
+    assert "source-id" not in serialized
+
+
+def test_deserialize_sort_field_both_source_id_and_source_ids_single_arg() -> None:
+    payload = '{"source-id":9,"source-ids":[19],"transform":"identity","direction":"asc","null-order":"nulls-first"}'
+    field = SortField.model_validate_json(payload)
+
+    assert field.source_id == 19
+    assert field.source_ids is None
+
+    serialized = json.loads(field.model_dump_json())
+    assert serialized["source-id"] == 19
+    assert "source-ids" not in serialized
+
+
+def test_sort_field_transform_arguments() -> None:
+    single = SortField(source_id=19, transform=BucketTransform(num_buckets=4), null_order=NullOrder.NULLS_FIRST)
+    assert single.transform_arguments == [19]
+    assert single.is_multi_argument is False
+
+    multi = SortField.model_validate_json(
+        '{"source-ids":[19,20],"transform":"bucket[4]","direction":"asc","null-order":"nulls-first"}'
+    )
+    assert multi.transform_arguments == [19, 20]
+    assert multi.is_multi_argument is True
