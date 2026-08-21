@@ -447,7 +447,9 @@ Legacy OAuth2 Properties will be removed in PyIceberg 1.0 in place of pluggable 
 
 ##### Pluggable Authentication via AuthManager
 
-The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
+The RESTCatalog supports pluggable authentication via the `auth` configuration block. This selects how an access token or
+authorization header is fetched and managed for requests to the REST Catalog server. The authentication method is selected by
+setting `auth.type`, and additional configuration can be provided as needed for each method.
 
 ###### Supported Authentication Types
 
@@ -460,7 +462,17 @@ The RESTCatalog supports pluggable authentication via the `auth` configuration b
 
 ###### Configuration Properties
 
-The `auth` block is structured as follows:
+Authentication can be configured through:
+
+- Python arguments passed to `load_catalog`.
+- Nested or flat properties in `.pyiceberg.yaml`.
+- `PYICEBERG_CATALOG__<NAME>__AUTH__...` environment variables.
+- Environment variables and credential chains defined by the authentication provider.
+
+PyIceberg guarantees that `auth.type` selects the authentication manager. Manager-specific properties are a best-effort
+passthrough to the manager constructor. PyIceberg does not normalize their names or coerce their values.
+
+The nested YAML form is:
 
 ```yaml
 catalog:
@@ -474,67 +486,208 @@ catalog:
       impl: <custom_class_path>  # Only for custom auth
 ```
 
+The equivalent flat YAML form is:
+
+```yaml
+catalog:
+  default:
+    type: rest
+    uri: http://rest-catalog/ws/
+    auth.type: entra
+```
+
+Python accepts the same flat properties and is the most reliable way to pass exact constructor names and typed values.
+
+Environment variables use two underscores to separate the catalog name from the property path and to represent dots inside
+that path:
+
+```sh
+export PYICEBERG_CATALOG__DEFAULT__AUTH__TYPE=entra
+```
+
+###### YAML and Environment Variable Limitations
+
+- Environment variables convert `_` in property names to `-`; literal underscores cannot be preserved. For example,
+  `AUTH__OAUTH2__CLIENT_ID` becomes `auth.oauth2.client-id`, not `auth.oauth2.client_id`.
+- Environment variable values remain strings and are not decoded, so lists, mappings, integers, and booleans cannot be passed
+  with their expected types. YAML preserves lists and mappings, but its scalar values are also strings.
+- When supported by the auth manager, prefer provider-native environment variables such as `GOOGLE_APPLICATION_CREDENTIALS`
+  or `AZURE_CLIENT_ID`.
+
+Flat `auth.*` properties override equivalent nested properties. Python arguments override environment variables, and
+environment variables override YAML.
+
 ###### Property Reference
 
-| Property         | Required | Description                                                                                     |
-|------------------|----------|-------------------------------------------------------------------------------------------------|
-| `auth.type`      | Yes      | The authentication type to use (`noop`, `basic`, `oauth2`, or `custom`).                       |
-| `auth.impl`      | Conditionally | The fully qualified class path for a custom AuthManager. Required if `auth.type` is `custom`. |
-| `auth.basic`     | If type is `basic` | Block containing `username` and `password` for HTTP Basic authentication.           |
-| `auth.oauth2`    | If type is `oauth2` | Block containing OAuth2 configuration (see below).                                 |
-| `auth.custom`    | If type is `custom` | Block containing configuration for the custom AuthManager.                          |
-| `auth.google`    | If type is `google` | Block containing `credentials_path` to a service account file (if using). Will default to using Application Default Credentials. |
-| `auth.entra`     | If type is `entra` | Block containing Entra ID configuration. Will default to using DefaultAzureCredential. |
+| Property | Required | Description |
+|----------|----------|-------------|
+| `auth.type` | Yes | Authentication type: `noop`, `basic`, `oauth2`, `google`, `entra`, or `custom`. |
+| `auth.impl` | For `custom` | Fully qualified class name of a custom `AuthManager`. |
+| `auth.<type>` | Type-specific | Nested YAML mapping passed to the selected manager. |
+| `auth.<type>.*` | Type-specific | Flat properties passed to the selected manager after removing the prefix. |
 
 ###### Examples
 
 No Authentication:
 
 ```yaml
-auth:
-  type: noop
+catalog:
+  default:
+    type: rest
+    uri: https://rest-catalog.example.com
+    auth.type: noop
 ```
+
+```sh
+export PYICEBERG_CATALOG__DEFAULT__AUTH__TYPE=noop
+```
+
+The `noop` manager accepts no options.
 
 Basic Authentication:
 
 ```yaml
-auth:
-  type: basic
-  basic:
-    username: myuser
-    password: mypass
+catalog:
+  default:
+    type: rest
+    uri: https://rest-catalog.example.com
+    auth.type: basic
+    auth.basic.username: myuser
+    auth.basic.password: mypass
 ```
+
+```sh
+export PYICEBERG_CATALOG__DEFAULT__AUTH__TYPE=basic
+export PYICEBERG_CATALOG__DEFAULT__AUTH__BASIC__USERNAME=myuser
+export PYICEBERG_CATALOG__DEFAULT__AUTH__BASIC__PASSWORD=mypass
+```
+
+`username` and `password` contain no underscores and both expect strings, so this manager can be fully configured using
+PyIceberg-prefixed environment variables. Avoid storing passwords directly in `.pyiceberg.yaml`.
 
 OAuth2 Authentication:
 
 ```yaml
-auth:
-  type: oauth2
-  oauth2:
-    client_id: my-client-id
-    client_secret: my-client-secret
-    token_url: https://auth.example.com/oauth/token
-    scope: read
-    refresh_margin: 60         # (optional) seconds before expiry to refresh
-    expires_in: 3600           # (optional) fallback if server does not provide
+catalog:
+  default:
+    type: rest
+    uri: https://rest-catalog.example.com
+    auth:
+      type: oauth2
+      oauth2:
+        client_id: my-client-id
+        client_secret: my-client-secret
+        token_url: https://auth.example.com/oauth/token
+        scope: read
 ```
+
+PyIceberg-prefixed environment variables can select the manager:
+
+```sh
+export PYICEBERG_CATALOG__DEFAULT__AUTH__TYPE=oauth2
+```
+
+OAuth2 cannot be fully configured through PyIceberg-prefixed environment variables because required names such as `client_id`
+become unsupported names such as `client-id`; use YAML for required strings and Python for typed options.
+
+Google Authentication:
+
+```yaml
+catalog:
+  default:
+    type: rest
+    uri: https://biglake.googleapis.com/iceberg/v1/restcatalog
+    auth.type: google
+```
+
+```sh
+export PYICEBERG_CATALOG__DEFAULT__AUTH__TYPE=google
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+```
+
+Install the manager with `pip install 'pyiceberg[gcp-auth]'`. Google Application Default Credentials handles
+`GOOGLE_APPLICATION_CREDENTIALS`, workload identity, attached service accounts, and other native credential sources.
+
+The optional `credentials_path` string and `scopes` list can be passed through nested YAML:
+
+```yaml
+auth:
+  type: google
+  google:
+    credentials_path: /path/to/service-account.json
+    scopes:
+      - https://www.googleapis.com/auth/cloud-platform
+```
+
+Google cannot use these options from PyIceberg-prefixed environment variables because `credentials_path` becomes
+`credentials-path` and `scopes` remains a string. Google-native variables can configure credentials, but scopes require YAML or
+Python.
+
+Microsoft Entra Authentication:
+
+```yaml
+catalog:
+  default:
+    type: rest
+    uri: https://rest-catalog.example.com
+    auth.type: entra
+```
+
+```sh
+export PYICEBERG_CATALOG__DEFAULT__AUTH__TYPE=entra
+export AZURE_TENANT_ID=<tenant-id>
+export AZURE_CLIENT_ID=<client-id>
+export AZURE_CLIENT_SECRET=<client-secret>
+```
+
+Install the manager with `pip install 'pyiceberg[entra-auth]'`. The manager uses `DefaultAzureCredential`, which supports Azure
+environment variables, managed identity, workload identity, Azure CLI login, and other native credential sources. The default
+scope is `https://storage.azure.com/.default`.
+
+Scopes and string-valued `DefaultAzureCredential` keyword arguments can be passed through nested YAML:
+
+```yaml
+auth:
+  type: entra
+  entra:
+    scopes:
+      - https://storage.azure.com/.default
+    managed_identity_client_id: user-assigned-client-id
+```
+
+Entra cannot use these options from PyIceberg-prefixed environment variables because `scopes` remains a string and
+`managed_identity_client_id` becomes `managed-identity-client-id`; use Azure-native credentials, YAML, or Python instead.
 
 Custom Authentication:
 
 ```yaml
-auth:
-  type: custom
-  impl: mypackage.module.MyAuthManager
-  custom:
-    property1: value1
-    property2: value2
+catalog:
+  default:
+    type: rest
+    uri: https://rest-catalog.example.com
+    auth.type: custom
+    auth.impl: mypackage.module.MyAuthManager
+    auth.custom.property1: value1
+    auth.custom.property2: value2
 ```
+
+```sh
+export PYICEBERG_CATALOG__DEFAULT__AUTH__TYPE=custom
+export PYICEBERG_CATALOG__DEFAULT__AUTH__IMPL=mypackage.module.MyAuthManager
+export PYICEBERG_CATALOG__DEFAULT__AUTH__CUSTOM__PROPERTY1=value1
+```
+
+`auth.impl` must be the fully qualified class name of an `AuthManager`. Properties under `auth.custom.*` are passed directly to
+its constructor after removing the prefix. Environment-variable compatibility depends on the names and value types accepted by
+the custom manager; prefer its provider-native configuration when available.
 
 ###### Notes
 
 - If `auth.type` is `custom`, you **must** specify `auth.impl` with the full class path to your custom AuthManager.
 - If `auth.type` is not `custom`, specifying `auth.impl` is not allowed.
 - The configuration block under each type (e.g., `basic`, `oauth2`, `custom`) is passed as keyword arguments to the corresponding AuthManager.
+- PyIceberg does not deserialize a complete `auth` mapping from a single environment variable. Use individual `AUTH__...`
+  variables.
 
 <!-- markdown-link-check-enable-->
 
