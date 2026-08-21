@@ -125,8 +125,7 @@ logger = logging.getLogger(__name__)
 
 ALWAYS_TRUE = AlwaysTrue()
 DOWNCAST_NS_TIMESTAMP_TO_US = "downcast-ns-timestamp-to-us"
-# Deprecated: use DOWNCAST_NS_TIMESTAMP_TO_US. The old key said "on-write" but the
-# config also controls read-path downcasting, so the name was misleading.
+# Deprecated: use DOWNCAST_NS_TIMESTAMP_TO_US
 DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE = "downcast-ns-timestamp-to-us-on-write"
 
 
@@ -146,8 +145,8 @@ def get_downcast_ns_timestamp_to_us() -> bool:
     legacy = config.get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
     if legacy is not None:
         deprecation_message(
-            deprecated_in="0.9.0",
-            removed_in="0.10.0",
+            deprecated_in="0.12.0",
+            removed_in="0.13.0",
             help_message="Config key 'downcast-ns-timestamp-to-us-on-write' is deprecated. "
             "Use 'downcast-ns-timestamp-to-us' (env: PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US) instead.",
         )
