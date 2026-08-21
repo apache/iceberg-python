@@ -32,6 +32,11 @@ from typing_extensions import override
 from pyiceberg import __version__
 from pyiceberg.catalog import BOTOCORE_SESSION, TOKEN, URI, WAREHOUSE_LOCATION, Catalog, PropertiesUpdateSummary
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER, AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
+from pyiceberg.catalog.rest.credential_provider import (
+    REFRESH_CREDENTIALS_ENABLED,
+    CredentialsProvider,
+    resolve_storage_credentials,
+)
 from pyiceberg.catalog.rest.response import _handle_non_200_response
 from pyiceberg.catalog.rest.scan_planning import (
     FetchScanTasksRequest,
@@ -466,26 +471,6 @@ class RestCatalog(Catalog):
 
         return session
 
-    @staticmethod
-    def _resolve_storage_credentials(storage_credentials: list[StorageCredential], location: str | None) -> Properties:
-        """Resolve the best-matching storage credential by longest prefix match.
-
-        Mirrors the Java implementation in S3FileIO.clientForStoragePath() which iterates
-        over storage credential prefixes and selects the one with the longest match.
-
-        See: https://github.com/apache/iceberg/blob/main/aws/src/main/java/org/apache/iceberg/aws/s3/S3FileIO.java
-        """
-        if not storage_credentials or not location:
-            return {}
-
-        best_match: StorageCredential | None = None
-        for cred in storage_credentials:
-            if location.startswith(cred.prefix):
-                if best_match is None or len(cred.prefix) > len(best_match.prefix):
-                    best_match = cred
-
-        return best_match.config if best_match else {}
-
     def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
         merged_properties = {**self.properties, **properties}
         if self._auth_manager:
@@ -827,36 +812,49 @@ class RestCatalog(Catalog):
 
     def _response_to_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> Table:
         # Per Iceberg spec: storage-credentials take precedence over config
-        credential_config = self._resolve_storage_credentials(
-            table_response.storage_credentials, table_response.metadata_location
+        credential_config = resolve_storage_credentials(table_response.storage_credentials, table_response.metadata_location)
+        io = self._load_file_io(
+            {**table_response.metadata.properties, **table_response.config, **credential_config},
+            table_response.metadata_location,
         )
+        self._attach_credentials_provider(io, identifier_tuple, table_response.storage_credentials)
         return Table(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
-            io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config, **credential_config},
-                table_response.metadata_location,
-            ),
+            io=io,
             catalog=self,
             config=table_response.config,
         )
 
     def _response_to_staged_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> StagedTable:
         # Per Iceberg spec: storage-credentials take precedence over config
-        credential_config = self._resolve_storage_credentials(
-            table_response.storage_credentials, table_response.metadata_location
+        credential_config = resolve_storage_credentials(table_response.storage_credentials, table_response.metadata_location)
+        io = self._load_file_io(
+            {**table_response.metadata.properties, **table_response.config, **credential_config},
+            table_response.metadata_location,
         )
+        self._attach_credentials_provider(io, identifier_tuple, table_response.storage_credentials)
         return StagedTable(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
-            io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config, **credential_config},
-                table_response.metadata_location,
-            ),
+            io=io,
             catalog=self,
         )
+
+    def _attach_credentials_provider(
+        self, io: FileIO, identifier: str | Identifier, storage_credentials: list[StorageCredential]
+    ) -> None:
+        """Attach a CredentialsProvider to io if credential refresh is enabled and credentials were vended.
+
+        The refresh callback returns the full LoadCredentialsResponse so the provider can re-run
+        longest-prefix matching against the freshly vended credentials.
+        """
+        if storage_credentials and property_as_bool(self.properties, REFRESH_CREDENTIALS_ENABLED, False):
+            io.set_credentials_provider(
+                CredentialsProvider(storage_credentials, refresh_fn=lambda: self._load_credentials(identifier))
+            )
 
     def _response_to_view(self, identifier_tuple: tuple[str, ...], view_response: ViewResponse) -> View:
         return View(
@@ -1124,7 +1122,7 @@ class RestCatalog(Catalog):
     ) -> Properties:
         """Load vended storage credentials and return the best match for a location."""
         credentials_response = self._load_credentials(identifier)
-        return self._resolve_storage_credentials(credentials_response.storage_credentials, location)
+        return resolve_storage_credentials(credentials_response.storage_credentials, location)
 
     @retry(**_RETRY_ARGS)
     @override
