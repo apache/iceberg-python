@@ -314,11 +314,19 @@ class Transaction:
 
         return self
 
-    def _scan(self, row_filter: str | BooleanExpression = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
-        """Minimal data scan of the table with the current state of the transaction."""
-        return DataScan(
+    def _scan(
+        self,
+        row_filter: str | BooleanExpression = ALWAYS_TRUE,
+        case_sensitive: bool = True,
+        branch: str | None = None,
+    ) -> DataScan:
+        """Minimal data scan of the current transaction state, optionally scoped to a branch."""
+        scan = DataScan(
             table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
         )
+        if branch in self.table_metadata.refs:
+            return scan.use_ref(branch)
+        return scan
 
     def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
         """Set the table to a certain version.
@@ -778,9 +786,7 @@ class Transaction:
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
 
-            file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
-            if branch is not None:
-                file_scan = file_scan.use_ref(branch)
+            file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive, branch=branch)
             files = file_scan.plan_files()
 
             commit_uuid = uuid.uuid4()
@@ -926,19 +932,15 @@ class Transaction:
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
 
-        # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
+        matched_iceberg_file_scan = self._scan(row_filter=matched_predicate, case_sensitive=case_sensitive, branch=branch)
 
-        matched_iceberg_record_batches_scan = DataScan(
-            table_metadata=self.table_metadata,
-            io=self._table.io,
-            row_filter=matched_predicate,
-            case_sensitive=case_sensitive,
+        # Plan files from the target branch, but read them using the transaction's current schema.
+        # A schema update does not create a snapshot, so the branch snapshot may use an older schema.
+        matched_iceberg_record_batches = _to_arrow_batch_reader_via_file_scan_tasks(
+            matched_iceberg_file_scan,
+            self.table_metadata.schema(),
+            matched_iceberg_file_scan.plan_files(),
         )
-
-        if branch in self.table_metadata.refs:
-            matched_iceberg_record_batches_scan = matched_iceberg_record_batches_scan.use_ref(branch)
-
-        matched_iceberg_record_batches = matched_iceberg_record_batches_scan.to_arrow_batch_reader()
 
         batches_to_overwrite = []
         overwrite_predicates = []
