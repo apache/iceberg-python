@@ -51,7 +51,7 @@ from pyiceberg.table import (
     StagedTable,
     Table,
     TableProperties,
-    _get_downcast_ns_timestamp_to_us,
+    get_downcast_ns_timestamp_to_us,
 )
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
@@ -847,7 +847,7 @@ class Catalog(ABC):
 
             from pyiceberg.io.pyarrow import _ConvertToIcebergWithoutIDs, visit_pyarrow
 
-            downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
+            downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
             if isinstance(schema, pa.Schema):
                 schema: Schema = visit_pyarrow(  # type: ignore
                     schema,

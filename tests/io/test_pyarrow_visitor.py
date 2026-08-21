@@ -209,7 +209,7 @@ def test_downcast_ns_timestamp_legacy_env_var_is_backwards_compat() -> None:
     import os
     import warnings
 
-    from pyiceberg.table import _get_downcast_ns_timestamp_to_us
+    from pyiceberg.table import get_downcast_ns_timestamp_to_us
 
     env_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE"
     old_value = os.environ.get(env_key)
@@ -217,7 +217,7 @@ def test_downcast_ns_timestamp_legacy_env_var_is_backwards_compat() -> None:
         os.environ[env_key] = "True"
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = _get_downcast_ns_timestamp_to_us()
+            result = get_downcast_ns_timestamp_to_us()
         assert result is True, "Legacy env var should still activate downcasting"
         deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
         assert len(deprecation_warnings) == 1
@@ -235,7 +235,7 @@ def test_downcast_ns_timestamp_new_env_var_takes_precedence() -> None:
     import os
     import warnings
 
-    from pyiceberg.table import _get_downcast_ns_timestamp_to_us
+    from pyiceberg.table import get_downcast_ns_timestamp_to_us
 
     new_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US"
     old_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE"
@@ -246,7 +246,7 @@ def test_downcast_ns_timestamp_new_env_var_takes_precedence() -> None:
         os.environ.pop(old_key, None)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = _get_downcast_ns_timestamp_to_us()
+            result = get_downcast_ns_timestamp_to_us()
         assert result is True
         deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
         assert len(deprecation_warnings) == 0, "New key must not emit a deprecation warning"
@@ -266,7 +266,7 @@ def test_downcast_ns_timestamp_new_key_overrides_legacy_key() -> None:
     import os
     import warnings
 
-    from pyiceberg.table import _get_downcast_ns_timestamp_to_us
+    from pyiceberg.table import get_downcast_ns_timestamp_to_us
 
     new_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US"
     old_key = "PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE"
@@ -277,7 +277,7 @@ def test_downcast_ns_timestamp_new_key_overrides_legacy_key() -> None:
         os.environ[old_key] = "True"  # legacy says True, but new key says False
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = _get_downcast_ns_timestamp_to_us()
+            result = get_downcast_ns_timestamp_to_us()
         assert result is False, "New key must win over legacy key"
         deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
         assert len(deprecation_warnings) == 0, "New key present: no deprecation warning expected"

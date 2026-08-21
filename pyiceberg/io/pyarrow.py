@@ -146,7 +146,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import TableProperties, _get_downcast_ns_timestamp_to_us
+from pyiceberg.table import TableProperties, get_downcast_ns_timestamp_to_us
 from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
@@ -1776,7 +1776,7 @@ class ArrowScan:
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._limit = limit
-        self._downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
+        self._downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
         self._dictionary_columns = dictionary_columns
 
     @property
@@ -2733,7 +2733,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         else:
             file_schema = table_schema
 
-        downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
+        downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
         batches = [
             _to_requested_schema(
                 requested_schema=file_schema,
@@ -2990,7 +2990,7 @@ def _dataframe_to_data_files(
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
     name_mapping = table_metadata.schema().name_mapping
-    downcast_ns_timestamp_to_us = _get_downcast_ns_timestamp_to_us()
+    downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
     task_schema = pyarrow_to_schema(
         df.schema,
         name_mapping=name_mapping,
