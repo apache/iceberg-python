@@ -3137,3 +3137,85 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
     field_array = arrow_table[path_parts[0]]
     # Navigate into the struct using the remaining path parts
     return pc.struct_field(field_array, path_parts[1:])
+
+
+def upsert_unique_keys(df: pa.Table, join_cols: list[str]) -> pa.Table:
+    """Extract unique key combinations from a table.
+
+    Returns a table containing one row per distinct combination of join_cols.
+    """
+    return df.select(join_cols).group_by(join_cols).aggregate([])
+
+
+def upsert_has_duplicate_rows(df: pa.Table, join_cols: list[str]) -> bool:
+    """Check for duplicate rows in a PyArrow table based on the join columns."""
+    return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
+
+
+def upsert_get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
+    """Return rows from source_table whose non-key columns differ from target_table.
+
+    Performs an inner join on join_cols, then compares non-key column values
+    row-by-row. Returns the subset of source rows that have at least one
+    changed non-key column. If target_table is empty, returns an empty table.
+
+    Raises:
+        ValueError: If target_table has duplicate rows on join_cols.
+        ValueError: If join_cols use reserved index column names.
+    """
+    all_columns = set(source_table.column_names)
+    join_cols_set = set(join_cols)
+
+    non_key_cols = list(all_columns - join_cols_set)
+
+    if upsert_has_duplicate_rows(target_table, join_cols):
+        raise ValueError("Target table has duplicate rows, aborting upsert")
+
+    if len(target_table) == 0:
+        return source_table.schema.empty_table()
+
+    # We need to compare non_key_cols in Python as PyArrow
+    # 1. Cannot do a join when non-join columns have complex types
+    # 2. Cannot compare columns with complex types
+    # See: https://github.com/apache/arrow/issues/35785
+    SOURCE_INDEX_COLUMN_NAME = "__source_index"
+    TARGET_INDEX_COLUMN_NAME = "__target_index"
+
+    if SOURCE_INDEX_COLUMN_NAME in join_cols or TARGET_INDEX_COLUMN_NAME in join_cols:
+        raise ValueError(
+            f"{SOURCE_INDEX_COLUMN_NAME} and {TARGET_INDEX_COLUMN_NAME} are reserved for joining "
+            f"DataFrames, and cannot be used as column names"
+        ) from None
+
+    # Cast to target table schema so types align for the join.
+    # See: https://github.com/apache/arrow/issues/37542
+    source_index = (
+        source_table.cast(target_table.schema)
+        .select(join_cols_set)
+        .append_column(SOURCE_INDEX_COLUMN_NAME, pa.array(range(len(source_table))))
+    )
+
+    target_index = target_table.select(join_cols_set).append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
+
+    matching_indices = source_index.join(target_index, keys=list(join_cols_set), join_type="inner")
+
+    to_update_indices = []
+    for source_idx, target_idx in zip(
+        matching_indices[SOURCE_INDEX_COLUMN_NAME].to_pylist(),
+        matching_indices[TARGET_INDEX_COLUMN_NAME].to_pylist(),
+        strict=True,
+    ):
+        source_row = source_table.slice(source_idx, 1)
+        target_row = target_table.slice(target_idx, 1)
+
+        for key in non_key_cols:
+            source_val = source_row.column(key)[0].as_py()
+            target_val = target_row.column(key)[0].as_py()
+            if source_val != target_val:
+                to_update_indices.append(source_idx)
+                break
+
+    if to_update_indices:
+        return source_table.take(to_update_indices)
+    else:
+        return source_table.schema.empty_table()
