@@ -123,6 +123,47 @@ def test_drop_namespace(mocker: MockFixture, gcp_dataset_name: str) -> None:
     assert args[0].dataset_id == gcp_dataset_name
 
 
+def test_load_namespace_properties_returns_flat_parameters(mocker: MockFixture, gcp_dataset_name: str) -> None:
+    client_mock = MagicMock()
+
+    # Round-trip the Dataset that create_namespace persists back through get_dataset,
+    # mimicking how BigQuery stores and returns the namespace.
+    def create_dataset(dataset: Dataset) -> Dataset:
+        client_mock.get_dataset.return_value = dataset
+        return dataset
+
+    client_mock.create_dataset.side_effect = create_dataset
+
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+
+    test_catalog = BigQueryMetastoreCatalog(
+        "test_catalog", **{"gcp.bigquery.project-id": "my-project", "warehouse": "gs://test-bucket/"}
+    )
+
+    properties = {"owner": "anas", "comment": "namespace comment"}
+    test_catalog.create_namespace(namespace=gcp_dataset_name, properties=properties)
+
+    # The stored, flat property map must be returned as-is, not the nested BigQuery API
+    # representation (which would bury the values under a "parameters" key and add
+    # "defaultStorageLocationUri").
+    assert test_catalog.load_namespace_properties(gcp_dataset_name) == properties
+
+
+def test_load_namespace_properties_without_parameters(mocker: MockFixture, gcp_dataset_name: str) -> None:
+    client_mock = MagicMock()
+    client_mock.get_dataset.return_value = dataset_mock()
+
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+
+    test_catalog = BigQueryMetastoreCatalog("test_catalog", **{"gcp.bigquery.project-id": "my-project"})
+
+    # A dataset whose external_catalog_dataset_options carries no parameters yields an
+    # empty property map, not None or a nested dict.
+    assert test_catalog.load_namespace_properties(gcp_dataset_name) == {}
+
+
 def test_list_tables(mocker: MockFixture, gcp_dataset_name: str) -> None:
     client_mock = MagicMock()
 
