@@ -29,7 +29,6 @@ from pydantic import (
     Field,
     PlainSerializer,
     WithJsonSchema,
-    model_validator,
 )
 
 from pyiceberg.exceptions import ValidationError
@@ -41,6 +40,7 @@ from pyiceberg.transforms import (
     IdentityTransform,
     MonthTransform,
     Transform,
+    TransformSourceMixin,
     TruncateTransform,
     UnknownTransform,
     VoidTransform,
@@ -66,17 +66,17 @@ INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
 
 
-class PartitionField(IcebergBaseModel):
+class PartitionField(TransformSourceMixin):
     """PartitionField represents how one partition value is derived from the source column via transformation.
 
     Attributes:
-        source_id(int): The source column id of table's schema.
         field_id(int): The partition field id across all the table partition specs.
         transform(Transform): The transform used to produce partition values from source column.
         name(str): The name of this partition field.
+
+    The source columns are carried by `TransformSourceMixin`.
     """
 
-    source_id: int = Field(alias="source-id")
     field_id: int = Field(alias="field-id")
     transform: Annotated[  # type: ignore
         Transform,
@@ -105,23 +105,10 @@ class PartitionField(IcebergBaseModel):
 
         super().__init__(**data)
 
-    @model_validator(mode="before")
-    @classmethod
-    def map_source_ids_onto_source_id(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            if "source-id" not in data and "source-ids" in data:
-                source_ids = data["source-ids"]
-                if isinstance(source_ids, list):
-                    if len(source_ids) == 0:
-                        raise ValueError("Empty source-ids is not allowed")
-                    if len(source_ids) > 1:
-                        raise ValueError("Multi argument transforms are not yet supported")
-                    data["source-id"] = source_ids[0]
-        return data
-
     def __str__(self) -> str:
         """Return the string representation of the PartitionField class."""
-        return f"{self.field_id}: {self.name}: {self.transform}({self.source_id})"
+        sources = ", ".join(str(source_id) for source_id in self.transform_arguments)
+        return f"{self.field_id}: {self.name}: {self.transform}({sources})"
 
 
 class PartitionSpec(IcebergBaseModel):
