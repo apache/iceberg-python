@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import base64
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any, cast
 from unittest import mock
 
@@ -32,6 +33,10 @@ from requests_mock import Mocker
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import (
+    CONNECTION,
+    CONNECTION_BACKOFF_FACTOR,
+    CONNECTION_RETRIES,
+    CONNECTION_TIMEOUT,
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
@@ -44,6 +49,7 @@ from pyiceberg.catalog.rest import (
     HttpMethod,
     RestCatalog,
     ScanPlanningMode,
+    _RetryTimeoutHTTPAdapter,
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -55,6 +61,7 @@ from pyiceberg.exceptions import (
     NoSuchViewError,
     OAuthError,
     ServerError,
+    ServiceUnavailableError,
     TableAlreadyExistsError,
     ViewAlreadyExistsError,
 )
@@ -2282,6 +2289,158 @@ def test_request_session_with_ssl_client_cert() -> None:
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not find the TLS certificate file, invalid path: path_to_client_cert" in str(e.value)
+
+
+def test_session_without_connection_config_uses_default_adapter(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    for adapter in catalog._session.adapters.values():
+        assert not isinstance(adapter, _RetryTimeoutHTTPAdapter)
+
+
+def test_session_with_connection_timeout_and_retries(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        CONNECTION: {
+            CONNECTION_TIMEOUT: 60,
+            CONNECTION_RETRIES: 5,
+            CONNECTION_BACKOFF_FACTOR: 1.0,
+        },
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+
+    https_adapter = catalog._session.adapters["https://"]
+    http_adapter = catalog._session.adapters["http://"]
+    assert isinstance(https_adapter, _RetryTimeoutHTTPAdapter)
+    assert https_adapter is http_adapter
+    assert https_adapter._timeout == 60.0
+    assert https_adapter.max_retries.total == 5
+    assert https_adapter.max_retries.backoff_factor == 1.0
+    # Internal retry policy: transient codes and idempotent methods only.
+    assert https_adapter.max_retries.status_forcelist == [429, 500, 502, 503, 504]
+    allowed_methods = https_adapter.max_retries.allowed_methods or frozenset()
+    assert set(allowed_methods) == {"GET", "HEAD", "OPTIONS"}
+
+
+def test_session_with_connection_timeout_only(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        CONNECTION: {CONNECTION_TIMEOUT: "30"},
+    }
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    adapter = catalog._session.adapters["https://"]
+    assert isinstance(adapter, _RetryTimeoutHTTPAdapter)
+    assert adapter._timeout == 30.0
+    # Default retry policy (total=0) is a no-op when only timeout is configured.
+    assert adapter.max_retries.total == 0
+
+
+@contextmanager
+def _local_rest_server_503_then_200(num_failures: int) -> Iterator[dict[str, Any]]:
+    """Stand up a loopback HTTP server that returns `num_failures` 503s for `/v1/namespaces` then a 200.
+
+    Used in place of `requests_mock`, which replaces the HTTPAdapter and would bypass the retry logic.
+
+    Yields a dict with `port` and `namespace_calls` keys (the latter is updated in-place as requests arrive).
+    """
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    state: dict[str, Any] = {"namespace_calls": 0}
+    config_body = json.dumps(
+        {"defaults": {}, "overrides": {}, "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS]}
+    ).encode()
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path.endswith("/v1/config"):
+                self._respond(200, config_body)
+            elif self.path.endswith("/v1/namespaces"):
+                state["namespace_calls"] += 1
+                if state["namespace_calls"] <= num_failures:
+                    self._respond(503, b"")
+                else:
+                    self._respond(200, json.dumps({"namespaces": [["foo"]]}).encode())
+            else:
+                self._respond(404, b"")
+
+        def _respond(self, status: int, body: bytes) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:  # silence default access logs
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    state["port"] = server.server_address[1]
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        yield state
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_session_retries_on_transient_5xx_then_succeeds() -> None:
+    """The catalog should retry on transient 5xx and succeed once the server stabilizes."""
+    with _local_rest_server_503_then_200(num_failures=3) as server:
+        catalog = RestCatalog(
+            "rest",
+            **{  # type: ignore
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                # backoff-factor=0 keeps the test fast; retries=3 covers three 503s + the eventual 200.
+                CONNECTION: {CONNECTION_RETRIES: 3, CONNECTION_BACKOFF_FACTOR: 0},
+            },
+        )
+        assert catalog.list_namespaces() == [("foo",)]
+        assert server["namespace_calls"] == 4
+
+
+def test_session_exhausted_retries_surfaces_typed_exception() -> None:
+    """When retries are exhausted, the typed exception from `_handle_non_200_response` should be raised
+    (e.g. `ServiceUnavailableError` for 503), not the urllib3 `MaxRetryError` / `RetryError`."""
+    # `num_failures` greater than `retries + 1` guarantees the server never returns success.
+    with _local_rest_server_503_then_200(num_failures=100) as server:
+        catalog = RestCatalog(
+            "rest",
+            **{  # type: ignore
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                CONNECTION: {CONNECTION_RETRIES: 2, CONNECTION_BACKOFF_FACTOR: 0},
+            },
+        )
+        with pytest.raises(ServiceUnavailableError):
+            catalog.list_namespaces()
+        # retries=2 means 1 initial attempt + 2 retries = 3 calls
+        assert server["namespace_calls"] == 3
+
+
+def test_session_with_invalid_connection_timeout_raises(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        CONNECTION: {CONNECTION_TIMEOUT: -1},
+    }
+    with pytest.raises(ValueError, match="`connection.timeout` must be a positive number"):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+
+
+def test_session_with_invalid_connection_retries_raises(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        CONNECTION: {CONNECTION_RETRIES: -1},
+    }
+    with pytest.raises(ValueError, match="`connection.retries` must be non-negative"):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
 
 
 def test_rest_catalog_with_basic_auth_type(rest_mock: Mocker) -> None:
