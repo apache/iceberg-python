@@ -503,6 +503,15 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def _find_for_move(self, name: str) -> int | None:
+        # Resolve staged renames first so a column can be moved by its new name
+        # within the same update context (matches the Java implementation).
+        for field_id, updated in self._updates.items():
+            if self._case_sensitive:
+                if updated.name == name:
+                    return field_id
+            elif updated.name.lower() == name.lower():
+                return field_id
+
         try:
             return self._schema.find_field(name, self._case_sensitive).field_id
         except ValueError:
