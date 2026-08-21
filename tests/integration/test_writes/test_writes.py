@@ -2236,6 +2236,33 @@ def test_append_to_existing_branch(session_catalog: Catalog, arrow_table_with_nu
 
 
 @pytest.mark.integration
+def test_write_to_branch_preserves_retention(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
+    """Writing to a branch must not reset the retention policy it was created with."""
+    identifier = "default.test_branch_write_retention"
+    branch = "retention_branch"
+    tbl = _create_table(session_catalog, identifier, {"format-version": "2"}, [arrow_table_with_null])
+    assert tbl.metadata.current_snapshot_id is not None
+
+    tbl.manage_snapshots().create_branch(
+        snapshot_id=tbl.metadata.current_snapshot_id,
+        branch_name=branch,
+        max_ref_age_ms=86400000,
+        max_snapshot_age_ms=3600000,
+        min_snapshots_to_keep=5,
+    ).commit()
+
+    tbl.append(arrow_table_with_null, branch=branch)
+    tbl.append(arrow_table_with_null, branch=branch)
+
+    ref = tbl.metadata.refs[branch]
+    assert ref.max_ref_age_ms == 86400000
+    assert ref.max_snapshot_age_ms == 3600000
+    assert ref.min_snapshots_to_keep == 5
+    # a branch with no retention configured stays that way
+    assert tbl.metadata.refs["main"].max_ref_age_ms is None
+
+
+@pytest.mark.integration
 def test_delete_to_existing_branch(session_catalog: Catalog, arrow_table_with_null: pa.Table) -> None:
     identifier = "default.test_existing_branch_delete"
     branch = "existing_branch"
