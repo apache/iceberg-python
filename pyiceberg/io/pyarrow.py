@@ -3139,7 +3139,7 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
     return pc.struct_field(field_array, path_parts[1:])
 
 
-def _upsert_unique_keys(df: pa.Table, join_cols: list[str]) -> pa.Table:
+def upsert_unique_keys(df: pa.Table, join_cols: list[str]) -> pa.Table:
     """Extract unique key combinations from a table.
 
     Returns a table containing one row per distinct combination of join_cols.
@@ -3147,12 +3147,12 @@ def _upsert_unique_keys(df: pa.Table, join_cols: list[str]) -> pa.Table:
     return df.select(join_cols).group_by(join_cols).aggregate([])
 
 
-def _upsert_has_duplicate_rows(df: pa.Table, join_cols: list[str]) -> bool:
+def upsert_has_duplicate_rows(df: pa.Table, join_cols: list[str]) -> bool:
     """Check for duplicate rows in a PyArrow table based on the join columns."""
     return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
 
 
-def _upsert_get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
+def upsert_get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
     """Return rows from source_table whose non-key columns differ from target_table.
 
     Performs an inner join on join_cols, then compares non-key column values
@@ -3168,7 +3168,7 @@ def _upsert_get_rows_to_update(source_table: pa.Table, target_table: pa.Table, j
 
     non_key_cols = list(all_columns - join_cols_set)
 
-    if _upsert_has_duplicate_rows(target_table, join_cols):
+    if upsert_has_duplicate_rows(target_table, join_cols):
         raise ValueError("Target table has duplicate rows, aborting upsert")
 
     if len(target_table) == 0:
