@@ -1437,6 +1437,7 @@ class Table:
             limit=limit,
             catalog=self.catalog,
             table_identifier=self._identifier,
+            table_config=self.config,
         )
 
     def incremental_append_scan(
@@ -2155,6 +2156,7 @@ class TableScan(BaseScan):
     snapshot_id: int | None
     catalog: Catalog | None
     table_identifier: Identifier | None
+    table_config: Properties
 
     def __init__(
         self,
@@ -2168,6 +2170,7 @@ class TableScan(BaseScan):
         limit: int | None = None,
         catalog: Catalog | None = None,
         table_identifier: Identifier | None = None,
+        table_config: Properties = EMPTY_DICT,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2181,6 +2184,7 @@ class TableScan(BaseScan):
         self.snapshot_id = snapshot_id
         self.catalog = catalog
         self.table_identifier = table_identifier
+        self.table_config = table_config
 
     def snapshot(self) -> Snapshot | None:
         if self.snapshot_id:
@@ -2425,7 +2429,7 @@ class DataScan(TableScan):
         """Check if server-side scan planning should be used for this scan."""
         if not self.catalog:
             return False
-        return self.catalog.supports_server_side_planning()
+        return self.catalog.supports_server_side_planning(self.table_config)
 
     def _plan_files_server_side(self) -> Iterable[FileScanTask]:
         """Plan files using REST server-side scan planning."""
@@ -2444,7 +2448,12 @@ class DataScan(TableScan):
             case_sensitive=self.case_sensitive,
         )
 
-        return self.catalog.plan_scan(self.table_identifier, request)
+        result = self.catalog._plan_scan_result(self.table_identifier, request)
+        location = result.tasks[0].file.file_path if result.tasks else None
+        plan_io = self.catalog._file_io_from_plan(self.io.properties, result.storage_credentials, location)
+        if plan_io is not None:
+            self.io = plan_io
+        return result.tasks
 
     def _plan_files_local(self) -> Iterable[FileScanTask]:
         """Plan files locally by reading manifests."""
