@@ -38,6 +38,21 @@ github:
       required_status_checks:
         # strict means "Require branches to be up to date before merging".
         strict: true
+        contexts:
+          # Repository policy and security checks.
+          - Analyze Actions
+          - CodeQL
+          - Run zizmor 🌈
+          - asf-allowlist-check
+          - rat
+
+          # Documentation checks.
+          - docs
+          - markdown-link-check
+
+          # Python workflow gates.
+          - python-ci-required
+          - python-integration-required
 
       required_pull_request_reviews:
         required_approving_review_count: 1
