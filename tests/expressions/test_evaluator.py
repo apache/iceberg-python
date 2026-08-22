@@ -1523,7 +1523,7 @@ def test_metrics_evaluator_record_count_short_circuits() -> None:
     )
     assert _InclusiveMetricsEvaluator(schema, EqualTo("x", 10)).eval(negative_record_file) is ROWS_MIGHT_MATCH
     assert _StrictMetricsEvaluator(schema, EqualTo("x", 10)).eval(zero_record_file) is ROWS_MUST_MATCH
-    assert _StrictMetricsEvaluator(schema, EqualTo("x", 10)).eval(negative_record_file) is ROWS_MUST_MATCH
+    assert _StrictMetricsEvaluator(schema, EqualTo("x", 10)).eval(negative_record_file) is ROWS_MIGHT_NOT_MATCH
 
 
 def test_strict_not(schema_data_file: Schema, strict_data_file_1: DataFile) -> None:
