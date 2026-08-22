@@ -24,6 +24,7 @@
 name: "ASF Allowlist Check"
 
 on:
+  # Do not add pull_request path filters: skipped workflows do not report required checks, which blocks auto-merge indefinitely.
   pull_request:
   push:
     branches:

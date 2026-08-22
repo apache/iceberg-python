@@ -23,6 +23,7 @@ on:
   push:
     branches:
     - 'main'
+  # Do not add pull_request path filters: skipped workflows do not report required checks, which blocks auto-merge indefinitely.
   pull_request:
 
 permissions:
@@ -114,3 +115,17 @@ jobs:
       run: uv sync --directory . --only-group dev --no-install-project
     - name: Mirror wheel CIBW_TEST_COMMAND
       run: uv run --directory . pytest tests/avro/test_decoder.py
+
+  python-ci-required:
+    if: ${{ always() }}
+    needs: [lint-and-unit-test, windows-unit-test, cibw-dev-env-smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Verify Python CI jobs succeeded
+      env:
+        RESULTS: ${{ join(needs.*.result, ' ') }}
+      run: |
+        read -ra results <<< "$RESULTS"
+        for result in "${results[@]}"; do
+          test "$result" = "success"
+        done

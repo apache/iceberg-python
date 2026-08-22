@@ -23,6 +23,7 @@ on:
   push:
     branches:
     - 'main'
+  # Do not add pull_request path filters: skipped workflows do not report required checks, which blocks auto-merge indefinitely.
   pull_request:
 
 permissions:
@@ -176,3 +177,17 @@ jobs:
         merge-multiple: true
     - name: Generate coverage report (75%) # Coverage threshold should only increase over time — never decrease it!
       run: COVERAGE_FAIL_UNDER=75 make coverage-report
+
+  python-integration-required:
+    if: ${{ always() }}
+    needs: [integration-test, integration-test-s3, integration-test-adls, integration-test-gcs, integration-coverage-report]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Verify Python integration jobs succeeded
+      env:
+        RESULTS: ${{ join(needs.*.result, ' ') }}
+      run: |
+        read -ra results <<< "$RESULTS"
+        for result in "${results[@]}"; do
+          test "$result" = "success"
+        done
