@@ -351,7 +351,7 @@ def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
 def test_write_empty_manifest() -> None:
     io = load_file_io()
     test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
-    with TemporaryDirectory() as tmpdir:
+    with TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"
 
         with pytest.raises(ValueError, match="An empty manifest file has been written"):
@@ -424,7 +424,7 @@ def test_write_manifest(
 
         assert manifest_entry.status == ManifestEntryStatus.ADDED
         assert manifest_entry.snapshot_id == 8744736658442914487
-        assert manifest_entry.sequence_number == -1 if format_version == 1 else 3
+        assert manifest_entry.sequence_number == (-1 if format_version == 1 else 3)
         assert isinstance(manifest_entry.data_file, DataFile)
 
         data_file = manifest_entry.data_file
@@ -587,9 +587,9 @@ def test_write_manifest_list(
 
         assert manifest_file.manifest_length == 7989
         assert manifest_file.partition_spec_id == 0
-        assert manifest_file.content == ManifestContent.DATA if format_version == 1 else ManifestContent.DELETES
-        assert manifest_file.sequence_number == 0 if format_version == 1 else 3
-        assert manifest_file.min_sequence_number == 0 if format_version == 1 else 3
+        assert manifest_file.content == (ManifestContent.DATA if format_version == 1 else ManifestContent.DELETES)
+        assert manifest_file.sequence_number == (0 if format_version == 1 else 3)
+        assert manifest_file.min_sequence_number == (0 if format_version == 1 else 3)
         assert manifest_file.added_snapshot_id == 9182715666859759686
         assert manifest_file.added_files_count == 3
         assert manifest_file.existing_files_count == 0
@@ -616,8 +616,8 @@ def test_write_manifest_list(
 
         entry = entries[0]
 
-        assert entry.sequence_number == 0 if format_version == 1 else 3
-        assert entry.file_sequence_number == 0 if format_version == 1 else 3
+        assert entry.sequence_number == (0 if format_version == 1 else 3)
+        assert entry.file_sequence_number == (0 if format_version == 1 else 3)
         assert entry.snapshot_id == 8744736658442914487
         assert entry.status == ManifestEntryStatus.ADDED
 

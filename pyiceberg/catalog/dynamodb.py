@@ -837,7 +837,10 @@ CREATE_CATALOG_GLOBAL_SECONDARY_INDEXES = [
 
 
 def _get_namespace_properties(namespace_dict: dict[str, str]) -> Properties:
-    return {_remove_property_prefix(key): val for key, val in namespace_dict.items() if key.startswith(PROPERTY_KEY_PREFIX)}
+    # removeprefix removes the literal prefix, unlike lstrip which removes any leading prefix characters
+    return {
+        key.removeprefix(PROPERTY_KEY_PREFIX): val for key, val in namespace_dict.items() if key.startswith(PROPERTY_KEY_PREFIX)
+    }
 
 
 def _convert_dynamo_item_to_regular_dict(dynamo_json: dict[str, Any]) -> dict[str, str]:
@@ -888,7 +891,3 @@ def _convert_dynamo_item_to_regular_dict(dynamo_json: dict[str, Any]) -> dict[st
 
 def _add_property_prefix(prop: str) -> str:
     return PROPERTY_KEY_PREFIX + prop
-
-
-def _remove_property_prefix(prop: str) -> str:
-    return prop.lstrip(PROPERTY_KEY_PREFIX)
