@@ -616,7 +616,8 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
     """
     from unittest import mock
 
-    from pyiceberg.table.update import update_table_metadata
+    from pyiceberg.table import Transaction
+    from pyiceberg.table.metadata import TableMetadata
     from pyiceberg.table.update.snapshot import _FastAppendFiles, _MergeAppendFiles
 
     def make_file() -> DataFile:
@@ -624,28 +625,37 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
 
     txn = table_v2.transaction()
 
-    with mock.patch("pyiceberg.table.update_table_metadata", wraps=update_table_metadata) as spy:
+    # Counts property reads rather than update_table_metadata calls: hoisting removes reads,
+    # and a read that the cache serves is still a read the hoisting was meant to remove.
+    reads = [0]
+    fget = Transaction.__dict__["table_metadata"].fget
+
+    def counting(self: Transaction) -> TableMetadata:
+        reads[0] += 1
+        return fget(self)
+
+    with mock.patch.object(Transaction, "table_metadata", property(counting)):
         # _summary() cost must not scale with the number of data files
-        def summary_calls(n_files: int) -> int:
+        def summary_reads(n_files: int) -> int:
             append = _FastAppendFiles(operation=Operation.APPEND, transaction=txn, io=table_v2.io)
             for _ in range(n_files):
                 append.append_data_file(make_file())
-            spy.reset_mock()
+            reads[0] = 0
             append._summary()
-            return spy.call_count
+            return reads[0]
 
-        few, many = summary_calls(10), summary_calls(100)
-        assert few == many, f"_summary() update_table_metadata calls scale with file count ({few} vs {many})"
-        assert many <= 2, f"_summary() triggered {many} update_table_metadata calls; expected O(1)"
+        few, many = summary_reads(10), summary_reads(100)
+        assert few == many, f"_summary() table_metadata reads scale with file count ({few} vs {many})"
+        assert many <= 2, f"_summary() made {many} table_metadata reads; expected O(1)"
 
-        # _MergeAppendFiles.__init__ should add exactly one call over _FastAppendFiles.__init__
-        spy.reset_mock()
+        # _MergeAppendFiles.__init__ should add exactly one read over _FastAppendFiles.__init__
+        reads[0] = 0
         _FastAppendFiles(operation=Operation.APPEND, transaction=txn, io=table_v2.io)
-        fast_init = spy.call_count
-        spy.reset_mock()
+        fast_init = reads[0]
+        reads[0] = 0
         _MergeAppendFiles(operation=Operation.APPEND, transaction=txn, io=table_v2.io)
-        merge_init = spy.call_count
+        merge_init = reads[0]
         assert merge_init - fast_init == 1, (
-            f"_MergeAppendFiles.__init__ made {merge_init - fast_init} extra update_table_metadata "
-            "calls over its superclass; expected 1 (hoisted)"
+            f"_MergeAppendFiles.__init__ made {merge_init - fast_init} extra table_metadata "
+            "reads over its superclass; expected 1 (hoisted)"
         )
