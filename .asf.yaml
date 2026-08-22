@@ -38,6 +38,26 @@ github:
       required_status_checks:
         # strict means "Require branches to be up to date before merging".
         strict: true
+        contexts:
+          - Analyze Actions
+          - CodeQL
+          - Run zizmor 🌈
+          - asf-allowlist-check
+          - cibw-dev-env-smoke-test
+          - docs
+          - integration-coverage-report
+          - integration-test
+          - integration-test-adls
+          - integration-test-gcs
+          - integration-test-s3
+          - lint-and-unit-test (3.10)
+          - lint-and-unit-test (3.11)
+          - lint-and-unit-test (3.12)
+          - lint-and-unit-test (3.13)
+          - lint-and-unit-test (3.14)
+          - markdown-link-check
+          - rat
+          - windows-unit-test (3.12)
 
       required_pull_request_reviews:
         required_approving_review_count: 1
