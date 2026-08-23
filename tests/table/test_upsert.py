@@ -14,8 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from datetime import datetime
 import itertools
+from datetime import datetime
 from pathlib import PosixPath
 
 import pyarrow as pa
@@ -25,7 +25,7 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, EqualTo, In, Reference
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, In, Or, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.expressions.visitors import expression_evaluator
 from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -449,7 +449,7 @@ def test_create_match_filter_single_condition() -> None:
     assert expr == And(op1, op2) or expr == And(op2, op1)
 
 
-def _assert_match_filter_selects(data: list[dict[str, int]], join_cols: list[str], schema: Schema) -> None:
+def _assert_match_filter_selects(data: list[dict[str, int]], join_cols: list[str], schema: Schema) -> BooleanExpression:
     """Assert the filter from ``create_match_filter`` matches exactly the unique source keys.
 
     Rather than asserting a specific expression tree (which is implementation-specific),
@@ -473,6 +473,15 @@ def _assert_match_filter_selects(data: list[dict[str, int]], join_cols: list[str
         should_match = candidate in expected_keys
         verb = "rejected matching" if should_match else "matched non-matching"
         assert evaluate(Record(*candidate)) is should_match, f"Filter {expr} {verb} key {key}"
+
+    return expr
+
+
+def _count_disjuncts(expr: BooleanExpression) -> int:
+    """Count the leaves of a top-level disjunction."""
+    if isinstance(expr, Or):
+        return _count_disjuncts(expr.left) + _count_disjuncts(expr.right)
+    return 1
 
 
 def test_create_match_filter_single_prefix_group() -> None:
@@ -513,6 +522,20 @@ def test_create_match_filter_multiple_prefix_groups() -> None:
         {"order_id": 202, "order_line_id": 2},
     ]
     _assert_match_filter_selects(data, ["order_id", "order_line_id"], schema)
+
+
+@pytest.mark.parametrize("join_cols", [["order_id", "region"], ["region", "order_id"]])
+def test_create_match_filter_collapses_low_cardinality_prefix(join_cols: list[str]) -> None:
+    """Expression size depends on prefix cardinality, regardless of join-column order."""
+    schema = Schema(
+        NestedField(1, "order_id", IntegerType(), required=True),
+        NestedField(2, "region", IntegerType(), required=True),
+    )
+    data = [{"order_id": order_id, "region": order_id % 4} for order_id in range(100)]
+
+    expr = _assert_match_filter_selects(data, join_cols, schema)
+
+    assert _count_disjuncts(expr) == 4
 
 
 def test_create_match_filter_single_column() -> None:
@@ -578,15 +601,33 @@ def test_create_match_filter_column_named_like_aggregate() -> None:
     _assert_match_filter_selects(data, ["a", "a_list"], schema)
 
 
-def test_upsert_large_composite_key_does_not_overflow(catalog: Catalog) -> None:
-    """
-    Regression test for #3508: a large multi-column upsert must not overflow PyArrow's
-    expression canonicalizer when at least one key column is low-cardinality (see #3509).
-    """
-    identifier = "default.test_upsert_large_composite_key"
+def test_create_match_filter_internal_aggregate_name_collision() -> None:
+    """Internal aggregate names advance until they no longer collide with prefix columns."""
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "__in_values", IntegerType(), required=True),
+        NestedField(3, "__in_values_", IntegerType(), required=True),
+    )
+    data = [
+        {"id": 1, "__in_values": 7, "__in_values_": 70},
+        {"id": 2, "__in_values": 7, "__in_values_": 70},
+        {"id": 3, "__in_values": 8, "__in_values_": 80},
+        {"id": 4, "__in_values": 8, "__in_values_": 80},
+    ]
+
+    expr = _assert_match_filter_selects(data, ["id", "__in_values", "__in_values_"], schema)
+
+    assert _count_disjuncts(expr) == 2
+
+
+def test_upsert_grouped_composite_key_final_state(catalog: Catalog) -> None:
+    """Grouped composite-key upserts update, preserve, and insert the exact expected rows."""
+    identifier = "default.test_upsert_grouped_composite_key_final_state"
     _drop_table(catalog, identifier)
 
-    n = 20_000
+    target_rows = 1_000
+    update_rows = 500
+    insert_rows = 100
     schema = pa.schema(
         [
             pa.field("order_id", pa.int64(), nullable=False),
@@ -596,26 +637,34 @@ def test_upsert_large_composite_key_does_not_overflow(catalog: Catalog) -> None:
     )
 
     def make(order_ids: range, amount: int) -> pa.Table:
-        # region is intentionally low-cardinality (4 values) so the fix folds order_id into an In().
         return pa.Table.from_pylist(
             [{"order_id": oid, "region": "ABCD"[oid % 4], "amount": amount} for oid in order_ids],
             schema=schema,
         )
 
     tbl = catalog.create_table(identifier, schema)
-    tbl.append(make(range(1, n + 1), amount=1))
+    tbl.append(make(range(target_rows), amount=1))
 
-    # Update the first half (amount changes) and insert a tenth of brand-new keys.
     source = pa.concat_tables(
         [
-            make(range(1, n // 2 + 1), amount=2),
-            make(range(n + 1, n + n // 10 + 1), amount=2),
+            make(range(update_rows), amount=2),
+            make(range(target_rows, target_rows + insert_rows), amount=2),
         ]
     )
 
     res = tbl.upsert(source, join_cols=["order_id", "region"])
-    assert res.rows_updated == n // 2
-    assert res.rows_inserted == n // 10
+    assert res.rows_updated == update_rows
+    assert res.rows_inserted == insert_rows
+
+    actual = {row["order_id"]: {"region": row["region"], "amount": row["amount"]} for row in tbl.scan().to_arrow().to_pylist()}
+    expected = {
+        order_id: {
+            "region": "ABCD"[order_id % 4],
+            "amount": 2 if order_id < update_rows or order_id >= target_rows else 1,
+        }
+        for order_id in range(target_rows + insert_rows)
+    }
+    assert actual == expected
 
 
 def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
