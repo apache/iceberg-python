@@ -17,7 +17,9 @@
 # pylint:disable=redefined-outer-name,eval-used
 import re
 import uuid
+from pathlib import Path
 from typing import cast
+from urllib.parse import urlparse
 
 import pyarrow as pa
 import pytest
@@ -657,12 +659,20 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
         )
 
 
-def _rewrite(table: Table, df: pa.Table) -> DataFile:
+@pytest.fixture
+def overwrite_table(catalog: Catalog, arrow_table_simple: pa.Table) -> Table:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.overwrite", arrow_table_simple.schema)
+    table.append(arrow_table_simple)
+    return table
+
+
+def _write_data_file(table: Table, rows: pa.Table) -> DataFile:
     return next(
         iter(
             _dataframe_to_data_files(
                 table_metadata=table.metadata,
-                df=df,
+                df=rows,
                 io=table.io,
                 write_uuid=uuid.uuid4(),
             )
@@ -670,65 +680,60 @@ def _rewrite(table: Table, df: pa.Table) -> DataFile:
     )
 
 
-def _total_data_files(table: Table) -> str:
+def _total_data_file_count(table: Table) -> int:
     snapshot = table.current_snapshot()
     assert snapshot is not None and snapshot.summary is not None
-    return snapshot.summary.additional_properties["total-data-files"]
+    return int(snapshot.summary.additional_properties["total-data-files"])
 
 
-def test_overwrite_replaces_a_file_that_is_present(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
-    catalog.create_namespace("default")
-    table = catalog.create_table("default.overwrite", arrow_table_simple.schema)
-    table.append(arrow_table_simple)
+def test_overwrite_replaces_existing_file(overwrite_table: Table, arrow_table_simple: pa.Table) -> None:
+    original_file = next(iter(overwrite_table.scan().plan_files())).file
+    replacement = _write_data_file(overwrite_table, arrow_table_simple.slice(0, 1))
 
-    data_file = list(table.scan().plan_files())[0].file
-    replacement = _rewrite(table, arrow_table_simple.slice(0, 1))
-
-    with table.transaction() as tx:
+    with overwrite_table.transaction() as tx:
         with tx.update_snapshot().overwrite() as overwrite:
-            overwrite.delete_data_file(data_file)
+            overwrite.delete_data_file(original_file)
             overwrite.append_data_file(replacement)
 
-    assert table.scan().to_arrow()["foo"].to_pylist() == ["a"]
-    assert _total_data_files(table) == "1"
+    assert overwrite_table.scan().to_arrow()["foo"].to_pylist() == ["a"]
+    assert _total_data_file_count(overwrite_table) == 1
 
 
-def test_overwrite_rejects_file_missing_from_base(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
-    catalog.create_namespace("default")
-    table = catalog.create_table("default.overwrite", arrow_table_simple.schema)
-    table.append(arrow_table_simple)
-
-    stale_file = list(table.scan().plan_files())[0].file
-    stale_rows = table.scan().to_arrow()
+def test_overwrite_rejects_explicit_delete_missing_from_base_snapshot(catalog: Catalog, overwrite_table: Table) -> None:
+    stale_file = next(iter(overwrite_table.scan().plan_files())).file
+    stale_rows = overwrite_table.scan().to_arrow()
 
     # Delete the file before the replacement transaction begins
-    with catalog.load_table("default.overwrite").transaction() as tx:
+    with catalog.load_table(overwrite_table.name()).transaction() as tx:
         with tx.update_snapshot().overwrite() as overwrite:
             overwrite.delete_data_file(stale_file)
 
-    current = catalog.load_table("default.overwrite")
-    replacement = _rewrite(current, stale_rows)
+    current = catalog.load_table(overwrite_table.name())
+    replacement = _write_data_file(current, stale_rows)
+    expected_error = re.escape(f"Missing required files to delete: {stale_file.file_path}")
 
-    with pytest.raises(ValidationException, match=re.escape(f"Missing required files to delete: {stale_file.file_path}")):
+    with pytest.raises(ValidationException, match=expected_error):
         with current.transaction() as tx:
             with tx.update_snapshot().overwrite() as overwrite:
                 overwrite.delete_data_file(stale_file)
                 overwrite.append_data_file(replacement)
 
-    committed = catalog.load_table("default.overwrite")
+    metadata_path = Path(urlparse(current.location()).path) / "metadata"
+    assert not any(metadata_path.glob(f"{overwrite.commit_uuid}-m*.avro"))
+
+    committed = catalog.load_table(overwrite_table.name())
     assert committed.scan().to_arrow()["foo"].to_pylist() == []
-    assert _total_data_files(committed) == "0"
+    assert _total_data_file_count(committed) == 0
 
 
-def test_overwrite_rejects_deletes_without_a_parent_snapshot(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
-    catalog.create_namespace("default")
-    table = catalog.create_table("default.overwrite", arrow_table_simple.schema)
-    table.append(arrow_table_simple)
-
-    stale_file = list(table.scan().plan_files())[0].file
+def test_overwrite_rejects_explicit_delete_without_parent_snapshot(
+    catalog: Catalog, overwrite_table: Table, arrow_table_simple: pa.Table
+) -> None:
+    stale_file = next(iter(overwrite_table.scan().plan_files())).file
     empty = catalog.create_table("default.empty", arrow_table_simple.schema)
+    expected_error = re.escape(f"Missing required files to delete: {stale_file.file_path}")
 
-    with pytest.raises(ValidationException, match=re.escape(f"Missing required files to delete: {stale_file.file_path}")):
+    with pytest.raises(ValidationException, match=expected_error):
         with empty.transaction() as tx:
             with tx.update_snapshot().overwrite() as overwrite:
                 overwrite.delete_data_file(stale_file)

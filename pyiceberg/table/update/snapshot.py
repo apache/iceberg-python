@@ -197,8 +197,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 return []
 
         def _write_delete_manifest() -> list[ManifestFile]:
-            # Check if we need to mark the files as deleted
-            deleted_entries = self._deleted_entries()
             if len(deleted_entries) > 0:
                 deleted_manifests = []
                 partition_groups: dict[int, list[ManifestEntry]] = defaultdict(list)
@@ -215,6 +213,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         # Updates self._predicate with computed partition predicate for manifest pruning
         self._build_delete_files_partition_predicate()
+        # Plan deletes before starting manifest writers so validation failures do not leave orphaned manifests
+        deleted_entries = self._deleted_entries()
 
         executor = ExecutorFactory.get_or_create()
 
@@ -677,14 +677,17 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         return deleted_entries
 
     def _validate_required_deletes(self, deleted_entries: list[ManifestEntry]) -> None:
-        """Validate that every explicitly deleted data file is present in the current manifests.
+        """Validate that explicitly deleted data files exist in the parent snapshot.
 
-        A data file that was passed to `delete_data_file` can already be absent from the base
-        snapshot, for example when it was removed by an earlier commit. Committing anyway would
-        silently reintroduce the data of its replacement files, and skew the snapshot summary.
+        Files passed to `delete_data_file` are required deletes. If one is absent, an overwrite
+        could commit replacement files without the corresponding deletion and produce incorrect
+        snapshot summary totals.
+
+        Args:
+            deleted_entries: Live parent-snapshot entries selected for deletion.
 
         Raises:
-            ValidationException: If a data file to delete is missing from the current manifests.
+            ValidationException: If a required data file is missing.
         """
         found_data_files = {entry.data_file for entry in deleted_entries}
         if missing := [data_file.file_path for data_file in self._deleted_data_files if data_file not in found_data_files]:
