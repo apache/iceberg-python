@@ -22,6 +22,30 @@ def test_upper_bound_string_truncation() -> None:
     assert truncate_upper_bound_text_string("".join([chr(0x10FFFF), chr(0x10FFFF), chr(0x0)]), 2) is None
 
 
+def test_upper_bound_string_truncation_skips_surrogates() -> None:
+    # U+D7FF is the last scalar value before the surrogate range, so incrementing it
+    # must skip to U+E000 rather than produce an unencodable lone surrogate.
+    value = "a" + chr(0xD7FF) + "tail"
+
+    result = truncate_upper_bound_text_string(value, 2)
+
+    assert result == "a" + chr(0xE000)
+    assert result >= value
+    result.encode("utf-8")
+
+
+def test_upper_bound_string_truncation_skips_surrogates_in_earlier_position() -> None:
+    # The last character is at the maximum code point, so the increment falls back to the
+    # previous character, which is also on the surrogate boundary.
+    value = chr(0xD7FF) + chr(0x10FFFF) + "tail"
+
+    result = truncate_upper_bound_text_string(value, 2)
+
+    assert result == chr(0xE000) + chr(0x10FFFF)
+    assert result >= value
+    result.encode("utf-8")
+
+
 def test_upper_bound_binary_truncation() -> None:
     assert truncate_upper_bound_binary_string(b"\x01\x02\x03", 2) == b"\x01\x03"
     assert truncate_upper_bound_binary_string(b"\xff\xff\x00", 2) is None
