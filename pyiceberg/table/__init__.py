@@ -390,19 +390,16 @@ class Transaction:
 
         return updates, requirements
 
-    def _build_partition_predicate(
-        self, partition_records: set[Record], spec: PartitionSpec, schema: Schema
-    ) -> BooleanExpression:
+    def _build_partition_predicate(self, partition_records: set[Record], partition_fields: list[str]) -> BooleanExpression:
         """Build a filter predicate matching any of the input partition records.
 
         Args:
             partition_records: A set of partition records to match
-            spec: An optional partition spec, if none then defaults to current
-            schema: An optional schema, if none then defaults to current
+            partition_fields: The field names to reference for each position in a partition record
+
         Returns:
             A predicate matching any of the input partition records.
         """
-        partition_fields = [schema.find_field(field.source_id).name for field in spec.fields]
         if not partition_records or not partition_fields:
             return AlwaysFalse()
 
@@ -622,8 +619,11 @@ class Transaction:
         )
 
         partitions_to_overwrite = {data_file.partition for data_file in data_files}
+        partitions_fields = [
+            self.table_metadata.schema().find_field(field.source_id).name for field in self.table_metadata.spec().fields
+        ]
         delete_filter = self._build_partition_predicate(
-            partition_records=partitions_to_overwrite, spec=self.table_metadata.spec(), schema=self.table_metadata.schema()
+            partition_records=partitions_to_overwrite, partition_fields=partitions_fields
         )
         self.delete(
             delete_filter=delete_filter,

@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import uuid
 from typing import Any
 from unittest.mock import patch
 
@@ -321,6 +322,77 @@ def test_concurrent_overwrite_overwrite_raises_validation_exception(catalog: Cat
     tbl1.overwrite(pa.table({"x": [10, 20, 30]}), overwrite_filter="x > 0")
     with pytest.raises(ValidationException):
         tbl2.overwrite(pa.table({"x": [40, 50, 60]}), overwrite_filter="x > 0")
+
+
+@pytest.mark.parametrize(
+    ("concurrently_deleted_file", "expect_conflict", "expected_values"),
+    [
+        pytest.param("target", True, [1, 3], id="target-file"),
+        pytest.param("same-partition", False, [1, 2], id="same-partition-file"),
+        pytest.param("different-partition", False, [2, 3], id="different-partition-file"),
+    ],
+)
+def test_file_overwrite_validates_concurrent_file_delete(
+    catalog: Catalog,
+    concurrently_deleted_file: str,
+    expect_conflict: bool,
+    expected_values: list[int],
+) -> None:
+    """A file replacement must fail only when its target file was concurrently deleted."""
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import _dataframe_to_data_files
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "value", LongType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"))
+    identifier = "default.concurrent_file_delete"
+    table = catalog.create_table(identifier, schema=schema, partition_spec=spec)
+    table.append(pa.table({"category": ["a", "b"], "value": [0, 1]}))
+    file_to_replace = next(task.file for task in table.scan().plan_files() if task.file.partition[0] == "a")
+    table.append(pa.table({"category": ["a"], "value": [3]}))
+
+    replacing_table = catalog.load_table(identifier)
+    deleting_table = catalog.load_table(identifier)
+    data_files = [task.file for task in deleting_table.scan().plan_files()]
+    file_to_delete = {
+        "target": file_to_replace,
+        "same-partition": next(
+            data_file for data_file in data_files if data_file.partition[0] == "a" and data_file != file_to_replace
+        ),
+        "different-partition": next(data_file for data_file in data_files if data_file.partition[0] == "b"),
+    }[concurrently_deleted_file]
+
+    replacement_file = list(
+        _dataframe_to_data_files(
+            table_metadata=replacing_table.metadata,
+            df=pa.table({"category": ["a"], "value": [2]}),
+            io=replacing_table.io,
+            write_uuid=uuid.uuid4(),
+        )
+    )[0]
+    replacing_transaction = replacing_table.transaction()
+    with replacing_transaction.update_snapshot().overwrite() as overwrite:
+        overwrite.delete_data_file(file_to_replace)
+        overwrite.append_data_file(replacement_file)
+
+    with deleting_table.transaction() as deleting_transaction:
+        with deleting_transaction.update_snapshot().overwrite() as overwrite:
+            overwrite.delete_data_file(file_to_delete)
+
+    if expect_conflict:
+        with pytest.raises(ValidationException, match="Data files were concurrently deleted"):
+            replacing_transaction.commit_transaction()
+    else:
+        replacing_transaction.commit_transaction()
+
+    result = catalog.load_table(identifier).scan().to_arrow()
+    assert sorted(result["value"].to_pylist()) == expected_values
 
 
 def test_concurrent_overwrite_append_retries_successfully(catalog: Catalog) -> None:

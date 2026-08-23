@@ -1527,11 +1527,13 @@ class _StrictMetricsEvaluator:
         Returns: false if the file may contain any row that doesn't match
                     the expression, true otherwise.
         """
-        if file.record_count <= 0:
-            # Older version don't correctly implement record count from avro file and thus
-            # set record count -1 when importing avro tables to iceberg tables. This should
-            # be updated once we implemented and set correct record count.
+        if file.record_count == 0:
             return ROWS_MUST_MATCH
+
+        if file.record_count < 0:
+            # Older versions set the record count to -1 when importing Avro tables.
+            # Treat an unknown count conservatively rather than as an empty file.
+            return ROWS_MIGHT_NOT_MATCH
 
         return visit(self.expr, _StrictMetricsEvaluationVisitor(self.struct, file))
 
@@ -1874,10 +1876,10 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     def visit_not_nan(self, term: BoundTerm) -> BooleanExpression:
         val = term.eval(self.struct)
-        if isinstance(val, SupportsFloat) and not math.isnan(val):
-            return self.visit_true()
-        else:
+        if isinstance(val, SupportsFloat) and math.isnan(val):
             return self.visit_false()
+        else:
+            return self.visit_true()
 
     def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) < literal.value:
