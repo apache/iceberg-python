@@ -1626,6 +1626,136 @@ def _get_column_projection_values(
     return projected_missing_fields
 
 
+def _fill_null_value(data_type: pa.DataType) -> Any:
+    if pa.types.is_integer(data_type) or pa.types.is_floating(data_type) or pa.types.is_decimal(data_type):
+        return 0
+    if pa.types.is_boolean(data_type):
+        return False
+    if pa.types.is_string(data_type) or pa.types.is_large_string(data_type):
+        return ""
+    if pa.types.is_binary(data_type) or pa.types.is_large_binary(data_type):
+        return b""
+    if pa.types.is_fixed_size_binary(data_type):
+        return b"\x00" * data_type.byte_width
+    if isinstance(data_type, pa.UuidType):
+        return pa.scalar(b"\x00" * 16, type=data_type)
+    if pa.types.is_timestamp(data_type) or pa.types.is_date(data_type) or pa.types.is_time(data_type):
+        return pa.scalar(0, type=data_type)
+    storage = getattr(data_type, "storage_type", None)
+    if storage is not None:
+        return _fill_null_value(storage)
+    return ""
+
+
+def _column_name_for_field_id(table: pa.Table, field_id: int, schema: Schema) -> str | None:
+    try:
+        name = schema.find_field(field_id).name
+    except ValueError:
+        name = None
+    if name is not None and name in table.column_names:
+        return name
+    for field in table.schema:
+        if _get_field_id(field) == field_id:
+            return field.name
+    return None
+
+
+def _align_equality_delete_table(
+    data: pa.Table, deletes: pa.Table, equality_ids: Iterable[int], table_schema: Schema
+) -> tuple[pa.Table, pa.Table, list[str]]:
+    join_keys: list[str] = []
+    for field_id in equality_ids:
+        delete_name: str | None = None
+        data_name = _column_name_for_field_id(data, field_id, table_schema)
+        if data_name is not None and data_name in deletes.column_names:
+            delete_name = data_name
+        else:
+            for field in deletes.schema:
+                if _get_field_id(field) == field_id:
+                    delete_name = field.name
+                    break
+            if delete_name is None:
+                try:
+                    schema_name = table_schema.find_field(field_id).name
+                except ValueError:
+                    schema_name = None
+                if schema_name is not None and schema_name in deletes.column_names:
+                    delete_name = schema_name
+        if delete_name is None:
+            raise ValueError(f"Equality delete file is missing field id {field_id}")
+        if data_name is None:
+            delete_type = deletes.schema.field(delete_name).type
+            data = data.append_column(delete_name, pa.nulls(data.num_rows, type=delete_type))
+            data_name = delete_name
+        if delete_name != data_name:
+            names = list(deletes.column_names)
+            names[names.index(delete_name)] = data_name
+            deletes = deletes.rename_columns(names)
+        data_type = data.schema.field(data_name).type
+        delete_type = deletes.schema.field(data_name).type
+        if delete_type != data_type:
+            deletes = deletes.set_column(
+                deletes.schema.get_field_index(data_name), data_name, pc.cast(deletes[data_name], data_type)
+            )
+        join_keys.append(data_name)
+    return data, deletes, join_keys
+
+
+def _null_safe_anti_join(data: pa.Table, deletes: pa.Table, join_keys: list[str]) -> pa.Table:
+    data_join = data
+    delete_join = deletes
+    join_cols: list[str] = []
+    extra_cols: list[str] = []
+    for key in join_keys:
+        null_col = f"__iceberg_eq_null_{key}"
+        val_col = f"__iceberg_eq_val_{key}"
+        key_type = data_join.schema.field(key).type
+        data_join = data_join.append_column(null_col, pc.is_null(data_join[key]))
+        delete_join = delete_join.append_column(null_col, pc.is_null(delete_join[key]))
+        data_vals = data_join[key]
+        delete_vals = delete_join[key]
+        fill_type = key_type
+        storage = getattr(key_type, "storage_type", None)
+        if storage is not None:
+            data_vals = data_vals.cast(storage)
+            delete_vals = delete_vals.cast(storage)
+            fill_type = storage
+        fill = _fill_null_value(fill_type)
+        data_join = data_join.append_column(val_col, pc.fill_null(data_vals, fill))
+        delete_join = delete_join.append_column(val_col, pc.fill_null(delete_vals, fill))
+        join_cols.extend([null_col, val_col])
+        extra_cols.extend([null_col, val_col])
+        if pa.types.is_floating(key_type):
+            nan_col = f"__iceberg_eq_nan_{key}"
+            data_join = data_join.append_column(nan_col, pc.fill_null(pc.is_nan(data_join[key]), False))
+            delete_join = delete_join.append_column(nan_col, pc.fill_null(pc.is_nan(delete_join[key]), False))
+            join_cols.append(nan_col)
+            extra_cols.append(nan_col)
+    delete_keys = delete_join.select(join_cols)
+    joined = data_join.join(delete_keys, keys=join_cols, join_type="left anti")
+    return joined.drop(extra_cols)
+
+
+def _apply_equality_deletes(
+    data: pa.Table, equality_groups: dict[frozenset[int], list[pa.Table]], table_schema: Schema
+) -> pa.Table:
+    if data.num_rows == 0:
+        return data
+    for equality_ids, delete_tables in equality_groups.items():
+        if not equality_ids:
+            continue
+        aligned: list[pa.Table] = []
+        join_keys: list[str] | None = None
+        for delete_table in delete_tables:
+            data, one, keys = _align_equality_delete_table(data, delete_table, equality_ids, table_schema)
+            if join_keys is None:
+                join_keys = keys
+            aligned.append(one.select(keys))
+        deletes = pa.concat_tables(aligned, promote_options="permissive")
+        data = _null_safe_anti_join(data, deletes, join_keys or [])
+    return data
+
+
 def _task_to_record_batches(
     io: FileIO,
     task: FileScanTask,
@@ -1640,6 +1770,7 @@ def _task_to_record_batches(
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
     downcast_ns_timestamp_to_us: bool | None = None,
     dictionary_columns: tuple[str, ...] = (),
+    equality_delete_tables: dict[str, pa.Table] | None = None,
 ) -> Iterator[pa.RecordBatch]:
     format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
     if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
@@ -1672,7 +1803,20 @@ def _task_to_record_batches(
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
 
-        file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
+        read_field_ids = set(projected_field_ids)
+        equality_groups: dict[frozenset[int], list[pa.Table]] = {}
+        if equality_delete_tables:
+            for delete_file in task.delete_files:
+                if delete_file.content != DataFileContent.EQUALITY_DELETES:
+                    continue
+                eq_table = equality_delete_tables.get(delete_file.file_path)
+                if eq_table is None:
+                    continue
+                eq_ids = frozenset(delete_file.equality_ids or [])
+                equality_groups.setdefault(eq_ids, []).append(eq_table)
+                read_field_ids.update(eq_ids)
+
+        file_project_schema = prune_columns(file_schema, read_field_ids, select_full_types=False)
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
@@ -1684,6 +1828,7 @@ def _task_to_record_batches(
         )
 
         next_index = 0
+        file_batches: list[pa.RecordBatch] = []
         batches = fragment_scanner.to_batches()
         for batch in batches:
             next_index = next_index + len(batch)
@@ -1709,24 +1854,61 @@ def _task_to_record_batches(
             if current_batch.num_rows == 0:
                 continue
 
-            yield _to_requested_schema(
-                projected_schema,
-                file_project_schema,
-                current_batch,
-                downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-                projected_missing_fields=projected_missing_fields,
-                allow_timestamp_tz_mismatch=True,
-            )
+            if not equality_groups:
+                yield _to_requested_schema(
+                    projected_schema,
+                    file_project_schema,
+                    current_batch,
+                    downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+                    projected_missing_fields=projected_missing_fields,
+                    allow_timestamp_tz_mismatch=True,
+                )
+            else:
+                file_batches.append(current_batch)
+
+        if equality_groups and file_batches:
+            data = pa.Table.from_batches(file_batches)
+            data = _apply_equality_deletes(data, equality_groups, table_schema)
+            for out_batch in data.to_batches():
+                if out_batch.num_rows == 0:
+                    continue
+                yield _to_requested_schema(
+                    projected_schema,
+                    file_project_schema,
+                    out_batch,
+                    downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+                    projected_missing_fields=projected_missing_fields,
+                    allow_timestamp_tz_mismatch=True,
+                )
 
 
-def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[str, list[ChunkedArray]]:
+def _read_equality_delete_table(io: FileIO, data_file: DataFile) -> pa.Table:
+    if data_file.file_format not in {FileFormat.PARQUET, FileFormat.ORC}:
+        raise ValueError(f"Equality delete file format not supported: {data_file.file_format}")
+    with io.new_input(data_file.file_path).open() as fi:
+        fragment = _get_file_format(data_file.file_format, pre_buffer=True, buffer_size=ONE_MEGABYTE).make_fragment(fi)
+        return ds.Scanner.from_fragment(fragment=fragment).to_table()
+
+
+def _read_all_delete_files(
+    io: FileIO, tasks: Iterable[FileScanTask]
+) -> tuple[dict[str, list[ChunkedArray]], dict[str, pa.Table]]:
     deletes_per_file: dict[str, list[ChunkedArray]] = {}
-    unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
-    if len(unique_deletes) > 0:
-        executor = ExecutorFactory.get_or_create()
+    equality_tables: dict[str, pa.Table] = {}
+    unique_pos: set[DataFile] = set()
+    unique_eq: set[DataFile] = set()
+    for task in tasks:
+        for delete_file in task.delete_files:
+            if delete_file.content == DataFileContent.EQUALITY_DELETES:
+                unique_eq.add(delete_file)
+            else:
+                unique_pos.add(delete_file)
+
+    executor = ExecutorFactory.get_or_create()
+    if unique_pos:
         deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(
             lambda args: _read_deletes(*args),
-            [(io, delete_file) for delete_file in unique_deletes],
+            [(io, delete_file) for delete_file in unique_pos],
         )
         for delete in deletes_per_files:
             for file, arr in delete.items():
@@ -1735,7 +1917,14 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
                 else:
                     deletes_per_file[file] = [arr]
 
-    return deletes_per_file
+    if unique_eq:
+        for path, table in executor.map(
+            lambda args: (args[1].file_path, _read_equality_delete_table(*args)),
+            [(io, delete_file) for delete_file in unique_eq],
+        ):
+            equality_tables[path] = table
+
+    return deletes_per_file, equality_tables
 
 
 class ArrowScan:
@@ -1841,7 +2030,7 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        deletes_per_file = _read_all_delete_files(self._io, tasks)
+        deletes_per_file, equality_delete_tables = _read_all_delete_files(self._io, tasks)
 
         total_row_count = 0
         executor = ExecutorFactory.get_or_create()
@@ -1850,7 +2039,7 @@ class ArrowScan:
             # Materialize the iterator here to ensure execution happens within the executor.
             # Otherwise, the iterator would be lazily consumed later (in the main thread),
             # defeating the purpose of using executor.map.
-            return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file))
+            return list(self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file, equality_delete_tables))
 
         limit_reached = False
         for batches in executor.map(batches_for_task, tasks):
@@ -1870,7 +2059,10 @@ class ArrowScan:
                 break
 
     def _record_batches_from_scan_tasks_and_deletes(
-        self, tasks: Iterable[FileScanTask], deletes_per_file: dict[str, list[ChunkedArray]]
+        self,
+        tasks: Iterable[FileScanTask],
+        deletes_per_file: dict[str, list[ChunkedArray]],
+        equality_delete_tables: dict[str, pa.Table] | None = None,
     ) -> Iterator[pa.RecordBatch]:
         total_row_count = 0
         for task in tasks:
@@ -1890,6 +2082,7 @@ class ArrowScan:
                 self._table_metadata.format_version,
                 self._downcast_ns_timestamp_to_us,
                 self._dictionary_columns,
+                equality_delete_tables,
             )
             for batch in batches:
                 if self._limit is not None:
