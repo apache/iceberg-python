@@ -79,11 +79,13 @@ from pyiceberg.io import (
     S3_REGION,
     S3_REQUEST_TIMEOUT,
     S3_SECRET_ACCESS_KEY,
+    S3_SERVER_SIDE_ENCRYPTION,
     S3_SESSION_TOKEN,
     S3_SIGNER,
     S3_SIGNER_ENDPOINT,
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
+    S3_SSE_KMS_KEY_ID,
     FileIO,
     InputFile,
     InputStream,
@@ -178,6 +180,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "region_name": get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
+    s3_additional_kwargs = {}
     register_events: dict[str, Callable[[AWSRequest], None]] = {}
 
     if signer := properties.get(S3_SIGNER):
@@ -202,13 +205,19 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
 
-    if _force_virtual_addressing := properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+    if property_as_bool(properties, S3_FORCE_VIRTUAL_ADDRESSING, False):
         config_kwargs["s3"] = {"addressing_style": "virtual"}
 
     if s3_anonymous := properties.get(S3_ANONYMOUS):
         anon = strtobool(s3_anonymous)
     else:
         anon = False
+
+    if server_side_encryption := properties.get(S3_SERVER_SIDE_ENCRYPTION):
+        s3_additional_kwargs["ServerSideEncryption"] = server_side_encryption
+
+    if sse_kms_key_id := properties.get(S3_SSE_KMS_KEY_ID):
+        s3_additional_kwargs["SSEKMSKeyId"] = sse_kms_key_id
 
     s3_fs_kwargs = {
         "anon": anon,
@@ -218,6 +227,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if profile_name := get_first_property_value(properties, S3_PROFILE_NAME, AWS_PROFILE_NAME):
         s3_fs_kwargs["profile"] = profile_name
+
+    if s3_additional_kwargs:
+        s3_fs_kwargs["s3_additional_kwargs"] = s3_additional_kwargs
 
     if register_events:
         from aiobotocore.session import AioSession
