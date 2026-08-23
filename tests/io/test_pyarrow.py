@@ -3210,6 +3210,43 @@ def test__to_requested_schema_float_promotion(
     assert result.column(0).to_pylist() == [1.5, 2.25, 3.0, None]
 
 
+def test__to_requested_schema_null_list_of_structs() -> None:
+    """Test that a null list survives the write path when its element is a struct."""
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_list_with_struct",
+            ListType(11, StructType(NestedField(111, "test", IntegerType(), required=False)), element_required=False),
+            required=False,
+        ),
+        NestedField(2, "col_list", ListType(21, IntegerType(), element_required=False), required=False),
+    )
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("col_list_with_struct", pa.list_(pa.struct([pa.field("test", pa.int32())]))),
+            pa.field("col_list", pa.list_(pa.int32())),
+        ]
+    )
+    batch = pa.RecordBatch.from_arrays(
+        [
+            pa.array([[{"test": 1}], [], None], type=arrow_schema.field(0).type),
+            pa.array([[1], [], None], type=arrow_schema.field(1).type),
+        ],
+        schema=arrow_schema,
+    )
+
+    result = _to_requested_schema(
+        requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False
+    )
+
+    # A null list and an empty list are different values, and only the struct-element
+    # case ever collapsed the former into the latter.
+    assert result.column(0).to_pylist() == [[{"test": 1}], [], None]
+    assert result.column(1).to_pylist() == [[1], [], None]
+
+
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
     # It's better to set up multi-region minio servers for an integration test once `endpoint_url` argument
     # becomes available for `resolve_s3_region`
