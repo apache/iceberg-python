@@ -1710,3 +1710,21 @@ def test_calling_pyarrow_transform_without_pyiceberg_core_installed_correctly_ra
 
     with pytest.raises(NotInstalledError):
         transform.pyarrow_transform(StringType())
+
+
+def test_pyarrow_transforms_dictionary_encoded() -> None:
+    dict_arr = pa.DictionaryArray.from_arrays(pa.array([0, 1, 0, None]), pa.array(["foo", "bar"]))
+    raw_arr = pa.array(["foo", "bar", "foo", None])
+    bucket_transform = BucketTransform(num_buckets=10)
+    expected_bucket = bucket_transform.pyarrow_transform(StringType())(raw_arr)
+    assert bucket_transform.pyarrow_transform(StringType())(dict_arr) == expected_bucket
+
+    chunked_dict = pa.chunked_array([dict_arr, dict_arr])
+    expected_chunked = pa.chunked_array([expected_bucket, expected_bucket])
+    assert bucket_transform.pyarrow_transform(StringType())(chunked_dict) == expected_chunked
+
+    truncate_transform = TruncateTransform(width=3)
+    dict_truncate_arr = pa.DictionaryArray.from_arrays(pa.array([0, 1, 0]), pa.array(["developer", "iceberg"]))
+    raw_truncate_arr = pa.array(["developer", "iceberg", "developer"])
+    expected_truncate = truncate_transform.pyarrow_transform(StringType())(raw_truncate_arr)
+    assert truncate_transform.pyarrow_transform(StringType())(dict_truncate_arr) == expected_truncate
