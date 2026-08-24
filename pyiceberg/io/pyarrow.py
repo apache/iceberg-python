@@ -2014,6 +2014,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                     promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
                 )
                 return values.cast(target_schema)
+            elif pa.types.is_dictionary(values.type) and not pa.types.is_dictionary(target_type):
+                return values.cast(target_type)
 
         return values
 
