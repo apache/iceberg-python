@@ -2857,6 +2857,60 @@ class TestRestCatalogClose:
 
         assert catalog.supports_server_side_planning() is True
 
+    def test_server_side_planning_enabled_by_table_config(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.supports_server_side_planning() is False
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.SERVER.value}) is True
+
+    def test_server_side_planning_table_config_overrides_catalog_property(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"scan-planning-mode": ScanPlanningMode.SERVER.value},
+        )
+
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.CLIENT.value}) is False
+
+    def test_server_side_planning_table_config_ignored_when_endpoint_unsupported(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.SERVER.value}) is False
+
+    def test_server_side_planning_invalid_mode(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        with pytest.raises(ValueError, match="Invalid scan-planning-mode: remote"):
+            catalog.supports_server_side_planning({"scan-planning-mode": "remote"})
+
+    def test_server_side_planning_invalid_catalog_mode_falls_back_to_default(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"scan-planning-mode": "servr"},
+        )
+
+        # Bad catalog config is ignored; default remains client-side planning.
+        assert catalog.supports_server_side_planning() is False
+
+    def test_server_side_planning_table_override_survives_invalid_catalog_mode(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"scan-planning-mode": "servr"},
+        )
+
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.SERVER.value}) is True
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.CLIENT.value}) is False
+
     def test_supported_endpoint(self, requests_mock: Mocker) -> None:
         requests_mock.get(
             f"{TEST_URI}v1/config",

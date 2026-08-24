@@ -804,8 +804,13 @@ class Catalog(ABC):
         return ".".join(segment.strip() for segment in tuple_identifier)
 
     @abstractmethod
-    def supports_server_side_planning(self) -> bool:
-        """Check if the catalog supports server-side scan planning."""
+    def supports_server_side_planning(self, table_config: Properties = EMPTY_DICT) -> bool:
+        """Check if server-side scan planning should be used.
+
+        Args:
+            table_config: Table configuration returned by the catalog when loading the table,
+                which may override the catalog-level scan planning mode for a single table.
+        """
 
     @staticmethod
     def identifier_to_database(
@@ -907,7 +912,7 @@ class MetastoreCatalog(Catalog, ABC):
         super().__init__(name, **properties)
 
     @override
-    def supports_server_side_planning(self) -> bool:
+    def supports_server_side_planning(self, table_config: Properties = EMPTY_DICT) -> bool:
         return False
 
     @override
