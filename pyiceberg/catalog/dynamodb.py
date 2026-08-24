@@ -34,6 +34,7 @@ from pyiceberg.catalog import (
     TABLE_TYPE,
     MetastoreCatalog,
     PropertiesUpdateSummary,
+    _get_aws_session_with_assumed_role,
 )
 from pyiceberg.exceptions import (
     ConditionalCheckFailedException,
@@ -46,7 +47,15 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, load_file_io
+from pyiceberg.io import (
+    AWS_ACCESS_KEY_ID,
+    AWS_REGION,
+    AWS_ROLE_ARN,
+    AWS_ROLE_SESSION_NAME,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN,
+    load_file_io,
+)
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromInputFile
@@ -92,6 +101,8 @@ DYNAMODB_REGION = "dynamodb.region"
 DYNAMODB_ACCESS_KEY_ID = "dynamodb.access-key-id"
 DYNAMODB_SECRET_ACCESS_KEY = "dynamodb.secret-access-key"
 DYNAMODB_SESSION_TOKEN = "dynamodb.session-token"
+DYNAMODB_ROLE_ARN = "dynamodb.role-arn"
+DYNAMODB_ROLE_SESSION_NAME = "dynamodb.role-session-name"
 
 
 class DynamoDbCatalog(MetastoreCatalog):
@@ -107,14 +118,22 @@ class DynamoDbCatalog(MetastoreCatalog):
         if client is not None:
             self.dynamodb = client
         else:
+            region_name = get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION)
             session = boto3.Session(
                 profile_name=properties.get(DYNAMODB_PROFILE_NAME),
-                region_name=get_first_property_value(properties, DYNAMODB_REGION, AWS_REGION),
+                region_name=region_name,
                 botocore_session=properties.get(BOTOCORE_SESSION),
                 aws_access_key_id=get_first_property_value(properties, DYNAMODB_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
                 aws_secret_access_key=get_first_property_value(properties, DYNAMODB_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
                 aws_session_token=get_first_property_value(properties, DYNAMODB_SESSION_TOKEN, AWS_SESSION_TOKEN),
             )
+            if role_arn := get_first_property_value(properties, DYNAMODB_ROLE_ARN, AWS_ROLE_ARN):
+                session = _get_aws_session_with_assumed_role(
+                    session=session,
+                    role_arn=role_arn,
+                    role_session_name=get_first_property_value(properties, DYNAMODB_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME),
+                    region_name=region_name,
+                )
             self.dynamodb = session.client(DYNAMODB_CLIENT)
 
         self.dynamodb_table_name = self.properties.get(DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT)

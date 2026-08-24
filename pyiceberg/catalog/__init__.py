@@ -74,6 +74,7 @@ from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
+    import boto3
     import pyarrow as pa
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,46 @@ URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
 BOTOCORE_SESSION = "botocore_session"
+
+DEFAULT_ROLE_SESSION_NAME = "pyiceberg"
+
+
+def _get_aws_session_with_assumed_role(
+    session: boto3.Session,
+    role_arn: str,
+    role_session_name: str | None,
+    region_name: str | None,
+) -> boto3.Session:
+    """Assume an IAM role via STS and return a new boto3 session using the temporary credentials.
+
+    This mirrors the assume-role behavior already available for the S3 FileIO (``client.role-arn`` /
+    ``client.role-session-name``) so that the AWS catalog clients (Glue, DynamoDB) can honor the same
+    properties.
+
+    Args:
+        session: The base boto3 session used to call STS.
+        role_arn: The ARN of the role to assume.
+        role_session_name: An identifier for the assumed-role session. Defaults to ``pyiceberg``.
+        region_name: The region for the returned session.
+
+    Returns:
+        A new boto3 session authenticated with the assumed-role temporary credentials.
+    """
+    import boto3
+
+    sts_client = session.client("sts", region_name=region_name)
+    response = sts_client.assume_role(
+        RoleArn=role_arn,
+        RoleSessionName=role_session_name or DEFAULT_ROLE_SESSION_NAME,
+    )
+    credentials = response["Credentials"]
+    return boto3.Session(
+        aws_access_key_id=credentials["AccessKeyId"],
+        aws_secret_access_key=credentials["SecretAccessKey"],
+        aws_session_token=credentials["SessionToken"],
+        region_name=region_name,
+    )
+
 
 TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     r"""
