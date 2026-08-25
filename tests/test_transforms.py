@@ -72,6 +72,7 @@ from pyiceberg.expressions.literals import (
     DateLiteral,
     DecimalLiteral,
     TimestampLiteral,
+    TimestampNanoLiteral,
     literal,
 )
 from pyiceberg.partitioning import _to_partition_representation
@@ -671,6 +672,13 @@ def bound_reference_timestamp() -> BoundReference:
 
 
 @pytest.fixture
+def bound_reference_timestamp_ns() -> BoundReference:
+    return BoundReference(
+        field=NestedField(1, "field", TimestampNanoType(), required=False), accessor=Accessor(position=0, inner=None)
+    )
+
+
+@pytest.fixture
 def bound_reference_decimal() -> BoundReference:
     return BoundReference(
         field=NestedField(1, "field", DecimalType(8, 2), required=False), accessor=Accessor(position=0, inner=None)
@@ -772,6 +780,37 @@ def test_projection_day_month_not_in(bound_reference_date: BoundReference) -> No
         MonthTransform().project("name", BoundNotIn(term=bound_reference_date, literals={DateLiteral(1925), DateLiteral(2925)}))
         is None
     )
+
+
+@pytest.mark.parametrize(
+    "transform, expected",
+    [
+        (YearTransform(), 52),
+        (MonthTransform(), 634),
+        (DayTransform(), 19302),
+        (HourTransform(), 463249),
+    ],
+)
+def test_projection_time_transform_literal_ns(
+    transform: TimeTransform[Any],
+    expected: int,
+    bound_reference_timestamp_ns: BoundReference,
+    bound_reference_timestamp: BoundReference,
+) -> None:
+    """A nanosecond literal must project onto the same partition value as the equivalent microsecond one."""
+    micros, nanos = 1667696874_000_000, 1667696874_000_000_000
+
+    assert transform.project(
+        "name", BoundGreaterThan(term=bound_reference_timestamp_ns, literal=TimestampNanoLiteral(nanos))
+    ) == transform.project("name", BoundGreaterThan(term=bound_reference_timestamp, literal=TimestampLiteral(micros)))
+
+    assert transform.project(
+        "name", BoundEqualTo(term=bound_reference_timestamp_ns, literal=TimestampNanoLiteral(nanos))
+    ) == EqualTo(term="name", literal=expected)
+
+    assert transform.strict_project(
+        "name", BoundNotEqualTo(term=bound_reference_timestamp_ns, literal=TimestampNanoLiteral(nanos))
+    ) == NotEqualTo(term="name", literal=expected)
 
 
 def test_projection_day_unary(bound_reference_timestamp: BoundReference) -> None:

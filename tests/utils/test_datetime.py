@@ -22,6 +22,7 @@ import pytz
 from pyiceberg.utils.datetime import (
     datetime_to_millis,
     datetime_to_nanos,
+    micros_to_nanos,
     millis_to_datetime,
     nanos_to_hours,
     nanos_to_micros,
@@ -158,3 +159,47 @@ def test_nanos_to_micros(nanos: int, micros: int) -> None:
 )
 def test_nanos_to_hours(nanos: int, hours: int) -> None:
     assert hours == nanos_to_hours(nanos)
+
+
+@pytest.mark.parametrize("micros, nanos", [(1510871468000001, 1510871468000001000), (-1510871468000001, -1510871468000001000)])
+def test_micros_to_nanos(micros: int, nanos: int) -> None:
+    assert nanos == micros_to_nanos(micros)
+
+
+@pytest.mark.parametrize("micros", [9223372036854776, -9223372036854776])
+def test_micros_to_nanos_out_of_range(micros: int) -> None:
+    """Java raises an ArithmeticException here, since Math.multiplyExact overflows a long."""
+    with pytest.raises(OverflowError, match=f"Timestamp cannot be converted to nanoseconds, out of range: {micros}"):
+        micros_to_nanos(micros)
+
+
+@pytest.mark.parametrize(
+    "timestamp, nanos",
+    [
+        # 2262-04-11T23:47:16.854775807 is the last timestamp that fits in a signed 64-bit integer
+        ("2262-04-11T23:47:16.854775807", 9223372036854775807),
+        ("1677-09-21T00:12:43.145224192", -9223372036854775808),
+    ],
+)
+def test_timestamp_to_nanos_at_boundary(timestamp: str, nanos: int) -> None:
+    assert nanos == timestamp_to_nanos(timestamp)
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "2300-01-01T00:00:00",
+        "1600-01-01T00:00:00",
+        # One nanosecond past either boundary, which only the sub-microsecond digits push over
+        "2262-04-11T23:47:16.854775808",
+        "1677-09-21T00:12:43.145224191",
+    ],
+)
+def test_timestamp_to_nanos_out_of_range(timestamp: str) -> None:
+    with pytest.raises(OverflowError, match="Timestamp cannot be converted to nanoseconds, out of range"):
+        timestamp_to_nanos(timestamp)
+
+
+def test_timestamptz_to_nanos_out_of_range() -> None:
+    with pytest.raises(OverflowError, match="Timestamp cannot be converted to nanoseconds, out of range"):
+        timestamptz_to_nanos("2300-01-01T00:00:00+00:00")

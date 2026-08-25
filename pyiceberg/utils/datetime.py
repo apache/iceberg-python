@@ -26,6 +26,8 @@ from datetime import (
     timedelta,
 )
 
+from pyiceberg.types import LongType
+
 EPOCH_DATE = date.fromisoformat("1970-01-01")
 EPOCH_TIMESTAMP = datetime.fromisoformat("1970-01-01T00:00:00.000000")
 ISO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d{1,6})?")
@@ -33,6 +35,18 @@ ISO_TIMESTAMP_NANO = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(.\d{1,6}
 EPOCH_TIMESTAMPTZ = datetime.fromisoformat("1970-01-01T00:00:00.000000+00:00")
 ISO_TIMESTAMPTZ = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d{1,6})?[-+]\d{2}:\d{2}")
 ISO_TIMESTAMPTZ_NANO = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(.\d{1,6})?(\d{1,3})?([-+]\d{2}:\d{2})")
+
+
+def _check_nanos_range(nanos: int, source: object) -> int:
+    """Reject nanosecond timestamps that do not fit in a 64-bit integer.
+
+    Python integers are unbounded, so the overflow has to be checked explicitly. Java gets this for
+    free: both DateTimeUtil.microsToNanos and DateTimeUtil.nanosFromTimestamp are exact long
+    operations that throw an ArithmeticException instead of wrapping around.
+    """
+    if not LongType.min <= nanos <= LongType.max:
+        raise OverflowError(f"Timestamp cannot be converted to nanoseconds, out of range: {source}")
+    return nanos
 
 
 def micros_to_days(timestamp: int) -> int:
@@ -105,8 +119,8 @@ def time_to_nanos(t: time) -> int:
     return ((((t.hour * 60 + t.minute) * 60) + t.second) * 1_000_000 + t.microsecond) * 1_000
 
 
-def datetime_to_nanos(dt: datetime) -> int:
-    """Convert a datetime to nanoseconds from 1970-01-01T00:00:00.000000000."""
+def _unchecked_datetime_to_nanos(dt: datetime) -> int:
+    """Convert a datetime to nanoseconds without a range check, so a caller can add the sub-microsecond digits first."""
     # python datetime and time doesn't have nanoseconds support yet
     # https://github.com/python/cpython/issues/59648
     if dt.tzinfo:
@@ -114,6 +128,11 @@ def datetime_to_nanos(dt: datetime) -> int:
     else:
         delta = dt - EPOCH_TIMESTAMP
     return ((delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds) * 1_000
+
+
+def datetime_to_nanos(dt: datetime) -> int:
+    """Convert a datetime to nanoseconds from 1970-01-01T00:00:00.000000000."""
+    return _check_nanos_range(_unchecked_datetime_to_nanos(dt), dt)
 
 
 def timestamp_to_nanos(timestamp_str: str) -> int:
@@ -126,7 +145,8 @@ def timestamp_to_nanos(timestamp_str: str) -> int:
         ns_str = (match.group(3) or "0").ljust(3, "0")
         ms_str = match.group(2) if match.group(2) else ""
         timestamp_str_without_ns_str = match.group(1) + ms_str
-        return datetime_to_nanos(datetime.fromisoformat(timestamp_str_without_ns_str)) + int(ns_str)
+        nanos = _unchecked_datetime_to_nanos(datetime.fromisoformat(timestamp_str_without_ns_str)) + int(ns_str)
+        return _check_nanos_range(nanos, timestamp_str)
     if ISO_TIMESTAMPTZ_NANO.fullmatch(timestamp_str):
         # When we can match a timestamp without a zone, we can give a more specific error
         raise ValueError(f"Zone offset provided, but not expected: {timestamp_str}")
@@ -143,7 +163,8 @@ def timestamptz_to_nanos(timestamptz_str: str) -> int:
         ns_str = (match.group(3) or "0").ljust(3, "0")
         ms_str = match.group(2) if match.group(2) else ""
         timestamptz_str_without_ns_str = match.group(1) + ms_str + match.group(4)
-        return datetime_to_nanos(datetime.fromisoformat(timestamptz_str_without_ns_str)) + int(ns_str)
+        nanos = _unchecked_datetime_to_nanos(datetime.fromisoformat(timestamptz_str_without_ns_str)) + int(ns_str)
+        return _check_nanos_range(nanos, timestamptz_str)
     if ISO_TIMESTAMP_NANO.fullmatch(timestamptz_str):
         # When we can match a timestamp without a zone, we can give a more specific error
         raise ValueError(f"Missing zone offset: {timestamptz_str} (must be ISO-8601)")
@@ -283,3 +304,8 @@ def nanos_to_hours(nanos: int) -> int:
 def nanos_to_micros(nanos: int) -> int:
     """Convert a nanoseconds timestamp to microsecond timestamp by dropping precision."""
     return nanos // 1000
+
+
+def micros_to_nanos(micros: int) -> int:
+    """Convert a microseconds timestamp to a nanosecond timestamp."""
+    return _check_nanos_range(micros * 1000, micros)
