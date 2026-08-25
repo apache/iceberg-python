@@ -938,7 +938,16 @@ class Transaction:
         if branch in self.table_metadata.refs:
             matched_iceberg_record_batches_scan = matched_iceberg_record_batches_scan.use_ref(branch)
 
-        matched_iceberg_record_batches = matched_iceberg_record_batches_scan.to_arrow_batch_reader()
+        # Project the current schema instead of DataScan.projection(). Pinning a ref sets the
+        # snapshot id, which makes projection() fall back to that snapshot's historical schema.
+        # A schema-only update does not create a data snapshot, so the branch tip can still carry
+        # an older schema, and the matched rows would then be missing the newly added columns that
+        # the input dataframe has.
+        matched_iceberg_record_batches = _to_arrow_batch_reader_via_file_scan_tasks(
+            matched_iceberg_record_batches_scan,
+            self.table_metadata.schema(),
+            matched_iceberg_record_batches_scan.plan_files(),
+        )
 
         batches_to_overwrite = []
         overwrite_predicates = []
