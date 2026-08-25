@@ -50,6 +50,9 @@ from typing import (
     TypeVar,
     cast,
 )
+from typing import (
+    Literal as LiteralType,
+)
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -3059,11 +3062,13 @@ def _dataframe_to_data_files(
 
 def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tuple[pa.Table, int | None]:
     """Apply a supported Iceberg sort order and return its file sort-order id."""
+    from packaging import version
+
     sort_order = table_metadata.sort_order()
     if sort_order.is_unsorted:
         return table, None
 
-    sort_keys: list[tuple[str, str]] = []
+    sort_keys: list[tuple[str, LiteralType["ascending", "descending"]]] = []
     null_orders = set()
     for field in sort_order.fields:
         if not isinstance(field.transform, IdentityTransform):
@@ -3079,15 +3084,22 @@ def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tup
                 stacklevel=2,
             )
             return table, None
-        direction = "descending" if field.direction == SortDirection.DESC else "ascending"
+        direction: LiteralType["ascending", "descending"] = "descending" if field.direction == SortDirection.DESC else "ascending"
         sort_keys.append((name, direction))
         null_orders.add(field.null_order)
 
     if len(null_orders) != 1:
         warnings.warn("Mixed null ordering is not supported; data files are marked unsorted", stacklevel=2)
         return table, None
-    null_placement = "at_start" if null_orders == {NullOrder.NULLS_FIRST} else "at_end"
-    indices = pc.sort_indices(table, sort_keys=sort_keys, null_placement=null_placement)
+    null_placement: LiteralType["at_start", "at_end"] = "at_start" if null_orders == {NullOrder.NULLS_FIRST} else "at_end"
+    if version.parse(pyarrow.__version__) < version.parse("25.0.0"):
+        indices = pc.sort_indices(table, sort_keys=sort_keys, null_placement=null_placement)
+    else:
+        # Per-key null placement replaced the SortOptions-level argument in Arrow 25
+        indices = pc.sort_indices(
+            table,
+            sort_keys=cast(Any, [(name, order, null_placement) for name, order in sort_keys]),
+        )
     return table.take(indices), sort_order.order_id
 
 
