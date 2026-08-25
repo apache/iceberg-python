@@ -32,6 +32,7 @@ from pyiceberg.catalog.sql import (
     SqlCatalogBaseTable,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NoSuchPropertyException,
     NoSuchTableError,
     TableAlreadyExistsError,
@@ -382,6 +383,31 @@ def test_rename_table_ignores_view_rows(warehouse: Path) -> None:
         catalog.rename_table(("ns", "a_view"), ("ns", "renamed_view"))
 
     # The view row must not have been renamed.
+    with catalog.engine.connect() as conn:
+        row = conn.execute(text("SELECT iceberg_type FROM iceberg_tables WHERE table_name = 'a_view'")).fetchone()
+    assert row is not None
+    assert row[0] == "VIEW"
+
+
+def test_commit_table_ignores_view_rows(warehouse: Path) -> None:
+    catalog = SqlCatalog(
+        name="test", uri=f"sqlite:///{warehouse.as_posix()}/test_commit_view.db", warehouse=f"file://{warehouse}"
+    )
+    catalog.create_namespace("ns")
+    schema = Schema(NestedField(1, "id", StringType(), required=True))
+    tbl = catalog.create_table(("ns", "a_view"), schema=schema)
+
+    # Tamper the table row into a VIEW (simulating external writer)
+    with catalog.engine.connect() as conn:
+        conn.execute(text("UPDATE iceberg_tables SET iceberg_type = 'VIEW' WHERE table_name = 'a_view'"))
+        conn.commit()
+
+    # Attempting to commit table updates must fail and not modify the VIEW row
+    with pytest.raises(CommitFailedException):
+        with tbl.update_schema() as update:
+            update.add_column("new_col", StringType())
+
+    # The view row must remain untouched with iceberg_type == 'VIEW'
     with catalog.engine.connect() as conn:
         row = conn.execute(text("SELECT iceberg_type FROM iceberg_tables WHERE table_name = 'a_view'")).fetchone()
     assert row is not None
