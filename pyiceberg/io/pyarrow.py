@@ -1716,6 +1716,7 @@ def _task_to_record_batches(
                 downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
                 projected_missing_fields=projected_missing_fields,
                 allow_timestamp_tz_mismatch=True,
+                dictionary_columns=dictionary_columns,
             )
 
 
@@ -1910,6 +1911,7 @@ def _to_requested_schema(
     projected_missing_fields: dict[int, Any] = EMPTY_DICT,
     allow_timestamp_tz_mismatch: bool = False,
     format_model: FileFormatModel | None = None,
+    dictionary_columns: tuple[str, ...] = (),
 ) -> pa.RecordBatch:
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
@@ -1922,6 +1924,7 @@ def _to_requested_schema(
             projected_missing_fields=projected_missing_fields,
             allow_timestamp_tz_mismatch=allow_timestamp_tz_mismatch,
             format_model=format_model,
+            dictionary_columns=dictionary_columns,
         ),
         ArrowAccessor(file_schema),
     )
@@ -1935,6 +1938,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
     _projected_missing_fields: dict[int, Any]
     _allow_timestamp_tz_mismatch: bool
     _format_model: FileFormatModel | None
+    _dictionary_columns: tuple[str, ...]
 
     def __init__(
         self,
@@ -1944,6 +1948,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         projected_missing_fields: dict[int, Any] = EMPTY_DICT,
         allow_timestamp_tz_mismatch: bool = False,
         format_model: FileFormatModel | None = None,
+        dictionary_columns: tuple[str, ...] = (),
     ) -> None:
         if include_field_ids and format_model is None:
             raise ValueError("format_model is required when include_field_ids=True")
@@ -1955,12 +1960,18 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         # Allowed for reading (aligns with Spark); disallowed for writing to enforce Iceberg spec's strict typing.
         self._allow_timestamp_tz_mismatch = allow_timestamp_tz_mismatch
         self._format_model = format_model
+        self._dictionary_columns = dictionary_columns
 
     def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
         file_field = self._file_schema.find_field(field.field_id)
 
         if field.field_type.is_primitive:
             if (target_type := schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)) != values.type:
+                if pa.types.is_dictionary(values.type):
+                    if field.name not in self._dictionary_columns:
+                        return values.cast(target_type)
+                    return values
+
                 if field.field_type == TimestampType():
                     source_tz_compatible = values.type.tz is None or (
                         self._allow_timestamp_tz_mismatch and values.type.tz in UTC_ALIASES
