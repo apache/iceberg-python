@@ -21,7 +21,7 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import PosixPath
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -52,6 +52,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation
+from pyiceberg.typedef import TableVersion
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -971,10 +972,21 @@ def test_upgrade_table_version(catalog: Catalog) -> None:
             transaction.upgrade_table_version(format_version=1)
     assert "Cannot downgrade v2 table to v1" in str(e.value)
 
+    with table_test_table_version.transaction() as transaction:
+        transaction.upgrade_table_version(format_version=3)
+
+    assert table_test_table_version.format_version == 3
+    assert table_test_table_version.metadata.next_row_id == 0
+
+    # the upgraded metadata must persist and reload from the catalog
+    reloaded = catalog.load_table("default.test_table_version")
+    assert reloaded.format_version == 3
+    assert reloaded.metadata.next_row_id == 0
+
     with pytest.raises(ValueError) as e:
         with table_test_table_version.transaction() as transaction:
-            transaction.upgrade_table_version(format_version=3)
-    assert "Unsupported table format version: 3" in str(e.value)
+            transaction.upgrade_table_version(format_version=cast(TableVersion, 4))
+    assert "Unsupported table format version: 4" in str(e.value)
 
 
 @pytest.mark.integration
