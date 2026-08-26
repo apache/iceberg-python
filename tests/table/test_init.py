@@ -18,7 +18,6 @@
 import json
 import uuid
 from copy import copy
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -2059,12 +2058,9 @@ def test_build_partition_predicate_with_evolved_fields(table_v2: Table) -> None:
     )
 
 
-def test_dynamic_partition_overwrite_with_partition_spec_evolution(warehouse: Path) -> None:
+def test_dynamic_partition_overwrite_with_partition_spec_evolution(catalog: Catalog) -> None:
     import pyarrow as pa
 
-    from pyiceberg.catalog.sql import SqlCatalog
-
-    catalog = SqlCatalog(name="test", uri=f"sqlite:///{warehouse.as_posix()}/test_dpo_evolve.db", warehouse=warehouse.as_uri())
     catalog.create_namespace("default")
     schema = Schema(
         NestedField(1, "category", StringType(), required=False),
