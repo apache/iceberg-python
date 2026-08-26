@@ -30,6 +30,8 @@ from pyiceberg.utils.datetime import (
     time_to_nanos,
     timestamp_to_nanos,
     timestamptz_to_nanos,
+    to_human_timestamp_ns,
+    to_human_timestamptz_ns,
 )
 
 timezones = [
@@ -169,3 +171,32 @@ def test_nanos_to_micros(nanos: int, micros: int) -> None:
 )
 def test_nanos_to_hours(nanos: int, hours: int) -> None:
     assert hours == nanos_to_hours(nanos)
+
+
+@pytest.mark.parametrize(
+    "nanos, expected",
+    [
+        (0, "1970-01-01T00:00:00.000000000"),
+        (1510871468123456789, "2017-11-16T22:31:08.123456789"),
+        # sub-second digits are zero padded to nine positions
+        (1510871468000000001, "2017-11-16T22:31:08.000000001"),
+        (-1, "1969-12-31T23:59:59.999999999"),
+    ],
+)
+def test_to_human_timestamp_ns(nanos: int, expected: str) -> None:
+    assert to_human_timestamp_ns(nanos) == expected
+    assert timestamp_to_nanos(expected) == nanos
+
+
+@pytest.mark.parametrize(
+    "nanos, expected",
+    [
+        (0, "1970-01-01T00:00:00.000000000+00:00"),
+        (1510871468123456789, "2017-11-16T22:31:08.123456789+00:00"),
+        (1510871468000000001, "2017-11-16T22:31:08.000000001+00:00"),
+        (-1, "1969-12-31T23:59:59.999999999+00:00"),
+    ],
+)
+def test_to_human_timestamptz_ns(nanos: int, expected: str) -> None:
+    assert to_human_timestamptz_ns(nanos) == expected
+    assert timestamptz_to_nanos(expected) == nanos
