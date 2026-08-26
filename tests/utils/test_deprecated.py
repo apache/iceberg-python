@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import warnings
 from unittest.mock import Mock, patch
 
 import pytest
@@ -88,3 +89,28 @@ def test_deprecation_notice_with_help_message() -> None:
         deprecation_notice("0.1.0", "0.2.0", "Please use something_else instead")
         == "Deprecated in 0.1.0, will be removed in 0.2.0. Please use something_else instead"
     )
+
+
+def test_deprecated_warning_points_at_the_caller() -> None:
+    """The warning is attributed to the code using the deprecated API, not to the helper."""
+
+    @deprecated(deprecated_in="0.1.0", removed_in="0.2.0")
+    def deprecated_method() -> None:
+        pass
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        deprecated_method()
+
+    assert len(caught) == 1
+    assert caught[0].filename == __file__
+
+
+def test_deprecation_message_points_at_the_caller() -> None:
+    """The warning is attributed to the code using the deprecated behavior, not to the helper."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        deprecation_message(deprecated_in="0.1.0", removed_in="0.2.0", help_message="Use something_else instead")
+
+    assert len(caught) == 1
+    assert caught[0].filename == __file__
