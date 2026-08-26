@@ -797,7 +797,7 @@ def test_projection_time_transform_literal_ns(
     bound_reference_timestamp_ns: BoundReference,
     bound_reference_timestamp: BoundReference,
 ) -> None:
-    """A nanosecond literal must project onto the same partition value as the equivalent microsecond one."""
+    # A nanosecond literal must project onto the same partition value as the equivalent microsecond one
     micros, nanos = 1667696874_000_000, 1667696874_000_000_000
 
     assert transform.project(

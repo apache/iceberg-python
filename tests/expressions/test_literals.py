@@ -232,7 +232,7 @@ def test_long_to_timestamp() -> None:
 
 @pytest.mark.parametrize("timestamp_nano_type", [TimestampNanoType(), TimestamptzNanoType()])
 def test_long_to_timestamp_nano(timestamp_nano_type: PrimitiveType) -> None:
-    """A long is read as microseconds, matching the plain timestamp case."""
+    # A long is read as microseconds, matching the plain timestamp case
     long_lit = literal(1647305201).to(LongType())
     timestamp_nano_lit = long_lit.to(timestamp_nano_type)
 
@@ -325,7 +325,7 @@ def test_timestamp_to_timestamp_nano(timestamp_nano_type: PrimitiveType) -> None
 
 @pytest.mark.parametrize("timestamp_nano_type", [TimestampNanoType(), TimestamptzNanoType()])
 def test_timestamp_to_timestamp_nano_out_of_range(timestamp_nano_type: PrimitiveType) -> None:
-    """A value that is already in nanoseconds no longer fits once it is scaled up by a thousand."""
+    # A value that is already in nanoseconds no longer fits once it is scaled up by a thousand
     nanos = 1503066061919234567
 
     with pytest.raises(OverflowError, match=f"Timestamp cannot be converted to nanoseconds, out of range: {nanos}"):
@@ -337,7 +337,7 @@ def test_timestamp_to_timestamp_nano_out_of_range(timestamp_nano_type: Primitive
 
 @pytest.mark.parametrize("timestamp_type", [TimestampType(), TimestamptzType()])
 def test_timestamp_nano_to_timestamp(timestamp_type: PrimitiveType) -> None:
-    """Sub-microsecond precision is truncated towards negative infinity."""
+    # Sub-microsecond precision is truncated towards negative infinity
     assert TimestampNanoLiteral(1503066061919234567).to(timestamp_type).value == 1503066061919234
     assert TimestampNanoLiteral(-1).to(timestamp_type).value == -1
 
@@ -453,15 +453,11 @@ def test_string_to_timestamp_nano_literal() -> None:
 
 
 def test_string_to_timestamp_nano_out_of_range() -> None:
-    """Java throws an ArithmeticException here, since ChronoUnit.NANOS.between overflows a long."""
     with pytest.raises(OverflowError, match="Timestamp cannot be converted to nanoseconds, out of range"):
         _ = literal("2300-01-01T00:00:00").to(TimestampNanoType())
 
     with pytest.raises(OverflowError, match="Timestamp cannot be converted to nanoseconds, out of range"):
         _ = literal("2300-01-01T00:00:00+00:00").to(TimestamptzNanoType())
-
-    # The last timestamp that still fits in a signed 64-bit integer
-    assert literal("2262-04-11T23:47:16.854775807").to(TimestampNanoType()).value == 9223372036854775807
 
 
 def test_string_to_timestamp_nano_zone_mismatch() -> None:

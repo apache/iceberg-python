@@ -168,7 +168,6 @@ def test_micros_to_nanos(micros: int, nanos: int) -> None:
 
 @pytest.mark.parametrize("micros", [9223372036854776, -9223372036854776])
 def test_micros_to_nanos_out_of_range(micros: int) -> None:
-    """Java raises an ArithmeticException here, since Math.multiplyExact overflows a long."""
     with pytest.raises(OverflowError, match=f"Timestamp cannot be converted to nanoseconds, out of range: {micros}"):
         micros_to_nanos(micros)
 
