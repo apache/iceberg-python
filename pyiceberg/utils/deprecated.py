@@ -60,5 +60,5 @@ def _deprecation_warning(message: str) -> None:
         warnings.warn(
             message,
             category=DeprecationWarning,
-            stacklevel=2,
+            stacklevel=3,
         )
