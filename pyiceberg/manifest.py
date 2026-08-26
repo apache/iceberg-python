@@ -19,13 +19,14 @@ from __future__ import annotations
 import math
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from copy import copy
 from enum import Enum
 from types import TracebackType
 from typing import (
     Any,
     Literal,
+    cast,
 )
 
 from cachetools import LRUCache
@@ -532,6 +533,26 @@ class DataFile(Record):
     def sort_order_id(self) -> int | None:
         return self._data[15]
 
+    @property
+    def first_row_id(self) -> int | None:
+        # V3-only field; absent on records bound to an older layout
+        return self._data[16] if len(self._data) > 16 else None
+
+    @property
+    def referenced_data_file(self) -> str | None:
+        # V3-only field; absent on records bound to an older layout
+        return self._data[17] if len(self._data) > 17 else None
+
+    @property
+    def content_offset(self) -> int | None:
+        # V3-only field; absent on records bound to an older layout
+        return self._data[18] if len(self._data) > 18 else None
+
+    @property
+    def content_size_in_bytes(self) -> int | None:
+        # V3-only field; absent on records bound to an older layout
+        return self._data[19] if len(self._data) > 19 else None
+
     # Spec ID should not be stored in the file
     _spec_id: int
 
@@ -774,6 +795,37 @@ MANIFEST_LIST_FILE_SCHEMAS: dict[int, Schema] = {
 
 MANIFEST_LIST_FILE_STRUCTS = {format_version: schema.as_struct() for format_version, schema in MANIFEST_LIST_FILE_SCHEMAS.items()}
 
+# Manifests and manifest lists are read with the schema of the latest known format version so that
+# fields added in newer versions (e.g. `first_row_id`) survive a read/write round trip. Reading an
+# older file with this schema is safe: the added fields are all optional and are filled with their
+# defaults (None) by Avro schema resolution. Deriving these from the schema dicts keeps them in sync
+# as new format versions are added. Manifest entries and manifest lists are versioned by separate
+# schema dicts, so each has its own latest-version constant rather than sharing one. Note these are
+# intentionally separate from DEFAULT_READ_VERSION, which remains the default layout for constructing
+# and writing records.
+LATEST_MANIFEST_ENTRY_READ_VERSION: TableVersion = cast(TableVersion, max(MANIFEST_ENTRY_SCHEMAS))
+LATEST_MANIFEST_LIST_READ_VERSION: TableVersion = cast(TableVersion, max(MANIFEST_LIST_FILE_SCHEMAS))
+
+
+def _layout_version_from_field_count(layouts: Mapping[int, Schema | StructType], field_count: int) -> TableVersion:
+    """Return the format version whose layout has exactly `field_count` fields.
+
+    A positional record (`DataFile`, `ManifestFile`, ...) does not carry the format version it was
+    bound to, but each version's layout has a distinct number of fields, so the field count uniquely
+    identifies it. This is used when rebinding a record to a newer layout to zip its `_data` against
+    the fields of the version it was originally bound to, rather than assuming a fixed version.
+
+    Identifying the version by field count is only valid while each version's layout has a distinct
+    field count, so this fails loudly if two versions share one rather than silently binding to the
+    wrong layout.
+    """
+    matches = [version for version, layout in layouts.items() if len(layout.fields) == field_count]
+    if len(matches) > 1:
+        raise ValueError(f"Ambiguous layout: versions {matches} all have {field_count} fields")
+    if not matches:
+        raise ValueError(f"Cannot determine layout version for record with {field_count} fields")
+    return cast(TableVersion, matches[0])
+
 
 POSITIONAL_DELETE_SCHEMA = Schema(
     NestedField(2147483546, "file_path", StringType()), NestedField(2147483545, "pos", IntegerType())
@@ -853,6 +905,17 @@ class ManifestFile(Record):
     def key_metadata(self) -> bytes | None:
         return self._data[14]
 
+    @property
+    def first_row_id(self) -> int | None:
+        # Only present when the record is bound to the V3 manifest list schema
+        return self._data[15] if len(self._data) > 15 else None
+
+    @first_row_id.setter
+    def first_row_id(self, value: int | None) -> None:
+        if len(self._data) <= 15:
+            raise ValueError("Cannot set first_row_id on a manifest file not bound to the V3 schema")
+        self._data[15] = value
+
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
 
@@ -873,7 +936,7 @@ class ManifestFile(Record):
         input_file = io.new_input(self.manifest_path)
         with AvroFile[ManifestEntry](
             input_file,
-            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
+            MANIFEST_ENTRY_SCHEMAS[LATEST_MANIFEST_ENTRY_READ_VERSION],
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
@@ -996,7 +1059,7 @@ def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
     """
     with AvroFile[ManifestFile](
         input_file,
-        MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION],
+        MANIFEST_LIST_FILE_SCHEMAS[LATEST_MANIFEST_LIST_READ_VERSION],
         read_types={-1: ManifestFile, 508: PartitionFieldSummary},
         read_enums={517: ManifestContent},
     ) as reader:
@@ -1286,6 +1349,78 @@ class ManifestWriterV2(ManifestWriter):
         return entry
 
 
+class ManifestWriterV3(ManifestWriterV2):
+    """Writes V3 manifest files.
+
+    The writer inherits the V2 sequence-number semantics; the V3 manifest entry
+    schema additionally carries `first_row_id`, `referenced_data_file`,
+    `content_offset` and `content_size_in_bytes` on the data file struct.
+
+    An optional `first_row_id` can be provided when rewriting a manifest whose
+    `first_row_id` is already known; it is carried into the produced manifest file
+    so the manifest list writer preserves it instead of assigning a new one. For
+    new manifests it is None and assigned when writing the manifest list.
+    """
+
+    _first_row_id: int | None
+
+    def __init__(
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        avro_compression: AvroCompressionCodec,
+        first_row_id: int | None = None,
+    ):
+        super().__init__(spec, schema, output_file, snapshot_id, avro_compression)
+        self._first_row_id = first_row_id
+
+    @property
+    def version(self) -> TableVersion:
+        return 3
+
+    def to_manifest_file(self) -> ManifestFile:
+        """Return the manifest file, bound to the V3 layout and carrying `first_row_id`."""
+        manifest_file = super().to_manifest_file()
+        args = {
+            field.name: value
+            for field, value in zip(MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION].fields, manifest_file._data, strict=True)
+        }
+        return ManifestFile.from_args(_table_format_version=3, first_row_id=self._first_row_id, **args)
+
+    def new_writer(self) -> AvroOutputFile[ManifestEntry]:
+        # Use the V3 record layout so the V3-only data file fields are written
+        return AvroOutputFile[ManifestEntry](
+            output_file=self._output_file,
+            file_schema=self._with_partition(3),
+            record_schema=self._with_partition(3),
+            schema_name="manifest_entry",
+            metadata=self._meta,
+        )
+
+    def _wrap_data_file(self, data_file: DataFile) -> DataFile:
+        """Rebind a data file to the V3 record layout."""
+        if len(data_file._data) >= len(DATA_FILE_TYPE[3].fields):
+            return data_file
+        source_version = _layout_version_from_field_count(DATA_FILE_TYPE, len(data_file._data))
+        args = {field.name: value for field, value in zip(DATA_FILE_TYPE[source_version].fields, data_file._data, strict=True)}
+        return DataFile.from_args(_table_format_version=3, **args)
+
+    def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
+        entry = super().prepare_entry(entry)
+        if len(entry.data_file._data) < len(DATA_FILE_TYPE[3].fields):
+            entry = ManifestEntry.from_args(
+                _table_format_version=3,
+                status=entry.status,
+                snapshot_id=entry.snapshot_id,
+                sequence_number=entry.sequence_number,
+                file_sequence_number=entry.file_sequence_number,
+                data_file=self._wrap_data_file(entry.data_file),
+            )
+        return entry
+
+
 def write_manifest(
     format_version: TableVersion,
     spec: PartitionSpec,
@@ -1293,11 +1428,16 @@ def write_manifest(
     output_file: OutputFile,
     snapshot_id: int,
     avro_compression: AvroCompressionCodec,
+    first_row_id: int | None = None,
 ) -> ManifestWriter:
+    if first_row_id is not None and format_version < 3:
+        raise ValueError(f"First-row-id is only supported for V3 tables: {format_version}")
     if format_version == 1:
         return ManifestWriterV1(spec, schema, output_file, snapshot_id, avro_compression)
     elif format_version == 2:
         return ManifestWriterV2(spec, schema, output_file, snapshot_id, avro_compression)
+    elif format_version == 3:
+        return ManifestWriterV3(spec, schema, output_file, snapshot_id, avro_compression, first_row_id)
     else:
         raise ValueError(f"Cannot write manifest for table version: {format_version}")
 
@@ -1421,6 +1561,81 @@ class ManifestListWriterV2(ManifestListWriter):
         return wrapped_manifest_file
 
 
+class ManifestListWriterV3(ManifestListWriterV2):
+    """Writes V3 manifest lists, assigning `first_row_id` to data manifests.
+
+    Follows the spec's First Row ID Assignment: existing `first_row_id` values are
+    preserved, delete manifests are never assigned one, and data manifests without a
+    `first_row_id` are assigned a running value starting at the snapshot's
+    `first-row-id`, advanced by each assigned manifest's existing and added row counts.
+    """
+
+    _next_row_id: int
+
+    def __init__(
+        self,
+        output_file: OutputFile,
+        snapshot_id: int,
+        parent_snapshot_id: int | None,
+        sequence_number: int,
+        compression: AvroCompressionCodec,
+        first_row_id: int,
+    ):
+        super().__init__(output_file, snapshot_id, parent_snapshot_id, sequence_number, compression)
+        self._format_version = 3
+        self._meta = {
+            **self._meta,
+            "first-row-id": str(first_row_id),
+            "format-version": "3",
+        }
+        self._next_row_id = first_row_id
+
+    def __enter__(self) -> ManifestListWriter:
+        """Open the writer for writing, using the V3 record layout so `first_row_id` is written."""
+        self._writer = AvroOutputFile[ManifestFile](
+            output_file=self._output_file,
+            record_schema=MANIFEST_LIST_FILE_SCHEMAS[3],
+            file_schema=MANIFEST_LIST_FILE_SCHEMAS[3],
+            schema_name="manifest_file",
+            metadata=self._meta,
+        )
+        self._writer.__enter__()
+        return self
+
+    @property
+    def next_row_id(self) -> int:
+        """The row ID after the last assigned one; the table's `next-row-id` after this snapshot."""
+        return self._next_row_id
+
+    def _wrap(self, manifest_file: ManifestFile) -> ManifestFile:
+        """Rebind a manifest file to the V3 record layout.
+
+        The manifest file's original layout version is recovered from its field count (each version's
+        layout has a distinct number of fields) so its positional data is zipped against the fields it
+        was actually bound to. Rebinding always produces a fresh record, so mutating the returned
+        manifest file (e.g. assigning `first_row_id`) never leaks back to the caller's record.
+        """
+        source_version = _layout_version_from_field_count(MANIFEST_LIST_FILE_SCHEMAS, len(manifest_file._data))
+        args = {
+            field.name: value
+            for field, value in zip(MANIFEST_LIST_FILE_SCHEMAS[source_version].fields, manifest_file._data, strict=True)
+        }
+        return ManifestFile.from_args(_table_format_version=3, **args)
+
+    def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
+        wrapped_manifest_file = super().prepare_manifest(self._wrap(manifest_file))
+
+        if wrapped_manifest_file.content == ManifestContent.DATA and wrapped_manifest_file.first_row_id is None:
+            if wrapped_manifest_file.existing_rows_count is None or wrapped_manifest_file.added_rows_count is None:
+                # assigning first-row-id with unknown row counts would overlap row ID ranges
+                raise ValueError(
+                    f"Cannot assign first-row-id to manifest with unknown row counts: {wrapped_manifest_file.manifest_path}"
+                )
+            wrapped_manifest_file.first_row_id = self._next_row_id
+            self._next_row_id += wrapped_manifest_file.existing_rows_count + wrapped_manifest_file.added_rows_count
+        return wrapped_manifest_file
+
+
 def write_manifest_list(
     format_version: TableVersion,
     output_file: OutputFile,
@@ -1428,6 +1643,7 @@ def write_manifest_list(
     parent_snapshot_id: int | None,
     sequence_number: int | None,
     avro_compression: AvroCompressionCodec,
+    first_row_id: int | None = None,
 ) -> ManifestListWriter:
     if format_version == 1:
         return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id, avro_compression)
@@ -1435,5 +1651,11 @@ def write_manifest_list(
         if sequence_number is None:
             raise ValueError(f"Sequence-number is required for V2 tables: {sequence_number}")
         return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number, avro_compression)
+    elif format_version == 3:
+        if sequence_number is None:
+            raise ValueError(f"Sequence-number is required for V3 tables: {sequence_number}")
+        if first_row_id is None:
+            raise ValueError("First-row-id is required for V3 tables")
+        return ManifestListWriterV3(output_file, snapshot_id, parent_snapshot_id, sequence_number, avro_compression, first_row_id)
     else:
         raise ValueError(f"Cannot write manifest list for table version: {format_version}")
