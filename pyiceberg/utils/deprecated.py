@@ -25,13 +25,12 @@ def deprecated(deprecated_in: str, removed_in: str, help_message: str | None = N
 
     Adding this will result in a warning being emitted when the function is used.
     """
-    if help_message is not None:
-        help_message = f" {help_message}."
+    help_suffix = f" {help_message}." if help_message else ""
 
     def decorator(func: Callable):  # type: ignore
         @functools.wraps(func)
         def new_func(*args: Any, **kwargs: Any) -> Any:
-            message = f"Call to {func.__name__}, deprecated in {deprecated_in}, will be removed in {removed_in}.{help_message}"
+            message = f"Call to {func.__name__}, deprecated in {deprecated_in}, will be removed in {removed_in}.{help_suffix}"
 
             _deprecation_warning(message)
 
@@ -44,7 +43,8 @@ def deprecated(deprecated_in: str, removed_in: str, help_message: str | None = N
 
 def deprecation_notice(deprecated_in: str, removed_in: str, help_message: str | None) -> str:
     """Return a deprecation notice."""
-    return f"Deprecated in {deprecated_in}, will be removed in {removed_in}. {help_message}"
+    help_suffix = f" {help_message}" if help_message else ""
+    return f"Deprecated in {deprecated_in}, will be removed in {removed_in}.{help_suffix}"
 
 
 def deprecation_message(deprecated_in: str, removed_in: str, help_message: str | None) -> None:
