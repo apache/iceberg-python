@@ -129,6 +129,7 @@ HIVE_KERBEROS_AUTH = "hive.kerberos-authentication"
 HIVE_KERBEROS_AUTH_DEFAULT = False
 HIVE_KERBEROS_SERVICE_NAME = "hive.kerberos-service-name"
 HIVE_KERBEROS_SERVICE_NAME_DEFAULT = "hive"
+HIVE_KERBEROS_SERVICE_HOST = "hive.kerberos-service-host"
 
 LOCK_CHECK_MIN_WAIT_TIME = "lock-check-min-wait-time"
 LOCK_CHECK_MAX_WAIT_TIME = "lock-check-max-wait-time"
@@ -155,10 +156,12 @@ class _HiveClient:
         ugi: str | None = None,
         kerberos_auth: bool | None = HIVE_KERBEROS_AUTH_DEFAULT,
         kerberos_service_name: str | None = HIVE_KERBEROS_SERVICE_NAME,
+        kerberos_service_host: str | None = None,
     ):
         self._uri = uri
         self._kerberos_auth = kerberos_auth
         self._kerberos_service_name = kerberos_service_name
+        self._kerberos_service_host = kerberos_service_host
         self._ugi = ugi.split(":") if ugi else None
         self._transport = self._init_thrift_transport()
         self._was_opened = False
@@ -169,7 +172,8 @@ class _HiveClient:
         if not self._kerberos_auth:
             return TTransport.TBufferedTransport(socket)
         else:
-            return TTransport.TSaslClientTransport(socket, host=url_parts.hostname, service=self._kerberos_service_name)
+            host = self._kerberos_service_host or url_parts.hostname
+            return TTransport.TSaslClientTransport(socket, host=host, service=self._kerberos_service_name)
 
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
@@ -316,6 +320,7 @@ class HiveCatalog(MetastoreCatalog):
                     properties.get("ugi"),
                     property_as_bool(properties, HIVE_KERBEROS_AUTH, HIVE_KERBEROS_AUTH_DEFAULT),
                     properties.get(HIVE_KERBEROS_SERVICE_NAME, HIVE_KERBEROS_SERVICE_NAME_DEFAULT),
+                    properties.get(HIVE_KERBEROS_SERVICE_HOST),
                 )
             except BaseException as e:
                 last_exception = e

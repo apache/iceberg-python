@@ -749,6 +749,7 @@ catalog:
 | hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode    |
 | hive.kerberos-authentication | true    | Using authentication via Kerberos    |
 | hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
+| hive.kerberos-service-host   | hive-host | Kerberos service host (default URI host) |
 | ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
 
 When using Hive 2.x, make sure to set the compatibility flag:
