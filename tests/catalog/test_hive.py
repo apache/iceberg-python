@@ -1465,6 +1465,7 @@ def test_kerberized_client_uses_fresh_transport_on_reuse(
         assert first_transport_id != second_transport_id
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Kerberos/puresasl not available on Windows")
 def test_kerberized_client_uses_configured_service_host() -> None:
     """The SASL host must come from hive.kerberos-service-host, or the URI host when unset."""
     configured = _HiveClient(
