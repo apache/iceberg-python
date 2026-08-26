@@ -29,9 +29,9 @@ from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table, UpsertResult
+from pyiceberg.table import Table, UpsertResult, upsert_util
 from pyiceberg.table.snapshots import Operation
-from pyiceberg.table.upsert_util import create_match_filter
+from pyiceberg.table.upsert_util import create_match_filter, get_rows_to_update
 from pyiceberg.transforms import DayTransform
 from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
 from tests.catalog.test_base import InMemoryCatalog
@@ -444,6 +444,240 @@ def test_create_match_filter_single_condition() -> None:
         EqualTo(term=Reference(name="order_id"), literal=LongLiteral(101)),
         EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1)),
     )
+
+
+def test_get_rows_to_update_compares_nulls() -> None:
+    """A null is only unchanged when the other side is null as well."""
+    schema = pa.schema([pa.field("id", pa.int32()), pa.field("value", pa.string())])
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "value": None},
+            {"id": 2, "value": "b"},
+            {"id": 3, "value": None},
+            {"id": 4, "value": "d"},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "value": None},  # null to null, unchanged
+            {"id": 2, "value": None},  # value to null, updated
+            {"id": 3, "value": "c"},  # null to value, updated
+            {"id": 4, "value": "d"},  # value to value, unchanged
+        ],
+        schema=schema,
+    )
+
+    assert get_rows_to_update(source, target, ["id"]).sort_by("id") == pa.Table.from_pylist(
+        [
+            {"id": 2, "value": None},
+            {"id": 3, "value": "c"},
+        ],
+        schema=schema,
+    )
+
+
+def test_get_rows_to_update_when_a_column_is_missing() -> None:
+    """A source that does not carry every target column would silently null the ones it omits."""
+    schema = pa.schema([pa.field("id", pa.int32()), pa.field("value", pa.string())])
+    target = pa.Table.from_pylist([{"id": 1, "value": "a"}], schema=schema)
+    source = pa.Table.from_pylist([{"id": 1}], schema=pa.schema([pa.field("id", pa.int32())]))
+
+    with pytest.raises(ValueError, match="field names are not matching"):
+        get_rows_to_update(source, target, ["id"])
+
+
+def test_get_rows_to_update_compares_columns_of_a_different_type() -> None:
+    """PyArrow refuses to compare a naive timestamp with a zoned one, the source is cast to compare.
+
+    Comparing the two in Python would call the row changed on every run, though it holds the
+    same instant.
+    """
+    target = pa.table({"id": pa.array([1, 2], pa.int32()), "ts": pa.array([1, 2], pa.timestamp("us", tz="UTC"))})
+    source = pa.table({"id": pa.array([1, 2], pa.int32()), "ts": pa.array([1, 9], pa.timestamp("us"))})
+
+    assert get_rows_to_update(source, target, ["id"]).column("id").to_pylist() == [2]
+
+
+def test_get_rows_to_update_when_the_cast_is_refused() -> None:
+    """A cast PyArrow refuses leaves the comparison in Python rather than raising."""
+    source = pa.table(
+        {
+            "id": pa.array([1], pa.int32()),
+            "value": pa.array([[("a", 1)]], type=pa.map_(pa.string(), pa.int32())),
+        }
+    )
+    target = pa.table(
+        {
+            "id": pa.array([1], pa.int32()),
+            "value": pa.array([[{"a": 1}]], type=pa.list_(pa.struct([("a", pa.int32())]))),
+        }
+    )
+
+    assert len(get_rows_to_update(source, target, ["id"])) == 1
+
+
+def test_get_rows_to_update_compares_a_struct_that_is_null() -> None:
+    """The fields of a null struct hold no meaningful value, so the struct itself decides."""
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("nested", pa.struct([pa.field("a", pa.int32()), pa.field("b", pa.string())])),
+        ]
+    )
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "nested": None},
+            {"id": 2, "nested": None},
+            {"id": 3, "nested": {"a": 1, "b": "x"}},
+            {"id": 4, "nested": {"a": 1, "b": "x"}},
+            {"id": 5, "nested": {"a": 1, "b": None}},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "nested": None},  # unchanged
+            {"id": 2, "nested": {"a": 1, "b": "x"}},  # null to a struct
+            {"id": 3, "nested": None},  # a struct to null
+            {"id": 4, "nested": {"a": 1, "b": "y"}},  # one field differs
+            {"id": 5, "nested": {"a": 1, "b": None}},  # unchanged, with a null field
+        ],
+        schema=schema,
+    )
+
+    assert [row["id"] for row in get_rows_to_update(source, target, ["id"]).sort_by("id").to_pylist()] == [2, 3, 4]
+
+
+def test_get_rows_to_update_compares_a_struct_whose_fields_are_in_another_order() -> None:
+    """The fields of a struct are compared by position, so the two have to be in the same order.
+
+    They are: two structs of the same fields in another order are not of the same type, and the
+    cast that follows puts the fields of the source in the order of the target.
+    """
+    source_type = pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.string())])
+    target_type = pa.struct([pa.field("b", pa.string()), pa.field("a", pa.int64())])
+    source = pa.table({"id": pa.array([1, 2]), "nested": pa.array([{"a": 1, "b": "x"}, {"a": 2, "b": "y"}], type=source_type)})
+    target = pa.table({"id": pa.array([1, 2]), "nested": pa.array([{"a": 1, "b": "x"}, {"a": 9, "b": "y"}], type=target_type)})
+
+    assert get_rows_to_update(source, target, ["id"]).column("id").to_pylist() == [2]
+
+
+def test_get_rows_to_update_compares_a_nested_struct() -> None:
+    """A struct holding a struct is compared by recursing into the fields of both."""
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("outer", pa.struct([pa.field("inner", pa.struct([pa.field("value", pa.int32())]))])),
+        ]
+    )
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "outer": {"inner": {"value": 1}}},
+            {"id": 2, "outer": {"inner": {"value": 1}}},
+            {"id": 3, "outer": {"inner": None}},
+            {"id": 4, "outer": {"inner": {"value": 1}}},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "outer": {"inner": {"value": 1}}},  # unchanged
+            {"id": 2, "outer": {"inner": {"value": 2}}},  # the innermost value differs
+            {"id": 3, "outer": {"inner": {"value": 1}}},  # a null inner struct to a struct
+            {"id": 4, "outer": {"inner": None}},  # a struct to a null inner struct
+        ],
+        schema=schema,
+    )
+
+    assert [row["id"] for row in get_rows_to_update(source, target, ["id"]).sort_by("id").to_pylist()] == [2, 3, 4]
+
+
+def test_get_rows_to_update_compares_a_list_column() -> None:
+    """PyArrow cannot compare list columns either, and unlike a struct they have no fields to compare."""
+    schema = pa.schema([pa.field("id", pa.int32()), pa.field("values", pa.list_(pa.int32()))])
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "values": [1, 2]},
+            {"id": 2, "values": [1, 2]},
+            {"id": 3, "values": None},
+            {"id": 4, "values": [1, 2]},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "values": [1, 2]},  # unchanged
+            {"id": 2, "values": [2, 1]},  # same values, different order
+            {"id": 3, "values": [1]},  # null to a list
+            {"id": 4, "values": None},  # a list to null
+        ],
+        schema=schema,
+    )
+
+    assert [row["id"] for row in get_rows_to_update(source, target, ["id"]).sort_by("id").to_pylist()] == [2, 3, 4]
+
+
+def test_get_rows_to_update_compares_a_column_at_a_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The comparison has to walk the columns: walking the cells costs a PyArrow round trip each."""
+    num_columns = 12
+    comparisons = []
+
+    compare = upsert_util._get_changed_mask
+
+    def record(source: pa.ChunkedArray, target: pa.ChunkedArray) -> pa.ChunkedArray:
+        comparisons.append((len(source), len(target)))
+        return compare(source, target)
+
+    monkeypatch.setattr(upsert_util, "_get_changed_mask", record)
+
+    for num_rows in (50, 500):
+        comparisons.clear()
+        table = pa.table({"pk": pa.array(range(num_rows)), **{f"col_{i}": pa.array([i] * num_rows) for i in range(num_columns)}})
+
+        assert len(get_rows_to_update(table, table, ["pk"])) == 0
+        # One comparison per column, whatever the number of rows behind them
+        assert len(comparisons) == num_columns
+
+
+def test_get_rows_to_update_compares_a_struct_by_its_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A struct cannot go through the comparison in Python, which builds a dict per row and column.
+
+    The two sides carry the types the upsert path gives them: a scan reads a string as a
+    large_string, so the type of the target struct does not match the one of the dataframe.
+    """
+    by_field = []
+    compare_struct = upsert_util._get_changed_struct_mask
+
+    def record(source: pa.ChunkedArray, target: pa.ChunkedArray) -> pa.ChunkedArray:
+        by_field.append(source.type)
+        return compare_struct(source, target)
+
+    monkeypatch.setattr(upsert_util, "_get_changed_struct_mask", record)
+
+    source = pa.table(
+        {
+            "id": pa.array([1, 2], pa.int32()),
+            "nested": pa.array([{"a": "x"}, {"a": "y"}], type=pa.struct([pa.field("a", pa.string())])),
+        }
+    )
+    target = pa.table(
+        {
+            "id": pa.array([1, 2], pa.int32()),
+            "nested": pa.array([{"a": "x"}, {"a": "z"}], type=pa.struct([pa.field("a", pa.large_string())])),
+        }
+    )
+
+    assert get_rows_to_update(source, target, ["id"]).column("id").to_pylist() == [2]
+    assert by_field
+
+
+def test_get_rows_to_update_without_any_match() -> None:
+    schema = pa.schema([pa.field("id", pa.int32()), pa.field("value", pa.string())])
+    target = pa.Table.from_pylist([{"id": 1, "value": "a"}], schema=schema)
+    source = pa.Table.from_pylist([{"id": 2, "value": "b"}], schema=schema)
+
+    assert get_rows_to_update(source, target, ["id"]) == schema.empty_table()
 
 
 def test_upsert_with_duplicate_rows_in_table(catalog: Catalog) -> None:
