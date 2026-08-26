@@ -2064,7 +2064,7 @@ def test_dynamic_partition_overwrite_with_partition_spec_evolution(warehouse: Pa
 
     from pyiceberg.catalog.sql import SqlCatalog
 
-    catalog = SqlCatalog(name="test", uri=f"sqlite:///{warehouse.as_posix()}/test_dpo_evolve.db", warehouse=f"file://{warehouse}")
+    catalog = SqlCatalog(name="test", uri=f"sqlite:///{warehouse.as_posix()}/test_dpo_evolve.db", warehouse=warehouse.as_uri())
     catalog.create_namespace("default")
     schema = Schema(
         NestedField(1, "category", StringType(), required=False),

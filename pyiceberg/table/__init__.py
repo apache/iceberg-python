@@ -433,7 +433,7 @@ class Transaction:
         return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
 
     def _get_evolved_partition_fields(self, current_spec: PartitionSpec) -> set[str]:
-        """Find partition fields in the current spec that were absent in any historical partitioned spec."""
+        """Find partition fields in the current spec that were absent in at least one historical partitioned spec."""
         historical_specs = [
             spec
             for spec in self.table_metadata.specs().values()
