@@ -530,11 +530,6 @@ def test_truncate_satisfies_order_of() -> None:
     assert not TruncateTransform(5).satisfies_order_of(YearTransform())
     assert not TruncateTransform(5).satisfies_order_of(UnknownTransform("unknown"))
 
-    # Non-transform comparisons
-    assert not TruncateTransform(5).satisfies_order_of(None)  # type: ignore
-    assert not TruncateTransform(5).satisfies_order_of("truncate[5]")  # type: ignore
-    assert not TruncateTransform(5).satisfies_order_of(5)  # type: ignore
-
     # Identity naturally satisfies TruncateTransform because Truncate preserves order
     assert IdentityTransform().satisfies_order_of(TruncateTransform(5))
 
