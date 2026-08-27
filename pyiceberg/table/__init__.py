@@ -1893,15 +1893,19 @@ class Table:
 
         return bd.read_iceberg_table(self)
 
-    def to_polars(self) -> pl.LazyFrame:
+    def to_polars(self, **kwargs: Any) -> pl.LazyFrame:
         """Lazily read from this Apache Iceberg table.
 
+        Args:
+            **kwargs: Additional keyword arguments to forward to :func:`polars.scan_iceberg`
+                (e.g. ``storage_options``, ``snapshot_id``, ``reader_override``).
+
         Returns:
-            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table
+            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table.
         """
         import polars as pl
 
-        return pl.scan_iceberg(self)
+        return pl.scan_iceberg(self, **kwargs)
 
     def __datafusion_table_provider__(self, session: Any | None = None) -> IcebergDataFusionTable:
         """Return the DataFusion table provider PyCapsule interface.
