@@ -514,11 +514,34 @@ def test_truncate_method(type_var: PrimitiveType, value: Any, expected_human_str
 
 
 def test_truncate_satisfies_order_of() -> None:
+    # Width comparison
     assert TruncateTransform(5).satisfies_order_of(TruncateTransform(3))
     assert TruncateTransform(5).satisfies_order_of(TruncateTransform(5))
     assert not TruncateTransform(3).satisfies_order_of(TruncateTransform(5))
+    assert TruncateTransform(10).satisfies_order_of(TruncateTransform(1))
+    assert not TruncateTransform(1).satisfies_order_of(TruncateTransform(10))
+    assert TruncateTransform(1).satisfies_order_of(TruncateTransform(1))
+
+    # Cross-transform comparisons
     assert not TruncateTransform(5).satisfies_order_of(BucketTransform(5))
     assert not TruncateTransform(5).satisfies_order_of(IdentityTransform())
+    assert not TruncateTransform(5).satisfies_order_of(VoidTransform())
+    assert not TruncateTransform(5).satisfies_order_of(DayTransform())
+    assert not TruncateTransform(5).satisfies_order_of(YearTransform())
+    assert not TruncateTransform(5).satisfies_order_of(UnknownTransform("unknown"))
+
+    # Non-transform comparisons
+    assert not TruncateTransform(5).satisfies_order_of(None)  # type: ignore
+    assert not TruncateTransform(5).satisfies_order_of("truncate[5]")  # type: ignore
+    assert not TruncateTransform(5).satisfies_order_of(5)  # type: ignore
+
+    # Identity naturally satisfies TruncateTransform because Truncate preserves order
+    assert IdentityTransform().satisfies_order_of(TruncateTransform(5))
+
+    # Verify unused source_type was cleanly removed
+    t = TruncateTransform(5)
+    assert not hasattr(t, "source_type")
+    assert not hasattr(t, "_source_type")
 
 
 def test_unknown_transform() -> None:

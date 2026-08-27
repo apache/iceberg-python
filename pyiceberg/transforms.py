@@ -779,7 +779,6 @@ class TruncateTransform(Transform[S, S]):
     """
 
     root: str = Field()
-    _source_type: IcebergType = PrivateAttr()
     _width: PositiveInt = PrivateAttr()
 
     def __init__(self, width: int, **data: Any):
@@ -795,10 +794,6 @@ class TruncateTransform(Transform[S, S]):
     @property
     def preserves_order(self) -> bool:
         return True
-
-    @property
-    def source_type(self) -> IcebergType:
-        return self._source_type
 
     def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         field_type = pred.term.ref().field.field_type
