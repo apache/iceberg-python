@@ -19,7 +19,7 @@ FROM apache/spark:${BASE_IMAGE_SPARK_VERSION}
 
 # Dependency versions - keep these compatible
 # Changing these will invalidate the JAR download cache layer
-ARG ICEBERG_VERSION=1.10.1
+ARG ICEBERG_VERSION=1.11.0
 ARG ICEBERG_SPARK_RUNTIME_VERSION=4.0_2.13
 ARG HADOOP_VERSION=3.4.1
 ARG AWS_SDK_VERSION=2.24.6

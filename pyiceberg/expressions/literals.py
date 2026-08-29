@@ -251,7 +251,7 @@ class LongAboveMax(AboveMax[int], Singleton):
 
     @singledispatchmethod
     def to(self, type_var: IcebergType) -> Literal:  # type: ignore
-        raise TypeError("Cannot change the type of IntAboveMax")
+        raise TypeError("Cannot change the type of LongAboveMax")
 
     @to.register(LongType)
     def _(self, _: LongType) -> Literal[int]:
@@ -264,7 +264,7 @@ class LongBelowMin(BelowMin[int], Singleton):
 
     @singledispatchmethod
     def to(self, type_var: IcebergType) -> Literal:  # type: ignore
-        raise TypeError("Cannot change the type of IntBelowMin")
+        raise TypeError("Cannot change the type of LongBelowMin")
 
     @to.register(LongType)
     def _(self, _: LongType) -> Literal[int]:
@@ -317,6 +317,10 @@ class LongLiteral(Literal[int]):
 
     @to.register(FloatType)
     def _(self, _: FloatType) -> Literal[float]:
+        if FloatType.max < self.value:
+            return FloatAboveMax()
+        elif self.value < FloatType.min:
+            return FloatBelowMin()
         return FloatLiteral(float(self.value))
 
     @to.register(DoubleType)
@@ -325,6 +329,10 @@ class LongLiteral(Literal[int]):
 
     @to.register(DateType)
     def _(self, _: DateType) -> Literal[int]:
+        if IntegerType.max < self.value:
+            return IntAboveMax()
+        elif IntegerType.min > self.value:
+            return IntBelowMin()
         return DateLiteral(self.value)
 
     @to.register(TimeType)
@@ -526,9 +534,9 @@ class DecimalLiteral(Literal[Decimal]):
     def _(self, _: LongType) -> Literal[int]:
         value_int = int(self.value.to_integral_value())
         if value_int > LongType.max:
-            return IntAboveMax()
+            return LongAboveMax()
         elif value_int < LongType.min:
-            return IntBelowMin()
+            return LongBelowMin()
         else:
             return LongLiteral(value_int)
 

@@ -98,7 +98,7 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     @override
-    def supports_server_side_planning(self) -> bool:
+    def supports_server_side_planning(self, table_config: Properties = EMPTY_DICT) -> bool:
         return False
 
     @override

@@ -395,3 +395,48 @@ for catalog_name, catalog in catalogs.items():
     )
     spark.sql(f"ALTER TABLE {catalog_name}.default.test_empty_scan_ordered_str WRITE ORDERED BY id")
     spark.sql(f"INSERT INTO {catalog_name}.default.test_empty_scan_ordered_str VALUES 'a', 'c'")
+
+    # Append scan fixture. Snapshots written:
+    #   0: append (1, 'a')
+    #   1: append (2, 'b')
+    #   2: append (3, 'c'), (4, 'b')
+    #   3: compact -- rewrites the two letter='b' files into one (operation=replace)
+    #   4: delete number=2
+    #   5: append (5, 'd', 100) -- on evolved schema
+    #   6: replace table -- lineage break
+    spark.sql(
+        f"""
+            CREATE OR REPLACE TABLE {catalog_name}.default.test_incremental_read (
+                number integer,
+                letter string
+            )
+            USING iceberg
+            PARTITIONED BY (letter)
+            TBLPROPERTIES ('format-version'='2')
+            """
+    )
+    spark.sql(f"INSERT INTO {catalog_name}.default.test_incremental_read VALUES (1, 'a')")
+    spark.sql(f"INSERT INTO {catalog_name}.default.test_incremental_read VALUES (2, 'b')")
+    spark.sql(f"INSERT INTO {catalog_name}.default.test_incremental_read VALUES (3, 'c'), (4, 'b')")
+    # Compact: letter='b' has two files (from the previous two appends); rewrite them into one.
+    # This commits a non-append (replace) snapshot whose rewritten file the append scan must not pick up.
+    spark.sql(
+        f"""
+            CALL {catalog_name}.system.rewrite_data_files(
+                table => 'default.test_incremental_read',
+                options => map('min-input-files', '2')
+            )
+            """
+    )
+    spark.sql(f"DELETE FROM {catalog_name}.default.test_incremental_read WHERE number = 2")
+    spark.sql(f"ALTER TABLE {catalog_name}.default.test_incremental_read ADD COLUMN extra int")
+    spark.sql(f"INSERT INTO {catalog_name}.default.test_incremental_read VALUES (5, 'd', 100)")
+    spark.sql(
+        f"""
+            REPLACE TABLE {catalog_name}.default.test_incremental_read
+            USING iceberg
+            PARTITIONED BY (letter)
+            TBLPROPERTIES ('format-version'='2')
+            AS SELECT number, letter, extra FROM {catalog_name}.default.test_incremental_read
+            """
+    )

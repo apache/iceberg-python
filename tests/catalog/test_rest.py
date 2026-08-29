@@ -104,6 +104,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_DELETE_TABLE,
     Capability.V1_RENAME_TABLE,
     Capability.V1_REGISTER_TABLE,
+    Capability.V1_LOAD_CREDENTIALS,
     Capability.V1_LIST_VIEWS,
     Capability.V1_LOAD_VIEW,
     Capability.V1_VIEW_EXISTS,
@@ -1802,8 +1803,6 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
         identifier=("fokko", "fokko2"),
         schema=table_schema_simple,
         view_version=ViewVersion(
-            version_id=1,
-            timestamp_ms=12345,
             schema_id=1,
             summary={"engine-name": "spark", "engineVersion": "3.3"},
             representations=[
@@ -1847,8 +1846,6 @@ def test_create_view_409(
             identifier=("fokko", "fokko2"),
             schema=table_schema_simple,
             view_version=ViewVersion(
-                version_id=1,
-                timestamp_ms=12345,
                 schema_id=1,
                 summary={"engine-name": "spark", "engineVersion": "3.3"},
                 representations=[],
@@ -2916,6 +2913,60 @@ class TestRestCatalogClose:
 
         assert catalog.supports_server_side_planning() is True
 
+    def test_server_side_planning_enabled_by_table_config(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.supports_server_side_planning() is False
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.SERVER.value}) is True
+
+    def test_server_side_planning_table_config_overrides_catalog_property(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"scan-planning-mode": ScanPlanningMode.SERVER.value},
+        )
+
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.CLIENT.value}) is False
+
+    def test_server_side_planning_table_config_ignored_when_endpoint_unsupported(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.SERVER.value}) is False
+
+    def test_server_side_planning_invalid_mode(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        with pytest.raises(ValueError, match="Invalid scan-planning-mode: remote"):
+            catalog.supports_server_side_planning({"scan-planning-mode": "remote"})
+
+    def test_server_side_planning_invalid_catalog_mode_falls_back_to_default(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"scan-planning-mode": "servr"},
+        )
+
+        # Bad catalog config is ignored; default remains client-side planning.
+        assert catalog.supports_server_side_planning() is False
+
+    def test_server_side_planning_table_override_survives_invalid_catalog_mode(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"scan-planning-mode": "servr"},
+        )
+
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.SERVER.value}) is True
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.CLIENT.value}) is False
+
     def test_supported_endpoint(self, requests_mock: Mocker) -> None:
         requests_mock.get(
             f"{TEST_URI}v1/config",
@@ -3201,6 +3252,38 @@ def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_me
     assert table.io.properties["s3.access-key-id"] == "vended-key"
     assert table.io.properties["s3.secret-access-key"] == "vended-secret"
     assert table.io.properties["s3.session-token"] == "vended-token"
+
+
+def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
+        json={
+            "storage-credentials": [
+                {
+                    "prefix": "s3://warehouse/database/",
+                    "config": {"s3.access-key-id": "short-prefix-key"},
+                },
+                {
+                    "prefix": "s3://warehouse/database/table",
+                    "config": {
+                        "s3.access-key-id": "long-prefix-key",
+                        "s3.secret-access-key": "long-prefix-secret",
+                    },
+                },
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    credentials = catalog.load_credentials(
+        ("fokko", "table"),
+        "s3://warehouse/database/table/data/file.parquet",
+    )
+
+    assert credentials == {"s3.access-key-id": "long-prefix-key", "s3.secret-access-key": "long-prefix-secret"}
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials"
 
 
 def test_load_table_without_storage_credentials(

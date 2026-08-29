@@ -670,7 +670,6 @@ def test_rest_drop_view(
 
 
 @pytest.mark.integration
-@pytest.mark.skip(reason="Requires Iceberg REST Fixtures 1.11.x")
 def test_rest_custom_namespace_separator(rest_catalog: RestCatalog, table_schema_simple: Schema) -> None:
     """
     Tests that the REST catalog correctly picks up the namespace-separator from the config endpoint.
@@ -742,19 +741,19 @@ def test_namespace_with_slash(test_catalog: Catalog) -> None:
 
     namespace = ("new/db",)
 
-    if test_catalog.namespace_exists(namespace):
+    if namespace in test_catalog.list_namespaces():
         test_catalog.drop_namespace(namespace)
 
-    assert not test_catalog.namespace_exists(namespace)
+    assert namespace not in test_catalog.list_namespaces()
 
     test_catalog.create_namespace(namespace)
-    assert test_catalog.namespace_exists(namespace)
+    assert namespace in test_catalog.list_namespaces()
 
     properties = test_catalog.load_namespace_properties(namespace)
     assert properties is not None
 
     test_catalog.drop_namespace(namespace)
-    assert not test_catalog.namespace_exists(namespace)
+    assert namespace not in test_catalog.list_namespaces()
 
 
 @pytest.mark.integration
