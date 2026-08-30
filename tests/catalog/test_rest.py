@@ -2015,6 +2015,21 @@ def test_delete_table_204(rest_mock: Mocker) -> None:
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(("example", "fokko"))
 
 
+def test_drop_table_serializes_purge_requested_as_lowercase_bool(rest_mock: Mocker) -> None:
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/example/tables/fokko",
+        json={},
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(("example", "fokko"), purge_requested=True)
+    assert rest_mock.last_request is not None
+    assert rest_mock.last_request.qs == {"purgerequested": ["true"]}
+
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(("example", "fokko"), purge_requested=False)
+    assert rest_mock.last_request.qs == {"purgerequested": ["false"]}
+
+
 def test_delete_table_from_self_identifier_204(
     rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:

@@ -1339,7 +1339,7 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_DELETE_TABLE)
         response = self._session.delete(
             self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
-            params={"purgeRequested": purge_requested},
+            params={"purgeRequested": "true" if purge_requested else "false"},
         )
         try:
             response.raise_for_status()
