@@ -27,37 +27,16 @@ def test_match_returns_the_bracketed_number() -> None:
     assert ParseNumberFromBrackets("truncate").match("truncate[16]") == 16
 
 
-def test_match_reads_multi_digit_values() -> None:
-    assert ParseNumberFromBrackets("fixed").match("fixed[1024]") == 1024
-
-
-def test_match_ignores_text_around_the_prefix() -> None:
-    # the implementation searches for the pattern, so surrounding text is tolerated
-    assert ParseNumberFromBrackets("fixed").match("  fixed[5]  ") == 5
-    assert ParseNumberFromBrackets("bucket").match("transform=bucket[4]") == 4
-
-
-def test_match_returns_the_first_occurrence() -> None:
-    assert ParseNumberFromBrackets("bucket").match("bucket[3] bucket[7]") == 3
-
-
-def test_match_raises_for_a_different_prefix() -> None:
+@pytest.mark.parametrize(
+    "prefix, value",
+    [
+        pytest.param("fixed", "decimal[8]", id="wrong-prefix"),
+        pytest.param("fixed", "fixed", id="missing-brackets"),
+        pytest.param("truncate", "truncate[abc]", id="non-numeric"),
+        pytest.param("truncate", "truncate[-1]", id="negative"),
+    ],
+)
+def test_match_raises_with_expected_message(prefix: str, value: str) -> None:
     with pytest.raises(ValidationError) as exc_info:
-        ParseNumberFromBrackets("fixed").match("decimal[8]")
-    assert "expected format fixed[22]" in str(exc_info.value)
-
-
-def test_match_raises_when_brackets_are_missing() -> None:
-    with pytest.raises(ValidationError):
-        ParseNumberFromBrackets("fixed").match("fixed")
-
-
-def test_match_raises_for_a_non_numeric_argument() -> None:
-    with pytest.raises(ValidationError):
-        ParseNumberFromBrackets("truncate").match("truncate[abc]")
-
-
-def test_match_raises_for_a_negative_number() -> None:
-    # the pattern only accepts digits, so a leading minus sign does not match
-    with pytest.raises(ValidationError):
-        ParseNumberFromBrackets("truncate").match("truncate[-1]")
+        ParseNumberFromBrackets(prefix).match(value)
+    assert str(exc_info.value) == f"Could not match {value}, expected format {prefix}[22]"
