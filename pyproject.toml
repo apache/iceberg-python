@@ -157,6 +157,74 @@ default-groups = [
 requires = ["setuptools>=83.0.0", "wheel", "Cython>=3.0.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.ruff]
+src = ['pyiceberg','tests']
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+# Ignore _all_ violations.
+# Same as Black.
+line-length = 130
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle
+    "W", # pycodestyle
+    "F", # Pyflakes
+    "B", # flake8-bugbear
+    "PIE", # flake8-pie
+    "C4", # flake8-comprehensions
+    "I", # isort
+    "UP", # pyupgrade
+    "T100", # flake8-debugger
+]
+ignore = []
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+per-file-ignores = {}
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.pyupgrade]
+# Preserve types, even if a file imports `from __future__ import annotations`.
+keep-runtime-typing = true
+
+[tool.ruff.lint.isort]
+detect-same-package = true
+lines-between-types = 0
+known-first-party = ["pyiceberg", "tests"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.format]
+quote-style = "double"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
