@@ -17,6 +17,7 @@
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import logging
 import os
+import sys
 import tempfile
 import uuid
 import warnings
@@ -162,14 +163,14 @@ def test_pyarrow_input_file() -> None:
         input_file = PyArrowFileIO().new_input(location=f"{absolute_file_location}")
 
         # Test opening and reading the file
-        r = input_file.open(seekable=False)
-        assert isinstance(r, InputStream)  # Test that the file object abides by the InputStream protocol
-        data = r.read()
-        assert data == b"foo"
-        assert len(input_file) == 3
-        with pytest.raises(OSError) as exc_info:
-            r.seek(0, 0)
-        assert "only valid on seekable files" in str(exc_info.value)
+        with input_file.open(seekable=False) as r:
+            assert isinstance(r, InputStream)  # Test that the file object abides by the InputStream protocol
+            data = r.read()
+            assert data == b"foo"
+            assert len(input_file) == 3
+            with pytest.raises(OSError) as exc_info:
+                r.seek(0, 0)
+            assert "only valid on seekable files" in str(exc_info.value)
 
 
 def test_pyarrow_input_file_seekable() -> None:
@@ -188,15 +189,15 @@ def test_pyarrow_input_file_seekable() -> None:
         input_file = PyArrowFileIO().new_input(location=f"{absolute_file_location}")
 
         # Test opening and reading the file
-        r = input_file.open(seekable=True)
-        assert isinstance(r, InputStream)  # Test that the file object abides by the InputStream protocol
-        data = r.read()
-        assert data == b"foo"
-        assert len(input_file) == 3
-        r.seek(0, 0)
-        data = r.read()
-        assert data == b"foo"
-        assert len(input_file) == 3
+        with input_file.open(seekable=True) as r:
+            assert isinstance(r, InputStream)  # Test that the file object abides by the InputStream protocol
+            data = r.read()
+            assert data == b"foo"
+            assert len(input_file) == 3
+            r.seek(0, 0)
+            data = r.read()
+            assert data == b"foo"
+            assert len(input_file) == 3
 
 
 def test_pyarrow_output_file() -> None:
@@ -210,9 +211,9 @@ def test_pyarrow_output_file() -> None:
         output_file = PyArrowFileIO().new_output(location=f"{absolute_file_location}")
 
         # Create the output file and write to it
-        f = output_file.create()
-        assert isinstance(f, OutputStream)  # Test that the file object abides by the OutputStream protocol
-        f.write(b"foo")
+        with output_file.create() as output_stream:
+            assert isinstance(output_stream, OutputStream)  # Test that the file object abides by the OutputStream protocol
+            output_stream.write(b"foo")
 
         # Confirm that bytes were written
         with open(file_location, "rb") as f:
@@ -283,7 +284,7 @@ def test_raise_on_opening_a_local_file_not_found() -> None:
         with pytest.raises(FileNotFoundError) as exc_info:
             f.open()
 
-        assert "[Errno 2] Failed to open local file" in str(exc_info.value)
+        assert "Failed to open local file" in str(exc_info.value)
 
 
 def test_raise_on_opening_an_s3_file_no_permission() -> None:
@@ -1002,7 +1003,7 @@ def _write_table_to_data_file(filepath: str, schema: pa.Schema, table: pa.Table)
 def file_int(schema_int: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_int, metadata={ICEBERG_SCHEMA: bytes(schema_int.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/a.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array([0, 1, 2])], schema=pyarrow_schema)
+        f"{tmpdir}/a.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array([0, 1, 2])], schema=pyarrow_schema)
     )
 
 
@@ -1010,7 +1011,7 @@ def file_int(schema_int: Schema, tmpdir: str) -> str:
 def file_int_str(schema_int_str: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_int_str, metadata={ICEBERG_SCHEMA: bytes(schema_int_str.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/a.parquet",
+        f"{tmpdir}/a.parquet",
         pyarrow_schema,
         pa.Table.from_arrays([pa.array([0, 1, 2]), pa.array(["0", "1", "2"])], schema=pyarrow_schema),
     )
@@ -1020,7 +1021,7 @@ def file_int_str(schema_int_str: Schema, tmpdir: str) -> str:
 def file_string(schema_str: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_str, metadata={ICEBERG_SCHEMA: bytes(schema_str.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/b.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array(["0", "1", "2"])], schema=pyarrow_schema)
+        f"{tmpdir}/b.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array(["0", "1", "2"])], schema=pyarrow_schema)
     )
 
 
@@ -1028,7 +1029,7 @@ def file_string(schema_str: Schema, tmpdir: str) -> str:
 def file_long(schema_long: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_long, metadata={ICEBERG_SCHEMA: bytes(schema_long.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/c.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array([0, 1, 2])], schema=pyarrow_schema)
+        f"{tmpdir}/c.parquet", pyarrow_schema, pa.Table.from_arrays([pa.array([0, 1, 2])], schema=pyarrow_schema)
     )
 
 
@@ -1036,7 +1037,7 @@ def file_long(schema_long: Schema, tmpdir: str) -> str:
 def file_struct(schema_struct: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_struct, metadata={ICEBERG_SCHEMA: bytes(schema_struct.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/d.parquet",
+        f"{tmpdir}/d.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -1053,7 +1054,7 @@ def file_struct(schema_struct: Schema, tmpdir: str) -> str:
 def file_list(schema_list: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_list, metadata={ICEBERG_SCHEMA: bytes(schema_list.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"{tmpdir}/e.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -1072,7 +1073,7 @@ def file_list_of_structs(schema_list_of_structs: Schema, tmpdir: str) -> str:
         schema_list_of_structs, metadata={ICEBERG_SCHEMA: bytes(schema_list_of_structs.model_dump_json(), UTF8)}
     )
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"{tmpdir}/e.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -1091,7 +1092,7 @@ def file_map_of_structs(schema_map_of_structs: Schema, tmpdir: str) -> str:
         schema_map_of_structs, metadata={ICEBERG_SCHEMA: bytes(schema_map_of_structs.model_dump_json(), UTF8)}
     )
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"{tmpdir}/e.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -1108,7 +1109,7 @@ def file_map_of_structs(schema_map_of_structs: Schema, tmpdir: str) -> str:
 def file_map(schema_map: Schema, tmpdir: str) -> str:
     pyarrow_schema = schema_to_pyarrow(schema_map, metadata={ICEBERG_SCHEMA: bytes(schema_map.model_dump_json(), UTF8)})
     return _write_table_to_file(
-        f"file:{tmpdir}/e.parquet",
+        f"{tmpdir}/e.parquet",
         pyarrow_schema,
         pa.Table.from_pylist(
             [
@@ -2322,8 +2323,19 @@ def test_parse_location() -> None:
     check_results("hdfs://127.0.0.1/root/foo.txt", "hdfs", "127.0.0.1", "/root/foo.txt")
     check_results("hdfs://clusterA/root/foo.txt", "hdfs", "clusterA", "/root/foo.txt")
 
-    check_results("/root/foo.txt", "file", "", "/root/foo.txt")
-    check_results("/root/tmp/foo.txt", "file", "", "/root/tmp/foo.txt")
+    check_results("/root/foo.txt", "file", "", os.path.abspath("/root/foo.txt"))
+    check_results("/root/tmp/foo.txt", "file", "", os.path.abspath("/root/tmp/foo.txt"))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
+def test_parse_location_windows_drive_letter() -> None:
+    """Windows drive letters should be treated as local file paths, not URL schemes."""
+    for drive in ("C", "D", "c", "d"):
+        path = f"{drive}:\\Users\\test\\file.avro"
+        scheme, netloc, result_path = PyArrowFileIO.parse_location(path)
+        assert scheme == "file"
+        assert netloc == ""
+        assert result_path == os.path.abspath(path)
 
 
 def test_make_compatible_name() -> None:
@@ -2480,6 +2492,7 @@ def test_bin_pack_record_batches_is_lazy(arrow_table_with_null: pa.Table) -> Non
     assert len(consumed) == arrow_table_with_null.num_rows
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Rich renders different box characters on Windows terminals")
 def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
     other_schema = pa.schema(
         (
@@ -2503,6 +2516,7 @@ def test_schema_mismatch_type(table_schema_simple: Schema) -> None:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Rich renders different box characters on Windows terminals")
 def test_schema_mismatch_nullability(table_schema_simple: Schema) -> None:
     other_schema = pa.schema(
         (
@@ -2541,6 +2555,7 @@ def test_schema_compatible_nullability_diff(table_schema_simple: Schema) -> None
         pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Rich renders different box characters on Windows terminals")
 def test_schema_mismatch_missing_field(table_schema_simple: Schema) -> None:
     other_schema = pa.schema(
         (
@@ -2583,6 +2598,7 @@ def test_schema_compatible_missing_nullable_field_nested(table_schema_nested: Sc
         pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Rich renders different box characters on Windows terminals")
 def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Schema) -> None:
     other_schema = table_schema_nested.as_arrow()
     other_schema = other_schema.remove(6).insert(
@@ -3485,21 +3501,21 @@ def test_parse_location_defaults() -> None:
     scheme, netloc, path = PyArrowFileIO.parse_location("/foo/bar")
     assert scheme == "file"
     assert netloc == ""
-    assert path == "/foo/bar"
+    assert path == os.path.abspath("/foo/bar")
 
     scheme, netloc, path = PyArrowFileIO.parse_location(
         "/foo/bar", properties={"DEFAULT_SCHEME": "scheme", "DEFAULT_NETLOC": "netloc:8000"}
     )
     assert scheme == "scheme"
     assert netloc == "netloc:8000"
-    assert path == "/foo/bar"
+    assert path == os.path.abspath("/foo/bar")
 
     scheme, netloc, path = PyArrowFileIO.parse_location(
         "/foo/bar", properties={"DEFAULT_SCHEME": "hdfs", "DEFAULT_NETLOC": "netloc:8000"}
     )
     assert scheme == "hdfs"
     assert netloc == "netloc:8000"
-    assert path == "/foo/bar"
+    assert path == os.path.abspath("/foo/bar")
 
 
 def test_write_and_read_orc(tmp_path: Path) -> None:
@@ -5312,6 +5328,70 @@ def test_partition_column_projection_with_schema_evolution(catalog: InMemoryCata
     result_sorted = result.sort_by("name")
     assert result_sorted["name"].to_pylist() == ["Alice", "Bob", "Charlie", "David"]
     assert result_sorted["new_column"].to_pylist() == [None, None, "new1", "new2"]
+
+
+def test_to_arrow_batch_reader_preserves_dictionary_columns(tmpdir: str) -> None:
+    """_to_arrow_batch_reader_via_file_scan_tasks must not strip dictionary encoding."""
+    # Regression test for https://github.com/apache/iceberg-python/issues/3540. Before the fix,
+    # RecordBatchReader.cast(target_schema) was called with a plain schema, silently converting
+    # dictionary arrays back to their value type so to_arrow_batch_reader(dictionary_columns=...)
+    # .read_all() returned plain strings instead of dictionary-encoded arrays.
+    from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.table import FileScanTask, _to_arrow_batch_reader_via_file_scan_tasks
+    from pyiceberg.table.metadata import TableMetadataV2
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+            pa.field("label", pa.string(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "2"}),
+        ]
+    )
+    arrow_table = pa.table(
+        [pa.array([1, 2, 3, 4], type=pa.int32()), pa.array(["a", "b", "a", "b"], type=pa.string())],
+        schema=arrow_schema,
+    )
+    data_file = _write_table_to_data_file(f"{tmpdir}/test_batch_reader_dict.parquet", arrow_schema, arrow_table)
+    data_file.spec_id = 0
+
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "label", StringType(), required=False),
+    )
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmpdir}",
+        last_column_id=2,
+        format_version=2,
+        schemas=[iceberg_schema],
+        partition_specs=[PartitionSpec()],
+    )
+
+    class _MockScan:
+        def __init__(self) -> None:
+            self.table_metadata = table_metadata
+            self.io = PyArrowFileIO()
+            self.row_filter = AlwaysTrue()
+            self.case_sensitive = True
+            self.limit = None
+
+    tasks = [FileScanTask(data_file)]
+    result = _to_arrow_batch_reader_via_file_scan_tasks(
+        _MockScan(),  # type: ignore[arg-type]
+        iceberg_schema,
+        tasks,
+        dictionary_columns=("label",),
+    ).read_all()
+
+    # label must be dictionary-encoded, not plain string
+    assert pa.types.is_dictionary(result.schema.field("label").type), (
+        f"expected dictionary type, got {result.schema.field('label').type}"
+    )
+    # id is not in dictionary_columns — must remain int32
+    assert result.schema.field("id").type == pa.int32()
+    # Values must be identical to the source data
+    assert result.column("label").to_pylist() == ["a", "b", "a", "b"]
+    assert result.column("id").to_pylist() == [1, 2, 3, 4]
 
 
 def test_dictionary_columns_produces_dict_encoded_output(tmpdir: str) -> None:

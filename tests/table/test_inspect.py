@@ -16,13 +16,17 @@
 # under the License.
 
 from pathlib import PosixPath
+from typing import Any
 
 import pyarrow as pa
 import pytest
 
 from pyiceberg.conversions import to_bytes
+from pyiceberg.manifest import DataFile, DataFileContent
 from pyiceberg.schema import Schema
-from pyiceberg.table.inspect import _readable_bound
+from pyiceberg.table.inspect import InspectTable, _readable_bound
+from pyiceberg.table.snapshots import Snapshot
+from pyiceberg.typedef import Record
 from pyiceberg.types import NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog
 
@@ -80,3 +84,24 @@ def test_inspect_snapshots_preserves_null_operation(catalog: InMemoryCatalog) ->
     tbl.metadata = tbl.metadata.model_copy(update={"snapshots": snapshots})
 
     assert tbl.inspect.snapshots().to_pydict()["operation"] == [None]
+
+    
+@pytest.mark.parametrize("newest_first", [False, True])
+def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest_first: bool) -> None:
+    # Manifest entries are visited in manifest order, which is not chronological, so the
+    # `partitions` metadata table must keep the snapshot with the highest commit timestamp
+    # per partition regardless of the order in which the entries are aggregated.
+    older = Snapshot(snapshot_id=6446744073709551000, timestamp_ms=1000, manifest_list="file:///dev/null")
+    newer = Snapshot(snapshot_id=8446744073709551111, timestamp_ms=5000, manifest_list="file:///dev/null")
+
+    data_file = DataFile.from_args(content=DataFileContent.DATA, record_count=1, file_size_in_bytes=1, partition=Record("a"))
+    data_file.spec_id = 0
+
+    inspect = InspectTable.__new__(InspectTable)
+    partitions_map: dict[tuple[str, Any], Any] = {}
+    for snapshot in [newer, older] if newest_first else [older, newer]:
+        inspect._update_partitions_map_from_manifest_entry(partitions_map, data_file, {"part": "a"}, snapshot)
+
+    (partition_row,) = partitions_map.values()
+    assert partition_row["last_updated_at"] == newer.timestamp_ms
+    assert partition_row["last_updated_snapshot_id"] == newer.snapshot_id
