@@ -54,13 +54,15 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UnknownType,
     UUIDType,
 )
-from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
+from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, datetime_to_nanos, time_to_micros
 
 INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
@@ -514,6 +516,19 @@ def _(type: IcebergType, value: int | datetime | None) -> int | None:
         return value
     elif isinstance(value, datetime):
         return datetime_to_micros(value)
+    else:
+        raise ValueError(f"Type not recognized: {value}")
+
+
+@_to_partition_representation.register(TimestampNanoType)
+@_to_partition_representation.register(TimestamptzNanoType)
+def _(type: IcebergType, value: int | datetime | None) -> int | None:
+    if value is None:
+        return None
+    elif isinstance(value, int):
+        return value
+    elif isinstance(value, datetime):
+        return datetime_to_nanos(value)
     else:
         raise ValueError(f"Type not recognized: {value}")
 
