@@ -24,6 +24,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 from pytest_lazy_fixtures import lf
 
+from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import (
@@ -33,7 +34,7 @@ from pyiceberg.expressions import (
     In,
 )
 from pyiceberg.expressions.visitors import bind
-from pyiceberg.io import PY_IO_IMPL, load_file_io
+from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import (
@@ -1982,10 +1983,56 @@ def test_check_uuid_passes_when_match(table_v2: Table, example_table_metadata_v2
 
 def test_build_large_partition_predicate(table_v2: Table) -> None:
     with table_v2.transaction() as tx:
+        schema = table_v2.schema()
+        spec = table_v2.spec()
         expr = tx._build_partition_predicate(
             partition_records={Record(i) for i in range(5000)},
-            spec=table_v2.metadata.spec(),
-            schema=table_v2.metadata.schema(),
+            partition_fields=[(schema.find_field(field.source_id).name) for field in spec.fields],
         )
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
+
+
+def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> None:
+    """Delete a data file without projecting its already-transformed partition value again."""
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "tenant_id", StringType(), required=False),
+        NestedField(2, "value", IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(8), name="tenant_id_bucket"))
+    table = catalog.create_table("default.bucket_file_delete", schema=schema, partition_spec=spec)
+
+    table.append(pa.Table.from_pylist([{"tenant_id": "tenant-a", "value": 1}], schema=schema_to_pyarrow(schema)))
+    data_file = next(iter(table.scan().plan_files())).file
+
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as overwrite:
+            overwrite.delete_data_file(data_file)
+
+    assert table.scan().to_arrow().num_rows == 0
+
+
+def test_static_table_forwards_location_to_table_file_io(metadata_location: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen_locations: list[str | None] = []
+    real_load_file_io = load_file_io
+
+    def _spy(*args: Any, **kwargs: Any) -> FileIO:
+        if "location" in kwargs:
+            seen_locations.append(kwargs["location"])
+        elif len(args) >= 2:
+            seen_locations.append(args[1])
+        else:
+            seen_locations.append(None)
+        return real_load_file_io(*args, **kwargs)
+
+    monkeypatch.setattr("pyiceberg.table.load_file_io", _spy)
+
+    StaticTable.from_metadata(metadata_location)
+
+    assert seen_locations, "expected at least one load_file_io call"
+    assert all(loc is not None for loc in seen_locations), f"load_file_io called without a location: {seen_locations}"

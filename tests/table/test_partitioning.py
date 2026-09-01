@@ -273,6 +273,12 @@ def test_deserialize_partition_field_empty_source_ids_rejected() -> None:
         PartitionField.model_validate_json(json_partition_spec)
 
 
+def test_deserialize_partition_field_source_id_and_source_ids_rejected() -> None:
+    json_partition_spec = """{"source-id": 5, "source-ids": [1, 2], "field-id": 1000, "transform": "bucket[4]", "name": "m"}"""
+    with pytest.raises(Exception, match="source-id and source-ids are mutually exclusive"):
+        PartitionField.model_validate_json(json_partition_spec)
+
+
 def test_incompatible_source_column_not_found() -> None:
     schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
 

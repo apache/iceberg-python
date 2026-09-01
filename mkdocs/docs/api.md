@@ -1170,7 +1170,7 @@ You can also initiate a transaction if you want to make more changes than just e
 ```python
 with table.transaction() as transaction:
     with transaction.update_schema() as update_schema:
-        update.add_column("some_other_field", IntegerType(), "doc")
+        update_schema.add_column("some_other_field", IntegerType(), "doc")
     # ... Update properties etc
 ```
 
@@ -1695,6 +1695,8 @@ scan = table.scan(
 [task.file.file_path for task in scan.plan_files()]
 ```
 
+When the REST catalog returns `scan-planning-mode=server` and advertises the plan endpoint, `plan_files()` / `to_arrow()` use server-side scan planning. The mode can also be returned per table in the `loadTable` response `config`, which takes precedence over the catalog-level setting, so a server can require server-side planning for some tables while others keep client-side planning. Catalogs that return async plans (`status=submitted`) are polled automatically until they reach a terminal state; see [REST Catalog configuration](configuration.md#rest-catalog).
+
 The low level API `plan_files` methods returns a set of tasks that provide the files that might contain matching rows:
 
 ```json
@@ -2123,7 +2125,7 @@ PyIceberg integrates with [Apache DataFusion](https://datafusion.apache.org/) th
 
     The integration has a few caveats:
 
-    - Only works with `datafusion == 51`, aligns with the version used in `pyiceberg-core`
+    - Only works with `datafusion == 53`, aligns with the version used in `pyiceberg-core`
     - Depends directly on `iceberg-rust` instead of PyIceberg's implementation
     - Has limited features compared to the full PyIceberg API
 

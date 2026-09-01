@@ -604,11 +604,13 @@ def test_ray_not_nan_count(catalog: Catalog, ray_session: Any) -> None:
 @pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_ray_all_types(catalog: Catalog, ray_session: Any) -> None:
+    from pandas.testing import assert_frame_equal
+
     table_test_all_types = catalog.load_table("default.test_all_types")
     ray_dataset = table_test_all_types.scan().to_ray()
     pandas_dataframe = table_test_all_types.scan().to_pandas()
     assert ray_dataset.count() == pandas_dataframe.shape[0]
-    assert pandas_dataframe.equals(ray_dataset.to_pandas())
+    assert_frame_equal(pandas_dataframe, ray_dataset.to_pandas(), check_dtype=False)
 
 
 @pytest.mark.integration

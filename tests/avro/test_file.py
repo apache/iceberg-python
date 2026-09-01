@@ -164,6 +164,8 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
         del v2_entry["file_sequence_number"]
         del v2_entry["data_file"]["content"]
         del v2_entry["data_file"]["equality_ids"]
+        for field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
+            del v2_entry["data_file"][field]
 
         # Required in V1
         v2_entry["data_file"]["block_size_in_bytes"] = DEFAULT_BLOCK_SIZE
@@ -222,7 +224,11 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
 
             fa_entry = next(it)
 
-        assert todict(entry) == fa_entry
+        v2_entry = todict(entry)
+        for field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
+            del v2_entry["data_file"][field]
+
+        assert v2_entry == fa_entry
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
