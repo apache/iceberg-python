@@ -1200,7 +1200,9 @@ class _InclusiveMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
     """Evaluate inclusive metrics for one data file."""
 
     def _may_contain_null(self, field_id: int) -> bool:
-        return self.null_counts is None or (field_id in self.null_counts and self.null_counts.get(field_id) is not None)
+        # A missing null count means the count is unknown, so the column may contain nulls.
+        null_count = self.null_counts.get(field_id)
+        return null_count is None or null_count != 0
 
     def _contains_nans_only(self, field_id: int) -> bool:
         if (nan_count := self.nan_counts.get(field_id)) and (value_count := self.value_counts.get(field_id)):
