@@ -16,7 +16,7 @@
 # under the License.
 import math
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import singledispatch
 from typing import (
     Any,
@@ -1121,12 +1121,19 @@ def expression_to_plain_format(
     return [visit(expression, visitor) for expression in expressions]
 
 
-class _MetricsEvaluator(BoundBooleanExpressionVisitor[bool], ABC):
-    value_counts: dict[int, int]
-    null_counts: dict[int, int]
-    nan_counts: dict[int, int]
-    lower_bounds: dict[int, bytes]
-    upper_bounds: dict[int, bytes]
+class _MetricsEvaluationVisitor(BoundBooleanExpressionVisitor[bool], ABC):
+    value_counts: Mapping[int, int]
+    null_counts: Mapping[int, int]
+    nan_counts: Mapping[int, int]
+    lower_bounds: Mapping[int, bytes]
+    upper_bounds: Mapping[int, bytes]
+
+    def __init__(self, file: DataFile) -> None:
+        self.value_counts = file.value_counts or EMPTY_DICT
+        self.null_counts = file.null_value_counts or EMPTY_DICT
+        self.nan_counts = file.nan_value_counts or EMPTY_DICT
+        self.lower_bounds = file.lower_bounds or EMPTY_DICT
+        self.upper_bounds = file.upper_bounds or EMPTY_DICT
 
     def visit_true(self) -> bool:
         # all rows match
@@ -1163,14 +1170,15 @@ class _MetricsEvaluator(BoundBooleanExpressionVisitor[bool], ABC):
             return False
 
 
-class _InclusiveMetricsEvaluator(_MetricsEvaluator):
-    struct: StructType
+class _InclusiveMetricsEvaluator:
+    """Bind an inclusive metrics expression once and evaluate files without mutating prepared state."""
+
     expr: BooleanExpression
+    include_empty_files: bool
 
     def __init__(
         self, schema: Schema, expr: BooleanExpression, case_sensitive: bool = True, include_empty_files: bool = False
     ) -> None:
-        self.struct = schema.as_struct()
         self.include_empty_files = include_empty_files
         self.expr = bind(schema, rewrite_not(expr), case_sensitive)
 
@@ -1185,13 +1193,11 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             # be updated once we implemented and set correct record count.
             return ROWS_MIGHT_MATCH
 
-        self.value_counts = file.value_counts or EMPTY_DICT
-        self.null_counts = file.null_value_counts or EMPTY_DICT
-        self.nan_counts = file.nan_value_counts or EMPTY_DICT
-        self.lower_bounds = file.lower_bounds or EMPTY_DICT
-        self.upper_bounds = file.upper_bounds or EMPTY_DICT
+        return visit(self.expr, _InclusiveMetricsEvaluationVisitor(file))
 
-        return visit(self.expr, self)
+
+class _InclusiveMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
+    """Evaluate inclusive metrics for one data file."""
 
     def _may_contain_null(self, field_id: int) -> bool:
         return self.null_counts is None or (field_id in self.null_counts and self.null_counts.get(field_id) is not None)
@@ -1498,9 +1504,12 @@ class StrictProjection(ProjectionEvaluator):
         return result
 
 
-class _StrictMetricsEvaluator(_MetricsEvaluator):
+class _StrictMetricsEvaluator:
+    """Bind a strict metrics expression once and evaluate files without mutating prepared state."""
+
     struct: StructType
     expr: BooleanExpression
+    include_empty_files: bool
 
     def __init__(
         self, schema: Schema, expr: BooleanExpression, case_sensitive: bool = True, include_empty_files: bool = False
@@ -1518,19 +1527,25 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         Returns: false if the file may contain any row that doesn't match
                     the expression, true otherwise.
         """
-        if file.record_count <= 0:
-            # Older version don't correctly implement record count from avro file and thus
-            # set record count -1 when importing avro tables to iceberg tables. This should
-            # be updated once we implemented and set correct record count.
+        if file.record_count == 0:
             return ROWS_MUST_MATCH
 
-        self.value_counts = file.value_counts or EMPTY_DICT
-        self.null_counts = file.null_value_counts or EMPTY_DICT
-        self.nan_counts = file.nan_value_counts or EMPTY_DICT
-        self.lower_bounds = file.lower_bounds or EMPTY_DICT
-        self.upper_bounds = file.upper_bounds or EMPTY_DICT
+        if file.record_count < 0:
+            # Older versions set the record count to -1 when importing Avro tables.
+            # Treat an unknown count conservatively rather than as an empty file.
+            return ROWS_MIGHT_NOT_MATCH
 
-        return visit(self.expr, self)
+        return visit(self.expr, _StrictMetricsEvaluationVisitor(self.struct, file))
+
+
+class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
+    """Evaluate strict metrics for one data file."""
+
+    struct: StructType
+
+    def __init__(self, struct: StructType, file: DataFile) -> None:
+        super().__init__(file)
+        self.struct = struct
 
     def visit_is_null(self, term: BoundTerm) -> bool:
         # no need to check whether the field is required because binding evaluates that case
@@ -1861,10 +1876,10 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     def visit_not_nan(self, term: BoundTerm) -> BooleanExpression:
         val = term.eval(self.struct)
-        if isinstance(val, SupportsFloat) and not math.isnan(val):
-            return self.visit_true()
-        else:
+        if isinstance(val, SupportsFloat) and math.isnan(val):
             return self.visit_false()
+        else:
+            return self.visit_true()
 
     def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) < literal.value:

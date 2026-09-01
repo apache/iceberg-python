@@ -54,13 +54,15 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UnknownType,
     UUIDType,
 )
-from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
+from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, datetime_to_nanos, time_to_micros
 
 INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
@@ -109,7 +111,9 @@ class PartitionField(IcebergBaseModel):
     @classmethod
     def map_source_ids_onto_source_id(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            if "source-id" not in data and "source-ids" in data:
+            if "source-ids" in data:
+                if "source-id" in data:
+                    raise ValueError("source-id and source-ids are mutually exclusive")
                 source_ids = data["source-ids"]
                 if isinstance(source_ids, list):
                     if len(source_ids) == 0:
@@ -500,7 +504,7 @@ def _to_partition_representation(type: IcebergType, value: Any) -> Any:
     can return date that still needs to be transformed into an int (days
     since epoch).
     """
-    return TypeError(f"Unsupported partition field type: {type}")
+    raise TypeError(f"Unsupported partition field type: {type}")
 
 
 @_to_partition_representation.register(TimestampType)
@@ -512,6 +516,19 @@ def _(type: IcebergType, value: int | datetime | None) -> int | None:
         return value
     elif isinstance(value, datetime):
         return datetime_to_micros(value)
+    else:
+        raise ValueError(f"Type not recognized: {value}")
+
+
+@_to_partition_representation.register(TimestampNanoType)
+@_to_partition_representation.register(TimestamptzNanoType)
+def _(type: IcebergType, value: int | datetime | None) -> int | None:
+    if value is None:
+        return None
+    elif isinstance(value, int):
+        return value
+    elif isinstance(value, datetime):
+        return datetime_to_nanos(value)
     else:
         raise ValueError(f"Type not recognized: {value}")
 

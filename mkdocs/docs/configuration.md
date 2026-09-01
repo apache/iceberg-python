@@ -108,6 +108,26 @@ Iceberg tables support table properties to configure table behavior.
 
 <!-- prettier-ignore-end -->
 
+### Commit retry options
+
+When a concurrent commit is detected, PyIceberg automatically retries the operation with exponential backoff. If the retry detects a real data conflict (e.g. concurrent deletes on the same partition), it raises `ValidationException` instead of retrying.
+
+| Key                              | Options          | Default   | Description                                                        |
+| -------------------------------- | ---------------- | --------- | ------------------------------------------------------------------ |
+| `commit.retry.num-retries`       | Integer          | 4         | Maximum number of retry attempts after a commit conflict            |
+| `commit.retry.min-wait-ms`      | Integer (ms)     | 100       | Minimum wait time before the first retry                            |
+| `commit.retry.max-wait-ms`      | Integer (ms)     | 60000     | Maximum wait time between retries (caps exponential backoff)        |
+| `commit.retry.total-timeout-ms` | Integer (ms)     | 1800000   | Total time allowed for all retry attempts before giving up          |
+
+### Isolation level options
+
+These properties control conflict detection behavior during concurrent writes.
+
+| Key                              | Options                          | Default      | Description                                                                                     |
+| -------------------------------- | -------------------------------- | ------------ | ----------------------------------------------------------------------------------------------- |
+| `write.delete.isolation-level`   | `{serializable,snapshot}`        | serializable | Isolation level for delete operations. Under `serializable`, concurrent appends to affected partitions cause `ValidationException`. Under `snapshot`, only conflicting deletes are rejected. |
+| `write.update.isolation-level`   | `{serializable,snapshot}`        | serializable | Isolation level for overwrite operations. Same semantics as `write.delete.isolation-level`.      |
+
 ## FileIO
 
 Iceberg works with the concept of a FileIO which is a pluggable module for reading, writing, and deleting files. By default, PyIceberg will try to initialize the FileIO that's suitable for the scheme (`s3://`, `gs://`, etc.) and will use the first one that's installed.
@@ -152,6 +172,8 @@ For the FileIO there are several configuration options available:
 | s3.force-virtual-addressing | False                      | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
 | s3.retry-strategy-impl      | None                       | Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the [S3RetryStrategy](https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110) base class.                         |
 | s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or boto's credential resolver.                                                                                                                                         |
+| s3.server-side-encryption   | aws:kms                    | Configure server-side encryption (e.g. `AES256` or `aws:kms`). Only supported by `FsspecFileIO`.                                                                                                                                     |
+| s3.sse-kms-key-id           | alias/my-key               | Configure the SSE-KMS key id (or ARN) for multipart uploads. Only supported by `FsspecFileIO`.                                                                                                                                                               |
 
 <!-- markdown-link-check-enable-->
 
@@ -386,6 +408,10 @@ catalog:
 | snapshot-loading-mode | refs                           | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
 | `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 | view-endpoints-supported | false                           | For backwards compatibility with older REST servers. Set to `true` if the server supports view endpoints but doesn't send the `endpoints` field in the ConfigResponse. |
+| scan-planning-mode | client | When set to `server`, and the catalog advertises the plan-table-scan endpoint, `table.scan()` uses REST server-side scan planning. May be set by the client, returned by the catalog via `GET /v1/config` defaults/overrides, or returned per table in the `config` of the `loadTable` response. The `loadTable` value takes precedence over the catalog-level value, which lets a server request server-side planning only for specific tables. Async plans (`status=submitted`) are polled via `GET .../plan/{plan-id}` until terminal state (completed / failed / cancelled). |
+| rest-scan-planning.poll-timeout-ms | 300000 | Maximum time to wait for an async scan plan to complete before failing (default: 5 minutes). |
+
+When server-side planning returns `storage-credentials` on a completed plan, PyIceberg applies them to the scan-scoped FileIO (layered on top of the existing table/load-time IO properties) so planned data and delete files can be read using the creds vended by the server.
 
 #### Headers in REST Catalog
 

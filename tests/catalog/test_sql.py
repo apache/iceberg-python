@@ -33,6 +33,7 @@ from pyiceberg.catalog.sql import (
 )
 from pyiceberg.exceptions import (
     NoSuchPropertyException,
+    NoSuchTableError,
     TableAlreadyExistsError,
 )
 from pyiceberg.schema import Schema
@@ -61,7 +62,7 @@ def catalog_memory(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
 @pytest.fixture(scope="module")
 def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, None, None]:
     props = {
-        "uri": f"sqlite:////{warehouse}/sql-catalog",
+        "uri": f"sqlite:///{warehouse.as_posix()}/sql-catalog",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog(catalog_name, **props)
@@ -72,7 +73,7 @@ def catalog_sqlite(catalog_name: str, warehouse: Path) -> Generator[SqlCatalog, 
 
 @pytest.fixture(scope="module")
 def catalog_uri(warehouse: Path) -> str:
-    return f"sqlite:////{warehouse}/sql-catalog"
+    return f"sqlite:///{warehouse.as_posix()}/sql-catalog"
 
 
 @pytest.fixture(scope="module")
@@ -96,7 +97,7 @@ def test_creation_with_echo_parameter(catalog_name: str, warehouse: Path) -> Non
 
     for echo_param, expected_echo_value in test_cases:
         props = {
-            "uri": f"sqlite:////{warehouse}/sql-catalog",
+            "uri": f"sqlite:///{warehouse.as_posix()}/sql-catalog",
             "warehouse": f"file://{warehouse}",
         }
         # None is for default value
@@ -119,7 +120,7 @@ def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Pat
 
     for pool_pre_ping_param, expected_pool_pre_ping_value in test_cases:
         props = {
-            "uri": f"sqlite:////{warehouse}/sql-catalog",
+            "uri": f"sqlite:///{warehouse.as_posix()}/sql-catalog",
             "warehouse": f"file://{warehouse}",
         }
         # None is for default value
@@ -139,7 +140,7 @@ def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
             catalog_name,
             **{
                 "py-catalog-impl": "pyiceberg.catalog.sql.SqlCatalog",
-                "uri": f"sqlite:////{warehouse}/sql-catalog",
+                "uri": f"sqlite:///{warehouse.as_posix()}/sql-catalog",
                 "warehouse": f"file://{warehouse}",
             },
         ),
@@ -268,7 +269,7 @@ def get_columns(engine: Engine) -> set[str]:
 
 
 def test_adds_iceberg_type_column_to_old_schema(warehouse: Path) -> None:
-    uri = f"sqlite:////{warehouse}/test-migration-add-col"
+    uri = f"sqlite:///{warehouse.as_posix()}/test-migration-add-col"
     engine = _create_v0_db(uri)
 
     # Verify the column does not exist in the old schema
@@ -333,8 +334,62 @@ def test_list_tables_filters_by_iceberg_type(warehouse: Path) -> None:
     assert "some_view" not in tables
 
 
+def _insert_view_row(catalog: SqlCatalog, namespace: str, table_name: str) -> None:
+    # Simulates a view row written by iceberg-java or iceberg-rust, which SqlCatalog table
+    # operations must not treat as a table (issue #3337).
+    with catalog.engine.connect() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO iceberg_tables "
+                "(catalog_name, table_namespace, table_name, metadata_location, previous_metadata_location, iceberg_type) "
+                "VALUES ('test', :namespace, :table_name, 's3://fake/metadata.json', NULL, 'VIEW')"
+            ),
+            {"namespace": namespace, "table_name": table_name},
+        )
+        conn.commit()
+
+
+def test_load_table_ignores_view_rows(warehouse: Path) -> None:
+    catalog = SqlCatalog(name="test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+    catalog.create_namespace("ns")
+    _insert_view_row(catalog, "ns", "a_view")
+
+    with pytest.raises(NoSuchTableError):
+        catalog.load_table(("ns", "a_view"))
+
+
+def test_drop_table_ignores_view_rows(warehouse: Path) -> None:
+    catalog = SqlCatalog(name="test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+    catalog.create_namespace("ns")
+    _insert_view_row(catalog, "ns", "a_view")
+
+    with pytest.raises(NoSuchTableError):
+        catalog.drop_table(("ns", "a_view"))
+
+    # The view row must not have been deleted.
+    with catalog.engine.connect() as conn:
+        row = conn.execute(text("SELECT iceberg_type FROM iceberg_tables WHERE table_name = 'a_view'")).fetchone()
+    assert row is not None
+    assert row[0] == "VIEW"
+
+
+def test_rename_table_ignores_view_rows(warehouse: Path) -> None:
+    catalog = SqlCatalog(name="test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+    catalog.create_namespace("ns")
+    _insert_view_row(catalog, "ns", "a_view")
+
+    with pytest.raises(NoSuchTableError):
+        catalog.rename_table(("ns", "a_view"), ("ns", "renamed_view"))
+
+    # The view row must not have been renamed.
+    with catalog.engine.connect() as conn:
+        row = conn.execute(text("SELECT iceberg_type FROM iceberg_tables WHERE table_name = 'a_view'")).fetchone()
+    assert row is not None
+    assert row[0] == "VIEW"
+
+
 def test_migration_to_v1_with_property_set(warehouse: Path) -> None:
-    uri = f"sqlite:////{warehouse}/test-v1-migrate"
+    uri = f"sqlite:///{warehouse.as_posix()}/test-v1-migrate"
     engine = _create_v0_db(uri)
 
     assert "iceberg_type" not in get_columns(engine)
@@ -361,7 +416,7 @@ def test_invalid_schema_version_raises(warehouse: Path) -> None:
 
 def test_list_tables_works_on_v0_schema(warehouse: Path) -> None:
     """list_tables should work on V0 schemas without iceberg_type column."""
-    uri = f"sqlite:////{warehouse}/test-v0-list"
+    uri = f"sqlite:///{warehouse.as_posix()}/test-v0-list"
     _create_v0_db(uri)
 
     catalog = SqlCatalog(
@@ -441,7 +496,7 @@ def _make_v0_catalog(uri: str, warehouse: Path) -> SqlCatalog:
 
 def test_namespace_exists_on_v0_schema(warehouse: Path) -> None:
     """namespace_exists should not fail on V0 schema (no iceberg_type column)."""
-    catalog = _make_v0_catalog(f"sqlite:////{warehouse}/test-v0-ns-exists", warehouse)
+    catalog = _make_v0_catalog(f"sqlite:///{warehouse.as_posix()}/test-v0-ns-exists", warehouse)
     catalog.create_namespace("ns")
     assert catalog.namespace_exists("ns")
     assert not catalog.namespace_exists("missing")
@@ -449,7 +504,7 @@ def test_namespace_exists_on_v0_schema(warehouse: Path) -> None:
 
 def test_create_and_load_table_on_v0_schema(warehouse: Path) -> None:
     """create_table and load_table should work on V0 schema without iceberg_type column."""
-    catalog = _make_v0_catalog(f"sqlite:////{warehouse}/test-v0-create", warehouse)
+    catalog = _make_v0_catalog(f"sqlite:///{warehouse.as_posix()}/test-v0-create", warehouse)
     catalog.create_namespace("ns")
     schema = Schema(NestedField(1, "id", StringType(), required=True))
     tbl = catalog.create_table(("ns", "tbl"), schema)

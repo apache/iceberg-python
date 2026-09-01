@@ -1695,6 +1695,8 @@ scan = table.scan(
 [task.file.file_path for task in scan.plan_files()]
 ```
 
+When the REST catalog returns `scan-planning-mode=server` and advertises the plan endpoint, `plan_files()` / `to_arrow()` use server-side scan planning. The mode can also be returned per table in the `loadTable` response `config`, which takes precedence over the catalog-level setting, so a server can require server-side planning for some tables while others keep client-side planning. Catalogs that return async plans (`status=submitted`) are polled automatically until they reach a terminal state; see [REST Catalog configuration](configuration.md#rest-catalog).
+
 The low level API `plan_files` methods returns a set of tasks that provide the files that might contain matching rows:
 
 ```json

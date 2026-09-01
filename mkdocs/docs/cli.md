@@ -240,3 +240,17 @@ Property write.metadata.delete-after-commit.enabled removed from nyc.taxis
 ➜  pyiceberg properties get table nyc.taxis write.metadata.delete-after-commit.enabled
 Could not find property write.metadata.delete-after-commit.enabled on nyc.taxis
 ```
+
+You can drop a table from the catalog:
+
+```sh
+➜  pyiceberg drop table nyc.taxis
+Dropped table: nyc.taxis
+```
+
+To request purge for the underlying table files through the configured catalog, pass `--purge`:
+
+```sh
+➜  pyiceberg drop table nyc.taxis --purge
+Dropped table: nyc.taxis (purge requested)
+```
