@@ -756,3 +756,4 @@ def test_overwrite_rejects_explicit_delete_without_parent_snapshot(
         with empty.transaction() as tx:
             with tx.update_snapshot().overwrite() as overwrite:
                 overwrite.delete_data_file(stale_file)
+
