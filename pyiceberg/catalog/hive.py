@@ -161,7 +161,7 @@ class _HiveClient:
         self._uri = uri
         self._kerberos_auth = kerberos_auth
         self._kerberos_service_name = kerberos_service_name
-        self._kerberos_service_host = kerberos_service_host
+        self._kerberos_service_host = kerberos_service_host or urlparse(uri).hostname
         self._ugi = ugi.split(":") if ugi else None
         self._transport = self._init_thrift_transport()
         self._was_opened = False
@@ -172,8 +172,7 @@ class _HiveClient:
         if not self._kerberos_auth:
             return TTransport.TBufferedTransport(socket)
         else:
-            host = self._kerberos_service_host or url_parts.hostname
-            return TTransport.TSaslClientTransport(socket, host=host, service=self._kerberos_service_name)
+            return TTransport.TSaslClientTransport(socket, host=self._kerberos_service_host, service=self._kerberos_service_name)
 
     def _client(self) -> Client:
         protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
