@@ -1785,28 +1785,37 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         return (nan_count := self.nan_counts.get(field_id)) is not None and nan_count > 0
 
 
-class _ResidualEvaluationVisitor(BoundBooleanExpressionVisitor[BooleanExpression]):
-    """Evaluate a residual expression for one partition."""
+class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
+    """Find residuals for an expression using partition values.
+
+    A residual expression is made by partially evaluating an expression using partition values.
+    For example, if a table is partitioned by day(utc_timestamp) and is read with a filter expression
+    utc_timestamp > a and utc_timestamp < b, then there are 4 possible residual expressions
+    for the partition data, d:
+
+    1. If d > day(a) and d < day(b), the residual is always true
+    2. If d == day(a) and d != day(b), the residual is utc_timestamp > a
+    3. If d == day(b) and d != day(a), the residual is utc_timestamp < b
+    4. If d == day(a) == day(b), the residual is utc_timestamp > a and utc_timestamp < b
+    """
 
     schema: Schema
     spec: PartitionSpec
     case_sensitive: bool
+    expr: BooleanExpression
     partition_schema: Schema
     struct: Record
 
-    def __init__(
-        self,
-        schema: Schema,
-        spec: PartitionSpec,
-        case_sensitive: bool,
-        partition_schema: Schema,
-        partition_data: Record,
-    ) -> None:
+    def __init__(self, schema: Schema, spec: PartitionSpec, case_sensitive: bool, expr: BooleanExpression) -> None:
         self.schema = schema
         self.spec = spec
         self.case_sensitive = case_sensitive
-        self.partition_schema = partition_schema
+        self.expr = expr
+        self.partition_schema = Schema(*spec.partition_type(schema).fields)
+
+    def eval(self, partition_data: Record) -> BooleanExpression:
         self.struct = partition_data
+        return visit(self.expr, visitor=self)
 
     def visit_true(self) -> BooleanExpression:
         return AlwaysTrue()
@@ -1844,10 +1853,10 @@ class _ResidualEvaluationVisitor(BoundBooleanExpressionVisitor[BooleanExpression
 
     def visit_not_nan(self, term: BoundTerm) -> BooleanExpression:
         val = term.eval(self.struct)
-        if isinstance(val, SupportsFloat) and not math.isnan(val):
-            return self.visit_true()
-        else:
+        if isinstance(val, SupportsFloat) and math.isnan(val):
             return self.visit_false()
+        else:
+            return self.visit_true()
 
     def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) < literal.value:
@@ -1968,46 +1977,6 @@ class _ResidualEvaluationVisitor(BoundBooleanExpressionVisitor[BooleanExpression
 
         # if binding didn't result in a Predicate, return the expression
         return bound
-
-
-class ResidualVisitor:
-    """Find residuals for an expression using partition values.
-
-    A residual expression is made by partially evaluating an expression using partition values.
-    For example, if a table is partitioned by day(utc_timestamp) and is read with a filter expression
-    utc_timestamp > a and utc_timestamp < b, then there are 4 possible residual expressions
-    for the partition data, d:
-
-    1. If d > day(a) and d < day(b), the residual is always true
-    2. If d == day(a) and d != day(b), the residual is utc_timestamp > a
-    3. If d == day(b) and d != day(a), the residual is utc_timestamp < b
-    4. If d == day(a) == day(b), the residual is utc_timestamp > a and utc_timestamp < b
-    """
-
-    schema: Schema
-    spec: PartitionSpec
-    case_sensitive: bool
-    expr: BooleanExpression
-    partition_schema: Schema
-
-    def __init__(self, schema: Schema, spec: PartitionSpec, case_sensitive: bool, expr: BooleanExpression) -> None:
-        self.schema = schema
-        self.spec = spec
-        self.case_sensitive = case_sensitive
-        self.expr = expr
-        self.partition_schema = Schema(*spec.partition_type(schema).fields)
-
-    def eval(self, partition_data: Record) -> BooleanExpression:
-        return visit(
-            self.expr,
-            visitor=_ResidualEvaluationVisitor(
-                schema=self.schema,
-                spec=self.spec,
-                case_sensitive=self.case_sensitive,
-                partition_schema=self.partition_schema,
-                partition_data=partition_data,
-            ),
-        )
 
 
 class ResidualEvaluator(ResidualVisitor):
