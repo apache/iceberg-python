@@ -44,9 +44,9 @@ from pyiceberg.schema import INITIAL_SCHEMA_ID, Schema
 from pyiceberg.table.metadata import INITIAL_SPEC_ID
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, SortField, SortOrder
 from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
-from pyiceberg.types import IntegerType, LongType, NestedField, TimestampType, UUIDType
+from pyiceberg.types import IntegerType, LongType, NestedField, StringType, TimestampType, UUIDType
 from pyiceberg.view import View
-from pyiceberg.view.metadata import ViewMetadata
+from pyiceberg.view.metadata import SQLViewRepresentation, ViewMetadata, ViewRepresentation, ViewVersion
 from tests.conftest import (
     clean_up,
     does_support_atomic_concurrent_updates,
@@ -618,6 +618,56 @@ def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Sch
     # Assert that registering the table again raises TableAlreadyExistsError
     with pytest.raises(TableAlreadyExistsError):
         test_catalog.register_table(identifier, metadata_location=table.metadata_location)
+
+
+@pytest.mark.integration
+def test_rest_basic_create_view(rest_catalog: RestCatalog, database_name: str, view_name: str) -> None:
+    """Ported from Java's ViewCatalogTests#basicCreateView."""
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    assert not rest_catalog.view_exists(identifier)
+
+    view = rest_catalog.create_view(
+        identifier,
+        schema=Schema(
+            NestedField(field_id=3, name="id", field_type=IntegerType(), required=True, doc="unique ID"),
+            NestedField(field_id=4, name="data", field_type=StringType(), required=True),
+            schema_id=5,
+        ),
+        view_version=ViewVersion(
+            version_id=1,
+            schema_id=0,
+            representations=[ViewRepresentation(SQLViewRepresentation(type="sql", sql="select * from ns.tbl", dialect="spark"))],
+            default_namespace=(database_name,),
+        ),
+    )
+
+    assert rest_catalog.view_exists(identifier)
+    assert view.name() == identifier
+    assert len(view.history()) == 1
+    assert view.history()[0].version_id == 1
+    assert view.schema().schema_id == 0
+
+    assert (
+        view.schema().as_struct()
+        == Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=True, doc="unique ID"),
+            NestedField(field_id=2, name="data", field_type=StringType(), required=True),
+        ).as_struct()
+    )
+    assert list(view.schemas().keys()) == [0]
+    assert view.versions == [view.current_version()]
+
+    current_version = view.current_version()
+    assert current_version == ViewVersion(
+        version_id=1,
+        schema_id=0,
+        timestamp_ms=current_version.timestamp_ms,
+        summary=current_version.summary,
+        representations=[ViewRepresentation(SQLViewRepresentation(type="sql", sql="select * from ns.tbl", dialect="spark"))],
+        default_namespace=(database_name,),
+    )
 
 
 @pytest.mark.integration
