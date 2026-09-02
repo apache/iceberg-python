@@ -62,6 +62,13 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - Use existing test fixtures when possible.
 - We have a strong bias towards integration testing over mocks. Mocks should be avoided whenever possible and should only be used if similar, existing tests are using mocks.
 
+### Required CI and Merge Queue
+
+- Keep the `required_status_checks.contexts` list in `.asf.yaml` synchronized whenever a required job/check is added, renamed, or removed. Each entry is a job/check context name, not a workflow filename.
+- Verify that every required context reports for both `pull_request` and `merge_group`. Its producer workflow must run on both events.
+- When a workflow uses an aggregate required job, such as `python-ci-required`, keep `if: always()` and its `needs` list in sync with every job whose result should block merging.
+- Do not use `pull_request` path filters in workflows that produce required contexts. A skipped workflow does not report its required context, which blocks pull requests and causes Merge Queue entries to time out.
+
 ## Commands
 
 - **Install / set up dev env:** `make install` (installs `uv`, syncs all extras, builds Cython, installs pre-commit hooks)
