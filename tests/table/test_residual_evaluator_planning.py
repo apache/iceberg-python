@@ -20,8 +20,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import Any
 
-from pyiceberg.expressions import And, BooleanExpression, EqualTo
-from pyiceberg.expressions.visitors import ResidualEvaluator
+import pytest
+
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -29,40 +30,23 @@ from pyiceberg.table import ManifestGroupPlanner, Table, TableProperties
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.transforms import BucketTransform, IdentityTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record
+from pyiceberg.types import LongType
 
 
-class _CountingResidualEvaluator(ResidualEvaluator):
-    def __init__(self, marker: int) -> None:
-        self.marker = marker
-        self.calls: list[tuple[Any, ...]] = []
-
-    def residual_for(self, partition: Record) -> BooleanExpression:
-        partition_values = tuple(partition[pos] for pos in range(len(partition)))
-        self.calls.append(partition_values)
-        return EqualTo("x", self.marker * 10 + partition[0])
-
-
-class _TestManifestGroupPlanner(ManifestGroupPlanner):
+class _ManifestEntriesPlanner(ManifestGroupPlanner):
     def __init__(
         self,
         table_metadata: TableMetadata,
         io: FileIO,
         row_filter: BooleanExpression,
         entries: list[ManifestEntry],
-        evaluators: dict[int, _CountingResidualEvaluator],
         options: Properties = EMPTY_DICT,
     ) -> None:
         super().__init__(table_metadata=table_metadata, io=io, row_filter=row_filter, options=options)
         self.entries = entries
-        self.evaluators = evaluators
-        self.evaluator_builds: list[int] = []
 
     def plan_manifest_entries(self, _manifests: Iterable[ManifestFile]) -> Iterator[list[ManifestEntry]]:
         return iter([self.entries])
-
-    def _build_residual_evaluator(self, spec_id: int) -> ResidualEvaluator:
-        self.evaluator_builds.append(spec_id)
-        return self.evaluators[spec_id]
 
 
 def _manifest_entry(file_number: int, spec_id: int, partition: tuple[Any, ...]) -> ManifestEntry:
@@ -103,123 +87,103 @@ def _planner(
     table_v2: Table,
     row_filter: BooleanExpression,
     entries: list[ManifestEntry],
-    evaluators: dict[int, _CountingResidualEvaluator],
     *partition_specs: PartitionSpec,
     options: Properties = EMPTY_DICT,
-) -> _TestManifestGroupPlanner:
+) -> _ManifestEntriesPlanner:
     metadata = table_v2.metadata.model_copy(update={"partition_specs": list(partition_specs)})
-    return _TestManifestGroupPlanner(
+    return _ManifestEntriesPlanner(
         table_metadata=metadata,
         io=table_v2.io,
         row_filter=row_filter,
         entries=entries,
-        evaluators=evaluators,
         options=options,
     )
 
 
-def test_manifest_group_planner_reuses_residuals_by_spec_and_partition(table_v2: Table) -> None:
-    entries = [
-        _manifest_entry(0, spec_id=0, partition=(1,)),
-        _manifest_entry(1, spec_id=0, partition=(1,)),
-        _manifest_entry(2, spec_id=1, partition=(1,)),
-        _manifest_entry(3, spec_id=1, partition=(1,)),
-        _manifest_entry(4, spec_id=0, partition=(2,)),
-    ]
-    evaluators = {0: _CountingResidualEvaluator(0), 1: _CountingResidualEvaluator(1)}
-    planner = _planner(table_v2, EqualTo("x", 1), entries, evaluators, _identity_spec(0, 1), _identity_spec(1, 1))
-
-    tasks = list(planner.plan_files([]))
-
-    assert planner.evaluator_builds == [0, 1]
-    assert evaluators[0].calls == [(1,), (2,)]
-    assert evaluators[1].calls == [(1,)]
-    assert [task.residual for task in tasks] == [
-        EqualTo("x", 1),
-        EqualTo("x", 1),
-        EqualTo("x", 11),
-        EqualTo("x", 11),
-        EqualTo("x", 2),
-    ]
-
-
-def test_manifest_group_planner_ignores_unreferenced_partition_fields(table_v2: Table) -> None:
+def test_plan_files_returns_correct_residuals_for_repeated_relevant_partitions(table_v2: Table) -> None:
     entries = [
         _manifest_entry(0, spec_id=0, partition=(1, 10)),
         _manifest_entry(1, spec_id=0, partition=(1, 20)),
         _manifest_entry(2, spec_id=0, partition=(2, 30)),
     ]
-    evaluator = _CountingResidualEvaluator(0)
-    planner = _planner(table_v2, EqualTo("x", 1), entries, {0: evaluator}, _identity_spec(0, 1, 2))
+    planner = _planner(table_v2, EqualTo("x", 1), entries, _identity_spec(0, 1, 2))
 
     tasks = list(planner.plan_files([]))
 
-    assert evaluator.calls == [(1, 10), (2, 30)]
-    assert [task.residual for task in tasks] == [EqualTo("x", 1), EqualTo("x", 1), EqualTo("x", 2)]
+    assert [task.residual for task in tasks] == [AlwaysTrue(), AlwaysTrue(), AlwaysFalse()]
 
 
-def test_manifest_group_planner_includes_referenced_partition_fields(table_v2: Table) -> None:
+def test_plan_files_distinguishes_each_referenced_partition_field(table_v2: Table) -> None:
     entries = [
         _manifest_entry(0, spec_id=0, partition=(1, 10)),
         _manifest_entry(1, spec_id=0, partition=(1, 20)),
     ]
-    evaluator = _CountingResidualEvaluator(0)
     planner = _planner(
         table_v2,
         And(EqualTo("x", 1), EqualTo("y", 10)),
         entries,
-        {0: evaluator},
         _identity_spec(0, 1, 2),
-    )
-
-    list(planner.plan_files([]))
-
-    assert evaluator.calls == [(1, 10), (1, 20)]
-
-
-def test_manifest_group_planner_includes_all_partition_transforms_for_referenced_source(table_v2: Table) -> None:
-    spec = PartitionSpec(
-        PartitionField(1, 1000, BucketTransform(7), "x_bucket_7"),
-        PartitionField(1, 1001, BucketTransform(5), "x_bucket_5"),
-        PartitionField(2, 1002, IdentityTransform(), "partition_hash"),
-        spec_id=0,
-    )
-    entries = [
-        _manifest_entry(0, spec_id=0, partition=(5, 0, 10)),
-        _manifest_entry(1, spec_id=0, partition=(5, 1, 20)),
-        _manifest_entry(2, spec_id=0, partition=(5, 0, 30)),
-    ]
-    evaluator = _CountingResidualEvaluator(0)
-    planner = _planner(table_v2, EqualTo("x", 1), entries, {0: evaluator}, spec)
-
-    list(planner.plan_files([]))
-
-    assert evaluator.calls == [(5, 0, 10), (5, 1, 20)]
-
-
-def test_manifest_group_planner_bounds_residual_cache(table_v2: Table) -> None:
-    entries = [
-        _manifest_entry(0, spec_id=0, partition=(1,)),
-        _manifest_entry(1, spec_id=0, partition=(2,)),
-        _manifest_entry(2, spec_id=0, partition=(3,)),
-        _manifest_entry(3, spec_id=0, partition=(1,)),
-    ]
-    evaluator = _CountingResidualEvaluator(0)
-    planner = _planner(
-        table_v2,
-        EqualTo("x", 1),
-        entries,
-        {0: evaluator},
-        _identity_spec(0, 1),
-        options={TableProperties.RESIDUAL_CACHE_MAX_SIZE: "2"},
     )
 
     tasks = list(planner.plan_files([]))
 
-    assert evaluator.calls == [(1,), (2,), (3,), (1,)]
-    assert [task.residual for task in tasks] == [
-        EqualTo("x", 1),
-        EqualTo("x", 2),
-        EqualTo("x", 3),
-        EqualTo("x", 1),
+    assert [task.residual for task in tasks] == [AlwaysTrue(), AlwaysFalse()]
+
+
+def test_plan_files_isolates_residuals_by_partition_spec(table_v2: Table) -> None:
+    predicate = EqualTo("x", 1)
+    entries = [
+        _manifest_entry(0, spec_id=0, partition=(1,)),
+        _manifest_entry(1, spec_id=1, partition=(1,)),
     ]
+    planner = _planner(
+        table_v2,
+        predicate,
+        entries,
+        _identity_spec(0, 1),
+        _identity_spec(1, 2),
+    )
+
+    tasks = list(planner.plan_files([]))
+
+    assert [task.residual for task in tasks] == [AlwaysTrue(), predicate]
+
+
+def test_plan_files_distinguishes_each_transform_for_a_referenced_field(table_v2: Table) -> None:
+    bucket_7: BucketTransform[int] = BucketTransform(7)
+    bucket_5: BucketTransform[int] = BucketTransform(5)
+    x_bucket_7 = bucket_7.transform(LongType())(1)
+    x_bucket_5 = bucket_5.transform(LongType())(1)
+    assert x_bucket_7 is not None
+    assert x_bucket_5 is not None
+
+    spec = PartitionSpec(
+        PartitionField(1, 1000, bucket_7, "x_bucket_7"),
+        PartitionField(1, 1001, bucket_5, "x_bucket_5"),
+        PartitionField(2, 1002, IdentityTransform(), "partition_hash"),
+        spec_id=0,
+    )
+    predicate = EqualTo("x", 1)
+    entries = [
+        _manifest_entry(0, spec_id=0, partition=(x_bucket_7, x_bucket_5, 10)),
+        _manifest_entry(1, spec_id=0, partition=(x_bucket_7, (x_bucket_5 + 1) % 5, 20)),
+    ]
+    planner = _planner(table_v2, predicate, entries, spec)
+
+    tasks = list(planner.plan_files([]))
+
+    assert [task.residual for task in tasks] == [predicate, AlwaysFalse()]
+
+
+@pytest.mark.parametrize("cache_size", ["0", "-1"])
+def test_plan_files_rejects_non_positive_residual_cache_size(table_v2: Table, cache_size: str) -> None:
+    planner = _planner(
+        table_v2,
+        EqualTo("x", 1),
+        [_manifest_entry(0, spec_id=0, partition=(1,))],
+        _identity_spec(0, 1),
+        options={TableProperties.RESIDUAL_CACHE_MAX_SIZE: cache_size},
+    )
+
+    with pytest.raises(ValueError, match="read.residual-cache.max-size must be a positive integer"):
+        list(planner.plan_files([]))
