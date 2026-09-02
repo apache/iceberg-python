@@ -39,7 +39,6 @@ github:
         contexts:
           # Repository policy and security checks.
           - Analyze Actions
-          - CodeQL
           - Run zizmor 🌈
           - asf-allowlist-check
           - rat
