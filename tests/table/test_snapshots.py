@@ -25,6 +25,7 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.exceptions import ValidationException
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
@@ -326,6 +327,7 @@ def test_merge_snapshot_summaries_empty() -> None:
             "total-files-size": "0",
             "total-position-deletes": "0",
             "total-equality-deletes": "0",
+            **EnvironmentContext.get(),
         },
     )
 
@@ -360,6 +362,7 @@ def test_merge_snapshot_summaries_new_summary() -> None:
             "total-files-size": "4",
             "total-position-deletes": "5",
             "total-equality-deletes": "3",
+            **EnvironmentContext.get(),
         },
     )
 
@@ -402,6 +405,7 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
         "total-files-size": "5",
         "total-position-deletes": "6",
         "total-equality-deletes": "4",
+        **EnvironmentContext.get(),
     }
 
     assert actual.additional_properties == expected
