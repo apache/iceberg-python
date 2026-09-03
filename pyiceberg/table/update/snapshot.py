@@ -1326,6 +1326,7 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
     """
 
     _computed_manifests: list[ManifestFile] | None
+    _predicate: Callable[[ManifestFile], bool] | None
 
     _rewritten_count: int
     _created_count: int
@@ -1347,11 +1348,24 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
                 "the first-row-id of rewritten manifests must be preserved, "
                 "see: https://github.com/apache/iceberg-python/issues/3621"
             )
+        self._predicate = None
         self._rewritten_count = 0
         self._created_count = 0
         self._kept_count = 0
         self._entries_processed = 0
         self._computed_manifests = None
+
+    def rewrite_if(self, predicate: Callable[[ManifestFile], bool]) -> RewriteManifests:
+        """Filter which manifests should be rewritten.
+
+        Args:
+            predicate: A function that takes a ManifestFile and returns True if it should be rewritten.
+
+        Returns:
+            This RewriteManifests instance for method chaining.
+        """
+        self._predicate = predicate
+        return self
 
     def _deleted_entries(self) -> list[ManifestEntry]:
         return []
@@ -1395,25 +1409,31 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         kept_manifests: list[ManifestFile] = []
         for manifest in snapshot.manifests(self._io):
             if manifest.content == ManifestContent.DATA:
-                data_manifests_by_spec[manifest.partition_spec_id].append(manifest)
+                if self._predicate is None or self._predicate(manifest):
+                    data_manifests_by_spec[manifest.partition_spec_id].append(manifest)
+                else:
+                    kept_manifests.append(manifest)
             else:
                 kept_manifests.append(manifest)
 
         new_manifests: list[ManifestFile] = []
         for spec_id, manifests in data_manifests_by_spec.items():
             for group in self._group_by_target_size(manifests):
-                if len(group) == 1:
-                    # nothing to merge; keep the manifest as-is
+                if len(group) == 1 and self._predicate is None:
+                    # nothing to merge and no predicate specified; keep the manifest as-is
                     kept_manifests.append(group[0])
                     continue
+                entries_in_group = 0
                 with self.new_manifest_writer(self.spec(spec_id)) as writer:
                     for manifest in group:
                         for entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True):
                             writer.existing(entry)
                             self._entries_processed += 1
-                new_manifests.append(writer.to_manifest_file())
+                            entries_in_group += 1
+                if entries_in_group > 0:
+                    new_manifests.append(writer.to_manifest_file())
+                    self._created_count += 1
                 self._rewritten_count += len(group)
-                self._created_count += 1
 
         self._kept_count = len(kept_manifests)
         self.snapshot_properties = {
@@ -1434,9 +1454,11 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         return super()._commit()
 
     def rewrites_needed(self) -> bool:
-        """Return whether the current snapshot has more than one data manifest to merge."""
+        """Return whether the current snapshot has data manifests to rewrite."""
         snapshot = self._transaction.table_metadata.snapshot_by_name(self._target_branch or MAIN_BRANCH)
         if snapshot is None:
             return False
         data_manifests = [m for m in snapshot.manifests(self._io) if m.content == ManifestContent.DATA]
+        if self._predicate is not None:
+            return any(self._predicate(m) for m in data_manifests)
         return len(data_manifests) > 1
