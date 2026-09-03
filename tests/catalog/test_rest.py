@@ -33,13 +33,12 @@ from requests_mock import Mocker
 import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import (
-    CONNECTION,
-    CONNECTION_BACKOFF_FACTOR,
-    CONNECTION_RETRIES,
-    CONNECTION_TIMEOUT,
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
+    REST_CLIENT_MAX_RETRIES,
+    REST_CLIENT_REQUEST_TIMEOUT,
+    REST_CLIENT_RETRY_BACKOFF_FACTOR,
     SIGV4_MAX_RETRIES,
     SIGV4_MAX_RETRIES_DEFAULT,
     SNAPSHOT_LOADING_MODE,
@@ -2036,11 +2035,9 @@ def test_session_with_connection_timeout_and_retries(rest_mock: Mocker) -> None:
     catalog_properties = {
         "uri": TEST_URI,
         "token": TEST_TOKEN,
-        CONNECTION: {
-            CONNECTION_TIMEOUT: 60,
-            CONNECTION_RETRIES: 5,
-            CONNECTION_BACKOFF_FACTOR: 1.0,
-        },
+        REST_CLIENT_REQUEST_TIMEOUT: 60,
+        REST_CLIENT_MAX_RETRIES: 5,
+        REST_CLIENT_RETRY_BACKOFF_FACTOR: 1.0,
     }
     catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
 
@@ -2054,14 +2051,14 @@ def test_session_with_connection_timeout_and_retries(rest_mock: Mocker) -> None:
     # Internal retry policy: transient codes and idempotent methods only.
     assert https_adapter.max_retries.status_forcelist == [429, 500, 502, 503, 504]
     allowed_methods = https_adapter.max_retries.allowed_methods or frozenset()
-    assert set(allowed_methods) == {"GET", "HEAD", "OPTIONS"}
+    assert set(allowed_methods) == {"GET", "HEAD", "OPTIONS", "PUT", "DELETE"}
 
 
 def test_session_with_connection_timeout_only(rest_mock: Mocker) -> None:
     catalog_properties = {
         "uri": TEST_URI,
         "token": TEST_TOKEN,
-        CONNECTION: {CONNECTION_TIMEOUT: "30"},
+        REST_CLIENT_REQUEST_TIMEOUT: "30",
     }
     catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
     adapter = catalog._session.adapters["https://"]
@@ -2132,7 +2129,8 @@ def test_session_retries_on_transient_5xx_then_succeeds() -> None:
                 "uri": f"http://127.0.0.1:{server['port']}/",
                 "token": TEST_TOKEN,
                 # backoff-factor=0 keeps the test fast; retries=3 covers three 503s + the eventual 200.
-                CONNECTION: {CONNECTION_RETRIES: 3, CONNECTION_BACKOFF_FACTOR: 0},
+                REST_CLIENT_MAX_RETRIES: 3,
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: 0,
             },
         )
         assert catalog.list_namespaces() == [("foo",)]
@@ -2149,7 +2147,8 @@ def test_session_exhausted_retries_surfaces_typed_exception() -> None:
             **{  # type: ignore
                 "uri": f"http://127.0.0.1:{server['port']}/",
                 "token": TEST_TOKEN,
-                CONNECTION: {CONNECTION_RETRIES: 2, CONNECTION_BACKOFF_FACTOR: 0},
+                REST_CLIENT_MAX_RETRIES: 2,
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: 0,
             },
         )
         with pytest.raises(ServiceUnavailableError):
@@ -2162,9 +2161,9 @@ def test_session_with_invalid_connection_timeout_raises(rest_mock: Mocker) -> No
     catalog_properties = {
         "uri": TEST_URI,
         "token": TEST_TOKEN,
-        CONNECTION: {CONNECTION_TIMEOUT: -1},
+        REST_CLIENT_REQUEST_TIMEOUT: -1,
     }
-    with pytest.raises(ValueError, match="`connection.timeout` must be a positive number"):
+    with pytest.raises(ValueError, match="`rest.client.request-timeout` must be a positive number"):
         RestCatalog("rest", **catalog_properties)  # type: ignore
 
 
@@ -2172,9 +2171,9 @@ def test_session_with_invalid_connection_retries_raises(rest_mock: Mocker) -> No
     catalog_properties = {
         "uri": TEST_URI,
         "token": TEST_TOKEN,
-        CONNECTION: {CONNECTION_RETRIES: -1},
+        REST_CLIENT_MAX_RETRIES: -1,
     }
-    with pytest.raises(ValueError, match="`connection.retries` must be non-negative"):
+    with pytest.raises(ValueError, match="`rest.client.max-retries` must be non-negative"):
         RestCatalog("rest", **catalog_properties)  # type: ignore
 
 

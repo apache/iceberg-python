@@ -17,17 +17,18 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
+    TypeVar,
 )
 from urllib.parse import quote, unquote
 
 from pydantic import ConfigDict, Field, TypeAdapter, field_validator
 from requests import HTTPError, PreparedRequest, Response, Session
-from requests.adapters import HTTPAdapter
+from requests.adapters import DEFAULT_RETRIES, HTTPAdapter
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 from typing_extensions import override
 from urllib3.util.retry import Retry
@@ -258,14 +259,13 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 SIGV4_MAX_RETRIES = "rest.sigv4.max-retries"
 SIGV4_MAX_RETRIES_DEFAULT = 10
-CONNECTION = "connection"
-CONNECTION_TIMEOUT = "timeout"
-CONNECTION_RETRIES = "retries"
-CONNECTION_BACKOFF_FACTOR = "backoff-factor"
+REST_CLIENT_REQUEST_TIMEOUT = "rest.client.request-timeout"
+REST_CLIENT_MAX_RETRIES = "rest.client.max-retries"
+REST_CLIENT_RETRY_BACKOFF_FACTOR = "rest.client.retry-backoff-factor"
 # Hard-coded internally so users cannot misconfigure the retry policy
 # (e.g. setting raise_on_status=False would swallow 4xx errors silently).
 _CONNECTION_RETRY_STATUS_FORCELIST = (429, 500, 502, 503, 504)
-_CONNECTION_RETRY_ALLOWED_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_CONNECTION_RETRY_ALLOWED_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
@@ -403,6 +403,29 @@ class ListViewsResponse(IcebergBaseModel):
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
+_T = TypeVar("_T", int, float)
+
+
+def _parse_connection_property(
+    properties: Properties,
+    property_name: str,
+    converter: Callable[[Any], _T],
+    type_description: str,
+    is_invalid: Callable[[_T], bool],
+    range_description: str,
+) -> _T | None:
+    raw_value = properties.get(property_name)
+    if raw_value is None:
+        return None
+    try:
+        value = converter(raw_value)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"`{property_name}` must be {type_description}, got: {raw_value!r}") from e
+    if is_invalid(value):
+        raise ValueError(f"`{property_name}` must be {range_description}, got: {value}")
+    return value
+
+
 class _RetryTimeoutHTTPAdapter(HTTPAdapter):
     """HTTPAdapter that applies a default per-request timeout.
 
@@ -411,12 +434,9 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
     The adapter applies `self._timeout` whenever a per-call timeout is not set.
     """
 
-    def __init__(self, timeout: float | None = None, max_retries: Retry | int | None = None) -> None:
+    def __init__(self, timeout: float | None = None, max_retries: Retry | int = DEFAULT_RETRIES) -> None:
         self._timeout = timeout
-        if max_retries is not None:
-            super().__init__(max_retries=max_retries)
-        else:
-            super().__init__()
+        super().__init__(max_retries=max_retries)
 
     def send(
         self,
@@ -433,51 +453,50 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
 
 
 def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapter | None:
-    """Build a connection adapter from the optional `connection.*` properties.
+    """Build a connection adapter from the optional `rest.client.*` properties.
 
-    Returns None when no `connection` block is supplied, leaving the default
+    Returns None when no connection properties are supplied, leaving the default
     Session behavior unchanged. Raises ValueError on invalid input.
     """
-    connection_config = properties.get(CONNECTION)
-    if not connection_config:
+    if not any(
+        property_name in properties
+        for property_name in (REST_CLIENT_REQUEST_TIMEOUT, REST_CLIENT_MAX_RETRIES, REST_CLIENT_RETRY_BACKOFF_FACTOR)
+    ):
         return None
-    if not isinstance(connection_config, dict):
-        raise ValueError(f"`{CONNECTION}` must be a mapping, got: {type(connection_config).__name__}")
 
-    timeout: float | None = None
-    if (raw_timeout := connection_config.get(CONNECTION_TIMEOUT)) is not None:
-        try:
-            timeout = float(raw_timeout)
-        except (TypeError, ValueError) as e:
-            raise ValueError(f"`{CONNECTION}.{CONNECTION_TIMEOUT}` must be a number, got: {raw_timeout!r}") from e
-        if timeout <= 0:
-            raise ValueError(f"`{CONNECTION}.{CONNECTION_TIMEOUT}` must be a positive number, got: {timeout}")
+    timeout = _parse_connection_property(
+        properties,
+        REST_CLIENT_REQUEST_TIMEOUT,
+        float,
+        "a number",
+        lambda value: value <= 0,
+        "a positive number",
+    )
 
-    # `retries` and `backoff_factor` default to 0 (a no-op Retry) so the user can set only
-    # one or the other without forcing the rest of the policy to be specified explicitly.
-    retries = 0
-    if (raw_retries := connection_config.get(CONNECTION_RETRIES)) is not None:
-        try:
-            retries = int(raw_retries)
-        except (TypeError, ValueError) as e:
-            raise ValueError(f"`{CONNECTION}.{CONNECTION_RETRIES}` must be an integer, got: {raw_retries!r}") from e
-        if retries < 0:
-            raise ValueError(f"`{CONNECTION}.{CONNECTION_RETRIES}` must be non-negative, got: {retries}")
-
-    backoff_factor = 0.0
-    if (raw_backoff := connection_config.get(CONNECTION_BACKOFF_FACTOR)) is not None:
-        try:
-            backoff_factor = float(raw_backoff)
-        except (TypeError, ValueError) as e:
-            raise ValueError(f"`{CONNECTION}.{CONNECTION_BACKOFF_FACTOR}` must be a number, got: {raw_backoff!r}") from e
-        if backoff_factor < 0:
-            raise ValueError(f"`{CONNECTION}.{CONNECTION_BACKOFF_FACTOR}` must be non-negative, got: {backoff_factor}")
+    retries = _parse_connection_property(
+        properties,
+        REST_CLIENT_MAX_RETRIES,
+        int,
+        "an integer",
+        lambda value: value < 0,
+        "non-negative",
+    )
+    backoff_factor = _parse_connection_property(
+        properties,
+        REST_CLIENT_RETRY_BACKOFF_FACTOR,
+        float,
+        "a number",
+        lambda value: value < 0,
+        "non-negative",
+    )
 
     return _RetryTimeoutHTTPAdapter(
         timeout=timeout,
         max_retries=Retry(
-            total=retries,
-            backoff_factor=backoff_factor,
+            # `retries` and `backoff_factor` fall back to a no-op Retry when unset, so a user can
+            # configure only one without having to specify the rest of the policy.
+            total=retries if retries is not None else DEFAULT_RETRIES,
+            backoff_factor=backoff_factor if backoff_factor is not None else 0.0,
             status_forcelist=list(_CONNECTION_RETRY_STATUS_FORCELIST),
             allowed_methods=_CONNECTION_RETRY_ALLOWED_METHODS,
             # Return the final response on retry exhaustion (instead of raising MaxRetryError)
