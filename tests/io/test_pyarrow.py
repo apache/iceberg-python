@@ -2326,6 +2326,30 @@ def test_parse_location() -> None:
     check_results("/root/foo.txt", "file", "", os.path.abspath("/root/foo.txt"))
     check_results("/root/tmp/foo.txt", "file", "", os.path.abspath("/root/tmp/foo.txt"))
 
+    check_results("s3://bucket/root/foo.txt", "s3", "bucket", "bucket/root/foo.txt")
+
+
+@pytest.mark.parametrize("scheme", ["abfs", "abfss", "wasb", "wasbs"])
+def test_parse_location_adls_account_qualified(scheme: str) -> None:
+    """The account must not leak into the path, PyArrow takes it on the filesystem instead."""
+    scheme_, netloc, path = PyArrowFileIO.parse_location(
+        f"{scheme}://mycontainer@myaccount.dfs.core.windows.net/wh/db/tbl/data.parquet"
+    )
+
+    assert scheme_ == scheme
+    assert netloc == "mycontainer@myaccount.dfs.core.windows.net"
+    assert path == "mycontainer/wh/db/tbl/data.parquet"
+
+
+@pytest.mark.parametrize("scheme", ["abfs", "abfss", "wasb", "wasbs"])
+def test_parse_location_adls_container_only(scheme: str) -> None:
+    """Locations without an account keep the netloc as the container."""
+    scheme_, netloc, path = PyArrowFileIO.parse_location(f"{scheme}://mycontainer/wh/db/tbl/data.parquet")
+
+    assert scheme_ == scheme
+    assert netloc == "mycontainer"
+    assert path == "mycontainer/wh/db/tbl/data.parquet"
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
 def test_parse_location_windows_drive_letter() -> None:
