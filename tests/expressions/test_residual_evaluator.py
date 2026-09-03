@@ -21,6 +21,7 @@ from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
     And,
+    BooleanExpression,
     EqualTo,
     GreaterThan,
     GreaterThanOrEqual,
@@ -36,7 +37,7 @@ from pyiceberg.expressions import (
     StartsWith,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.expressions.visitors import residual_evaluator_of
+from pyiceberg.expressions.visitors import ResidualVisitor, residual_evaluator_of
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import DayTransform, IdentityTransform
@@ -86,6 +87,27 @@ def test_identity_transform_residual() -> None:
     residual = res_eval.residual_for(Record(20170817))
 
     assert residual == AlwaysFalse()
+
+
+def test_residual_visitor_preserves_public_eval_api() -> None:
+    schema = Schema(NestedField(1, "a", IntegerType()))
+    spec = PartitionSpec(PartitionField(1, 1001, IdentityTransform(), "a_part"))
+    visitor = ResidualVisitor(schema=schema, spec=spec, case_sensitive=True, expr=EqualTo("a", 1))
+
+    assert visitor.eval(Record(1)) == AlwaysTrue()
+    assert visitor.eval(Record(0)) == AlwaysFalse()
+
+
+def test_residual_visitor_subclass_can_customize_evaluation() -> None:
+    class FalseForTrueResidualVisitor(ResidualVisitor):
+        def visit_true(self) -> BooleanExpression:
+            return AlwaysFalse()
+
+    schema = Schema(NestedField(1, "a", IntegerType()))
+    spec = PartitionSpec(PartitionField(1, 1001, IdentityTransform(), "a_part"))
+    visitor = FalseForTrueResidualVisitor(schema=schema, spec=spec, case_sensitive=True, expr=AlwaysTrue())
+
+    assert visitor.eval(Record(1)) == AlwaysFalse()
 
 
 def test_case_insensitive_identity_transform_residuals() -> None:
@@ -216,6 +238,9 @@ def test_is_not_nan() -> None:
     residual = res_eval.residual_for(Record(float("nan")))
     assert residual == AlwaysFalse()
 
+    residual = res_eval.residual_for(Record(float("nan")))
+    assert residual == AlwaysFalse()
+
     residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysTrue()
 
@@ -227,6 +252,9 @@ def test_is_not_nan() -> None:
 
     residual = res_eval.residual_for(Record(None))
     assert residual == AlwaysTrue()
+
+    residual = res_eval.residual_for(Record(float("nan")))
+    assert residual == AlwaysFalse()
 
     residual = res_eval.residual_for(Record(float("nan")))
     assert residual == AlwaysFalse()

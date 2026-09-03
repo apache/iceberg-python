@@ -31,6 +31,7 @@ from itertools import chain
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from cachetools import LRUCache
 from pydantic import Field
 
 import pyiceberg.expressions.parser as parser
@@ -41,6 +42,7 @@ from pyiceberg.expressions.visitors import (
     _InclusiveMetricsEvaluator,
     bind,
     expression_evaluator,
+    extract_field_ids,
     inclusive_projection,
     manifest_evaluator,
 )
@@ -135,6 +137,9 @@ class UpsertResult:
 
 
 class TableProperties:
+    RESIDUAL_CACHE_MAX_SIZE = "read.residual-cache.max-size"
+    RESIDUAL_CACHE_MAX_SIZE_DEFAULT = 128
+
     PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
     PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
 
@@ -2813,7 +2818,39 @@ class ManifestGroupPlanner:
         data_entries: list[ManifestEntry] = []
         delete_index = DeleteFileIndex()
 
-        residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
+        residual_evaluators: dict[int, ResidualEvaluator] = KeyDefaultDict(self._build_residual_evaluator)
+        referenced_field_ids = extract_field_ids(
+            bind(self.table_metadata.schema(), self.row_filter, case_sensitive=self.case_sensitive)
+        )
+        partition_specs = self.table_metadata.specs()
+        residual_cache_key_positions: dict[int, tuple[int, ...]] = KeyDefaultDict(
+            lambda spec_id: tuple(
+                pos
+                for pos, partition_field in enumerate(partition_specs[spec_id].fields)
+                if partition_field.source_id in referenced_field_ids
+            )
+        )
+        # A residual can only depend on partition fields derived from source columns
+        # referenced by the scan filter. Keep the cache local and bounded.
+        residual_cache_max_size = property_as_int(
+            self.options,
+            TableProperties.RESIDUAL_CACHE_MAX_SIZE,
+            TableProperties.RESIDUAL_CACHE_MAX_SIZE_DEFAULT,
+        )
+        if residual_cache_max_size is None or residual_cache_max_size <= 0:
+            raise ValueError(f"{TableProperties.RESIDUAL_CACHE_MAX_SIZE} must be a positive integer")
+        residual_cache: LRUCache[tuple[int, tuple[Any, ...]], BooleanExpression] = LRUCache(maxsize=residual_cache_max_size)
+
+        def residual_for(data_file: DataFile) -> BooleanExpression:
+            partition = data_file.partition
+            partition_values = tuple(partition[pos] for pos in residual_cache_key_positions[data_file.spec_id])
+            cache_key = data_file.spec_id, partition_values
+            try:
+                return residual_cache[cache_key]
+            except KeyError:
+                residual = residual_evaluators[data_file.spec_id].residual_for(partition)
+                residual_cache[cache_key] = residual
+                return residual
 
         for manifest_entry in chain.from_iterable(self.plan_manifest_entries(manifests)):
             if not manifest_entry_filter(manifest_entry):
@@ -2837,9 +2874,7 @@ class ManifestGroupPlanner:
                     data_entry.data_file,
                     partition_key=data_entry.data_file.partition,
                 ),
-                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
-                    data_entry.data_file.partition
-                ),
+                residual=residual_for(data_entry.data_file),
             )
             for data_entry in data_entries
         ]
@@ -2876,15 +2911,12 @@ class ManifestGroupPlanner:
             include_empty_files,
         ).eval
 
-    def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
+    def _build_residual_evaluator(self, spec_id: int) -> ResidualEvaluator:
         spec = self.table_metadata.specs()[spec_id]
 
         from pyiceberg.expressions.visitors import residual_evaluator_of
 
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _EvaluatorExpression methods bound to a single
-        # shared instance across multiple threads.
-        return lambda datafile: residual_evaluator_of(
+        return residual_evaluator_of(
             spec=spec,
             expr=self.row_filter,
             case_sensitive=self.case_sensitive,
