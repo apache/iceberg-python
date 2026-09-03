@@ -29,7 +29,7 @@ from click import Context
 from pyiceberg import __version__
 from pyiceberg.catalog import URI, Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
-from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError, NoSuchViewError
 from pyiceberg.io import WAREHOUSE
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
@@ -142,12 +142,12 @@ def list(ctx: Context, parent: str | None) -> None:  # pylint: disable=redefined
 
 
 @run.command()
-@click.option("--entity", type=click.Choice(["any", "namespace", "table"]), default="any")
+@click.option("--entity", type=click.Choice(["any", "namespace", "table", "view"]), default="any")
 @click.argument("identifier")
 @click.pass_context
 @catch_exception()
-def describe(ctx: Context, entity: Literal["name", "namespace", "table"], identifier: str) -> None:
-    """Describe a namespace or a table."""
+def describe(ctx: Context, entity: Literal["any", "namespace", "table", "view"], identifier: str) -> None:
+    """Describe a namespace, a table, or a view."""
     catalog, output = _catalog_and_output(ctx)
     identifier_tuple = Catalog.identifier_to_tuple(identifier)
 
@@ -158,7 +158,7 @@ def describe(ctx: Context, entity: Literal["name", "namespace", "table"], identi
             output.describe_properties(namespace_properties)
             is_namespace = True
         except NoSuchNamespaceError as exc:
-            if entity != "any" or len(identifier_tuple) == 1:  # type: ignore
+            if entity != "any" or len(identifier_tuple) == 1:
                 raise exc
 
     is_table = False
@@ -171,8 +171,18 @@ def describe(ctx: Context, entity: Literal["name", "namespace", "table"], identi
             if entity != "any":
                 raise exc
 
-    if is_namespace is False and is_table is False:
-        raise NoSuchTableError(f"Table or namespace does not exist: {identifier}")
+    is_view = False
+    if entity in {"view", "any"} and len(identifier_tuple) > 1:
+        try:
+            catalog_view = catalog.load_view(identifier)
+            output.describe_view(catalog_view)
+            is_view = True
+        except (NoSuchViewError, NotImplementedError) as exc:
+            if entity != "any":
+                raise exc
+
+    if is_namespace is False and is_table is False and is_view is False:
+        raise NoSuchTableError(f"Table, view, or namespace does not exist: {identifier}")
 
 
 @run.command()
@@ -294,6 +304,18 @@ def namespace(ctx: Context, identifier: str) -> None:  # noqa: F811
 
     catalog.drop_namespace(identifier)
     output.text(f"Dropped namespace: {identifier}")
+
+
+@drop.command()
+@click.argument("identifier")
+@click.pass_context
+@catch_exception()
+def view(ctx: Context, identifier: str) -> None:  # noqa: F811
+    """Drop a view."""
+    catalog, output = _catalog_and_output(ctx)
+
+    catalog.drop_view(identifier)
+    output.text(f"Dropped view: {identifier}")
 
 
 @run.command()
@@ -438,6 +460,17 @@ def table(ctx: Context, identifier: str, property_name: str) -> None:  # noqa: F
         output.text(f"Property {property_name} removed from {identifier}")
     else:
         raise NoSuchPropertyException(f"Property {property_name} does not exist on {identifier}")
+
+
+@run.command()
+@click.argument("namespace")
+@click.pass_context
+@catch_exception()
+def list_views(ctx: Context, namespace: str) -> None:
+    """List all views in a namespace."""
+    catalog, output = _catalog_and_output(ctx)
+    identifiers = catalog.list_views(namespace)
+    output.identifiers(identifiers)
 
 
 @run.command()
