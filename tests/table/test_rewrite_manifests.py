@@ -141,3 +141,63 @@ def test_rewrites_needed(catalog: Catalog) -> None:
     table.append(_arrow_table(offset=3))
     table = catalog.load_table("default.test_rewrite")
     assert table.maintenance.rewrite_manifests().rewrites_needed() is True
+
+
+def test_rewrite_manifests_with_predicate_selective(catalog: Catalog) -> None:
+    table = _create_table_with_appends(catalog, appends=3)
+    manifests_before = _data_manifests(table)
+    assert len(manifests_before) == 3
+    target_manifest = manifests_before[0]
+    target_path = target_manifest.manifest_path
+    rows_before = table.scan().to_arrow().sort_by("id")
+
+    table.maintenance.rewrite_manifests().rewrite_if(lambda m: m.manifest_path == target_path).commit()
+
+    table = catalog.load_table("default.test_rewrite")
+    manifests_after = _data_manifests(table)
+    assert len(manifests_after) == 3
+    assert table.scan().to_arrow().sort_by("id") == rows_before
+
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.summary is not None
+    assert snapshot.summary["manifests-created"] == "1"
+    assert snapshot.summary["manifests-replaced"] == "1"
+    assert snapshot.summary["manifests-kept"] == "2"
+    assert snapshot.summary["entries-processed"] == "1"
+
+
+def test_rewrite_manifests_single_manifest_with_predicate(catalog: Catalog) -> None:
+    table = _create_table_with_appends(catalog, appends=1)
+    snapshot_before = table.current_snapshot()
+    assert snapshot_before is not None
+    manifest_path_before = _data_manifests(table)[0].manifest_path
+
+    # with predicate, even single manifest should be rewritten
+    table.maintenance.rewrite_manifests().rewrite_if(lambda m: True).commit()
+
+    table = catalog.load_table("default.test_rewrite")
+    manifests_after = _data_manifests(table)
+    assert len(manifests_after) == 1
+    assert manifests_after[0].manifest_path != manifest_path_before
+    assert manifests_after[0].existing_files_count == 1
+    assert manifests_after[0].added_files_count == 0
+
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.snapshot_id != snapshot_before.snapshot_id
+    assert snapshot.summary is not None
+    assert snapshot.summary["manifests-created"] == "1"
+    assert snapshot.summary["manifests-replaced"] == "1"
+    assert snapshot.summary["manifests-kept"] == "0"
+    assert snapshot.summary["entries-processed"] == "1"
+
+
+def test_rewrites_needed_with_predicate(catalog: Catalog) -> None:
+    table = _create_table_with_appends(catalog, appends=1)
+    # single manifest without predicate: False
+    assert table.maintenance.rewrite_manifests().rewrites_needed() is False
+    # single manifest with matching predicate: True
+    assert table.maintenance.rewrite_manifests().rewrite_if(lambda m: True).rewrites_needed() is True
+    # single manifest with non-matching predicate: False
+    assert table.maintenance.rewrite_manifests().rewrite_if(lambda m: False).rewrites_needed() is False
