@@ -371,7 +371,7 @@ Every write operation is available through two APIs.
 
 The **`Table` API** exposes each operation directly on the table object: `tbl.append(...)`, `tbl.overwrite(...)`, `tbl.delete(...)`, `tbl.dynamic_partition_overwrite(...)` and `tbl.upsert(...)`. Each call opens a transaction, applies the operation, and commits atomically. This is the simplest mode and the right default when you only need a single write.
 
-The **`Transaction` API** exposes the same operations on a transaction object obtained from `tbl.transaction()`. It batches multiple operations into a single atomic commit: either every operation becomes visible together, or, on failure, none of them do, and readers never observe an intermediate state.
+The **`Transaction` API** exposes the same operations on a transaction object obtained from `tbl.transaction()`. It batches multiple operations into a single atomic commit. On success, every operation becomes visible together. On failure, none of the operations occur and readers never observe an intermediate state.
 
 ```python
 with tbl.transaction() as txn:
