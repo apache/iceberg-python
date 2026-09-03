@@ -205,7 +205,7 @@ class TableProperties:
     MANIFEST_MIN_MERGE_COUNT_DEFAULT = 100
 
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
-    MANIFEST_MERGE_ENABLED_DEFAULT = False
+    MANIFEST_MERGE_ENABLED_DEFAULT = True
 
     METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
     METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
