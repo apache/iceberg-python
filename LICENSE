@@ -216,7 +216,9 @@ License: https://www.apache.org/licenses/LICENSE-2.0
 
 This product includes code from Apache Thrift.
 
-* Uses the fb303.thrift file that's part of Hive's thrift service in vendor/fb303/
+* Uses the fb303.thrift file that's part of Hive's thrift service, located in
+  vendor/fb303/ in the source distribution and shipped as the top-level fb303
+  package in binary distributions.
 
 Copyright: 2006-2022 The Apache Software Foundation.
 Home page: https://thrift.apache.org/
@@ -226,10 +228,23 @@ License: https://www.apache.org/licenses/LICENSE-2.0
 
 This product includes code from Apache Hive.
 
-* Uses hive_metastore.thrift to generate the Hive Metastore client in vendor/hive_metastore/
+* Uses hive_metastore.thrift to generate the Hive Metastore client, located in
+  vendor/hive_metastore/ in the source distribution and shipped as the
+  top-level hive_metastore package in binary distributions.
 
 Copyright: 2008-2022 The Apache Software Foundation.
 Home page: https://hive.apache.org/
+License: https://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+
+This product includes code from Cython in binary distributions.
+
+* The compiled extension module (pyiceberg.avro.decoder_fast) embeds the
+  Cython runtime code that Cython generates into every compiled module.
+
+Copyright: The Cython Project Developers.
+Home page: https://cython.org/
 License: https://www.apache.org/licenses/LICENSE-2.0
 
 --------------------------------------------------------------------------------
