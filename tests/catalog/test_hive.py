@@ -48,6 +48,7 @@ from pyiceberg.catalog.hive import (
     DO_NOT_UPDATE_STATS,
     DO_NOT_UPDATE_STATS_DEFAULT,
     HIVE_KERBEROS_AUTH,
+    HIVE_KERBEROS_SERVICE_HOST,
     HIVE_KERBEROS_SERVICE_NAME,
     LOCK_CHECK_MAX_WAIT_TIME,
     LOCK_CHECK_MIN_WAIT_TIME,
@@ -1330,7 +1331,7 @@ def test_create_hive_client_success() -> None:
 
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False, "hive")
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", False, "hive", None)
         assert client is not None
 
 
@@ -1343,7 +1344,21 @@ def test_create_hive_client_with_kerberos_success() -> None:
     }
     with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
         client = HiveCatalog._create_hive_client(properties)
-        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", True, "hiveuser")
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", True, "hiveuser", None)
+        assert client is not None
+
+
+def test_create_hive_client_with_kerberos_service_host() -> None:
+    properties = {
+        "uri": "thrift://localhost:10000",
+        "ugi": "user",
+        HIVE_KERBEROS_AUTH: "true",
+        HIVE_KERBEROS_SERVICE_NAME: "hiveuser",
+        HIVE_KERBEROS_SERVICE_HOST: "hive-host.example.com",
+    }
+    with patch("pyiceberg.catalog.hive._HiveClient", return_value=MagicMock()) as mock_hive_client:
+        client = HiveCatalog._create_hive_client(properties)
+        mock_hive_client.assert_called_once_with("thrift://localhost:10000", "user", True, "hiveuser", "hive-host.example.com")
         assert client is not None
 
 
@@ -1356,7 +1371,10 @@ def test_create_hive_client_multiple_uris() -> None:
         client = HiveCatalog._create_hive_client(properties)
         assert mock_hive_client.call_count == 2
         mock_hive_client.assert_has_calls(
-            [call("thrift://localhost:10000", "user", False, "hive"), call("thrift://localhost:10001", "user", False, "hive")]
+            [
+                call("thrift://localhost:10000", "user", False, "hive", None),
+                call("thrift://localhost:10001", "user", False, "hive", None),
+            ]
         )
         assert client is not None
 
@@ -1445,3 +1463,23 @@ def test_kerberized_client_uses_fresh_transport_on_reuse(
             second_transport_id = id(client._transport)
 
         assert first_transport_id != second_transport_id
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Kerberos/puresasl not available on Windows")
+def test_kerberized_client_uses_configured_service_host() -> None:
+    """The SASL host must come from hive.kerberos-service-host, or the URI host when unset."""
+    configured = _HiveClient(
+        uri="thrift://metastore-lb:9083",
+        kerberos_auth=True,
+        kerberos_service_name="hive",
+        kerberos_service_host="metastore-host",
+    )
+    assert configured._transport.sasl.host == "metastore-host"
+    assert configured._transport.sasl.service == "hive"
+
+    default = _HiveClient(
+        uri="thrift://metastore-lb:9083",
+        kerberos_auth=True,
+        kerberos_service_name="hive",
+    )
+    assert default._transport.sasl.host == "metastore-lb"
