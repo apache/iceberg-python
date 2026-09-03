@@ -17,8 +17,10 @@
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import pyarrow as pa
 import pytest
 
+from pyiceberg.catalog import Catalog
 from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.update import SetSnapshotRefUpdate, TableUpdate
 
@@ -177,3 +179,105 @@ def test_set_current_snapshot_chained_with_create_tag(table_v2: Table) -> None:
     # The main branch should point to the same snapshot as the tag
     main_update = next(u for u in set_ref_updates if u.ref_name == "main")
     assert main_update.snapshot_id == snapshot_one
+
+
+def test_branch_write_preserves_retention(catalog_with_warehouse: Catalog) -> None:
+    """Writing to a branch keeps the retention policy it was created with."""
+    catalog_with_warehouse.create_namespace("branch_retention")
+    schema = pa.schema([pa.field("id", pa.int64())])
+    tbl = catalog_with_warehouse.create_table("branch_retention.tbl", schema=schema)
+    tbl.append(pa.table({"id": [1]}, schema=schema))
+    tbl = catalog_with_warehouse.load_table("branch_retention.tbl")
+
+    snapshot_id = tbl.metadata.current_snapshot_id
+    assert snapshot_id is not None
+    tbl.manage_snapshots().create_branch(
+        snapshot_id=snapshot_id,
+        branch_name="audit",
+        max_ref_age_ms=86400000,
+        max_snapshot_age_ms=3600000,
+        min_snapshots_to_keep=5,
+    ).commit()
+
+    for i in range(3):
+        tbl = catalog_with_warehouse.load_table("branch_retention.tbl")
+        tbl.append(pa.table({"id": [i + 2]}, schema=schema), branch="audit")
+
+    ref = catalog_with_warehouse.load_table("branch_retention.tbl").metadata.refs["audit"]
+    assert ref.max_ref_age_ms == 86400000
+    assert ref.max_snapshot_age_ms == 3600000
+    assert ref.min_snapshots_to_keep == 5
+
+
+def test_branch_write_without_retention_stays_unset(catalog_with_warehouse: Catalog) -> None:
+    """A branch created without a retention policy does not gain one from a write."""
+    catalog_with_warehouse.create_namespace("branch_no_retention")
+    schema = pa.schema([pa.field("id", pa.int64())])
+    tbl = catalog_with_warehouse.create_table("branch_no_retention.tbl", schema=schema)
+    tbl.append(pa.table({"id": [1]}, schema=schema))
+    tbl = catalog_with_warehouse.load_table("branch_no_retention.tbl")
+
+    snapshot_id = tbl.metadata.current_snapshot_id
+    assert snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=snapshot_id, branch_name="plain").commit()
+
+    tbl = catalog_with_warehouse.load_table("branch_no_retention.tbl")
+    tbl.append(pa.table({"id": [2]}, schema=schema), branch="plain")
+
+    ref = catalog_with_warehouse.load_table("branch_no_retention.tbl").metadata.refs["plain"]
+    assert ref.max_ref_age_ms is None
+    assert ref.max_snapshot_age_ms is None
+    assert ref.min_snapshots_to_keep is None
+
+
+def test_rollback_preserves_retention(catalog_with_warehouse: Catalog) -> None:
+    """Moving a ref keeps its retention policy; rollback and set_current_snapshot move main."""
+    catalog_with_warehouse.create_namespace("rollback_retention")
+    schema = pa.schema([pa.field("id", pa.int64())])
+    tbl = catalog_with_warehouse.create_table("rollback_retention.tbl", schema=schema)
+    tbl.append(pa.table({"id": [1]}, schema=schema))
+    tbl = catalog_with_warehouse.load_table("rollback_retention.tbl")
+    first = tbl.metadata.current_snapshot_id
+    assert first is not None
+
+    tbl.append(pa.table({"id": [2]}, schema=schema))
+    tbl = catalog_with_warehouse.load_table("rollback_retention.tbl")
+    head = tbl.metadata.current_snapshot_id
+    assert head is not None
+
+    tbl.manage_snapshots().create_branch(
+        snapshot_id=head,
+        branch_name="main",
+        max_ref_age_ms=99999,
+        max_snapshot_age_ms=1234,
+        min_snapshots_to_keep=7,
+    ).commit()
+
+    tbl = catalog_with_warehouse.load_table("rollback_retention.tbl")
+    tbl.manage_snapshots().rollback_to_snapshot(first).commit()
+
+    ref = catalog_with_warehouse.load_table("rollback_retention.tbl").metadata.refs["main"]
+    assert ref.snapshot_id == first
+    assert ref.max_ref_age_ms == 99999
+    assert ref.max_snapshot_age_ms == 1234
+    assert ref.min_snapshots_to_keep == 7
+
+
+def test_rollback_without_retention_stays_unset(catalog_with_warehouse: Catalog) -> None:
+    """A ref with no retention policy does not gain one from being moved."""
+    catalog_with_warehouse.create_namespace("rollback_plain")
+    schema = pa.schema([pa.field("id", pa.int64())])
+    tbl = catalog_with_warehouse.create_table("rollback_plain.tbl", schema=schema)
+    tbl.append(pa.table({"id": [1]}, schema=schema))
+    tbl = catalog_with_warehouse.load_table("rollback_plain.tbl")
+    first = tbl.metadata.current_snapshot_id
+    assert first is not None
+
+    tbl.append(pa.table({"id": [2]}, schema=schema))
+    tbl = catalog_with_warehouse.load_table("rollback_plain.tbl")
+    tbl.manage_snapshots().rollback_to_snapshot(first).commit()
+
+    ref = catalog_with_warehouse.load_table("rollback_plain.tbl").metadata.refs["main"]
+    assert ref.max_ref_age_ms is None
+    assert ref.max_snapshot_age_ms is None
+    assert ref.min_snapshots_to_keep is None
