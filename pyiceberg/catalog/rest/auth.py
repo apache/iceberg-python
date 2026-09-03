@@ -21,6 +21,7 @@ import logging
 import threading
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
@@ -30,11 +31,53 @@ from requests.auth import AuthBase
 
 from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_response
 from pyiceberg.exceptions import OAuthError
+from pyiceberg.typedef import Properties
 
 AUTH_MANAGER = "auth.manager"
+AUTH = "auth"
+AUTH_TYPE = f"{AUTH}.type"
+AUTH_IMPL = f"{AUTH}.impl"
+CUSTOM = "custom"
 
 COLON = ":"
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _AuthConfig:
+    """Resolved declarative configuration for an AuthManager."""
+
+    manager: str
+    properties: Properties
+
+
+def _resolve_auth_config(properties: Properties) -> _AuthConfig | None:
+    """Resolve nested and flat auth properties into the canonical property representation."""
+    auth_config = properties.get(AUTH)
+    if auth_config is None:
+        auth_config = {}
+    elif not isinstance(auth_config, dict):
+        raise ValueError(
+            "Auth configuration must be a mapping; use auth.type in YAML or "
+            "PYICEBERG_CATALOG__<NAME>__AUTH__TYPE in the environment"
+        )
+
+    auth_type = properties.get(AUTH_TYPE, auth_config.get("type"))
+    if auth_type is None:
+        if auth_config or any(key.startswith(f"{AUTH}.") and key != AUTH_MANAGER for key in properties):
+            raise ValueError("auth.type must be defined")
+        return None
+
+    auth_impl = properties.get(AUTH_IMPL, auth_config.get("impl"))
+    if auth_type == CUSTOM and not auth_impl:
+        raise ValueError("auth.impl must be specified when using custom auth.type")
+    if auth_type != CUSTOM and auth_impl:
+        raise ValueError("auth.impl can only be specified when using custom auth.type")
+
+    auth_properties = dict(auth_config.get(auth_type, {}))
+    type_prefix = f"{AUTH}.{auth_type}."
+    auth_properties.update({key[len(type_prefix) :]: value for key, value in properties.items() if key.startswith(type_prefix)})
+    return _AuthConfig(manager=auth_impl or auth_type, properties=auth_properties)
 
 
 class AuthManager(ABC):
