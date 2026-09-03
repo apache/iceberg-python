@@ -97,6 +97,30 @@ def test_property_as_bool_with_invalid_value() -> None:
         assert "Could not parse table property some_bool_prop to a boolean: invalid" in str(exc.value)
 
 
+def test_property_as_int_with_empty_string() -> None:
+    properties = {
+        "some_int_prop": "",
+    }
+
+    with pytest.raises(ValueError) as exc:
+        property_as_int(properties, "some_int_prop", default=1)
+    assert "Could not parse table property some_int_prop to an integer: " in str(exc.value)
+
+
+def test_property_as_float_with_empty_string() -> None:
+    properties = {
+        "some_float_prop": "",
+    }
+
+    with pytest.raises(ValueError) as exc:
+        property_as_float(properties, "some_float_prop", default=1.0)
+    assert "Could not parse table property some_float_prop to a float: " in str(exc.value)
+
+
+def test_property_as_bool_with_empty_string() -> None:
+    assert property_as_bool({"some_bool_prop": ""}, "some_bool_prop", default=True) is True
+
+
 def test_get_first_property_value() -> None:
     properties = {
         "prop_1": "value_1",
@@ -105,3 +129,13 @@ def test_get_first_property_value() -> None:
 
     assert get_first_property_value(properties, "prop_2", "prop_1") == "value_2"
     assert get_first_property_value(properties, "missing", "prop_1") == "value_1"
+
+
+def test_get_first_property_value_with_empty_string() -> None:
+    properties = {
+        "empty": "",
+        "prop_1": "value_1",
+    }
+
+    assert get_first_property_value(properties, "empty", "prop_1") == ""
+    assert get_first_property_value(properties, "missing", "empty") == ""
