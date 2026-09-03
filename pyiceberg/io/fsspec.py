@@ -492,29 +492,44 @@ class FsspecFileIO(FileIO):
         fs.rm(str_location)
 
     def _get_fs_from_uri(self, uri: "ParseResult", location: str = "") -> AbstractFileSystem:
-        """Get a filesystem from a parsed URI, using hostname for ADLS account resolution."""
+        """Get a filesystem from a parsed URI, using hostname for ADLS account resolution.
+
+        When a credentials provider is attached, its resolved (and possibly refreshed) credential
+        properties are folded into the cache key so rotated credentials build a new filesystem.
+        """
         if _is_local_path(location):
             return self.get_fs("file")
-        if uri.scheme in _ADLS_SCHEMES:
-            return self.get_fs(uri.scheme, uri.hostname)
-        return self.get_fs(uri.scheme)
 
-    def get_fs(self, scheme: str, hostname: str | None = None) -> AbstractFileSystem:
+        creds_key: frozenset[tuple[str, str]] = frozenset()
+        if provider := self._credentials_provider:
+            creds_key = frozenset(provider.properties_for(location).items())
+
+        if uri.scheme in _ADLS_SCHEMES:
+            return self.get_fs(uri.scheme, uri.hostname, creds_key)
+        return self.get_fs(uri.scheme, None, creds_key)
+
+    def get_fs(
+        self, scheme: str, hostname: str | None = None, creds_key: frozenset[tuple[str, str]] = frozenset()
+    ) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme, cached per thread."""
         if not hasattr(self._thread_locals, "get_fs_cached"):
             self._thread_locals.get_fs_cached = lru_cache(self._get_fs)
 
-        return self._thread_locals.get_fs_cached(scheme, hostname)
+        return self._thread_locals.get_fs_cached(scheme, hostname, creds_key)
 
-    def _get_fs(self, scheme: str, hostname: str | None = None) -> AbstractFileSystem:
+    def _get_fs(
+        self, scheme: str, hostname: str | None = None, creds_key: frozenset[tuple[str, str]] = frozenset()
+    ) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme."""
         if scheme not in self._scheme_to_fs:
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
 
-        if scheme in _ADLS_SCHEMES:
-            return _adls(self.properties, hostname)
+        properties = {**self.properties, **dict(creds_key)}
 
-        return self._scheme_to_fs[scheme](self.properties)
+        if scheme in _ADLS_SCHEMES:
+            return _adls(properties, hostname)
+
+        return self._scheme_to_fs[scheme](properties)
 
     def __getstate__(self) -> dict[str, Any]:
         """Create a dictionary of the FsSpecFileIO fields used when pickling."""

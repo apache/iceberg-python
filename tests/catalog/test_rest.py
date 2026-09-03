@@ -3139,29 +3139,33 @@ def test_endpoint_parsing_from_string_with_invalid_http_method() -> None:
 
 
 def test_resolve_storage_credentials_longest_prefix_wins() -> None:
+    from pyiceberg.catalog.rest.credential_provider import resolve_storage_credentials
     from pyiceberg.catalog.rest.scan_planning import StorageCredential
 
     credentials = [
         StorageCredential(prefix="s3://warehouse/", config={"s3.access-key-id": "short-prefix-key"}),
         StorageCredential(prefix="s3://warehouse/database/table", config={"s3.access-key-id": "long-prefix-key"}),
     ]
-    result = RestCatalog._resolve_storage_credentials(credentials, "s3://warehouse/database/table/metadata/00001.json")
+    result = resolve_storage_credentials(credentials, "s3://warehouse/database/table/metadata/00001.json")
     assert result == {"s3.access-key-id": "long-prefix-key"}
 
 
 def test_resolve_storage_credentials_no_match() -> None:
+    from pyiceberg.catalog.rest.credential_provider import resolve_storage_credentials
     from pyiceberg.catalog.rest.scan_planning import StorageCredential
 
     credentials = [
         StorageCredential(prefix="s3://other-bucket/", config={"s3.access-key-id": "no-match"}),
     ]
-    result = RestCatalog._resolve_storage_credentials(credentials, "s3://warehouse/database/table/metadata/00001.json")
+    result = resolve_storage_credentials(credentials, "s3://warehouse/database/table/metadata/00001.json")
     assert result == {}
 
 
 def test_resolve_storage_credentials_empty() -> None:
-    assert RestCatalog._resolve_storage_credentials([], "s3://warehouse/foo") == {}
-    assert RestCatalog._resolve_storage_credentials([], None) == {}
+    from pyiceberg.catalog.rest.credential_provider import resolve_storage_credentials
+
+    assert resolve_storage_credentials([], "s3://warehouse/foo") == {}
+    assert resolve_storage_credentials([], None) == {}
 
 
 def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]) -> None:
@@ -3196,6 +3200,80 @@ def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_me
     assert table.io.properties["s3.access-key-id"] == "vended-key"
     assert table.io.properties["s3.secret-access-key"] == "vended-secret"
     assert table.io.properties["s3.session-token"] == "vended-token"
+
+
+def _mock_table_with_storage_credentials(rest_mock: Mocker, metadata: dict[str, Any]) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": "s3://warehouse/database/table/metadata/00001.metadata.json",
+            "metadata": metadata,
+            "config": {},
+            "storage-credentials": [
+                {
+                    "prefix": "s3://warehouse/database/table",
+                    "config": {"s3.access-key-id": "vended-key"},
+                }
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+
+def test_load_table_attaches_credentials_provider_when_enabled(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    from pyiceberg.catalog.rest.credential_provider import REFRESH_CREDENTIALS_ENABLED, CredentialsProvider
+    from pyiceberg.io import FileIO
+
+    _mock_table_with_storage_credentials(rest_mock, example_table_metadata_with_snapshot_v1)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{REFRESH_CREDENTIALS_ENABLED: "true"})
+    with mock.patch.object(FileIO, "set_credentials_provider") as mock_set_credentials_provider:
+        catalog.load_table(("fokko", "table"))
+
+    mock_set_credentials_provider.assert_called_once()
+    (provider,), _ = mock_set_credentials_provider.call_args
+    assert isinstance(provider, CredentialsProvider)
+
+
+def test_load_table_no_provider_when_flag_disabled(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    from pyiceberg.io import FileIO
+
+    _mock_table_with_storage_credentials(rest_mock, example_table_metadata_with_snapshot_v1)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with mock.patch.object(FileIO, "set_credentials_provider") as mock_set_credentials_provider:
+        catalog.load_table(("fokko", "table"))
+
+    mock_set_credentials_provider.assert_not_called()
+
+
+def test_attached_provider_refresh_fn_returns_full_response(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    """The refresh callback must return the raw LoadCredentialsResponse (full credential list),
+    not the already-resolved Properties, so the provider can re-run longest-prefix matching."""
+    from pyiceberg.catalog.rest import LoadCredentialsResponse
+    from pyiceberg.catalog.rest.credential_provider import REFRESH_CREDENTIALS_ENABLED
+    from pyiceberg.io import FileIO
+
+    _mock_table_with_storage_credentials(rest_mock, example_table_metadata_with_snapshot_v1)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
+        json={"storage-credentials": [{"prefix": "s3://warehouse/database/table", "config": {"s3.access-key-id": "refreshed"}}]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{REFRESH_CREDENTIALS_ENABLED: "true"})
+    captured: dict[str, LoadCredentialsResponse] = {}
+    with mock.patch.object(FileIO, "set_credentials_provider", side_effect=lambda p: captured.update(provider=p)):
+        catalog.load_table(("fokko", "table"))
+
+    response = captured["provider"]._refresh_fn()
+    assert isinstance(response, LoadCredentialsResponse)
+    assert response.storage_credentials[0].config == {"s3.access-key-id": "refreshed"}
 
 
 def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
