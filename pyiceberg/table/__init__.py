@@ -235,6 +235,9 @@ class TableProperties:
     WRITE_UPDATE_ISOLATION_LEVEL = "write.update.isolation-level"
     WRITE_ISOLATION_LEVEL_DEFAULT = "serializable"
 
+    GC_ENABLED = "gc.enabled"
+    GC_ENABLED_DEFAULT = True
+
 
 class Transaction:
     _table: Table
