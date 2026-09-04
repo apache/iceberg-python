@@ -147,16 +147,39 @@ def test_rewrite_manifests_with_predicate_selective(catalog: Catalog) -> None:
     table = _create_table_with_appends(catalog, appends=3)
     manifests_before = _data_manifests(table)
     assert len(manifests_before) == 3
-    target_manifest = manifests_before[0]
-    target_path = target_manifest.manifest_path
-    rows_before = table.scan().to_arrow().sort_by("id")
 
+    # 1. Extract all manifest paths and underlying data file paths before rewrite
+    paths_before = [m.manifest_path for m in manifests_before]
+    target_path = paths_before[0]
+    kept_paths_before = set(paths_before[1:])
+    rows_before = table.scan().to_arrow().sort_by("id")
+    data_files_before = [
+        entry.data_file.file_path for m in manifests_before for entry in m.fetch_manifest_entry(table.io, discard_deleted=True)
+    ]
+
+    # 2. Execute selective rewrite
     table.maintenance.rewrite_manifests().rewrite_if(lambda m: m.manifest_path == target_path).commit()
 
+    # 3. Reload table and extract new paths for comprehensive verification
     table = catalog.load_table("default.test_rewrite")
     manifests_after = _data_manifests(table)
+    paths_after = {m.manifest_path for m in manifests_after}
+
     assert len(manifests_after) == 3
+    # Manifest paths not rewritten remain unchanged
+    assert kept_paths_before.issubset(paths_after)
+    # Old path of rewritten target manifest is gone
+    assert target_path not in paths_after
+    # Exactly one new manifest was created
+    new_manifest_paths = paths_after - kept_paths_before
+    assert len(new_manifest_paths) == 1
+
+    # Verify table data and underlying data files are completely preserved
     assert table.scan().to_arrow().sort_by("id") == rows_before
+    data_files_after = [
+        entry.data_file.file_path for m in manifests_after for entry in m.fetch_manifest_entry(table.io, discard_deleted=True)
+    ]
+    assert set(data_files_before) == set(data_files_after)
 
     snapshot = table.current_snapshot()
     assert snapshot is not None
@@ -201,3 +224,63 @@ def test_rewrites_needed_with_predicate(catalog: Catalog) -> None:
     assert table.maintenance.rewrite_manifests().rewrite_if(lambda m: True).rewrites_needed() is True
     # single manifest with non-matching predicate: False
     assert table.maintenance.rewrite_manifests().rewrite_if(lambda m: False).rewrites_needed() is False
+
+
+def test_rewrite_manifests_with_fully_deleted_manifest(catalog: Catalog) -> None:
+    table = catalog.create_table("default.test_fully_deleted", schema=pa.schema([pa.field("id", pa.int64())]))
+    table.append(_arrow_table(offset=0))  # manifest 1: id 1, 2, 3
+    table.append(_arrow_table(offset=3))  # manifest 2: id 4, 5, 6
+    table.delete("id <= 3")  # deletes id 1, 2, 3
+
+    snapshot_before = table.current_snapshot()
+    manifests_before = _data_manifests(table)
+    assert len(manifests_before) == 2
+    paths_before = [m.manifest_path for m in manifests_before]
+
+    # Target rewrite for manifest containing only deleted entries
+    table.maintenance.rewrite_manifests().rewrite_if(lambda m: (m.deleted_files_count or 0) > 0).commit()
+
+    table = catalog.load_table("default.test_fully_deleted")
+    assert table.current_snapshot() == snapshot_before
+
+    # Verify both manifest paths remain unchanged
+    manifests_after = _data_manifests(table)
+    assert len(manifests_after) == 2
+    assert [m.manifest_path for m in manifests_after] == paths_before
+
+    # Verify the second manifest with live data (ids 4, 5, 6) is intact and readable
+    assert table.scan().to_arrow().sort_by("id") == _arrow_table(offset=3)
+    live_entries_manifest2 = manifests_after[1].fetch_manifest_entry(table.io, discard_deleted=True)
+    assert len(live_entries_manifest2) == 1
+    assert live_entries_manifest2[0].data_file.record_count == 3
+
+
+def test_rewrite_manifests_predicate_matching_nothing(catalog: Catalog) -> None:
+    table = _create_table_with_appends(catalog, appends=2)
+    snapshot_before = table.current_snapshot()
+    table.maintenance.rewrite_manifests().rewrite_if(lambda m: False).commit()
+    table = catalog.load_table("default.test_rewrite")
+    assert table.current_snapshot() == snapshot_before
+
+
+def test_rewrite_manifests_merges_live_and_fully_deleted_manifests(catalog: Catalog) -> None:
+    table = catalog.create_table("default.test_merge_deleted", schema=pa.schema([pa.field("id", pa.int64())]))
+    table.append(_arrow_table(offset=0))  # manifest 1: id 1, 2, 3
+    table.append(_arrow_table(offset=3))  # manifest 2: id 4, 5, 6
+    table.delete("id <= 3")  # fully deletes manifest 1
+
+    manifests_before = _data_manifests(table)
+    assert len(manifests_before) == 2
+
+    # Plain rewrite_manifests() without predicate should merge live and fully-deleted manifests into 1
+    assert table.maintenance.rewrite_manifests().rewrites_needed() is True
+    table.maintenance.rewrite_manifests().commit()
+
+    table = catalog.load_table("default.test_merge_deleted")
+    manifests_after = _data_manifests(table)
+    assert len(manifests_after) == 1
+    assert manifests_after[0].existing_files_count == 1
+    assert manifests_after[0].added_files_count == 0
+
+    # Verify table data is fully preserved and matches remaining live records
+    assert table.scan().to_arrow().sort_by("id") == _arrow_table(offset=3)
