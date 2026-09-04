@@ -39,6 +39,7 @@ from pyiceberg.catalog import (
     TABLE_TYPE,
     MetastoreCatalog,
     PropertiesUpdateSummary,
+    _get_aws_session_with_assumed_role,
 )
 from pyiceberg.exceptions import (
     CommitFailedException,
@@ -50,7 +51,16 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
-from pyiceberg.io import AWS_ACCESS_KEY_ID, AWS_PROFILE_NAME, AWS_REGION, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, FileIO
+from pyiceberg.io import (
+    AWS_ACCESS_KEY_ID,
+    AWS_PROFILE_NAME,
+    AWS_REGION,
+    AWS_ROLE_ARN,
+    AWS_ROLE_SESSION_NAME,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN,
+    FileIO,
+)
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema, SchemaVisitor, visit
 from pyiceberg.serializers import FromInputFile, ToOutputFile
@@ -131,6 +141,8 @@ GLUE_REGION = "glue.region"
 GLUE_ACCESS_KEY_ID = "glue.access-key-id"
 GLUE_SECRET_ACCESS_KEY = "glue.secret-access-key"
 GLUE_SESSION_TOKEN = "glue.session-token"
+GLUE_ROLE_ARN = "glue.role-arn"
+GLUE_ROLE_SESSION_NAME = "glue.role-session-name"
 GLUE_MAX_RETRIES = "glue.max-retries"
 GLUE_RETRY_MODE = "glue.retry-mode"
 GLUE_CONNECTION_S3_TABLES = "aws:s3tables"
@@ -335,14 +347,22 @@ class GlueCatalog(MetastoreCatalog):
         else:
             retry_mode_prop_value = get_first_property_value(properties, GLUE_RETRY_MODE)
 
+            region_name = get_first_property_value(properties, GLUE_REGION, AWS_REGION)
             session = boto3.Session(
                 profile_name=get_first_property_value(properties, GLUE_PROFILE_NAME, AWS_PROFILE_NAME),
-                region_name=get_first_property_value(properties, GLUE_REGION, AWS_REGION),
+                region_name=region_name,
                 botocore_session=properties.get(BOTOCORE_SESSION),
                 aws_access_key_id=get_first_property_value(properties, GLUE_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID),
                 aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
                 aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
             )
+            if role_arn := get_first_property_value(properties, GLUE_ROLE_ARN, AWS_ROLE_ARN):
+                session = _get_aws_session_with_assumed_role(
+                    session=session,
+                    role_arn=role_arn,
+                    role_session_name=get_first_property_value(properties, GLUE_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME),
+                    region_name=region_name,
+                )
             self.glue: GlueClient = session.client(
                 "glue",
                 endpoint_url=properties.get(GLUE_CATALOG_ENDPOINT),
