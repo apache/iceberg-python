@@ -1485,7 +1485,7 @@ table.manage_snapshots().remove_branch("dev").commit()
 
 ## Table Maintenance
 
-PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.
+PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration and manifest rewriting.
 
 ### Snapshot Expiration
 
@@ -1526,6 +1526,36 @@ def cleanup_old_snapshots(table_name: str, snapshot_ids: list[int]):
 # Usage
 cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 ```
+
+### Manifest Rewriting
+
+Rewrite the current snapshot's data manifests without changing any data. Live entries are regrouped into new manifests sized by the `commit.manifest.target-size-bytes` table property and written as `EXISTING` entries that keep their sequence numbers, which keeps scan planning fast on tables that accumulate many small manifests through frequent appends. Delete manifests are kept as-is, and the result is committed as a `replace` snapshot:
+
+```python
+table.maintenance.rewrite_manifests().commit()
+```
+
+Nothing is committed when there is only one data manifest, so the call is safe to schedule periodically. To find out in advance whether a rewrite would do anything:
+
+```python
+if table.maintenance.rewrite_manifests().rewrites_needed():
+    table.maintenance.rewrite_manifests().commit()
+```
+
+The `replace` snapshot records what the operation did in its summary:
+
+```python
+table.current_snapshot().summary
+# {'operation': 'replace', 'manifests-created': '1', 'manifests-kept': '0',
+#  'manifests-replaced': '3', 'entries-processed': '3', ...}
+```
+
+<!-- prettier-ignore-start -->
+
+!!! note "V3 tables"
+    Rewriting manifests on V3 tables raises `NotImplementedError`, because the `first-row-id` of rewritten manifests has to be preserved and that support is still pending ([#3621](https://github.com/apache/iceberg-python/issues/3621)).
+
+<!-- prettier-ignore-end -->
 
 ## Views
 
