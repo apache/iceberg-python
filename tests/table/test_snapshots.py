@@ -26,6 +26,7 @@ import pytest
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import ValidationException
+from pyiceberg.expressions import EqualTo
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -737,3 +738,67 @@ def test_overwrite_rejects_explicit_delete_without_parent_snapshot(
         with empty.transaction() as tx:
             with tx.update_snapshot().overwrite() as overwrite:
                 overwrite.delete_data_file(stale_file)
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for delete_data_file() on _DeleteFiles instances (#3857)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def multi_file_table(catalog: Catalog, arrow_table_simple: pa.Table) -> Table:
+    """A table with three separate data files (one append per file)."""
+    catalog.create_namespace_if_not_exists("default")
+    table = catalog.create_table("default.multi_file_delete", arrow_table_simple.schema)
+    for i in range(3):
+        table.append(arrow_table_simple.slice(i, 1))
+    return table
+
+
+def test_delete_files_explicit_delete_removes_file(overwrite_table: Table) -> None:
+    """delete_data_file() on a _DeleteFiles instance should actually delete the file."""
+    data_file = next(iter(overwrite_table.scan().plan_files())).file
+
+    with overwrite_table.transaction() as tx:
+        with tx.update_snapshot().delete() as delete_snapshot:
+            delete_snapshot.delete_data_file(data_file)
+
+    assert _total_data_file_count(overwrite_table) == 0
+
+
+def test_delete_files_explicit_delete_only_targeted(multi_file_table: Table) -> None:
+    """Only the targeted file is removed; other files remain intact."""
+    files = [task.file for task in multi_file_table.scan().plan_files()]
+    assert len(files) == 3
+
+    with multi_file_table.transaction() as tx:
+        with tx.update_snapshot().delete() as delete_snapshot:
+            delete_snapshot.delete_data_file(files[0])
+
+    assert _total_data_file_count(multi_file_table) == 2
+
+
+def test_delete_files_predicate_still_works(multi_file_table: Table, arrow_table_simple: pa.Table) -> None:
+    """Predicate-based deletion continues to work alongside the fix."""
+    # Each file has one row; EqualTo strictly matches the single-row file
+    first_value = arrow_table_simple.column("bar")[0].as_py()
+
+    with multi_file_table.transaction() as tx:
+        with tx.update_snapshot().delete() as delete_snapshot:
+            delete_snapshot.delete_by_predicate(EqualTo("bar", first_value))
+
+    assert _total_data_file_count(multi_file_table) == 2
+
+
+def test_delete_files_explicit_and_predicate_combined(multi_file_table: Table) -> None:
+    """Both explicit file deletion and predicate-based deletion take effect together."""
+    files = [task.file for task in multi_file_table.scan().plan_files()]
+    assert len(files) == 3
+
+    # Explicitly delete the first file in the list
+    with multi_file_table.transaction() as tx:
+        with tx.update_snapshot().delete() as delete_snapshot:
+            delete_snapshot.delete_data_file(files[0])
+            delete_snapshot.delete_data_file(files[1])
+
+    assert _total_data_file_count(multi_file_table) == 1
