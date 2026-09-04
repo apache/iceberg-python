@@ -2036,3 +2036,54 @@ def test_static_table_forwards_location_to_table_file_io(metadata_location: str,
 
     assert seen_locations, "expected at least one load_file_io call"
     assert all(loc is not None for loc in seen_locations), f"load_file_io called without a location: {seen_locations}"
+
+
+def test_transaction_table_metadata_cached(table_v2: Table) -> None:
+    """Repeated reads of an unchanged transaction state recompute at most once.
+
+    `Transaction.table_metadata` replays every staged update through
+    `model_copy(deep=True)`, so the cost of a read scales with the size of the
+    metadata (the snapshot list in particular), not with the work being done.
+    """
+    from unittest import mock
+
+    from pyiceberg.table.update import SetPropertiesUpdate, update_table_metadata
+
+    with mock.patch("pyiceberg.table.update_table_metadata", wraps=update_table_metadata) as spy:
+        txn = table_v2.transaction()
+
+        first = txn.table_metadata
+        for _ in range(10):
+            assert txn.table_metadata is first
+        assert spy.call_count == 1, f"expected 1 recompute for repeated reads, got {spy.call_count}"
+
+        txn._stage((SetPropertiesUpdate(updates={"k": "v"}),))
+        second = txn.table_metadata
+        assert second is not first
+        assert second.properties["k"] == "v"
+        for _ in range(10):
+            assert txn.table_metadata is second
+        assert spy.call_count == 2, f"expected 2 recomputes after one staged update, got {spy.call_count}"
+
+
+def test_transaction_table_metadata_cached_with_updates_already_staged(table_v2: Table) -> None:
+    """The cache must still hold once `_updates` is non-empty.
+
+    An empty-`_updates` short circuit (`return self._table.metadata` when nothing
+    is staged) would leave this case uncovered, and it is the expensive one:
+    `CreateTableTransaction` seeds `_updates` with ~10 entries before any write,
+    so a create-then-append transaction replays all of them on every read.
+    """
+    from unittest import mock
+
+    from pyiceberg.table.update import SetPropertiesUpdate, update_table_metadata
+
+    txn = table_v2.transaction()
+    txn._stage((SetPropertiesUpdate(updates={"staged": "before"}),))
+
+    with mock.patch("pyiceberg.table.update_table_metadata", wraps=update_table_metadata) as spy:
+        first = txn.table_metadata
+        for _ in range(10):
+            assert txn.table_metadata is first
+        assert first.properties["staged"] == "before"
+        assert spy.call_count == 1, f"expected 1 recompute with updates already staged, got {spy.call_count}"
