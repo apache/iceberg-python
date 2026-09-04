@@ -32,6 +32,7 @@ from pyiceberg.exceptions import (
     NoSuchSnapshotRefError,
     NotAncestorError,
     SnapshotRefTypeError,
+    ValidationException,
 )
 from pyiceberg.expressions import AlwaysFalse, BooleanExpression, Or
 from pyiceberg.expressions.visitors import (
@@ -1269,12 +1270,13 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
     def fast_forward_branch(self, from_branch: str, to_ref: str) -> ManageSnapshots:
         """Fast-forward ``from_branch`` to the snapshot referenced by ``to_ref``.
 
-        If ``from_branch`` does not exist, it is created pointing at ``to_ref``'s snapshot (Java/Spark parity).
-        If both refs already point to the same snapshot the call is a no-op.
-        Otherwise ``from_branch`` must be a branch (not a tag) and its current
-        snapshot must be an ancestor of ``to_ref``'s snapshot. Within a single
-        ``manage_snapshots()`` chain, ref lookups observe earlier staged
-        operations via :meth:`_effective_refs`, so `create_branch(...)` followed
+        * If ``from_branch`` does not exist, it is created pointing at ``to_ref``'s snapshot (Java/Spark parity).
+        * If both refs already point to the same snapshot the call is a no-op.
+        * Otherwise ``from_branch`` must be a branch (not a tag) and its current snapshot
+        must be an ancestor of ``to_ref``'s snapshot.
+
+        Within a single ``manage_snapshots()`` chain, ref lookups observe earlier staged
+        operations via :meth:`_effective_refs`. This means that `create_branch(...)` followed
         by `fast_forward_branch(...)` on the same ref works as expected.
 
         Args:
