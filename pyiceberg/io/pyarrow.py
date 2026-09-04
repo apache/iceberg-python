@@ -50,6 +50,9 @@ from typing import (
     TypeVar,
     cast,
 )
+from typing import (
+    Literal as LiteralType,
+)
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -152,6 +155,7 @@ from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.table.puffin import PuffinFile
+from pyiceberg.table.sorting import NullOrder, SortDirection
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
@@ -2763,10 +2767,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             file_format=file_format,
             partition=task.partition_key.partition if task.partition_key else Record(),
             file_size_in_bytes=len(fo),
-            # After this has been fixed:
-            # https://github.com/apache/iceberg-python/issues/271
-            # sort_order_id=task.sort_order_id,
-            sort_order_id=None,
+            sort_order_id=task.sort_order_id,
             # Just copy these from the table for now
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
@@ -2998,6 +2999,7 @@ def _dataframe_to_data_files(
         downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
         format_version=table_metadata.format_version,
     )
+    sort_order = table_metadata.sort_order()
 
     if isinstance(df, pa.RecordBatchReader):
         if not table_metadata.spec().is_unpartitioned():
@@ -3005,6 +3007,11 @@ def _dataframe_to_data_files(
                 "Writing a pa.RecordBatchReader to a partitioned table is not yet supported. "
                 "Materialise the reader as a pa.Table first, or follow "
                 "https://github.com/apache/iceberg-python/issues/2152 for partitioned streaming support."
+            )
+        if not sort_order.is_unsorted:
+            warnings.warn(
+                "Sort order is not applied to streaming RecordBatchReader writes; data files are marked unsorted",
+                stacklevel=2,
             )
         yield from write_file(
             io=io,
@@ -3017,11 +3024,18 @@ def _dataframe_to_data_files(
         return
 
     if table_metadata.spec().is_unpartitioned():
+        df, sort_order_id = _sort_table_for_write(table_metadata, df)
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
             tasks=(
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    record_batches=batches,
+                    schema=task_schema,
+                    sort_order_id=sort_order_id,
+                )
                 for batches in bin_pack_arrow_table(df, target_file_size)
             ),
         )
@@ -3037,11 +3051,56 @@ def _dataframe_to_data_files(
                     record_batches=batches,
                     partition_key=partition.partition_key,
                     schema=task_schema,
+                    sort_order_id=sort_order_id,
                 )
                 for partition in partitions
-                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+                for sorted_partition, sort_order_id in [_sort_table_for_write(table_metadata, partition.arrow_table_partition)]
+                for batches in bin_pack_arrow_table(sorted_partition, target_file_size)
             ),
         )
+
+
+def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tuple[pa.Table, int | None]:
+    """Apply a supported Iceberg sort order and return its file sort-order id."""
+    from packaging import version
+
+    sort_order = table_metadata.sort_order()
+    if sort_order.is_unsorted:
+        return table, None
+
+    sort_keys: list[tuple[str, LiteralType["ascending", "descending"]]] = []
+    null_orders = set()
+    for field in sort_order.fields:
+        if not isinstance(field.transform, IdentityTransform):
+            warnings.warn(
+                f"Unsupported sort transform {field.transform}; data files are marked unsorted",
+                stacklevel=2,
+            )
+            return table, None
+        name = table_metadata.schema().find_column_name(field.source_id)
+        if name is None or name not in table.column_names:
+            warnings.warn(
+                f"Unsupported nested or missing sort field id {field.source_id}; data files are marked unsorted",
+                stacklevel=2,
+            )
+            return table, None
+        direction: LiteralType["ascending", "descending"] = "descending" if field.direction == SortDirection.DESC else "ascending"
+        sort_keys.append((name, direction))
+        null_orders.add(field.null_order)
+
+    if len(null_orders) != 1:
+        warnings.warn("Mixed null ordering is not supported; data files are marked unsorted", stacklevel=2)
+        return table, None
+    null_placement: LiteralType["at_start", "at_end"] = "at_start" if null_orders == {NullOrder.NULLS_FIRST} else "at_end"
+    if version.parse(pyarrow.__version__) < version.parse("25.0.0"):
+        indices = pc.sort_indices(table, sort_keys=sort_keys, null_placement=null_placement)
+    else:
+        # Per-key null placement replaced the SortOptions-level argument in Arrow 25
+        indices = pc.sort_indices(
+            table,
+            sort_keys=cast(Any, [(name, order, null_placement) for name, order in sort_keys]),
+        )
+    return table.take(indices), sort_order.order_id
 
 
 @dataclass(frozen=True)
