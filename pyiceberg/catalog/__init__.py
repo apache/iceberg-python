@@ -96,6 +96,7 @@ URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
 BOTOCORE_SESSION = "botocore_session"
+ICEBERG_VIEW = "iceberg-view"
 
 TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     r"""

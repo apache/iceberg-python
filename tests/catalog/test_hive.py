@@ -1145,6 +1145,50 @@ def test_create_database_already_exists() -> None:
     assert "Database default already exists" in str(exc_info.value)
 
 
+def test_list_views(hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+
+    tbl1 = deepcopy(hive_table)
+    tbl1.tableName = "table1"
+    tbl1.dbName = "database"
+    tbl1.parameters["table_type"] = "iceberg-view"
+    tbl2 = deepcopy(hive_table)
+    tbl2.tableName = "table2"
+    tbl2.dbName = "database"
+    tbl2.parameters["table_type"] = "iceberg-view"
+    tbl3 = deepcopy(hive_table)
+    tbl3.tableName = "table3"
+    tbl3.dbName = "database"
+    tbl3.parameters["table_type"] = "iceberg"
+    tbl4 = deepcopy(hive_table)
+    tbl4.tableName = "table4"
+    tbl4.dbName = "database"
+    tbl4.parameters.pop("table_type")
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_all_tables.return_value = ["table1", "table2", "table3", "table4"]
+    catalog._client.__enter__().get_table_objects_by_name.return_value = [tbl1, tbl2, tbl3, tbl4]
+
+    got_tables = catalog.list_views("database")
+    assert got_tables == [("database", "table1"), ("database", "table2")]
+    catalog._client.__enter__().get_all_tables.assert_called_with(db_name="database")
+    catalog._client.__enter__().get_table_objects_by_name.assert_called_with(
+        dbname="database", tbl_names=["table1", "table2", "table3", "table4"]
+    )
+
+
+def test_list_views_to_namespace_does_not_exists(hive_table: HiveTable) -> None:
+    catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
+
+    catalog._client = MagicMock()
+    catalog._client.__enter__().get_database.side_effect = NoSuchObjectException(message="does_not_exists")
+
+    with pytest.raises(NoSuchNamespaceError) as exc_info:
+        catalog.list_views("does_not_exists")
+
+    assert "Namespace does not exist: does_not_exists" in str(exc_info.value)
+
+
 def test_load_namespace_properties(hive_database: HiveDatabase) -> None:
     catalog = HiveCatalog(HIVE_CATALOG_NAME, uri=HIVE_METASTORE_FAKE_URL)
 
