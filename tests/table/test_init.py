@@ -2036,3 +2036,29 @@ def test_static_table_forwards_location_to_table_file_io(metadata_location: str,
 
     assert seen_locations, "expected at least one load_file_io call"
     assert all(loc is not None for loc in seen_locations), f"load_file_io called without a location: {seen_locations}"
+
+
+def test_table_to_polars_forwards_kwargs(table_v2: Table, monkeypatch: pytest.MonkeyPatch) -> None:
+    import polars as pl
+
+    recorded_calls: list[tuple[Any, dict[str, Any]]] = []
+
+    def mock_scan_iceberg(source: Any, **kwargs: Any) -> Any:
+        recorded_calls.append((source, kwargs))
+        return "mock_lazy_frame"
+
+    monkeypatch.setattr(pl, "scan_iceberg", mock_scan_iceberg)
+
+    # Test without kwargs
+    res1 = table_v2.to_polars()
+    assert res1 == "mock_lazy_frame"
+    assert recorded_calls[0] == (table_v2, {})
+
+    # Test with kwargs
+    storage_options = {"s3": {"endpoint": "https://s3.custom.endpoint"}}
+    res2 = table_v2.to_polars(storage_options=storage_options, snapshot_id=12345, reader_override="native")
+    assert res2 == "mock_lazy_frame"
+    assert recorded_calls[1] == (
+        table_v2,
+        {"storage_options": storage_options, "snapshot_id": 12345, "reader_override": "native"},
+    )
