@@ -2899,11 +2899,15 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
         stats_columns=compute_statistics_plan(schema, table_metadata.properties),
         parquet_column_mapping=parquet_path_to_id_mapping(schema),
     )
+    partition_spec = table_metadata.spec()
+    partition = partition_spec.partition_from_path(file_path, schema)
+    if partition is None:
+        partition = statistics.partition(partition_spec, table_metadata.schema())
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path=file_path,
         file_format=FileFormat.PARQUET,
-        partition=statistics.partition(table_metadata.spec(), table_metadata.schema()),
+        partition=partition,
         file_size_in_bytes=len(input_file),
         sort_order_id=None,
         spec_id=table_metadata.default_spec_id,
