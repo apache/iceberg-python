@@ -1483,6 +1483,31 @@ Remove an existing branch:
 table.manage_snapshots().remove_branch("dev").commit()
 ```
 
+#### Fast-forwarding a branch
+
+Advance a branch to the snapshot another ref points to. `to_ref` is left untouched and may be a branch or a tag, while `from_branch` must be a branch. The fast-forward only succeeds when the snapshot of `from_branch` is an ancestor of the snapshot of `to_ref`, otherwise a `ValueError` is raised. Fast-forwarding a branch onto the snapshot it already points to does nothing.
+
+A `from_branch` that does not exist yet is created at the snapshot of `to_ref` with the default retention properties, so a misspelled branch name creates a new branch instead of raising. An existing `from_branch` keeps its own retention properties.
+
+This is the publish step of the write-audit-publish pattern, where data is written to a side branch, validated there, and only then made visible on `main`:
+
+```python
+# Write: branch off main and append to the branch
+main_snapshot_id = table.refs()["main"].snapshot_id
+table.manage_snapshots().create_branch(snapshot_id=main_snapshot_id, branch_name="audit").commit()
+table.append(df, branch="audit")
+
+# Audit: main is untouched while the new data is validated on the branch
+assert table.refs()["main"].snapshot_id == main_snapshot_id
+audit_data = table.scan(snapshot_id=table.refs()["audit"].snapshot_id).to_arrow()
+assert audit_data.num_rows > 0
+
+# Publish: move main up to the audited snapshot
+with table.manage_snapshots() as ms:
+    ms.fast_forward_branch("main", "audit")
+    ms.remove_branch("audit")
+```
+
 ## Table Maintenance
 
 PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.

@@ -332,3 +332,69 @@ def test_rollback_to_timestamp_chained_with_tag(table_with_snapshots: Table) -> 
     assert table_with_snapshots.metadata.refs[tag_name] == SnapshotRef(
         snapshot_id=current_snapshot.snapshot_id, snapshot_ref_type="tag"
     )
+
+
+@pytest.mark.integration
+def test_fast_forward_branch(table_with_snapshots: Table) -> None:
+    main_snapshot_id = table_with_snapshots.refs()["main"].snapshot_id
+    history_length = len(table_with_snapshots.history())
+
+    table_with_snapshots.manage_snapshots().create_branch(snapshot_id=main_snapshot_id, branch_name="audit").commit()
+
+    arrow_schema = table_with_snapshots.schema().as_arrow()
+    table_with_snapshots.append(
+        pa.Table.from_pylist([{"id": 5, "data": "e"}], schema=arrow_schema),
+        branch="audit",
+    )
+    audit_snapshot_id = table_with_snapshots.refs()["audit"].snapshot_id
+    assert audit_snapshot_id != main_snapshot_id
+    assert table_with_snapshots.refs()["main"].snapshot_id == main_snapshot_id
+
+    table_with_snapshots.manage_snapshots().fast_forward_branch(from_branch="main", to_ref="audit").commit()
+
+    assert table_with_snapshots.refs()["main"].snapshot_id == audit_snapshot_id
+    assert table_with_snapshots.refs()["audit"].snapshot_id == audit_snapshot_id
+    current_snapshot = table_with_snapshots.current_snapshot()
+    assert current_snapshot is not None
+    assert current_snapshot.snapshot_id == audit_snapshot_id
+    assert len(table_with_snapshots.history()) == history_length + 1
+
+
+@pytest.mark.integration
+def test_fast_forward_branch_preserves_retention(table_with_snapshots: Table) -> None:
+    main_snapshot_id = table_with_snapshots.refs()["main"].snapshot_id
+    older_snapshot_id = table_with_snapshots.history()[-2].snapshot_id
+    assert older_snapshot_id != main_snapshot_id
+
+    # distinct values so a swapped field is caught
+    table_with_snapshots.manage_snapshots().create_branch(
+        snapshot_id=older_snapshot_id,
+        branch_name="retained",
+        max_ref_age_ms=3_600_000,
+        max_snapshot_age_ms=7_200_000,
+        min_snapshots_to_keep=5,
+    ).commit()
+
+    table_with_snapshots.manage_snapshots().fast_forward_branch(from_branch="retained", to_ref="main").commit()
+
+    ref = table_with_snapshots.refs()["retained"]
+    assert ref.snapshot_id == main_snapshot_id
+    assert ref.max_ref_age_ms == 3_600_000
+    assert ref.max_snapshot_age_ms == 7_200_000
+    assert ref.min_snapshots_to_keep == 5
+
+
+@pytest.mark.integration
+def test_fast_forward_branch_not_an_ancestor(table_with_snapshots: Table) -> None:
+    older_snapshot_id = table_with_snapshots.history()[-2].snapshot_id
+
+    table_with_snapshots.manage_snapshots().create_branch(snapshot_id=older_snapshot_id, branch_name="diverged").commit()
+
+    arrow_schema = table_with_snapshots.schema().as_arrow()
+    table_with_snapshots.append(
+        pa.Table.from_pylist([{"id": 6, "data": "f"}], schema=arrow_schema),
+        branch="diverged",
+    )
+
+    with pytest.raises(ValueError, match="Cannot fast-forward: main is not an ancestor of diverged"):
+        table_with_snapshots.manage_snapshots().fast_forward_branch(from_branch="main", to_ref="diverged").commit()
