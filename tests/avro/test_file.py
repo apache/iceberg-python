@@ -87,6 +87,18 @@ def test_missing_schema() -> None:
     assert "No schema found in Avro file headers" in str(exc_info.value)
 
 
+def test_get_schema_is_cached() -> None:
+    schema_json = '{"type": "record", "name": "r", "fields": [{"name": "id", "type": "int", "field-id": 1}]}'
+    header1 = AvroFileHeader(bytes(0), {"avro.schema": schema_json}, bytes(16))
+    header2 = AvroFileHeader(bytes(0), {"avro.schema": schema_json}, bytes(16))
+
+    schema1 = header1.get_schema()
+    schema2 = header2.get_schema()
+
+    assert schema1 == schema2
+    assert schema1 is schema2
+
+
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
 def todict(obj: Any) -> Any:
