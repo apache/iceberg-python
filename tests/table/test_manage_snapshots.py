@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
 from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
@@ -389,5 +390,15 @@ def test_fast_forward_branch_unknown_snapshot(table_v2: Table) -> None:
 
     with pytest.raises(ValueError, match="Cannot fast-forward to unknown snapshot id: 1234567890000"):
         table_v2.manage_snapshots().fast_forward_branch(from_branch="main", to_ref="dangling")
+
+    table_v2.catalog.commit_table.assert_not_called()
+
+
+def test_create_branch_invalid_retention(table_v2: Table) -> None:
+    table_v2.catalog = MagicMock()
+
+    # rejected when passed, not when the ref is built
+    with pytest.raises(PydanticValidationError, match="min_snapshots_to_keep"):
+        table_v2.manage_snapshots().create_branch(snapshot_id=PARENT_SNAPSHOT_ID, branch_name="b", min_snapshots_to_keep=0)
 
     table_v2.catalog.commit_table.assert_not_called()

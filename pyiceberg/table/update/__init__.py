@@ -138,9 +138,9 @@ class SetSnapshotRefUpdate(IcebergBaseModel):
     ref_name: str = Field(alias="ref-name")
     type: Literal[SnapshotRefType.TAG, SnapshotRefType.BRANCH]
     snapshot_id: int = Field(alias="snapshot-id")
-    max_ref_age_ms: Annotated[int | None, Field(alias="max-ref-age-ms", default=None)]
-    max_snapshot_age_ms: Annotated[int | None, Field(alias="max-snapshot-age-ms", default=None)]
-    min_snapshots_to_keep: Annotated[int | None, Field(alias="min-snapshots-to-keep", default=None)]
+    max_ref_age_ms: Annotated[int | None, Field(alias="max-ref-age-ms", default=None, gt=0)]
+    max_snapshot_age_ms: Annotated[int | None, Field(alias="max-snapshot-age-ms", default=None, gt=0)]
+    min_snapshots_to_keep: Annotated[int | None, Field(alias="min-snapshots-to-keep", default=None, gt=0)]
 
 
 class RemoveSnapshotsUpdate(IcebergBaseModel):
