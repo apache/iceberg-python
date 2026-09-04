@@ -994,10 +994,7 @@ def test_null_list_and_map(catalog: Catalog) -> None:
     arrow_table = table_test_empty_list_and_map.scan().to_arrow()
     assert arrow_table["col_list"].to_pylist() == [None, []]
     assert arrow_table["col_map"].to_pylist() == [None, []]
-    # This should be:
-    # assert arrow_table["col_list_with_struct"].to_pylist() == [None, [{'test': 1}]]
-    # Once https://github.com/apache/arrow/issues/38809 has been fixed
-    assert arrow_table["col_list_with_struct"].to_pylist() == [[], [{"test": 1}]]
+    assert arrow_table["col_list_with_struct"].to_pylist() == [None, [{"test": 1}]]
 
 
 @pytest.mark.integration
