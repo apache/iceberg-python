@@ -90,7 +90,7 @@ from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _Fa
 from pyiceberg.table.update.sorting import UpdateSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import IdentityTransform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -234,6 +234,11 @@ class TableProperties:
     WRITE_DELETE_ISOLATION_LEVEL = "write.delete.isolation-level"
     WRITE_UPDATE_ISOLATION_LEVEL = "write.update.isolation-level"
     WRITE_ISOLATION_LEVEL_DEFAULT = "serializable"
+
+
+def _active_partition_source_ids(spec: PartitionSpec) -> set[int]:
+    """Return the set of active source field IDs in a partition spec."""
+    return {field.source_id for field in spec.fields if not isinstance(field.transform, VoidTransform)}
 
 
 class Transaction:
@@ -390,12 +395,18 @@ class Transaction:
 
         return updates, requirements
 
-    def _build_partition_predicate(self, partition_records: set[Record], partition_fields: list[str]) -> BooleanExpression:
+    def _build_partition_predicate(
+        self,
+        partition_records: set[Record],
+        partition_fields: list[str],
+        evolved_fields: set[str] | None = None,
+    ) -> BooleanExpression:
         """Build a filter predicate matching any of the input partition records.
 
         Args:
             partition_records: A set of partition records to match
             partition_fields: The field names to reference for each position in a partition record
+            evolved_fields: Optional set of field names added during partition spec evolution
 
         Returns:
             A predicate matching any of the input partition records.
@@ -403,17 +414,41 @@ class Transaction:
         if not partition_records or not partition_fields:
             return AlwaysFalse()
 
+        evolved = evolved_fields or set()
         per_record_exprs: list[BooleanExpression] = []
         for partition_record in partition_records:
-            predicates: list[BooleanExpression] = [
-                EqualTo(Reference(partition_field), partition_record[pos])
-                if partition_record[pos] is not None
-                else IsNull(Reference(partition_field))
-                for pos, partition_field in enumerate(partition_fields)
-            ]
+            predicates: list[BooleanExpression] = []
+            for pos, field in enumerate(partition_fields):
+                ref = Reference(field)
+                val = partition_record[pos]
+                if val is None:
+                    predicates.append(IsNull(ref))
+                elif field in evolved:
+                    predicates.append(Or(EqualTo(ref, val), IsNull(ref)))
+                else:
+                    predicates.append(EqualTo(ref, val))
+
             per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
 
         return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
+
+    def _get_evolved_partition_fields(self, current_spec: PartitionSpec) -> set[str]:
+        """Find partition fields in the current spec that were absent in at least one historical partitioned spec."""
+        historical_specs = [
+            spec
+            for spec in self.table_metadata.specs().values()
+            if spec.spec_id != current_spec.spec_id and not spec.is_unpartitioned()
+        ]
+        if not historical_specs:
+            return set()
+
+        common_historical_source_ids = set.intersection(*(_active_partition_source_ids(spec) for spec in historical_specs))
+        evolved_source_ids = _active_partition_source_ids(current_spec) - common_historical_source_ids
+        if not evolved_source_ids:
+            return set()
+
+        schema = self.table_metadata.schema()
+        return {field.name for source_id in evolved_source_ids if (field := schema.find_field(source_id)) is not None}
 
     def _append_snapshot_producer(
         self, snapshot_properties: dict[str, str], branch: str | None = MAIN_BRANCH
@@ -619,11 +654,13 @@ class Transaction:
         )
 
         partitions_to_overwrite = {data_file.partition for data_file in data_files}
-        partitions_fields = [
-            self.table_metadata.schema().find_field(field.source_id).name for field in self.table_metadata.spec().fields
-        ]
+        current_spec = self.table_metadata.spec()
+        partitions_fields = [self.table_metadata.schema().find_field(field.source_id).name for field in current_spec.fields]
+        evolved_fields = self._get_evolved_partition_fields(current_spec)
         delete_filter = self._build_partition_predicate(
-            partition_records=partitions_to_overwrite, partition_fields=partitions_fields
+            partition_records=partitions_to_overwrite,
+            partition_fields=partitions_fields,
+            evolved_fields=evolved_fields,
         )
         self.delete(
             delete_filter=delete_filter,
