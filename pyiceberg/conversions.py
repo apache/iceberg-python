@@ -198,7 +198,7 @@ def _(_: PrimitiveType, value_str: str) -> bytes:
 
 @singledispatch
 def to_bytes(
-    primitive_type: PrimitiveType, _: bool | bytes | Decimal | date | datetime | float | int | str | time | uuid.UUID
+    primitive_type: PrimitiveType, value: bool | bytes | Decimal | date | datetime | float | int | str | time | uuid.UUID
 ) -> bytes:
     """Convert a built-in python value to bytes.
 
@@ -208,10 +208,10 @@ def to_bytes(
 
     Args:
         primitive_type (PrimitiveType): An implementation of the PrimitiveType base class.
-        _: The value to convert to bytes (The type of this value depends on which dispatched function is
+        value: The value to convert to bytes (The type of this value depends on which dispatched function is
             used--check dispatchable functions for type hints).
     """
-    raise TypeError(f"scale does not match {primitive_type}")
+    raise TypeError(f"Cannot serialize to bytes, type {primitive_type} not supported: {value!r}")
 
 
 @to_bytes.register(BooleanType)
@@ -408,7 +408,7 @@ def to_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore
         primitive_type (PrimitiveType): An implementation of the PrimitiveType base class.
         val (Any): The arbitrary built-in value to convert into the right form
     """
-    raise TypeError(f"Cannot deserialize bytes, type {primitive_type} not supported: {val}")
+    raise TypeError(f"Cannot serialize to JSON, type {primitive_type} not supported: {val}")
 
 
 @to_json.register(BooleanType)
@@ -547,7 +547,7 @@ def from_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore
         primitive_type (PrimitiveType): An implementation of the PrimitiveType base class.
         val (Any): The arbitrary JSON value to convert into the right form
     """
-    raise TypeError(f"Cannot deserialize bytes, type {primitive_type} not supported: {str(val)}")
+    raise TypeError(f"Cannot deserialize JSON, type {primitive_type} not supported: {val}")
 
 
 @from_json.register(BooleanType)
