@@ -14,9 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import warnings
 from unittest.mock import Mock, patch
 
-from pyiceberg.utils.deprecated import deprecated
+import pytest
+
+from pyiceberg.utils.deprecated import deprecated, deprecation_message, deprecation_notice
 
 
 @patch("warnings.warn")
@@ -38,9 +41,49 @@ def test_deprecated(warn: Mock) -> None:
 
 
 @patch("warnings.warn")
-def test_deprecation_message(warn: Mock) -> None:
-    from pyiceberg.utils.deprecated import deprecation_message
+def test_deprecated_without_help_message(warn: Mock) -> None:
+    @deprecated(
+        deprecated_in="0.1.0",
+        removed_in="0.2.0",
+    )
+    def deprecated_method() -> None:
+        pass
 
+    deprecated_method()
+
+    assert warn.called
+    assert warn.call_args[0] == ("Call to deprecated_method, deprecated in 0.1.0, will be removed in 0.2.0.",)
+
+
+def test_deprecated_warning_points_at_the_caller() -> None:
+    """The warning is attributed to the code using the deprecated API, not to the helper."""
+
+    @deprecated(deprecated_in="0.1.0", removed_in="0.2.0")
+    def deprecated_method() -> None:
+        pass
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        deprecated_method()
+
+    assert len(caught) == 1
+    assert caught[0].filename == __file__
+
+
+def test_deprecation_notice_with_help_message() -> None:
+    assert (
+        deprecation_notice("0.1.0", "0.2.0", "Please use something_else instead")
+        == "Deprecated in 0.1.0, will be removed in 0.2.0. Please use something_else instead"
+    )
+
+
+@pytest.mark.parametrize("help_message", [None, ""])
+def test_deprecation_notice_without_help_message(help_message: str | None) -> None:
+    assert deprecation_notice("0.1.0", "0.2.0", help_message) == "Deprecated in 0.1.0, will be removed in 0.2.0."
+
+
+@patch("warnings.warn")
+def test_deprecation_message(warn: Mock) -> None:
     deprecation_message(
         deprecated_in="0.1.0",
         removed_in="0.2.0",
@@ -49,3 +92,25 @@ def test_deprecation_message(warn: Mock) -> None:
 
     assert warn.called
     assert warn.call_args[0] == ("Deprecated in 0.1.0, will be removed in 0.2.0. Please use something_else instead",)
+
+
+@patch("warnings.warn")
+def test_deprecation_message_without_help_message(warn: Mock) -> None:
+    deprecation_message(
+        deprecated_in="0.1.0",
+        removed_in="0.2.0",
+        help_message=None,
+    )
+
+    assert warn.called
+    assert warn.call_args[0] == ("Deprecated in 0.1.0, will be removed in 0.2.0.",)
+
+
+def test_deprecation_message_points_at_the_caller() -> None:
+    """The warning is attributed to the code using the deprecated behavior, not to the helper."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        deprecation_message(deprecated_in="0.1.0", removed_in="0.2.0", help_message="Use something_else instead")
+
+    assert len(caught) == 1
+    assert caught[0].filename == __file__
