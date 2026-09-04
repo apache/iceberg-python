@@ -1485,24 +1485,66 @@ table.manage_snapshots().remove_branch("dev").commit()
 
 #### Fast-forwarding a branch
 
-Fast-forward `from_branch` to point at the snapshot referenced by
-`to_ref`. `to_ref` may be a branch or tag; `from_branch` must be a
-branch. If `from_branch` does not yet exist it is created pointing at
-`to_ref`'s snapshot. If both already point at the same snapshot the
-call is a no-op. Otherwise `from_branch`'s current snapshot must be an
-ancestor of `to_ref`'s snapshot; if not, `NotAncestorError` is raised.
+Fast-forward the `main` branch to the `audit-branch` branch:
 
 ```python
 with table.manage_snapshots() as ms:
-    ms.fast_forward_branch("main", "audit-branch")
+    ms.fast_forward_branch(from_branch="main", to_ref="audit-branch")
 ```
 
-##### End-to-end: write-audit-publish
+Fast-forward `from_branch` to point at the snapshot referenced by `to_ref`.
+`to_ref` may be a branch or tag. `from_branch` must be a branch.
 
-The canonical use case for fast-forward is the write-audit-publish
-(WAP) pattern: writes proceed on a side branch, validation runs
-against that branch, and only after validation succeeds is the main
-branch advanced to publish the new data.
+<!-- markdownlint-disable MD046 -- Allowing indented multi-line formatting in admonition-->
+
+!!! info "Fast Forward Behavior"
+
+    * Case 1: If `from_branch` does not yet exist it is created and pointing at `to_ref`'s
+        snapshot. The default retention properties are applied on the auto-created snapshot.
+    * Case 2:** If both already point at the same snapshot the call is a no-op.
+    * Case 3: Otherwise `from_branch`'s current snapshot must be an ancestor of `to_ref`'s snapshot;
+    if not, `NotAncestorError` is raised.
+
+<!-- markdownlint-enable MD046 -->
+
+#### Example Use-Case: write-audit-publish (WAP)
+
+The use of branching & fast-forwarding enable the usage of the write-audit-publish (WAP) process:
+
+1. Writes proceed on a side branch
+2. Audit Validation runs against that branch
+3. Publish the new data by fast-forwarding the main branch
+
+```mermaid
+---
+title: Conceptually Illustration of the WAP Process
+---
+flowchart LR
+
+    subgraph audit [audit branch]
+        s1_audit["snapshot_1"] -- "1.2 append(new_rows)" --> s2_audit["snapshot_2"]
+        v@{ shape: comment, label: '2. Validation Performed & Passed' }
+         s2_audit ~~~ v
+         v -.-> s2_audit
+    end
+
+    subgraph main [main branch]
+        s1["snapshot_1"]
+        s2_main["snapshot_2"]
+
+    end
+
+    s1 -. "1.1 create_branch" .-> s1_audit
+    s2_audit -. "3. fast_forward_branch" .-> s2_main
+
+```
+
+If validation fails, callers simply skip the fast-forward step. The
+audit branch (and its data files) can then be inspected, rewritten,
+or removed via `remove_branch` and subsequent snapshot expiration -
+without ever having polluted the data on `main`.
+
+##### Programmatic Example
 
 ```python
 import pyarrow as pa
@@ -1513,6 +1555,7 @@ catalog = load_catalog("prod")
 table = catalog.load_table("sales.orders")
 
 # 1. WRITE — create a side branch off main and append to it.
+# 1.1 Create the Branch
 main_snapshot_id = table.current_snapshot().snapshot_id
 table.manage_snapshots().create_branch(
     snapshot_id=main_snapshot_id,
@@ -1523,11 +1566,12 @@ new_rows = pa.table({
     "order_id": [1001, 1002, 1003],
     "amount":   [ 49.99, 129.00, 12.50],
 })
+
+# 1.2 Write into the branch
 table.append(new_rows, branch="audit")
 
-# 2. AUDIT — scan the audit branch and run whatever validation
-#    your data-quality contract requires. Nothing on `main` has
-#    changed yet, so readers of `main` still see the pre-write state.
+# 2. AUDIT — scan the audit branch and run whatever validation your data-quality contract requires.
+#    Nothing on `main` has changed yet, so readers of `main` still see the pre-write state.
 audit_snapshot_id = table.refs()["audit"].snapshot_id
 audit_data = table.scan(snapshot_id=audit_snapshot_id).to_arrow()
 
@@ -1536,18 +1580,12 @@ assert pc.all(pc.greater(audit_data["amount"], 0)).as_py(), \
     "found non-positive amounts"
 
 # 3. PUBLISH — validation passed; fast-forward main to audit.
-#    Because the audit branch was created from main and only appended
-#    to, main's current snapshot is an ancestor of audit's snapshot,
-#    so the fast-forward is valid.
+#    fast-forward can occur because the audit branch was created from main and
+#    main's current snapshot is an ancestor of audit's snapshot.
 with table.manage_snapshots() as ms:
     ms.fast_forward_branch("main", "audit")
     ms.remove_branch("audit")  # optional: clean up the side branch
 ```
-
-If validation fails, callers simply skip the fast-forward step. The
-audit branch (and its data files) can then be inspected, rewritten,
-or removed via `remove_branch` and subsequent snapshot expiration —
-without ever having polluted `main`.
 
 ## Table Maintenance
 
