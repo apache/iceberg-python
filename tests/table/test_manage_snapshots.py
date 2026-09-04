@@ -28,7 +28,7 @@ PARENT_SNAPSHOT_ID = 3051729675574597004
 CHILD_SNAPSHOT_ID = 3055729675574597004
 
 
-def _mock_commit_response(table: Table) -> CommitTableResponse:
+def mock_commit_response(table: Table) -> CommitTableResponse:
     return CommitTableResponse(
         metadata=table.metadata,
         metadata_location="s3://bucket/tbl",
@@ -36,31 +36,31 @@ def _mock_commit_response(table: Table) -> CommitTableResponse:
     )
 
 
-def _get_updates(mock_catalog: MagicMock) -> tuple[TableUpdate, ...]:
+def get_updates(mock_catalog: MagicMock) -> tuple[TableUpdate, ...]:
     args, _ = mock_catalog.commit_table.call_args
     return args[2]
 
 
-def _get_requirements(mock_catalog: MagicMock) -> tuple[TableRequirement, ...]:
+def get_requirements(mock_catalog: MagicMock) -> tuple[TableRequirement, ...]:
     args, _ = mock_catalog.commit_table.call_args
     return args[1]
 
 
-def _get_set_ref_updates(mock_catalog: MagicMock) -> list[SetSnapshotRefUpdate]:
-    return [update for update in _get_updates(mock_catalog) if isinstance(update, SetSnapshotRefUpdate)]
+def get_set_ref_updates(mock_catalog: MagicMock) -> list[SetSnapshotRefUpdate]:
+    return [update for update in get_updates(mock_catalog) if isinstance(update, SetSnapshotRefUpdate)]
 
 
 def test_set_current_snapshot_basic(table_v2: Table) -> None:
     snapshot_one = 3051729675574597004
 
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     table_v2.manage_snapshots().set_current_snapshot(snapshot_id=snapshot_one).commit()
 
     table_v2.catalog.commit_table.assert_called_once()
 
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
 
     assert len(set_ref_updates) == 1
     update = set_ref_updates[0]
@@ -84,7 +84,7 @@ def test_set_current_snapshot_to_current(table_v2: Table) -> None:
     assert current_snapshot is not None
 
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     table_v2.manage_snapshots().set_current_snapshot(snapshot_id=current_snapshot.snapshot_id).commit()
 
@@ -94,13 +94,13 @@ def test_set_current_snapshot_to_current(table_v2: Table) -> None:
 def test_set_current_snapshot_chained_with_tag(table_v2: Table) -> None:
     snapshot_one = 3051729675574597004
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     (table_v2.manage_snapshots().set_current_snapshot(snapshot_id=snapshot_one).create_tag(snapshot_one, "my-tag").commit())
 
     table_v2.catalog.commit_table.assert_called_once()
 
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
 
     assert len(set_ref_updates) == 2
     assert {u.ref_name for u in set_ref_updates} == {"main", "my-tag"}
@@ -113,13 +113,13 @@ def test_set_current_snapshot_with_extensive_snapshots(table_v2_with_extensive_s
     target_snapshot = snapshots[50].snapshot_id
 
     table_v2_with_extensive_snapshots.catalog = MagicMock()
-    table_v2_with_extensive_snapshots.catalog.commit_table.return_value = _mock_commit_response(table_v2_with_extensive_snapshots)
+    table_v2_with_extensive_snapshots.catalog.commit_table.return_value = mock_commit_response(table_v2_with_extensive_snapshots)
 
     table_v2_with_extensive_snapshots.manage_snapshots().set_current_snapshot(snapshot_id=target_snapshot).commit()
 
     table_v2_with_extensive_snapshots.catalog.commit_table.assert_called_once()
 
-    set_ref_updates = _get_set_ref_updates(table_v2_with_extensive_snapshots.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2_with_extensive_snapshots.catalog)
 
     assert len(set_ref_updates) == 1
     assert set_ref_updates[0].snapshot_id == target_snapshot
@@ -130,11 +130,11 @@ def test_set_current_snapshot_by_ref_name(table_v2: Table) -> None:
     assert current_snapshot is not None
 
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     table_v2.manage_snapshots().set_current_snapshot(ref_name="main").commit()
 
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
 
     assert len(set_ref_updates) == 1
     assert set_ref_updates[0].snapshot_id == current_snapshot.snapshot_id
@@ -165,7 +165,7 @@ def test_set_current_snapshot_requires_one_argument(table_v2: Table) -> None:
 def test_set_current_snapshot_chained_with_create_tag(table_v2: Table) -> None:
     snapshot_one = 3051729675574597004
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     # create a tag and immediately use it to set current snapshot
     (
@@ -177,7 +177,7 @@ def test_set_current_snapshot_chained_with_create_tag(table_v2: Table) -> None:
 
     table_v2.catalog.commit_table.assert_called_once()
 
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
 
     # should have the tag and the main branch update
     assert len(set_ref_updates) == 2
@@ -194,11 +194,11 @@ def test_fast_forward_branch_basic(table_v2: Table) -> None:
         snapshot_ref_type=SnapshotRefType.BRANCH,
     )
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     table_v2.manage_snapshots().fast_forward_branch(from_branch="lagging", to_ref="main").commit()
 
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
     assert len(set_ref_updates) == 1
     assert set_ref_updates[0].ref_name == "lagging"
     assert set_ref_updates[0].snapshot_id == CHILD_SNAPSHOT_ID
@@ -215,11 +215,11 @@ def test_fast_forward_branch_to_tag(table_v2: Table) -> None:
         snapshot_ref_type=SnapshotRefType.TAG,
     )
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     table_v2.manage_snapshots().fast_forward_branch(from_branch="lagging", to_ref="release").commit()
 
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
     assert len(set_ref_updates) == 1
     assert set_ref_updates[0].ref_name == "lagging"
     assert set_ref_updates[0].snapshot_id == CHILD_SNAPSHOT_ID
@@ -228,11 +228,11 @@ def test_fast_forward_branch_to_tag(table_v2: Table) -> None:
 
 def test_fast_forward_branch_creates_branch(table_v2: Table) -> None:
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     table_v2.manage_snapshots().fast_forward_branch(from_branch="brand-new", to_ref="main").commit()
 
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
     assert len(set_ref_updates) == 1
     update = set_ref_updates[0]
     assert update.ref_name == "brand-new"
@@ -250,7 +250,7 @@ def test_fast_forward_branch_noop(table_v2: Table) -> None:
         snapshot_ref_type=SnapshotRefType.BRANCH,
     )
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     table_v2.manage_snapshots().fast_forward_branch(from_branch="peer", to_ref="main").commit()
 
@@ -266,11 +266,11 @@ def test_fast_forward_branch_preserves_retention(table_v2: Table) -> None:
         min_snapshots_to_keep=5,
     )
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     table_v2.manage_snapshots().fast_forward_branch(from_branch="lagging", to_ref="main").commit()
 
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
     assert len(set_ref_updates) == 1
     update = set_ref_updates[0]
     assert update.snapshot_id == CHILD_SNAPSHOT_ID
@@ -281,7 +281,7 @@ def test_fast_forward_branch_preserves_retention(table_v2: Table) -> None:
 
 def test_fast_forward_branch_chained_with_create_branch(table_v2: Table) -> None:
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     with table_v2.manage_snapshots() as ms:
         ms.create_branch(
@@ -293,7 +293,7 @@ def test_fast_forward_branch_chained_with_create_branch(table_v2: Table) -> None
         ).fast_forward_branch(from_branch="staging", to_ref="main")
 
     # the fast-forward sees the branch created in the same chain and replaces its update
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
     assert len(set_ref_updates) == 1
     update = set_ref_updates[0]
     assert update.ref_name == "staging"
@@ -337,13 +337,13 @@ def test_fast_forward_branch_chained_with_remove_branch(table_v2: Table) -> None
         snapshot_ref_type=SnapshotRefType.BRANCH,
     )
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     # the branch removed earlier in the chain is created again at main
     with table_v2.manage_snapshots() as ms:
         ms.remove_branch("stale").fast_forward_branch(from_branch="stale", to_ref="main")
 
-    set_ref_updates = _get_set_ref_updates(table_v2.catalog)
+    set_ref_updates = get_set_ref_updates(table_v2.catalog)
     assert len(set_ref_updates) == 1
     assert set_ref_updates[0].ref_name == "stale"
     assert set_ref_updates[0].snapshot_id == CHILD_SNAPSHOT_ID
@@ -355,12 +355,12 @@ def test_fast_forward_branch_requirement(table_v2: Table) -> None:
         snapshot_ref_type=SnapshotRefType.BRANCH,
     )
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     table_v2.manage_snapshots().fast_forward_branch(from_branch="lagging", to_ref="main").commit()
 
     # the requirement asserts the committed snapshot of the branch
-    ref_requirements = [r for r in _get_requirements(table_v2.catalog) if isinstance(r, AssertRefSnapshotId)]
+    ref_requirements = [r for r in get_requirements(table_v2.catalog) if isinstance(r, AssertRefSnapshotId)]
     assert len(ref_requirements) == 1
     assert ref_requirements[0].ref == "lagging"
     assert ref_requirements[0].snapshot_id == PARENT_SNAPSHOT_ID
@@ -368,14 +368,14 @@ def test_fast_forward_branch_requirement(table_v2: Table) -> None:
 
 def test_fast_forward_branch_chained_requirement(table_v2: Table) -> None:
     table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = _mock_commit_response(table_v2)
+    table_v2.catalog.commit_table.return_value = mock_commit_response(table_v2)
 
     with table_v2.manage_snapshots() as ms:
         ms.create_branch(snapshot_id=PARENT_SNAPSHOT_ID, branch_name="staging").fast_forward_branch(
             from_branch="staging", to_ref="main"
         )
 
-    ref_requirements = [r for r in _get_requirements(table_v2.catalog) if isinstance(r, AssertRefSnapshotId)]
+    ref_requirements = [r for r in get_requirements(table_v2.catalog) if isinstance(r, AssertRefSnapshotId)]
     assert len(ref_requirements) == 1
     assert ref_requirements[0].ref == "staging"
     assert ref_requirements[0].snapshot_id is None
