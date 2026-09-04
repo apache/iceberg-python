@@ -109,6 +109,7 @@ from pyiceberg.types import (
     TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -606,3 +607,20 @@ def test_json_single_serialization(primitive_type: PrimitiveType, value: Any, ex
 )
 def test_json_serialize_roundtrip(primitive_type: PrimitiveType, value: Any) -> None:
     assert value == conversions.from_json(primitive_type, conversions.to_json(primitive_type, value))
+
+
+def test_unknown_type_conversions() -> None:
+    """Unknown values are always null, so they have no binary or partition representation."""
+    unknown = UnknownType()
+
+    assert conversions.to_bytes(unknown, "iceberg") is None
+    assert conversions.from_bytes(unknown, b"\x01\x02\x03\xff") is None
+    assert conversions.partition_to_py(unknown, "iceberg") is None
+
+    # The spec defines no JSON single-value representation for unknown, since a
+    # non-null initial-default or write-default is invalid for the type.
+    with pytest.raises(TypeError):
+        conversions.to_json(unknown, "iceberg")
+
+    with pytest.raises(TypeError):
+        conversions.from_json(unknown, "iceberg")
