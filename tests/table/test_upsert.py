@@ -31,7 +31,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
-from pyiceberg.table.upsert_util import create_match_filter
+from pyiceberg.table.upsert_util import create_match_filter, get_rows_to_update
 from pyiceberg.transforms import DayTransform
 from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
 from tests.catalog.test_base import InMemoryCatalog
@@ -927,3 +927,294 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+def test_get_rows_to_update_with_difference_cols() -> None:
+    """Change detection is limited to difference_cols, but detected rows are returned with all columns."""
+    schema = pa.schema([pa.field("id", pa.int32()), pa.field("val", pa.string()), pa.field("meta", pa.string())])
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "val": "a", "meta": "m1"},
+            {"id": 2, "val": "b", "meta": "m2"},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "val": "a", "meta": "changed"},  # differs only outside difference_cols
+            {"id": 2, "val": "B", "meta": "m2"},  # differs in difference_cols column
+        ],
+        schema=schema,
+    )
+
+    # Without difference_cols, both rows are detected as changed
+    assert len(get_rows_to_update(source, target, ["id"])) == 2
+
+    # With difference_cols, only row 2 (changed in "val") is detected, and returned with all columns
+    rows = get_rows_to_update(source, target, ["id"], difference_cols=["val"])
+    assert rows.to_pylist() == [{"id": 2, "val": "B", "meta": "m2"}]
+
+
+def test_get_rows_to_update_difference_cols_validation() -> None:
+    schema = pa.schema([pa.field("id", pa.int32()), pa.field("val", pa.string())])
+    table = pa.Table.from_pylist([{"id": 1, "val": "a"}], schema=schema)
+    with pytest.raises(
+        ValueError, match="difference_cols must contain at least one column; use None to compare all non-key columns"
+    ):
+        get_rows_to_update(table, table, ["id"], difference_cols=[])
+
+    with pytest.raises(ValueError, match=r"Columns in difference_cols could not be found in the source table: \['nonexistent'\]"):
+        get_rows_to_update(table, table, ["id"], difference_cols=["nonexistent"])
+
+    with pytest.raises(ValueError, match=r"Columns in difference_cols cannot be join columns: \['id'\]"):
+        get_rows_to_update(table, table, ["id"], difference_cols=["id"])
+
+
+def test_upsert_with_difference_cols(catalog: Catalog) -> None:
+    """Upsert with difference_cols skips matched rows whose changes are outside the listed columns."""
+    identifier = "default.test_upsert_with_difference_cols"
+    _drop_table(catalog, identifier)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+            pa.field("notes", pa.string(), nullable=False),
+        ]
+    )
+
+    tbl = catalog.create_table(identifier, arrow_schema)
+    tbl.append(
+        pa.Table.from_pylist(
+            [
+                {"city": "Amsterdam", "population": 921402, "notes": "old"},
+                {"city": "San Francisco", "population": 808988, "notes": "old"},
+            ],
+            schema=arrow_schema,
+        )
+    )
+
+    source_df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 921402, "notes": "new"},  # change outside difference_cols -> skipped
+            {"city": "San Francisco", "population": 810000, "notes": "new"},  # change in difference_cols -> updated
+            {"city": "Drachten", "population": 45019, "notes": "new"},  # unmatched -> inserted
+        ],
+        schema=arrow_schema,
+    )
+
+    res = tbl.upsert(source_df, join_cols=["city"], difference_cols=["population"])
+
+    assert_upsert_result(res, expected_updated=1, expected_inserted=1)
+
+    result = {row["city"]: row for row in tbl.scan().to_arrow().to_pylist()}
+    # The skipped row is untouched, including the column that differed
+    assert result["Amsterdam"] == {"city": "Amsterdam", "population": 921402, "notes": "old"}
+    # The updated row is written with all columns, not only the difference_cols
+    assert result["San Francisco"] == {"city": "San Francisco", "population": 810000, "notes": "new"}
+    assert result["Drachten"] == {"city": "Drachten", "population": 45019, "notes": "new"}
+
+
+def test_upsert_with_invalid_difference_cols(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_invalid_difference_cols"
+    _drop_table(catalog, identifier)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+        ]
+    )
+
+    tbl = catalog.create_table(identifier, arrow_schema)
+    df = pa.Table.from_pylist([{"city": "Amsterdam", "population": 921402}], schema=arrow_schema)
+
+    with pytest.raises(ValueError, match="Columns in difference_cols could not be found in the source table"):
+        tbl.upsert(df, join_cols=["city"], difference_cols=["nonexistent"])
+
+
+def test_upsert_transaction_with_difference_cols(catalog: Catalog) -> None:
+    """Verify Transaction.upsert supports difference_cols."""
+    identifier = "default.test_upsert_tx_with_difference_cols"
+    _drop_table(catalog, identifier)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+            pa.field("notes", pa.string(), nullable=False),
+        ]
+    )
+
+    tbl = catalog.create_table(identifier, arrow_schema)
+    tbl.append(
+        pa.Table.from_pylist(
+            [
+                {"city": "Amsterdam", "population": 921402, "notes": "old"},
+            ],
+            schema=arrow_schema,
+        )
+    )
+
+    source_df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 950000, "notes": "new"},
+        ],
+        schema=arrow_schema,
+    )
+
+    with tbl.transaction() as tx:
+        res = tx.upsert(source_df, join_cols=["city"], difference_cols=["population"])
+        assert_upsert_result(res, expected_updated=1, expected_inserted=0)
+
+    result = {row["city"]: row for row in tbl.scan().to_arrow().to_pylist()}
+    assert result["Amsterdam"] == {"city": "Amsterdam", "population": 950000, "notes": "new"}
+
+
+def test_get_rows_to_update_with_multiple_difference_cols() -> None:
+    """Verify change detection when difference_cols contains multiple columns."""
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("col1", pa.string()),
+            pa.field("col2", pa.int32()),
+            pa.field("col3", pa.string()),
+        ]
+    )
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "col1": "a", "col2": 10, "col3": "old"},
+            {"id": 2, "col1": "b", "col2": 20, "col3": "old"},
+            {"id": 3, "col1": "c", "col2": 30, "col3": "old"},
+            {"id": 4, "col1": "d", "col2": 40, "col3": "old"},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "col1": "A", "col2": 10, "col3": "old"},  # col1 changed (in difference_cols) -> update
+            {"id": 2, "col1": "b", "col2": 25, "col3": "old"},  # col2 changed (in difference_cols) -> update
+            {"id": 3, "col1": "c", "col2": 30, "col3": "new"},  # col3 changed (outside difference_cols) -> skip
+            {"id": 4, "col1": "d", "col2": 40, "col3": "old"},  # no change -> skip
+        ],
+        schema=schema,
+    )
+
+    rows = get_rows_to_update(source, target, ["id"], difference_cols=["col1", "col2"])
+    assert rows.to_pylist() == [
+        {"id": 1, "col1": "A", "col2": 10, "col3": "old"},
+        {"id": 2, "col1": "b", "col2": 25, "col3": "old"},
+    ]
+
+
+def test_get_rows_to_update_difference_cols_with_nulls() -> None:
+    """Verify change detection in difference_cols with null/None transitions."""
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("val", pa.string(), nullable=True),
+            pa.field("notes", pa.string(), nullable=True),
+        ]
+    )
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "val": "value", "notes": "m1"},
+            {"id": 2, "val": None, "notes": "m2"},
+            {"id": 3, "val": None, "notes": "m3"},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "val": None, "notes": "m1"},  # value -> None: changed
+            {"id": 2, "val": "new_value", "notes": "m2"},  # None -> value: changed
+            {"id": 3, "val": None, "notes": "changed_notes"},  # None -> None: unchanged
+        ],
+        schema=schema,
+    )
+
+    rows = get_rows_to_update(source, target, ["id"], difference_cols=["val"])
+    assert rows.to_pylist() == [
+        {"id": 1, "val": None, "notes": "m1"},
+        {"id": 2, "val": "new_value", "notes": "m2"},
+    ]
+
+
+def test_get_rows_to_update_difference_cols_ignore_other_columns() -> None:
+    """Verify that changes to columns outside difference_cols are ignored for update detection."""
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("row_hash", pa.string()),
+            pa.field("name", pa.string()),
+        ]
+    )
+    target = pa.Table.from_pylist([{"id": 1, "row_hash": "abc", "name": "Alice"}], schema=schema)
+
+    # 1. Non-difference column changed ("Alice" -> "Bob"), but row_hash unchanged -> NOOP (0 rows)
+    source_noop = pa.Table.from_pylist([{"id": 1, "row_hash": "abc", "name": "Bob"}], schema=schema)
+    assert len(get_rows_to_update(source_noop, target, ["id"], difference_cols=["row_hash"])) == 0
+
+    # 2. Difference column changed ("abc" -> "xyz"), name unchanged -> UPDATE with full row returned
+    source_update = pa.Table.from_pylist([{"id": 1, "row_hash": "xyz", "name": "Alice"}], schema=schema)
+    res = get_rows_to_update(source_update, target, ["id"], difference_cols=["row_hash"])
+    assert res.to_pylist() == [{"id": 1, "row_hash": "xyz", "name": "Alice"}]
+
+
+def test_upsert_schema_evolution_with_difference_cols(catalog: Catalog) -> None:
+    """Verify interaction between schema evolution and difference_cols."""
+    identifier = "default.test_upsert_schema_evolution_with_diff_cols"
+    _drop_table(catalog, identifier)
+
+    initial_arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
+        ]
+    )
+    tbl = catalog.create_table(identifier, schema=initial_arrow_schema)
+
+    # 1. Initial row
+    initial_df = pa.Table.from_pylist(
+        [{"id": 1, "name": "Alice"}],
+        schema=initial_arrow_schema,
+    )
+    tbl.append(initial_df)
+
+    # 2. Evolve schema: add 'status' column
+    with tbl.update_schema() as update:
+        update.add_column("status", StringType())
+
+    evolved_arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
+            pa.field("status", pa.string(), nullable=True),
+        ]
+    )
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"id": 2, "name": "Bob", "status": "pending"}],
+            schema=evolved_arrow_schema,
+        )
+    )
+
+    # 3. Upsert with difference_cols=["status"]: Bob status changed ("pending" -> "active") -> updated
+    source_df1 = pa.Table.from_pylist(
+        [{"id": 2, "name": "Bob", "status": "active"}],
+        schema=evolved_arrow_schema,
+    )
+    res1 = tbl.upsert(source_df1, join_cols=["id"], difference_cols=["status"])
+    assert_upsert_result(res1, expected_updated=1, expected_inserted=0)
+
+    # 4. Upsert again with difference_cols=["status"]: status is still "active", but name changed to "Bob_new"
+    # Because name is outside difference_cols, this should be ignored (0 updated)
+    source_df2 = pa.Table.from_pylist(
+        [{"id": 2, "name": "Bob_new", "status": "active"}],
+        schema=evolved_arrow_schema,
+    )
+    res2 = tbl.upsert(source_df2, join_cols=["id"], difference_cols=["status"])
+    assert_upsert_result(res2, expected_updated=0, expected_inserted=0)
+
+    result = {row["id"]: row for row in tbl.scan().to_arrow().to_pylist()}
+    assert result[2] == {"id": 2, "name": "Bob", "status": "active"}

@@ -848,6 +848,7 @@ class Transaction:
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
+        difference_cols: list[str] | None = None,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -862,6 +863,11 @@ class Transaction:
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
+            difference_cols: Subset of non-key columns to compare when detecting changed rows
+                (e.g. a hash column that reflects any change to the row). This only limits change
+                *detection*: when a matched row is detected as changed, all of its columns are
+                written, not just the listed ones. Changes to columns outside difference_cols are
+                intentionally ignored for update detection. If not provided, all non-key columns are compared.
 
             To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
@@ -913,6 +919,9 @@ class Transaction:
         if upsert_util.has_duplicate_rows(df, join_cols):
             raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
 
+        # Fail fast on invalid difference_cols instead of erroring on the first matched batch
+        upsert_util.validate_difference_cols(df.column_names, join_cols, difference_cols)
+
         from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
@@ -952,7 +961,7 @@ class Transaction:
                 # values have actually changed. We don't want to do just a blanket overwrite for matched
                 # rows if the actual non-key column data hasn't changed.
                 # this extra step avoids unnecessary IO and writes
-                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
+                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols, difference_cols)
 
                 if len(rows_to_update) > 0:
                     # build the match predicate filter
@@ -1653,6 +1662,7 @@ class Table:
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
+        difference_cols: list[str] | None = None,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
@@ -1667,6 +1677,11 @@ class Table:
             case_sensitive: Bool indicating if the match should be case-sensitive
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
+            difference_cols: Subset of non-key columns to compare when detecting changed rows
+                (e.g. a hash column that reflects any change to the row). This only limits change
+                *detection*: when a matched row is detected as changed, all of its columns are
+                written, not just the listed ones. Changes to columns outside difference_cols are
+                intentionally ignored for update detection. If not provided, all non-key columns are compared.
 
             To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
@@ -1701,6 +1716,7 @@ class Table:
                 case_sensitive=case_sensitive,
                 branch=branch,
                 snapshot_properties=snapshot_properties,
+                difference_cols=difference_cols,
             )
 
     def append(
