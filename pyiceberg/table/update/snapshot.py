@@ -1358,6 +1358,9 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
     def rewrite_if(self, predicate: Callable[[ManifestFile], bool]) -> RewriteManifests:
         """Filter which manifests should be rewritten.
 
+        Passing a predicate also disables the optimization that keeps single-manifest
+        groups as-is, allowing single manifests to be rewritten when they match the predicate.
+
         Args:
             predicate: A function that takes a ManifestFile and returns True if it should be rewritten.
 
@@ -1408,11 +1411,8 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         data_manifests_by_spec: defaultdict[int, list[ManifestFile]] = defaultdict(list)
         kept_manifests: list[ManifestFile] = []
         for manifest in snapshot.manifests(self._io):
-            if manifest.content == ManifestContent.DATA:
-                if self._predicate is None or self._predicate(manifest):
-                    data_manifests_by_spec[manifest.partition_spec_id].append(manifest)
-                else:
-                    kept_manifests.append(manifest)
+            if manifest.content == ManifestContent.DATA and (self._predicate is None or self._predicate(manifest)):
+                data_manifests_by_spec[manifest.partition_spec_id].append(manifest)
             else:
                 kept_manifests.append(manifest)
 
@@ -1423,16 +1423,20 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
                     # nothing to merge and no predicate specified; keep the manifest as-is
                     kept_manifests.append(group[0])
                     continue
-                entries_in_group = 0
+
+                entries = (entry for manifest in group for entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True))
+                first_entry = next(entries, None)
+                if first_entry is None:
+                    kept_manifests.extend(group)
+                    continue
+
                 with self.new_manifest_writer(self.spec(spec_id)) as writer:
-                    for manifest in group:
-                        for entry in manifest.fetch_manifest_entry(self._io, discard_deleted=True):
-                            writer.existing(entry)
-                            self._entries_processed += 1
-                            entries_in_group += 1
-                if entries_in_group > 0:
-                    new_manifests.append(writer.to_manifest_file())
-                    self._created_count += 1
+                    for entry in itertools.chain([first_entry], entries):
+                        writer.existing(entry)
+                        self._entries_processed += 1
+
+                new_manifests.append(writer.to_manifest_file())
+                self._created_count += 1
                 self._rewritten_count += len(group)
 
         self._kept_count = len(kept_manifests)
