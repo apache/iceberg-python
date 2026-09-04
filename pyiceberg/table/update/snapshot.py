@@ -59,6 +59,7 @@ from pyiceberg.table.snapshots import (
     SnapshotSummaryCollector,
     Summary,
     ancestors_of,
+    is_ancestor_of,
     latest_ancestor_before_timestamp,
     update_snapshot_summaries,
 )
@@ -73,6 +74,7 @@ from pyiceberg.table.update import (
     U,
     UpdatesAndRequirements,
     UpdateTableMetadata,
+    update_table_metadata,
 )
 from pyiceberg.typedef import EMPTY_DICT, KeyDefaultDict, Record
 from pyiceberg.utils.bin_packing import ListPacker
@@ -1043,6 +1045,14 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             self._updates = ()
             self._requirements = ()
 
+    def _pending_table_metadata(self) -> TableMetadata:
+        """Return the table metadata with the ref updates staged on this instance applied.
+
+        Only used to look at the result of operations chained earlier, requirements are still built
+        from the transaction metadata.
+        """
+        return update_table_metadata(self._transaction.table_metadata, self._updates)
+
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
         """Remove a snapshot ref.
 
@@ -1192,6 +1202,8 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Raises:
             ValueError: If the snapshot does not exist or is not an ancestor of the current table state.
         """
+        self._commit_if_ref_updates_exist()
+
         if not self._transaction.table_metadata.snapshot_by_id(snapshot_id):
             raise ValueError(f"Cannot roll back to unknown snapshot id: {snapshot_id}")
 
@@ -1214,6 +1226,8 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Raises:
             ValueError: If no valid snapshot exists older than the given timestamp.
         """
+        self._commit_if_ref_updates_exist()
+
         snapshot = latest_ancestor_before_timestamp(self._transaction.table_metadata, timestamp_ms)
         if snapshot is None:
             raise ValueError(f"Cannot roll back, no valid snapshot older than: {timestamp_ms}")
@@ -1231,6 +1245,79 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
                 self._transaction.table_metadata,
             )
         }
+
+    def _stage_ref_snapshot(
+        self,
+        ref_name: str,
+        snapshot_id: int,
+        type: str,
+        max_ref_age_ms: int | None = None,
+        max_snapshot_age_ms: int | None = None,
+        min_snapshots_to_keep: int | None = None,
+    ) -> None:
+        """Stage a set-snapshot-ref, replacing any update already pending for the same ref."""
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=snapshot_id,
+            ref_name=ref_name,
+            type=type,
+            max_ref_age_ms=max_ref_age_ms,
+            max_snapshot_age_ms=max_snapshot_age_ms,
+            min_snapshots_to_keep=min_snapshots_to_keep,
+        )
+        self._updates = (
+            tuple(u for u in self._updates if not (isinstance(u, SetSnapshotRefUpdate) and u.ref_name == ref_name)) + update
+        )
+        if not any(isinstance(r, AssertRefSnapshotId) and r.ref == ref_name for r in self._requirements):
+            self._requirements += requirement
+
+    def fast_forward_branch(self, from_branch: str, to_ref: str) -> ManageSnapshots:
+        """
+        Fast-forward a branch to the snapshot that another ref points to.
+
+        The ref to fast-forward to can be a branch or a tag and is left untouched. A branch that does
+        not exist yet is created at that snapshot with default retention properties, otherwise the
+        branch keeps its retention properties. Fast-forwarding a branch to the snapshot it already
+        points to is a no-op.
+
+        Args:
+            from_branch (str): name of the branch to fast-forward
+            to_ref (str): name of the branch or tag to fast-forward to
+        Returns:
+            This for method chaining
+        Raises:
+            ValueError: If to_ref does not exist, from_branch is a tag, or from_branch is not an ancestor of to_ref.
+        """
+        table_metadata = self._pending_table_metadata()
+        refs = table_metadata.refs
+
+        if to_ref not in refs:
+            raise ValueError(f"Ref does not exist: {to_ref}")
+
+        to_snapshot_id = refs[to_ref].snapshot_id
+        if table_metadata.snapshot_by_id(to_snapshot_id) is None:
+            raise ValueError(f"Cannot fast-forward to unknown snapshot id: {to_snapshot_id}")
+
+        if (from_ref := refs.get(from_branch)) is None:
+            return self.create_branch(snapshot_id=to_snapshot_id, branch_name=from_branch)
+
+        if from_ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+            raise ValueError(f"Ref {from_branch} is a tag not a branch")
+
+        if from_ref.snapshot_id == to_snapshot_id:
+            return self
+
+        if not is_ancestor_of(to_snapshot_id, from_ref.snapshot_id, table_metadata):
+            raise ValueError(f"Cannot fast-forward: {from_branch} is not an ancestor of {to_ref}")
+
+        self._stage_ref_snapshot(
+            ref_name=from_branch,
+            snapshot_id=to_snapshot_id,
+            type=SnapshotRefType.BRANCH,
+            max_ref_age_ms=from_ref.max_ref_age_ms,
+            max_snapshot_age_ms=from_ref.max_snapshot_age_ms,
+            min_snapshots_to_keep=from_ref.min_snapshots_to_keep,
+        )
+        return self
 
 
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
