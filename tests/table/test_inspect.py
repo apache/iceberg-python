@@ -85,7 +85,7 @@ def test_inspect_snapshots_preserves_null_operation(catalog: InMemoryCatalog) ->
 
     assert tbl.inspect.snapshots().to_pydict()["operation"] == [None]
 
-    
+
 @pytest.mark.parametrize("newest_first", [False, True])
 def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest_first: bool) -> None:
     # Manifest entries are visited in manifest order, which is not chronological, so the
