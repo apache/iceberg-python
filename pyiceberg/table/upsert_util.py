@@ -62,8 +62,8 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     """
     all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
-
     non_key_cols = list(all_columns - join_cols_set)
+    target_columns = set(target_table.column_names)
 
     if has_duplicate_rows(target_table, join_cols):
         raise ValueError("Target table has duplicate rows, aborting upsert")
@@ -86,19 +86,20 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         ) from None
 
     # Step 1: Prepare source index with join keys and a marker index
-    # Cast to target table schema, so we can do the join
+    # Cast join columns to target table schema, so we can do the join
     # See: https://github.com/apache/arrow/issues/37542
+    join_schema = pa.schema([target_table.schema.field(col) for col in join_cols])
     source_index = (
-        source_table.cast(target_table.schema)
-        .select(join_cols_set)
+        source_table.select(join_cols)
+        .cast(join_schema)
         .append_column(SOURCE_INDEX_COLUMN_NAME, pa.array(range(len(source_table))))
     )
 
     # Step 2: Prepare target index with join keys and a marker
-    target_index = target_table.select(join_cols_set).append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
+    target_index = target_table.select(join_cols).append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
 
     # Step 3: Perform an inner join to find which rows from source exist in target
-    matching_indices = source_index.join(target_index, keys=list(join_cols_set), join_type="inner")
+    matching_indices = source_index.join(target_index, keys=join_cols, join_type="inner")
 
     # Step 4: Compare all rows using Python
     to_update_indices = []
@@ -112,7 +113,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
 
         for key in non_key_cols:
             source_val = source_row.column(key)[0].as_py()
-            target_val = target_row.column(key)[0].as_py()
+            target_val = target_row.column(key)[0].as_py() if key in target_columns else None
             if source_val != target_val:
                 to_update_indices.append(source_idx)
                 break
