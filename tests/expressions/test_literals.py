@@ -45,6 +45,7 @@ from pyiceberg.expressions.literals import (
     StringLiteral,
     TimeLiteral,
     TimestampLiteral,
+    TimestampNanoLiteral,
     literal,
 )
 from pyiceberg.types import (
@@ -59,7 +60,9 @@ from pyiceberg.types import (
     LongType,
     PrimitiveType,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -88,6 +91,7 @@ def test_literal_from_nan_error() -> None:
         DateLiteral,
         TimeLiteral,
         TimestampLiteral,
+        TimestampNanoLiteral,
         DecimalLiteral,
         StringLiteral,
         FixedLiteral,
@@ -226,6 +230,16 @@ def test_long_to_timestamp() -> None:
     assert timestamp_lit.value == long_lit.value
 
 
+@pytest.mark.parametrize("timestamp_nano_type", [TimestampNanoType(), TimestamptzNanoType()])
+def test_long_to_timestamp_nano(timestamp_nano_type: PrimitiveType) -> None:
+    # A long is read as microseconds, matching the plain timestamp case
+    long_lit = literal(1647305201).to(LongType())
+    timestamp_nano_lit = long_lit.to(timestamp_nano_type)
+
+    assert isinstance(timestamp_nano_lit, TimestampNanoLiteral)
+    assert timestamp_nano_lit.value == 1647305201 * 1_000
+
+
 @pytest.mark.parametrize(
     "decimal_type, decimal_value", [(DecimalType(9, 0), "34"), (DecimalType(9, 2), "34.00"), (DecimalType(9, 4), "34.0000")]
 )
@@ -300,6 +314,69 @@ def test_timestamp_to_date() -> None:
     assert date_lit.value == 0
 
 
+@pytest.mark.parametrize("timestamp_nano_type", [TimestampNanoType(), TimestamptzNanoType()])
+def test_timestamp_to_timestamp_nano(timestamp_nano_type: PrimitiveType) -> None:
+    timestamp_lit = TimestampLiteral(1503066061919234)
+    timestamp_nano_lit = timestamp_lit.to(timestamp_nano_type)
+
+    assert isinstance(timestamp_nano_lit, TimestampNanoLiteral)
+    assert timestamp_nano_lit.value == 1503066061919234000
+
+
+@pytest.mark.parametrize("timestamp_nano_type", [TimestampNanoType(), TimestamptzNanoType()])
+def test_timestamp_to_timestamp_nano_out_of_range(timestamp_nano_type: PrimitiveType) -> None:
+    # A value that is already in nanoseconds no longer fits once it is scaled up by a thousand
+    nanos = 1503066061919234567
+
+    with pytest.raises(OverflowError, match=f"Timestamp cannot be converted to nanoseconds, out of range: {nanos}"):
+        _ = TimestampLiteral(nanos).to(timestamp_nano_type)
+
+    with pytest.raises(OverflowError, match=f"Timestamp cannot be converted to nanoseconds, out of range: {nanos}"):
+        _ = literal(nanos).to(LongType()).to(timestamp_nano_type)
+
+
+@pytest.mark.parametrize("timestamp_type", [TimestampType(), TimestamptzType()])
+def test_timestamp_nano_to_timestamp(timestamp_type: PrimitiveType) -> None:
+    # Sub-microsecond precision is truncated towards negative infinity
+    assert TimestampNanoLiteral(1503066061919234567).to(timestamp_type).value == 1503066061919234
+    assert TimestampNanoLiteral(-1).to(timestamp_type).value == -1
+
+
+@pytest.mark.parametrize("timestamp_nano_type", [TimestampNanoType(), TimestamptzNanoType()])
+def test_timestamp_nano_to_timestamp_nano(timestamp_nano_type: PrimitiveType) -> None:
+    timestamp_nano_lit = TimestampNanoLiteral(1503066061919234567)
+
+    assert timestamp_nano_lit.to(timestamp_nano_type) is timestamp_nano_lit
+
+
+def test_timestamp_nano_to_date() -> None:
+    assert TimestampNanoLiteral(0).to(DateType()).value == 0
+    assert TimestampNanoLiteral(1503066061919234567).to(DateType()).value == 17396
+    # One nanosecond before the epoch still falls on the previous day
+    assert TimestampNanoLiteral(-1).to(DateType()).value == -1
+
+
+def test_timestamp_nano_increment_decrement() -> None:
+    timestamp_nano_lit = TimestampNanoLiteral(1503066061919234567)
+
+    assert timestamp_nano_lit.increment() == TimestampNanoLiteral(1503066061919234568)
+    assert timestamp_nano_lit.decrement() == TimestampNanoLiteral(1503066061919234566)
+
+
+@pytest.mark.parametrize(
+    "nanos, expected",
+    [
+        (1503066061919234567, "2017-08-18T14:21:01.919234567"),
+        # The microsecond part is zero, so the fraction still has to be padded out
+        (1_000_000_500, "1970-01-01T00:00:01.000000500"),
+        (0, "1970-01-01T00:00:00.000000000"),
+        (-1, "1969-12-31T23:59:59.999999999"),
+    ],
+)
+def test_timestamp_nano_serialization(nanos: int, expected: str) -> None:
+    assert TimestampNanoLiteral(nanos).model_dump() == expected
+
+
 def test_string_literal() -> None:
     sqrt2 = literal("1.414").to(StringType())
     pi = literal("3.141").to(StringType())
@@ -357,6 +434,40 @@ def test_string_to_timestamp_literal() -> None:
     timestamp = timestamp_str.to(TimestamptzType())
     avro_val = 1503091261919234
     assert avro_val == timestamp.value
+
+
+def test_string_to_timestamp_nano_literal() -> None:
+    timestamp_str = literal("2017-08-18T14:21:01.919234567+00:00")
+    timestamp_nano = timestamp_str.to(TimestamptzNanoType())
+
+    assert isinstance(timestamp_nano, TimestampNanoLiteral)
+    assert timestamp_nano.value == 1503066061919234567
+
+    timestamp_str = literal("2017-08-18T14:21:01.919234567")
+    timestamp_nano = timestamp_str.to(TimestampNanoType())
+    assert timestamp_nano.value == 1503066061919234567
+
+    timestamp_str = literal("2017-08-18T14:21:01.919234567-07:00")
+    timestamp_nano = timestamp_str.to(TimestamptzNanoType())
+    assert timestamp_nano.value == 1503091261919234567
+
+
+def test_string_to_timestamp_nano_out_of_range() -> None:
+    with pytest.raises(OverflowError, match="Timestamp cannot be converted to nanoseconds, out of range"):
+        _ = literal("2300-01-01T00:00:00").to(TimestampNanoType())
+
+    with pytest.raises(OverflowError, match="Timestamp cannot be converted to nanoseconds, out of range"):
+        _ = literal("2300-01-01T00:00:00+00:00").to(TimestamptzNanoType())
+
+
+def test_string_to_timestamp_nano_zone_mismatch() -> None:
+    with pytest.raises(ValueError) as e:
+        _ = literal("2017-08-18T14:21:01.919234567").to(TimestamptzNanoType())
+    assert "Missing zone offset: 2017-08-18T14:21:01.919234567 (must be ISO-8601)" in str(e.value)
+
+    with pytest.raises(ValueError) as e:
+        _ = literal("2017-08-18T14:21:01.919234567+07:00").to(TimestampNanoType())
+    assert "Zone offset provided, but not expected: 2017-08-18T14:21:01.919234567+07:00" in str(e.value)
 
 
 def test_timestamp_with_zone_without_zone_in_literal() -> None:
@@ -748,6 +859,25 @@ def test_invalid_time_conversions() -> None:
 def test_invalid_timestamp_conversions() -> None:
     assert_invalid_conversions(
         literal("2017-08-18T14:21:01.919").to(TimestampType()),
+        [
+            BooleanType(),
+            IntegerType(),
+            LongType(),
+            FloatType(),
+            DoubleType(),
+            TimeType(),
+            DecimalType(9, 2),
+            StringType(),
+            UUIDType(),
+            FixedType(1),
+            BinaryType(),
+        ],
+    )
+
+
+def test_invalid_timestamp_nano_conversions() -> None:
+    assert_invalid_conversions(
+        TimestampNanoLiteral(1503066061919234567),
         [
             BooleanType(),
             IntegerType(),
