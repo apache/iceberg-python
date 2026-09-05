@@ -407,10 +407,23 @@ def test_merge_snapshot_summaries_overwrite_summary() -> None:
     assert actual.additional_properties == expected
 
 
-def test_invalid_operation() -> None:
-    with pytest.raises(ValueError) as e:
-        update_snapshot_summaries(summary=Summary(Operation.REPLACE))
-    assert "Operation not implemented: Operation.REPLACE" in str(e.value)
+def test_replace_operation_carries_totals() -> None:
+    actual = update_snapshot_summaries(
+        summary=Summary(Operation.REPLACE),
+        previous_summary={
+            "total-data-files": "3",
+            "total-delete-files": "0",
+            "total-records": "9",
+            "total-files-size": "1234",
+            "total-position-deletes": "0",
+            "total-equality-deletes": "0",
+        },
+    )
+
+    # a replace operation does not change any of the totals
+    assert actual["total-data-files"] == "3"
+    assert actual["total-records"] == "9"
+    assert actual["total-files-size"] == "1234"
 
 
 def test_invalid_type() -> None:
