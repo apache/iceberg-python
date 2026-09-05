@@ -413,6 +413,30 @@ catalog:
 
 When server-side planning returns `storage-credentials` on a completed plan, PyIceberg applies them to the scan-scoped FileIO (layered on top of the existing table/load-time IO properties) so planned data and delete files can be read using the creds vended by the server.
 
+#### Retry and timeout
+
+The REST Catalog uses `requests` with no retries and no timeout by default, so transient
+5xx / network failures bubble up immediately and slow servers can hang the client indefinitely.
+Set the `rest.client.*` catalog properties to opt in to a request timeout and a retry policy.
+
+```yaml
+catalog:
+  default:
+    uri: http://rest-catalog/ws/
+    rest.client.request-timeout: 60       # seconds, applied to the whole request
+    rest.client.max-retries: 5            # number of retry attempts on transient failures
+    rest.client.retry-backoff-factor: 1.0 # exponential backoff between retries
+```
+
+| Key                                     | Example  | Description                                                                                                        |
+| --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| rest.client.request-timeout             | 60       | Timeout in seconds, applied as a single value to the whole request. Must be a positive number.                      |
+| rest.client.max-retries                 | 5        | Number of retry attempts for transient failures. Must be non-negative.                                             |
+| rest.client.retry-backoff-factor        | 1.0      | Backoff factor between retry attempts. Must be non-negative. See [`urllib3` Retry docs](https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html#urllib3.util.Retry) for the formula. |
+
+Retries are applied to idempotent methods only (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`) and to the
+transient HTTP status codes `429`, `500`, `502`, `503`, `504`. Other failures are not retried.
+
 #### Headers in REST Catalog
 
 To configure custom headers in REST Catalog, include them in the catalog properties with `header.<Header-Name>`. This
