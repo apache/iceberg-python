@@ -1535,7 +1535,7 @@ Rewrite the current snapshot's data manifests without changing any data. Live en
 table.maintenance.rewrite_manifests().commit()
 ```
 
-Nothing is committed when there is only one data manifest, so the call is safe to schedule periodically. To find out in advance whether a rewrite would do anything:
+Nothing is committed when no manifests would be merged, so the call is safe to schedule periodically. To find out in advance whether a rewrite would do anything:
 
 ```python
 if table.maintenance.rewrite_manifests().rewrites_needed():

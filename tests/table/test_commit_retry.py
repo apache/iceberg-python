@@ -302,6 +302,40 @@ def test_delete_files_refresh_clears_compute_deletes_cache(catalog: Catalog) -> 
     assert "_compute_deletes" not in producer.__dict__
 
 
+def test_rewrite_manifests_refresh_clears_computed_manifests(catalog: Catalog) -> None:
+    """Verify that _refresh_for_retry discards the plan RewriteManifests computed for the old head."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    table = catalog.create_table("default.rewrite_cache_test", schema=schema)
+
+    import pyarrow as pa
+
+    table.append(pa.table({"x": [1, 2, 3]}))
+    table.append(pa.table({"x": [4, 5, 6]}))
+    table = catalog.load_table("default.rewrite_cache_test")
+
+    from pyiceberg.table.update.snapshot import RewriteManifests
+
+    tx = Transaction(table, autocommit=False)
+    producer = RewriteManifests(transaction=tx, io=table.io)
+
+    # Plan against the current head, populating the cache and the counters
+    planned = producer._existing_manifests()
+
+    assert planned
+    assert producer._created_count == 1
+    assert producer._rewritten_count == 2
+
+    producer._refresh_for_retry()
+
+    # Reusing either would rebuild the replacement snapshot from the superseded head
+    assert producer._computed_manifests is None
+    assert producer._created_count == 0
+    assert producer._rewritten_count == 0
+    assert producer._kept_count == 0
+    assert producer._entries_processed == 0
+
+
 def test_concurrent_overwrite_overwrite_raises_validation_exception(catalog: Catalog) -> None:
     """Concurrent overwrites on the same data should fail with ValidationException."""
     catalog.create_namespace("default")

@@ -1452,6 +1452,18 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         self._computed_manifests = new_manifests + kept_manifests
         return self._computed_manifests
 
+    def _refresh_for_retry(self) -> None:
+        """Reset state for a retry attempt, discarding the plan built from the stale branch head."""
+        super()._refresh_for_retry()
+        # The plan and its counters depend on the branch head, which changes on retry. Keeping them
+        # would rebuild the replacement snapshot from the manifests of the superseded snapshot,
+        # dropping whatever was committed concurrently.
+        self._computed_manifests = None
+        self._rewritten_count = 0
+        self._created_count = 0
+        self._kept_count = 0
+        self._entries_processed = 0
+
     def _commit(self) -> UpdatesAndRequirements:
         self._existing_manifests()
         if self._created_count == 0:
@@ -1460,11 +1472,25 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         return super()._commit()
 
     def rewrites_needed(self) -> bool:
-        """Return whether the current snapshot has data manifests to rewrite."""
+        """Return whether committing would rewrite any manifest.
+
+        This mirrors the grouping that `_existing_manifests` performs, so a snapshot whose data
+        manifests all end up kept as-is reports False. A predicate that matches only manifests
+        holding no live entries still reports True, because deciding that requires reading them.
+        """
         snapshot = self._transaction.table_metadata.snapshot_by_name(self._target_branch or MAIN_BRANCH)
         if snapshot is None:
             return False
-        data_manifests = [m for m in snapshot.manifests(self._io) if m.content == ManifestContent.DATA]
-        if self._manifest_predicate is not None:
-            return any(self._manifest_predicate(m) for m in data_manifests)
-        return len(data_manifests) > 1
+
+        data_manifests_by_spec: defaultdict[int, list[ManifestFile]] = defaultdict(list)
+        for manifest in snapshot.manifests(self._io):
+            if manifest.content == ManifestContent.DATA and (
+                self._manifest_predicate is None or self._manifest_predicate(manifest)
+            ):
+                data_manifests_by_spec[manifest.partition_spec_id].append(manifest)
+
+        return any(
+            len(group) > 1 or self._manifest_predicate is not None
+            for manifests in data_manifests_by_spec.values()
+            for group in self._group_by_target_size(manifests)
+        )
