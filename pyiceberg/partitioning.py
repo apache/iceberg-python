@@ -191,7 +191,7 @@ class PartitionSpec(IcebergBaseModel):
         if len(self.fields) != len(other.fields):
             return False
         return all(
-            this_field.source_id == that_field.source_id
+            this_field.transform_arguments == that_field.transform_arguments
             and this_field.transform == that_field.transform
             and this_field.name == that_field.name
             for this_field, that_field in zip(self.fields, other.fields, strict=True)

@@ -105,6 +105,31 @@ def test_partition_compatible_with() -> None:
     assert not lhs.compatible_with(rhs)
 
 
+def test_partition_compatible_with_compares_every_source_id() -> None:
+    # multi-argument fields differ in their later source ids, which the first one cannot show
+    lhs = PartitionSpec.model_validate(
+        {"spec-id": 0, "fields": [{"field-id": 1000, "name": "p", "source-ids": [1, 2], "transform": "zorder(a,b)"}]}
+    )
+    rhs = PartitionSpec.model_validate(
+        {"spec-id": 0, "fields": [{"field-id": 1000, "name": "p", "source-ids": [1, 3], "transform": "zorder(a,c)"}]}
+    )
+
+    assert not lhs.compatible_with(rhs)
+    assert lhs.compatible_with(lhs)
+
+
+def test_partition_compatible_with_compares_unknown_transform_names() -> None:
+    # same source ids, different transform: the names are all that separates them
+    lhs = PartitionSpec.model_validate(
+        {"spec-id": 0, "fields": [{"field-id": 1000, "name": "p", "source-ids": [1, 2], "transform": "zorder(a,b)"}]}
+    )
+    rhs = PartitionSpec.model_validate(
+        {"spec-id": 0, "fields": [{"field-id": 1000, "name": "p", "source-ids": [1, 2], "transform": "somethingelse(a,b)"}]}
+    )
+
+    assert not lhs.compatible_with(rhs)
+
+
 def test_unpartitioned() -> None:
     assert len(UNPARTITIONED_PARTITION_SPEC.fields) == 0
     assert UNPARTITIONED_PARTITION_SPEC.is_unpartitioned()
