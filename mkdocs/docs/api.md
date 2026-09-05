@@ -1550,6 +1550,15 @@ table.current_snapshot().summary
 #  'manifests-replaced': '3', 'entries-processed': '3', ...}
 ```
 
+By default every data manifest is a candidate. Pass a predicate to `rewrite_if` to choose which ones to rewrite; manifests that do not match are kept exactly as they are. This is the way to target a subset, such as manifests written by an older library version whose contents need re-encoding:
+
+```python
+# Rewrite only the manifests smaller than 1 MiB, leaving larger ones untouched
+table.maintenance.rewrite_manifests().rewrite_if(lambda manifest: manifest.manifest_length < 1024 * 1024).commit()
+```
+
+A predicate also turns off the shortcut that leaves a lone manifest alone: a manifest that matches is rewritten even when there is nothing to merge it with. `rewrite_if(lambda manifest: True)` therefore rewrites every data manifest, which is not the same as passing no predicate at all.
+
 <!-- prettier-ignore-start -->
 
 !!! note "V3 tables"
