@@ -54,6 +54,7 @@ def catch_exception() -> Callable:  # type: ignore
 
 
 @click.group()
+@click.version_option(__version__, message="%(version)s")
 @click.option("--catalog")
 @click.option("--verbose", type=click.BOOL)
 @click.option("--output", type=click.Choice(["text", "json"]), default="text")
@@ -235,7 +236,12 @@ def location(ctx: Context, identifier: str) -> None:
 @click.pass_context
 @catch_exception()
 def version(ctx: Context) -> None:
-    """Print pyiceberg version."""
+    """Print the installed pyiceberg package version. Deprecated: use --version instead."""
+    click.echo(
+        "Deprecation warning: the `version` command is deprecated and will be removed in 0.13.0. "
+        "Please use `pyiceberg --version` instead.",
+        err=True,
+    )
     ctx.obj["output"].version(__version__)
 
 
@@ -263,14 +269,19 @@ def drop() -> None:
 
 @drop.command()
 @click.argument("identifier")
+@click.option("--purge", is_flag=True, help="Request that the catalog purge all table files.", default=False)
 @click.pass_context
 @catch_exception()
-def table(ctx: Context, identifier: str) -> None:  # noqa: F811
+def table(ctx: Context, identifier: str, purge: bool) -> None:  # noqa: F811
     """Drop a table."""
     catalog, output = _catalog_and_output(ctx)
 
-    catalog.drop_table(identifier)
-    output.text(f"Dropped table: {identifier}")
+    if purge:
+        catalog.purge_table(identifier)
+    else:
+        catalog.drop_table(identifier)
+    purge_message = " (purge requested)" if purge else ""
+    output.text(f"Dropped table: {identifier}{purge_message}")
 
 
 @drop.command()  # type: ignore
@@ -320,13 +331,15 @@ def get_namespace(ctx: Context, identifier: str, property_name: str) -> None:
 
     namespace_properties = catalog.load_namespace_properties(identifier_tuple)
 
-    if property_name:
-        if property_value := namespace_properties.get(property_name):
-            output.text(property_value)
-        else:
-            raise NoSuchPropertyException(f"Could not find property {property_name} on namespace {identifier}")
-    else:
+    if not property_name:
         output.describe_properties(namespace_properties)
+        return
+
+    property_value = namespace_properties.get(property_name)
+    if property_value is None:
+        raise NoSuchPropertyException(f"Could not find property {property_name} on namespace {identifier}")
+
+    output.text(property_value)
 
 
 @get.command("table")
@@ -341,13 +354,15 @@ def get_table(ctx: Context, identifier: str, property_name: str) -> None:
 
     metadata = catalog.load_table(identifier_tuple).metadata
 
-    if property_name:
-        if property_value := metadata.properties.get(property_name):
-            output.text(property_value)
-        else:
-            raise NoSuchPropertyException(f"Could not find property {property_name} on table {identifier}")
-    else:
+    if not property_name:
         output.describe_properties(metadata.properties)
+        return
+
+    property_value = metadata.properties.get(property_name)
+    if property_value is None:
+        raise NoSuchPropertyException(f"Could not find property {property_name} on table {identifier}")
+
+    output.text(property_value)
 
 
 @properties.group()

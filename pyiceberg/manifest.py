@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from copy import copy
 from enum import Enum
 from types import TracebackType
@@ -51,10 +51,11 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
+from pyiceberg.utils.config import Config
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
-DEFAULT_READ_VERSION: Literal[2] = 2
+DEFAULT_READ_VERSION: Literal[3] = 3
 
 INITIAL_SEQUENCE_NUMBER = 0
 
@@ -531,6 +532,22 @@ class DataFile(Record):
     def sort_order_id(self) -> int | None:
         return self._data[15]
 
+    @property
+    def first_row_id(self) -> int | None:
+        return self._data[16]
+
+    @property
+    def referenced_data_file(self) -> str | None:
+        return self._data[17]
+
+    @property
+    def content_offset(self) -> int | None:
+        return self._data[18]
+
+    @property
+    def content_size_in_bytes(self) -> int | None:
+        return self._data[19]
+
     # Spec ID should not be stored in the file
     _spec_id: int
 
@@ -852,19 +869,29 @@ class ManifestFile(Record):
     def key_metadata(self) -> bytes | None:
         return self._data[14]
 
+    @property
+    def first_row_id(self) -> int | None:
+        return self._data[15]
+
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
 
     def has_existing_files(self) -> bool:
         return self.existing_files_count is None or self.existing_files_count > 0
 
-    def fetch_manifest_entry(self, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+    def fetch_manifest_entry(
+        self,
+        io: FileIO,
+        discard_deleted: bool = True,
+        entry_filter: Callable[[ManifestEntry], bool] | None = None,
+    ) -> list[ManifestEntry]:
         """
         Read the manifest entries from the manifest file.
 
         Args:
             io: The FileIO to fetch the file.
             discard_deleted: Filter on live entries.
+            entry_filter: Optional predicate to filter manifest entries.
 
         Returns:
             An Iterator of manifest entries.
@@ -876,11 +903,17 @@ class ManifestFile(Record):
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
-            return [
+            result = []
+
+            for entry in reader:
+                if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
+                    continue
                 _inherit_from_manifest(entry, self)
-                for entry in reader
-                if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
-            ]
+
+                if entry_filter is None or entry_filter(entry):
+                    result.append(entry)
+
+            return result
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the ManifestFile class."""
@@ -891,17 +924,70 @@ class ManifestFile(Record):
         return hash(self.manifest_path)
 
 
-# Global cache for ManifestFile objects, keyed by manifest_path.
-# This deduplicates ManifestFile objects across manifest lists, which commonly
-# share manifests after append operations.
-_manifest_cache: LRUCache[str, ManifestFile] = LRUCache(maxsize=128)
+class _ManifestCache:
+    """Process-wide ManifestFile cache keyed by manifest_path.
 
-# Lock for thread-safe cache access
-_manifest_cache_lock = threading.RLock()
+    Consecutive snapshots often reference the same manifests after append
+    operations, so reusing ManifestFile instances avoids retaining duplicate
+    objects.
+    """
+
+    DEFAULT_SIZE = 128
+
+    _cache: LRUCache[str, ManifestFile] | None
+
+    def __init__(self) -> None:
+        self.maxsize = self._load_configured_size()
+        self._cache = LRUCache(maxsize=self.maxsize) if self.maxsize > 0 else None
+        self._lock = threading.RLock()
+
+    @classmethod
+    def _load_configured_size(cls) -> int:
+        configured_size = Config().get_int("manifest-cache-size")
+        if configured_size is None:
+            return cls.DEFAULT_SIZE
+        if configured_size < 0:
+            raise ValueError(
+                f"manifest-cache-size should be a non-negative integer or left unset. Current value: {configured_size}"
+            )
+        return configured_size
+
+    def clear(self) -> None:
+        with self._lock:
+            if self._cache is not None:
+                self._cache.clear()
+
+    def get_or_cache(self, manifest_file: ManifestFile) -> ManifestFile:
+        if self._cache is None:
+            return manifest_file
+
+        with self._lock:
+            manifest_path = manifest_file.manifest_path
+            if manifest_path in self._cache:
+                return self._cache[manifest_path]
+
+            self._cache[manifest_path] = manifest_file
+            return manifest_file
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._cache) if self._cache is not None else 0
+
+
+_manifest_cache = _ManifestCache()
+
+
+def clear_manifest_cache() -> None:
+    """Clear cached ManifestFile objects.
+
+    This is primarily useful in long-lived or memory-sensitive processes that
+    want to release cached manifest metadata between bursts of table reads.
+    """
+    _manifest_cache.clear()
 
 
 def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
-    """Read manifests from a manifest list, deduplicating ManifestFile objects via cache.
+    """Read manifests from a manifest list, reusing cached ManifestFile objects.
 
     Caches individual ManifestFile objects by manifest_path. This is memory-efficient
     because consecutive manifest lists typically share most of their manifests:
@@ -927,17 +1013,7 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     file = io.new_input(manifest_list)
     manifest_files = list(read_manifest_list(file))
 
-    result = []
-    with _manifest_cache_lock:
-        for manifest_file in manifest_files:
-            manifest_path = manifest_file.manifest_path
-            if manifest_path in _manifest_cache:
-                result.append(_manifest_cache[manifest_path])
-            else:
-                _manifest_cache[manifest_path] = manifest_file
-                result.append(manifest_file)
-
-    return tuple(result)
+    return tuple(_manifest_cache.get_or_cache(manifest_file) for manifest_file in manifest_files)
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
@@ -1101,7 +1177,9 @@ class ManifestWriter(ABC):
         """Return the manifest file."""
         # once the manifest file is generated, no more entries can be added
         self.closed = True
-        min_sequence_number = self._min_sequence_number or UNASSIGNED_SEQ
+        # A min sequence number of 0 is legitimate (e.g. live files from a v1 table or the
+        # initial commit of a v2 table), so fall back to UNASSIGNED_SEQ only when it is unset.
+        min_sequence_number = self._min_sequence_number if self._min_sequence_number is not None else UNASSIGNED_SEQ
         return ManifestFile.from_args(
             manifest_path=self._output_file.location,
             manifest_length=len(self._writer.output_file),

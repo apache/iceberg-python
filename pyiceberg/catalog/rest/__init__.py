@@ -16,6 +16,8 @@
 #  under the License.
 from __future__ import annotations
 
+import logging
+import time
 from collections import deque
 from collections.abc import Callable, Mapping
 from enum import Enum
@@ -42,6 +44,7 @@ from pyiceberg.catalog.rest.scan_planning import (
     PlanCancelled,
     PlanCompleted,
     PlanFailed,
+    PlannedScanResult,
     PlanningResponse,
     PlanSubmitted,
     PlanTableScanRequest,
@@ -56,9 +59,11 @@ from pyiceberg.exceptions import (
     NamespaceNotEmptyError,
     NoSuchIdentifierError,
     NoSuchNamespaceError,
+    NoSuchPlanIdError,
     NoSuchPlanTaskError,
     NoSuchTableError,
     NoSuchViewError,
+    RemotePlanTimeoutError,
     TableAlreadyExistsError,
     UnauthorizedError,
     ViewAlreadyExistsError,
@@ -99,6 +104,8 @@ from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+logger = logging.getLogger(__name__)
 
 
 class HttpMethod(str, Enum):
@@ -151,6 +158,7 @@ class Endpoints:
     create_table: str = "namespaces/{namespace}/tables"
     register_table: str = "namespaces/{namespace}/register"
     load_table: str = "namespaces/{namespace}/tables/{table}"
+    load_credentials: str = "namespaces/{namespace}/tables/{table}/credentials"
     update_table: str = "namespaces/{namespace}/tables/{table}"
     drop_table: str = "namespaces/{namespace}/tables/{table}"
     table_exists: str = "namespaces/{namespace}/tables/{table}"
@@ -163,6 +171,9 @@ class Endpoints:
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
     plan_table_scan: str = "namespaces/{namespace}/tables/{table}/plan"
+    # Use plan_id (underscore) for str.format; Capability paths use {plan-id} to match the REST spec.
+    fetch_planning_result: str = "namespaces/{namespace}/tables/{table}/plan/{plan_id}"
+    cancel_planning: str = "namespaces/{namespace}/tables/{table}/plan/{plan_id}"
     fetch_scan_tasks: str = "namespaces/{namespace}/tables/{table}/tasks"
 
 
@@ -185,6 +196,7 @@ class Capability:
     V1_DELETE_TABLE = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_table}")
     V1_RENAME_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.rename_table}")
     V1_REGISTER_TABLE = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_table}")
+    V1_LOAD_CREDENTIALS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_credentials}")
 
     V1_LIST_VIEWS = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.list_views}")
     V1_LOAD_VIEW = Endpoint(http_method=HttpMethod.GET, path=f"{API_PREFIX}/{Endpoints.load_view}")
@@ -192,6 +204,13 @@ class Capability:
     V1_REGISTER_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_view}")
     V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
     V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
+    # Spec advertises {plan-id}; must match ConfigResponse endpoint strings from servers.
+    V1_FETCH_TABLE_SCAN_PLAN = Endpoint(
+        http_method=HttpMethod.GET, path=f"{API_PREFIX}/namespaces/{{namespace}}/tables/{{table}}/plan/{{plan-id}}"
+    )
+    V1_CANCEL_TABLE_SCAN_PLAN = Endpoint(
+        http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/namespaces/{{namespace}}/tables/{{table}}/plan/{{plan-id}}"
+    )
     V1_TABLE_SCAN_PLAN_TASKS = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.fetch_scan_tasks}")
 
 
@@ -273,13 +292,38 @@ AUTH = "auth"
 CUSTOM = "custom"
 SCAN_PLANNING_MODE = "scan-planning-mode"
 SCAN_PLANNING_MODE_DEFAULT = ScanPlanningMode.CLIENT.value
+REST_SCAN_PLANNING_POLL_TIMEOUT_MS = "rest-scan-planning.poll-timeout-ms"
+REST_SCAN_PLANNING_POLL_TIMEOUT_MS_DEFAULT = 5 * 60 * 1000  # 5 minutes, matches Java
+REST_SCAN_PLANNING_POLL_MIN_SLEEP_MS = 1000
+REST_SCAN_PLANNING_POLL_MAX_SLEEP_MS = 60 * 1000
+REST_SCAN_PLANNING_POLL_SCALE_FACTOR = 2.0
+REST_SCAN_PLANNING_POLL_MAX_RETRIES = 10
 # for backwards compatibility with older REST servers where it can be assumed that a particular
 # server supports view endpoints but doesn't send the "endpoints" field in the ConfigResponse
 VIEW_ENDPOINTS_SUPPORTED = "view-endpoints-supported"
 VIEW_ENDPOINTS_SUPPORTED_DEFAULT = False
 
+PAGE_SIZE = "rest-page-size"
+
 NAMESPACE_SEPARATOR_PROPERTY = "namespace-separator"
 DEFAULT_NAMESPACE_SEPARATOR = b"\x1f".decode(UTF8)
+
+
+def _parse_scan_planning_mode(properties: Properties, *, strict: bool = True) -> ScanPlanningMode | None:
+    """Read the scan planning mode from a set of properties, returning None when it is not set.
+
+    When ``strict`` is False, an unrecognized value is logged and treated as unset so a higher-priority
+    source (for example a loadTable override) or the default mode can still decide.
+    """
+    if (mode := properties.get(SCAN_PLANNING_MODE)) is None:
+        return None
+    try:
+        return ScanPlanningMode(str(mode).strip().lower())
+    except ValueError as exc:
+        if strict:
+            raise ValueError(f"Invalid {SCAN_PLANNING_MODE}: {mode}") from exc
+        logger.warning("Ignoring invalid %s=%r", SCAN_PLANNING_MODE, mode)
+        return None
 
 
 def _retry_hook(retry_state: RetryCallState) -> None:
@@ -300,6 +344,10 @@ class TableResponse(IcebergBaseModel):
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
     storage_credentials: list[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
+
+
+class LoadCredentialsResponse(IcebergBaseModel):
+    storage_credentials: list[StorageCredential] = Field(alias="storage-credentials")
 
 
 class ViewResponse(IcebergBaseModel):
@@ -361,6 +409,7 @@ class ConfigResponse(IcebergBaseModel):
 
 class ListNamespaceResponse(IcebergBaseModel):
     namespaces: list[Identifier] = Field()
+    next_page_token: str | None = Field(default=None, alias="next-page-token")
 
 
 class NamespaceResponse(IcebergBaseModel):
@@ -393,6 +442,7 @@ class ListViewResponseEntry(IcebergBaseModel):
 
 class ListTablesResponse(IcebergBaseModel):
     identifiers: list[ListTableResponseEntry] = Field()
+    next_page_token: str | None = Field(default=None, alias="next-page-token")
 
 
 class ListViewsResponse(IcebergBaseModel):
@@ -604,11 +654,31 @@ class RestCatalog(Catalog):
             merged_properties[AUTH_MANAGER] = self._auth_manager
         return load_file_io(merged_properties, location)
 
+    def _effective_scan_planning_mode(self, table_config: Properties) -> ScanPlanningMode:
+        """Resolve the scan planning mode, where a loadTable override wins over the catalog property.
+
+        An invalid catalog-level value is ignored (with a warning) so it cannot block a valid
+        loadTable override or the default client-side mode. An invalid loadTable value still fails.
+        """
+        # Parse the table override first so a valid loadTable value is not blocked by a bad catalog property.
+        table_mode = _parse_scan_planning_mode(table_config)
+        catalog_mode = _parse_scan_planning_mode(self.properties, strict=False)
+
+        if catalog_mode is not None and table_mode is not None and catalog_mode != table_mode:
+            logger.warning(
+                "Scan planning mode mismatch: client config=%s, server config=%s. Server config takes precedence.",
+                catalog_mode.value,
+                table_mode.value,
+            )
+
+        return table_mode or catalog_mode or ScanPlanningMode(SCAN_PLANNING_MODE_DEFAULT)
+
     @override
-    def supports_server_side_planning(self) -> bool:
-        """Check if the catalog supports server-side scan planning."""
-        scan_planning_mode = ScanPlanningMode(self.properties.get(SCAN_PLANNING_MODE, SCAN_PLANNING_MODE_DEFAULT))
-        return Capability.V1_SUBMIT_TABLE_SCAN_PLAN in self._supported_endpoints and scan_planning_mode == ScanPlanningMode.SERVER
+    def supports_server_side_planning(self, table_config: Properties = EMPTY_DICT) -> bool:
+        """Check if server-side scan planning should be used, honoring a per-table loadTable override."""
+        if Capability.V1_SUBMIT_TABLE_SCAN_PLAN not in self._supported_endpoints:
+            return False
+        return self._effective_scan_planning_mode(table_config) == ScanPlanningMode.SERVER
 
     @retry(**_RETRY_ARGS)
     def _plan_table_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> PlanningResponse:
@@ -663,38 +733,110 @@ class RestCatalog(Catalog):
 
         return ScanTasks.model_validate_json(response.text)
 
-    def plan_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> list[FileScanTask]:
-        """Plan a table scan and return FileScanTasks.
-
-        Handles the full scan planning lifecycle including pagination.
+    @retry(**_RETRY_ARGS)
+    def _fetch_planning_result(self, identifier: str | Identifier, plan_id: str) -> PlanningResponse:
+        """Fetch the result of an async scan plan by plan-id.
 
         Args:
             identifier: Table identifier.
-            request: The scan plan request parameters.
+            plan_id: Plan id returned from a submitted planTableScan response.
 
         Returns:
-            List of FileScanTask objects ready for execution.
+            PlanningResponse with the current plan status.
 
         Raises:
-            RuntimeError: If planning fails, is cancelled, or returns unexpected response.
-            NotImplementedError: If async planning is required but not yet supported.
+            NoSuchPlanIdError: If the plan-id does not exist.
+            NoSuchTableError: If the table does not exist.
         """
-        response = self._plan_table_scan(identifier, request)
+        self._check_endpoint(Capability.V1_FETCH_TABLE_SCAN_PLAN)
+        response = self._session.get(
+            self.url(
+                Endpoints.fetch_planning_result,
+                prefixed=True,
+                plan_id=quote(plan_id, safe=""),
+                **self._split_identifier_for_path(identifier),
+            ),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchPlanIdError})
 
-        if isinstance(response, PlanFailed):
-            error_msg = response.error.message if response.error else "unknown error"
-            raise RuntimeError(f"Received status: failed: {error_msg}")
+        return _PLANNING_RESPONSE_ADAPTER.validate_json(response.text)
 
-        if isinstance(response, PlanCancelled):
-            raise RuntimeError("Received status: cancelled")
+    def _cancel_planning(self, identifier: str | Identifier, plan_id: str) -> bool:
+        """Best-effort cancel of an async scan plan.
 
-        if isinstance(response, PlanSubmitted):
-            # TODO: implement polling for async planning
-            raise NotImplementedError(f"Async scan planning not yet supported for planId: {response.plan_id}")
+        Returns:
+            True if the cancel request was accepted, False otherwise.
+        """
+        if Capability.V1_CANCEL_TABLE_SCAN_PLAN not in self._supported_endpoints:
+            return False
 
-        if not isinstance(response, PlanCompleted):
-            raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
+        try:
+            response = self._session.delete(
+                self.url(
+                    Endpoints.cancel_planning,
+                    prefixed=True,
+                    plan_id=quote(plan_id, safe=""),
+                    **self._split_identifier_for_path(identifier),
+                ),
+            )
+            response.raise_for_status()
+            return True
+        except Exception:
+            # Plan may have already completed, failed, or been cancelled.
+            return False
 
+    def _poll_until_completed(self, identifier: str | Identifier, plan_id: str) -> PlanCompleted:
+        """Poll fetchPlanningResult until the plan completes or times out.
+
+        Uses exponential backoff matching Java RESTTableScan defaults.
+        """
+        max_wait_ms = property_as_int(
+            self.properties,
+            REST_SCAN_PLANNING_POLL_TIMEOUT_MS,
+            REST_SCAN_PLANNING_POLL_TIMEOUT_MS_DEFAULT,
+        )
+        if max_wait_ms is None or max_wait_ms <= 0:
+            raise ValueError(f"Invalid value for {REST_SCAN_PLANNING_POLL_TIMEOUT_MS}: {max_wait_ms} (must be positive)")
+
+        sleep_ms = float(REST_SCAN_PLANNING_POLL_MIN_SLEEP_MS)
+        start = time.monotonic()
+        retries = 0
+
+        while True:
+            response = self._fetch_planning_result(identifier, plan_id)
+
+            if isinstance(response, PlanCompleted):
+                return response
+
+            if isinstance(response, PlanFailed):
+                error_msg = response.error.message if response.error else "unknown error"
+                self._cancel_planning(identifier, plan_id)
+                raise RuntimeError(f"Remote scan planning failed for planId: {plan_id}: {error_msg}")
+
+            if isinstance(response, PlanCancelled):
+                raise RuntimeError(f"Remote scan planning cancelled for planId: {plan_id}")
+
+            if not isinstance(response, PlanSubmitted):
+                self._cancel_planning(identifier, plan_id)
+                raise RuntimeError(f"Invalid planStatus for planId: {plan_id}: {type(response).__name__}")
+
+            elapsed_ms = (time.monotonic() - start) * 1000
+            if retries >= REST_SCAN_PLANNING_POLL_MAX_RETRIES or elapsed_ms >= max_wait_ms:
+                self._cancel_planning(identifier, plan_id)
+                raise RemotePlanTimeoutError(
+                    f"Remote scan planning for planId: {plan_id} did not complete within configured limits "
+                    f"(timeout={max_wait_ms} ms, maxRetries={REST_SCAN_PLANNING_POLL_MAX_RETRIES})"
+                )
+
+            time.sleep(sleep_ms / 1000.0)
+            sleep_ms = min(sleep_ms * REST_SCAN_PLANNING_POLL_SCALE_FACTOR, REST_SCAN_PLANNING_POLL_MAX_SLEEP_MS)
+            retries += 1
+
+    def _expand_plan_tasks(self, identifier: str | Identifier, response: PlanCompleted) -> list[FileScanTask]:
+        """Expand a completed plan response into FileScanTask objects, including pagination."""
         tasks: list[FileScanTask] = []
 
         # Collect tasks from initial response
@@ -711,6 +853,81 @@ class RestCatalog(Catalog):
             pending_tasks.extend(batch.plan_tasks)
 
         return tasks
+
+    def _plan_scan_result(self, identifier: str | Identifier, request: PlanTableScanRequest) -> PlannedScanResult:
+        """Plan a table scan and return tasks with optional plan storage credentials.
+
+        Handles the full scan planning lifecycle including async polling and pagination.
+        """
+        response = self._plan_table_scan(identifier, request)
+
+        if isinstance(response, PlanFailed):
+            error_msg = response.error.message if response.error else "unknown error"
+            raise RuntimeError(f"Received status: failed: {error_msg}")
+
+        if isinstance(response, PlanCancelled):
+            raise RuntimeError("Received status: cancelled")
+
+        if isinstance(response, PlanSubmitted):
+            if not response.plan_id:
+                raise ValueError("Async scan planning submitted without plan-id")
+            response = self._poll_until_completed(identifier, response.plan_id)
+
+        if not isinstance(response, PlanCompleted):
+            raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
+
+        tasks = self._expand_plan_tasks(identifier, response)
+        return PlannedScanResult(
+            tasks=tasks,
+            storage_credentials=list(response.storage_credentials or []),
+            plan_id=response.plan_id,
+        )
+
+    def plan_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> list[FileScanTask]:
+        """Plan a table scan and return FileScanTasks.
+
+        Handles the full scan planning lifecycle including async polling and pagination.
+
+        Args:
+            identifier: Table identifier.
+            request: The scan plan request parameters.
+
+        Returns:
+            List of FileScanTask objects ready for execution.
+
+        Raises:
+            RuntimeError: If planning fails, is cancelled, or returns unexpected response.
+            RemotePlanTimeoutError: If async planning does not complete in time.
+            ValueError: If a submitted plan is missing plan-id.
+        """
+        return self._plan_scan_result(identifier, request).tasks
+
+    def _file_io_from_plan(
+        self,
+        existing_properties: Properties,
+        storage_credentials: list[StorageCredential],
+        location: str | None = None,
+    ) -> FileIO | None:
+        """Build a scan-scoped FileIO from plan storage credentials.
+
+        Layers resolved plan credentials on top of the existing scan FileIO properties so
+        load-time settings (for example custom S3 endpoints) are retained.
+        """
+        if not storage_credentials:
+            return None
+
+        resolve_location = location
+        if resolve_location is None and storage_credentials[0].prefix:
+            resolve_location = storage_credentials[0].prefix
+
+        credential_config = self._resolve_storage_credentials(storage_credentials, resolve_location)
+        if not credential_config and resolve_location is None:
+            credential_config = dict(storage_credentials[0].config)
+
+        if not credential_config:
+            return None
+
+        return self._load_file_io({**existing_properties, **credential_config}, resolve_location)
 
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
         """Create the LegacyOAuth2AuthManager by fetching required properties.
@@ -1158,12 +1375,35 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_LIST_TABLES)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace_concat = self._encode_namespace_path(namespace_tuple)
-        response = self._session.get(self.url(Endpoints.list_tables, namespace=namespace_concat))
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-        return [(*table.namespace, table.name) for table in ListTablesResponse.model_validate_json(response.text).identifiers]
+        url = self.url(Endpoints.list_tables, namespace=namespace_concat)
+
+        params: dict[str, str] = {}
+        page_size = property_as_int(self.properties, PAGE_SIZE, None)
+        if page_size is not None:
+            if page_size <= 0:
+                raise ValueError(f"{PAGE_SIZE} must be a positive integer")
+            params["pageSize"] = str(page_size)
+
+        tables: list[Identifier] = []
+        page_token: str | None = None
+
+        while True:
+            if page_token:
+                params["pageToken"] = page_token
+            response = self._session.get(url, params=params)
+            try:
+                response.raise_for_status()
+            except HTTPError as exc:
+                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+
+            parsed = ListTablesResponse.model_validate_json(response.text)
+            tables.extend([(*table.namespace, table.name) for table in parsed.identifiers])
+
+            if not parsed.next_page_token:
+                break
+            page_token = parsed.next_page_token
+
+        return tables
 
     @retry(**_RETRY_ARGS)
     @override
@@ -1186,6 +1426,32 @@ class RestCatalog(Catalog):
 
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
+
+    @retry(**_RETRY_ARGS)
+    def _load_credentials(
+        self,
+        identifier: str | Identifier,
+    ) -> LoadCredentialsResponse:
+        """Load raw vended storage credentials for a table."""
+        self._check_endpoint(Capability.V1_LOAD_CREDENTIALS)
+        response = self._session.get(
+            self.url(Endpoints.load_credentials, prefixed=True, **self._split_identifier_for_path(identifier)),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchTableError})
+
+        return LoadCredentialsResponse.model_validate_json(response.text)
+
+    def load_credentials(
+        self,
+        identifier: str | Identifier,
+        location: str,
+    ) -> Properties:
+        """Load vended storage credentials and return the best match for a location."""
+        credentials_response = self._load_credentials(identifier)
+        return self._resolve_storage_credentials(credentials_response.storage_credentials, location)
 
     @retry(**_RETRY_ARGS)
     @override
@@ -1251,11 +1517,20 @@ class RestCatalog(Catalog):
         namespace_concat = self._encode_namespace_path(namespace_tuple)
         url = self.url(Endpoints.list_views, namespace=namespace_concat)
 
+        params: dict[str, str] = {}
+        page_size = property_as_int(self.properties, PAGE_SIZE, None)
+        if page_size is not None:
+            if page_size <= 0:
+                raise ValueError(f"{PAGE_SIZE} must be a positive integer")
+            params["pageSize"] = str(page_size)
+
         views: list[Identifier] = []
         page_token: str | None = None
 
         while True:
-            params = {"pageToken": page_token} if page_token else None
+            if page_token:
+                params["pageToken"] = page_token
+
             response = self._session.get(url, params=params)
             try:
                 response.raise_for_status()
@@ -1363,19 +1638,37 @@ class RestCatalog(Catalog):
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         self._check_endpoint(Capability.V1_LIST_NAMESPACES)
         namespace_tuple = self.identifier_to_tuple(namespace)
-        response = self._session.get(
-            self.url(
-                f"{Endpoints.list_namespaces}?parent={self._encode_namespace_path(namespace_tuple)}"
-                if namespace_tuple
-                else Endpoints.list_namespaces
-            ),
-        )
-        try:
-            response.raise_for_status()
-        except HTTPError as exc:
-            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
 
-        return ListNamespaceResponse.model_validate_json(response.text).namespaces
+        params: dict[str, str] = {}
+        page_size = property_as_int(self.properties, PAGE_SIZE, None)
+        if page_size is not None:
+            if page_size <= 0:
+                raise ValueError(f"{PAGE_SIZE} must be a positive integer")
+            params["pageSize"] = str(page_size)
+
+        namespaces: list[Identifier] = []
+        page_token: str | None = None
+
+        while True:
+            if namespace_tuple:
+                params["parent"] = self._encode_namespace_path(namespace_tuple)
+            if page_token:
+                params["pageToken"] = page_token
+            response = self._session.get(self.url(Endpoints.list_namespaces), params=params)
+
+            try:
+                response.raise_for_status()
+            except HTTPError as exc:
+                _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+
+            parsed = ListNamespaceResponse.model_validate_json(response.text)
+            namespaces.extend(parsed.namespaces)
+
+            if not parsed.next_page_token:
+                break
+            page_token = parsed.next_page_token
+
+        return namespaces
 
     @retry(**_RETRY_ARGS)
     @override
@@ -1527,7 +1820,7 @@ class RestCatalog(Catalog):
 
     @retry(**_RETRY_ARGS)
     @override
-    def drop_view(self, identifier: str) -> None:
+    def drop_view(self, identifier: str | Identifier) -> None:
         self._check_endpoint(Capability.V1_DELETE_VIEW)
         response = self._session.delete(
             self.url(Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),

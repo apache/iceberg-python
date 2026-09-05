@@ -65,10 +65,17 @@ def test_validation_history(table_v2_with_extensive_snapshots_and_manifests: tup
     """Test the validation history function."""
     table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
 
-    expected_manifest_data_counts = len([m for m in mock_manifests.values() if m[0].content == ManifestContent.DATA])
-
     oldest_snapshot = table.snapshots()[0]
     newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    # from_snapshot (oldest) is excluded from the results since it's the base
+    expected_manifest_data_counts = len(
+        [
+            m
+            for snap_id, m in mock_manifests.items()
+            if m[0].content == ManifestContent.DATA and snap_id != oldest_snapshot.snapshot_id
+        ]
+    )
 
     def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
@@ -246,7 +253,8 @@ def test_validate_added_data_files_conflicting_count(
         update={"snapshots": snapshots},
     )
 
-    oldest_snapshot = table.snapshots()[-snapshot_history]
+    # Use one snapshot before the altered range as the boundary (exclusive stop point)
+    boundary_snapshot = table.snapshots()[-(snapshot_history + 1)]
     newest_snapshot = cast(Snapshot, table.current_snapshot())
 
     def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
@@ -273,7 +281,7 @@ def test_validate_added_data_files_conflicting_count(
                 table=table,
                 starting_snapshot=newest_snapshot,
                 data_filter=None,
-                parent_snapshot=oldest_snapshot,
+                parent_snapshot=boundary_snapshot,
                 partition_set=None,
             )
         )

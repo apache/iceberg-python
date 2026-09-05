@@ -27,7 +27,6 @@ retrieved using `request.getfixturevalue(fixture_name)`.
 
 import os
 import re
-import socket
 import string
 import time
 import uuid
@@ -169,6 +168,20 @@ def table_schema_simple() -> Schema:
         NestedField(field_id=3, name="baz", field_type=BooleanType(), required=False),
         schema_id=1,
         identifier_field_ids=[2],
+    )
+
+
+@pytest.fixture(scope="session")
+def arrow_table_simple() -> "pa.Table":
+    """Pyarrow table that pairs with `table_schema_simple` (3 rows, no nulls)."""
+    import pyarrow as pa
+
+    return pa.table(
+        {
+            "foo": ["a", "b", "c"],
+            "bar": pa.array([1, 2, 3], type=pa.int32()),
+            "baz": [True, False, True],
+        }
     )
 
 
@@ -1171,6 +1184,43 @@ def example_view_metadata_v1() -> dict[str, Any]:
         ],
         "version-log": [{"timestamp-ms": 1602638573874, "version-id": 1}],
         "properties": {"comment": "this is a test view"},
+    }
+
+
+@pytest.fixture
+def example_view_metadata_v1_multiple_versions() -> dict[str, Any]:
+    return {
+        "view-uuid": "a20125c8-7284-442c-9aea-15fee620737c",
+        "format-version": 1,
+        "location": "s3://bucket/test/location/test_view",
+        "current-version-id": 2,
+        "versions": [
+            {
+                "version-id": 1,
+                "timestamp-ms": 1602638573874,
+                "schema-id": 1,
+                "summary": {},
+                "representations": [{"type": "sql", "sql": "SELECT 1", "dialect": "spark"}],
+                "default-namespace": ["default"],
+            },
+            {
+                "version-id": 2,
+                "timestamp-ms": 1602638573875,
+                "schema-id": 2,
+                "summary": {},
+                "representations": [{"type": "sql", "sql": "SELECT 2", "dialect": "spark"}],
+                "default-namespace": ["default"],
+            },
+        ],
+        "schemas": [
+            {"type": "struct", "schema-id": 1, "fields": [{"id": 1, "name": "a", "required": True, "type": "long"}]},
+            {"type": "struct", "schema-id": 2, "fields": [{"id": 2, "name": "b", "required": True, "type": "string"}]},
+        ],
+        "version-log": [
+            {"timestamp-ms": 1602638573874, "version-id": 1},
+            {"timestamp-ms": 1602638573875, "version-id": 2},
+        ],
+        "properties": {},
     }
 
 
@@ -2290,14 +2340,14 @@ def fixture_aws_credentials() -> Generator[None, None, None]:
 
 
 @pytest.fixture(scope="session")
-def moto_server() -> "ThreadedMotoServer":
+def moto_server() -> Generator["ThreadedMotoServer", None, None]:
     from moto.server import ThreadedMotoServer
 
-    server = ThreadedMotoServer(ip_address="localhost", port=5001)
-
-    # this will throw an exception if the port is already in use
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((server._ip_address, server._port))
+    # Bind to port 0 so the OS assigns a free ephemeral port. A hardcoded port
+    # collides when tests run in parallel (e.g. on shared CI agents) or when a
+    # previous run leaves the port in TIME_WAIT, raising
+    # "OSError: [Errno 98] Address already in use".
+    server = ThreadedMotoServer(ip_address="localhost", port=0)
 
     server.start()
     yield server
@@ -2306,7 +2356,8 @@ def moto_server() -> "ThreadedMotoServer":
 
 @pytest.fixture(scope="session")
 def moto_endpoint_url(moto_server: "ThreadedMotoServer") -> str:
-    _url = f"http://{moto_server._ip_address}:{moto_server._port}"
+    host, port = moto_server.get_host_and_port()
+    _url = f"http://{host}:{port}"
     return _url
 
 
@@ -2337,7 +2388,7 @@ def empty_home_dir_path(tmp_path_factory: pytest.TempPathFactory) -> str:
     return home_path
 
 
-RANDOM_LENGTH = 20
+RANDOM_LENGTH = 8  # Keep short to stay within Windows MAX_PATH (260 chars)
 NUM_TABLES = 2
 
 
@@ -2394,15 +2445,15 @@ def hierarchical_namespace_list(hierarchical_namespace_name: str) -> list[str]:
 
 BUCKET_NAME = "test_bucket"
 TABLE_METADATA_LOCATION_REGEX = re.compile(
-    r"""s3://test_bucket/my_iceberg_database-[a-z]{20}.db/
-    my_iceberg_table-[a-z]{20}/metadata/
+    r"""s3://test_bucket/my_iceberg_database-[a-z]{8}.db/
+    my_iceberg_table-[a-z]{8}/metadata/
     [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
 )
 
 BQ_TABLE_METADATA_LOCATION_REGEX = re.compile(
-    r"""gs://alexstephen-test-bq-bucket/my_iceberg_database_[a-z]{20}.db/
-    my_iceberg_table-[a-z]{20}/metadata/
+    r"""gs://alexstephen-test-bq-bucket/my_iceberg_database_[a-z]{8}.db/
+    my_iceberg_table-[a-z]{8}/metadata/
     [0-9]{5}-[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}.metadata.json""",
     re.X,
 )
@@ -2473,6 +2524,11 @@ def clean_up(test_catalog: Catalog) -> None:
         if "my_iceberg_database-" in database_name:
             for identifier in test_catalog.list_tables(database_name):
                 test_catalog.drop_table(identifier)
+            try:
+                for identifier in test_catalog.list_views(database_name):
+                    test_catalog.drop_view(identifier)
+            except NotImplementedError:
+                pass
             test_catalog.drop_namespace(database_name)
 
 
@@ -3082,7 +3138,7 @@ def _create_sql_without_rowcount_catalog(name: str, warehouse: Path) -> Catalog:
     from pyiceberg.catalog.sql import SqlCatalog
 
     props = {
-        "uri": f"sqlite:////{warehouse}/sql-catalog",
+        "uri": f"sqlite:///{warehouse.as_posix()}/sql-catalog",
         "warehouse": f"file://{warehouse}",
     }
     catalog = SqlCatalog(name, **props)
@@ -3278,7 +3334,7 @@ def does_support_slash_in_identifier(catalog: Catalog) -> bool:
     from pyiceberg.catalog.sql import SqlCatalog
 
     if isinstance(catalog, RestCatalog):
-        return property_as_bool(catalog.properties, "supports_slash_in_identifier", True)
+        return property_as_bool(catalog.properties, "supports_slash_in_identifier", False)
     from pyiceberg.catalog.hive import HiveCatalog
 
     if isinstance(catalog, (HiveCatalog, NoopCatalog, SqlCatalog)):

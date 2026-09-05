@@ -17,7 +17,7 @@
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
@@ -101,6 +101,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     LongType,
     NestedField,
@@ -185,6 +187,7 @@ def test_bucket_hash_values(test_input: Any, test_type: PrimitiveType, expected:
         (BucketTransform(100).transform(TimeType()), 81068000000, 59),
         (BucketTransform(100).transform(TimestampType()), 1510871468000000, 7),
         (BucketTransform(100).transform(DecimalType(9, 2)), Decimal("14.20"), 59),
+        (BucketTransform(16).transform(DecimalType(5, 2)), Decimal("-1.28"), 13),
         (BucketTransform(100).transform(StringType()), "iceberg", 89),
         (
             BucketTransform(100).transform(UUIDType()),
@@ -253,6 +256,11 @@ def test_identity_transform_unknown_type() -> None:
     assert IdentityTransform().result_type(UnknownType()) == UnknownType()
     assert IdentityTransform().transform(UnknownType())(None) is None
     assert IdentityTransform().to_human_string(UnknownType(), None) == "null"
+
+
+@pytest.mark.parametrize("type_var", [GeometryType(), GeographyType()])
+def test_identity_can_transform_unsupported_type(type_var: PrimitiveType) -> None:
+    assert not IdentityTransform().can_transform(type_var)
 
 
 def test_string_with_surrogate_pair() -> None:
@@ -1025,10 +1033,23 @@ def test_projection_truncate_string_starts_with(bound_reference_str: BoundRefere
     ) == StartsWith(term="name", literal=literal("he"))
 
 
-def test_projection_truncate_string_not_starts_with(bound_reference_str: BoundReference) -> None:
+def test_projection_truncate_string_not_starts_with_longer_literal(bound_reference_str: BoundReference) -> None:
+    # Not a valid projection: return None because pruning on "he" could drop qualifying rows like "help".
+    assert TruncateTransform(2).project("name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))) is None
+
+
+def test_projection_truncate_string_not_starts_with_equal_width_literal(bound_reference_str: BoundReference) -> None:
+    # Valid projection: improve NOT STARTS WITH "he" to partition != "he".
     assert TruncateTransform(2).project(
-        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("hello"))
-    ) == NotStartsWith(term="name", literal=literal("he"))
+        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("he"))
+    ) == NotEqualTo(term="name", literal=literal("he"))
+
+
+def test_projection_truncate_string_not_starts_with_shorter_literal(bound_reference_str: BoundReference) -> None:
+    # Valid projection: pass the NOT STARTS WITH literal "h" through unchanged.
+    assert TruncateTransform(2).project(
+        "name", BoundNotStartsWith(term=bound_reference_str, literal=literal("h"))
+    ) == NotStartsWith(term="name", literal=literal("h"))
 
 
 def _test_projection(lhs: UnboundPredicate | None, rhs: UnboundPredicate | None) -> None:
@@ -1603,6 +1624,30 @@ def test_strict_binary(bound_reference_binary: BoundReference) -> None:
         BoundNotIn(term=bound_reference_binary, literals={value, other_value}), transform, EqualTo, "YWJjZGU="
     )
     _assert_projection_strict(BoundIn(term=bound_reference_binary, literals={value, other_value}), transform, NotIn)
+
+
+@pytest.mark.parametrize(
+    "source_type, value, expected",
+    [
+        pytest.param(TimestampType(), None, None, id="timestamp_none"),
+        pytest.param(TimestampType(), 1577836800000000, 1577836800000000, id="timestamp_int_passthrough"),
+        pytest.param(TimestampType(), datetime(2020, 1, 1), 1577836800000000, id="timestamp_datetime"),
+        pytest.param(TimestamptzType(), datetime(2020, 1, 1), 1577836800000000, id="timestamptz_datetime"),
+        pytest.param(TimestampNanoType(), None, None, id="timestamp_nano_none"),
+        pytest.param(TimestampNanoType(), 1577836800000000000, 1577836800000000000, id="timestamp_nano_int_passthrough"),
+        pytest.param(TimestampNanoType(), datetime(2020, 1, 1), 1577836800000000000, id="timestamp_nano_datetime"),
+        pytest.param(TimestamptzNanoType(), datetime(2020, 1, 1), 1577836800000000000, id="timestamptz_nano_datetime"),
+    ],
+)
+def test_to_partition_representation_timestamps(source_type: PrimitiveType, value: Any, expected: Any) -> None:
+    assert _to_partition_representation(source_type, value) == expected
+
+
+def test_to_partition_representation_unrecognized_type_raises() -> None:
+    with pytest.raises(ValueError, match="Type not recognized"):
+        _to_partition_representation(TimestampType(), "not-a-datetime-or-int")
+    with pytest.raises(ValueError, match="Type not recognized"):
+        _to_partition_representation(TimestampNanoType(), "not-a-datetime-or-int")
 
 
 @pytest.mark.parametrize(

@@ -1012,6 +1012,7 @@ def test_inspect_all_manifests(spark: SparkSession, session_catalog: Catalog, fo
         "deleted_delete_files_count",
         "partition_summaries",
         "reference_snapshot_id",
+        "key_metadata",
     ]
 
     int_cols = [
