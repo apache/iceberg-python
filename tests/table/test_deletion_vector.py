@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import zlib
 from os import path
 
 import pytest
@@ -133,6 +134,10 @@ def test_to_blob_metadata() -> None:
     # offset and length are placeholders until PuffinWriter assembles the file
     assert blob.metadata.offset == 0
     assert blob.metadata.length == 0
+    # -1 marks the snapshot id and sequence number as inherited at commit time, matching Java's
+    # BaseDVFileWriter.toBlob
+    assert blob.metadata.snapshot_id == -1
+    assert blob.metadata.sequence_number == -1
 
 
 def test_to_blob_payload_layout() -> None:
@@ -146,3 +151,12 @@ def test_to_blob_payload_layout() -> None:
     assert length_prefix == len(DELETION_VECTOR_MAGIC) + len(vector)
     assert len(blob.payload) == 4 + length_prefix + 4
     assert DeletionVector._deserialize_bitmap(vector) == DeletionVector.from_positions("file.parquet", [1, 2, 3])._bitmaps
+
+    # The reader tolerates a wrong checksum and wrong magic bytes, so assert the trailer here
+    # instead of relying on the round-trip above to catch a change in what the CRC covers.
+    assert int.from_bytes(blob.payload[-4:], "big") == zlib.crc32(DELETION_VECTOR_MAGIC + vector)
+
+    # Vector framing: number of non-empty bitmaps (8B little-endian) then the first key (4B
+    # little-endian). Positions 1..3 share key 0, so exactly one bitmap is written.
+    assert int.from_bytes(vector[0:8], "little") == 1
+    assert int.from_bytes(vector[8:12], "little") == 0
