@@ -284,3 +284,22 @@ def test_rewrite_manifests_merges_live_and_fully_deleted_manifests(catalog: Cata
 
     # Verify table data is fully preserved and matches remaining live records
     assert table.scan().to_arrow().sort_by("id") == _arrow_table(offset=3)
+
+
+def test_rewrites_needed_is_false_when_every_group_is_a_single_manifest(catalog: Catalog) -> None:
+    table = _create_table_with_appends(catalog, appends=3)
+    # A tiny target size puts every manifest in its own group, so nothing can be merged
+    with table.transaction() as tx:
+        tx.set_properties({"commit.manifest.target-size-bytes": "1"})
+
+    table = catalog.load_table("default.test_rewrite")
+    assert len(_data_manifests(table)) == 3
+
+    snapshot_before = table.current_snapshot()
+    assert table.maintenance.rewrite_manifests().rewrites_needed() is False
+
+    table.maintenance.rewrite_manifests().commit()
+
+    table = catalog.load_table("default.test_rewrite")
+    assert table.current_snapshot() == snapshot_before
+    assert len(_data_manifests(table)) == 3
