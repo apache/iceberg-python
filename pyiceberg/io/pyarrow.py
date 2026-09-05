@@ -445,7 +445,7 @@ class PyArrowFileIO(FileIO):
             return self._initialize_gcs_fs()
 
         elif scheme in ADLS_SCHEMES:
-            return self._initialize_azure_fs()
+            return self._initialize_azure_fs(netloc)
 
         elif scheme in {"file"}:
             return self._initialize_local_fs()
@@ -539,7 +539,7 @@ class PyArrowFileIO(FileIO):
 
         return S3FileSystem(**client_kwargs)
 
-    def _initialize_azure_fs(self) -> FileSystem:
+    def _initialize_azure_fs(self, netloc: str | None = None) -> FileSystem:
         # https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html
         from packaging import version
 
@@ -554,7 +554,15 @@ class PyArrowFileIO(FileIO):
 
         client_kwargs: dict[str, str] = {}
 
-        if account_name := self.properties.get(ADLS_ACCOUNT_NAME):
+        account_name = self.properties.get(ADLS_ACCOUNT_NAME)
+        if account_name is None and netloc and "@" in netloc:
+            # An account qualified location carries the account in its host part,
+            # abfss://<container>@<account>.<host>/<path>. Only that form has a userinfo
+            # part, without it the netloc is just the container and there is no account
+            # to read. An explicit adls.account-name always wins, same as FsspecFileIO.
+            account_name = netloc.rpartition("@")[2].split(".")[0] or None
+
+        if account_name:
             client_kwargs["account_name"] = account_name
 
         if account_key := self.properties.get(ADLS_ACCOUNT_KEY):
