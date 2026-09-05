@@ -2325,7 +2325,7 @@ def test_session_with_connection_timeout_only(rest_mock: Mocker) -> None:
         "token": TEST_TOKEN,
         REST_CLIENT_REQUEST_TIMEOUT: "30",
     }
-    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    catalog = RestCatalog("rest", **catalog_properties)
     adapter = catalog._session.adapters["https://"]
     assert isinstance(adapter, _RetryTimeoutHTTPAdapter)
     assert adapter._timeout == 30.0
