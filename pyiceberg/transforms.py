@@ -1002,6 +1002,16 @@ class UnknownTransform(Transform[S, T]):
         """Return the string representation of the UnknownTransform class."""
         return f"UnknownTransform(transform={repr(self._transform)})"
 
+    def __eq__(self, other: Any) -> bool:
+        """Compare the preserved transform name, since every unknown transform shares one root value."""
+        if isinstance(other, UnknownTransform):
+            return self._transform == other._transform
+        return False
+
+    def __hash__(self) -> int:
+        """Hash the preserved transform name so distinct unknown transforms do not collide."""
+        return hash((self.root, self._transform))
+
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
         raise NotImplementedError()
 
