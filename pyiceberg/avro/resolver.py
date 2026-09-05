@@ -461,9 +461,24 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
 
             # ensure that the type can be projected to the expected
             if primitive != expected_primitive:
+                if self._is_legacy_long_equality_ids(primitive, expected_primitive):
+                    return IntegerReader()
                 promote(primitive, expected_primitive)
 
         return super().primitive(primitive, expected_primitive)
+
+    def _is_legacy_long_equality_ids(self, primitive: PrimitiveType, expected_primitive: PrimitiveType) -> bool:
+        # PyIceberg previously wrote the wrong schema, list<long>, for equality_ids; the Iceberg spec requires list<int>.
+        # The default schema now uses list<int>, but the schema promotion rules do not allow reading long as int.
+        # Ints and longs share the same Avro encoding, so allow this exact mismatch for the equality_ids element (136)
+        # when reading existing files.
+        # See: https://github.com/apache/iceberg-python/issues/3840
+        # See: https://iceberg.apache.org/spec/#manifests
+        return (
+            self.context == [2, 135, 136]  # field id path from manifest_entry: data_file (2), equality_ids (135), element (136)
+            and isinstance(primitive, LongType)
+            and isinstance(expected_primitive, IntegerType)
+        )
 
     def visit_boolean(self, boolean_type: BooleanType, partner: IcebergType | None) -> Reader:
         return BooleanReader()
