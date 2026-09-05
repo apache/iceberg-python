@@ -1326,7 +1326,7 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
     """
 
     _computed_manifests: list[ManifestFile] | None
-    _predicate: Callable[[ManifestFile], bool] | None
+    _manifest_predicate: Callable[[ManifestFile], bool] | None
 
     _rewritten_count: int
     _created_count: int
@@ -1348,7 +1348,7 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
                 "the first-row-id of rewritten manifests must be preserved, "
                 "see: https://github.com/apache/iceberg-python/issues/3621"
             )
-        self._predicate = None
+        self._manifest_predicate = None
         self._rewritten_count = 0
         self._created_count = 0
         self._kept_count = 0
@@ -1367,7 +1367,7 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         Returns:
             This RewriteManifests instance for method chaining.
         """
-        self._predicate = predicate
+        self._manifest_predicate = predicate
         return self
 
     def _deleted_entries(self) -> list[ManifestEntry]:
@@ -1411,7 +1411,9 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         data_manifests_by_spec: defaultdict[int, list[ManifestFile]] = defaultdict(list)
         kept_manifests: list[ManifestFile] = []
         for manifest in snapshot.manifests(self._io):
-            if manifest.content == ManifestContent.DATA and (self._predicate is None or self._predicate(manifest)):
+            if manifest.content == ManifestContent.DATA and (
+                self._manifest_predicate is None or self._manifest_predicate(manifest)
+            ):
                 data_manifests_by_spec[manifest.partition_spec_id].append(manifest)
             else:
                 kept_manifests.append(manifest)
@@ -1419,7 +1421,7 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         new_manifests: list[ManifestFile] = []
         for spec_id, manifests in data_manifests_by_spec.items():
             for group in self._group_by_target_size(manifests):
-                if len(group) == 1 and self._predicate is None:
+                if len(group) == 1 and self._manifest_predicate is None:
                     # nothing to merge and no predicate specified; keep the manifest as-is
                     kept_manifests.append(group[0])
                     continue
@@ -1463,6 +1465,6 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         if snapshot is None:
             return False
         data_manifests = [m for m in snapshot.manifests(self._io) if m.content == ManifestContent.DATA]
-        if self._predicate is not None:
-            return any(self._predicate(m) for m in data_manifests)
+        if self._manifest_predicate is not None:
+            return any(self._manifest_predicate(m) for m in data_manifests)
         return len(data_manifests) > 1
