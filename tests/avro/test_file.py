@@ -297,9 +297,11 @@ def test_todict_manifest_file_v2_layout_matches_fastavro() -> None:
     """todict must exclude ManifestFile's V3-only first_row_id for a record bound to the V2 layout,
 
     the same way it does for DataFile, otherwise the exclusion added for DataFile would be
-    inconsistent for other record types with version-dependent trailing fields.
+    inconsistent for other record types with version-dependent trailing fields. The binding is
+    explicit because the default read version is V3, whose layout does carry first_row_id.
     """
     manifest_file = ManifestFile.from_args(
+        _table_format_version=2,
         manifest_path="/manifests/m1.avro",
         manifest_length=100,
         partition_spec_id=0,
