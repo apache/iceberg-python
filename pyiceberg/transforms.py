@@ -1087,14 +1087,15 @@ class TransformSourceMixin(IcebergBaseModel):
         if not isinstance(data, dict) or "source-ids" not in data:
             return data
 
+        if "source-id" in data:
+            raise ValueError("source-id and source-ids are mutually exclusive")
+
         source_ids = data["source-ids"]
         if not isinstance(source_ids, list):
             return data
         if len(source_ids) == 0:
             raise ValueError("Empty source-ids is not allowed")
 
-        # The spec writes only one of the two keys, so a source-id next to source-ids comes
-        # from a non-conformant writer; source-ids is the one that carries the arity
         data["source-id"] = source_ids[0]
         if len(source_ids) == 1:
             data.pop("source-ids", None)
