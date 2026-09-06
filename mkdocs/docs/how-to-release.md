@@ -69,7 +69,7 @@ deprecation_message(
 
 ### Update Dependencies
 
-Dependabot runs monthly to keep the noise down, so the pinned dependencies in `uv.lock` may be stale by the time of a release. Before cutting the release candidate, go to the [Dependabot page](https://github.com/apache/iceberg-python/network/updates) in the repository's Insights tab and trigger a manual check for both the `uv` and `github-actions` ecosystems. Review and merge the resulting PRs so the release ships with up-to-date dependencies.
+Dependabot runs monthly to keep the noise down, so the pinned dependencies in `uv.lock` may be stale by the time of a release. Before cutting the release candidate, open the repository's **Insights** tab, select **Dependabot**, and trigger a manual check for both the `uv` and `github-actions` ecosystems. Review and merge the resulting PRs so the release ships with up-to-date dependencies. See the [GitHub documentation](https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/listing-dependencies-configured-for-version-updates) for details.
 
 <!-- prettier-ignore-start -->
 
