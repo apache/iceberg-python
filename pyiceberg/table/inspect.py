@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import itertools
+import warnings
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -558,7 +559,18 @@ class InspectTable:
             rows = []
             for i, field_summary in enumerate(partition_summaries):
                 field = spec.fields[i]
-                partition_field_type = spec.partition_type(self.tbl.schema()).fields[i].field_type
+                partition_schema = schema
+                if field.source_id not in schema.field_ids:
+                    # Retained manifests can reference partition sources dropped before this snapshot.
+                    partition_schema = next(
+                        (
+                            old_schema
+                            for old_schema in reversed(self.tbl.metadata.schemas)
+                            if field.source_id in old_schema.field_ids
+                        ),
+                        schema,
+                    )
+                partition_field_type = spec.partition_type(partition_schema).fields[i].field_type
                 lower_bound = (
                     (
                         field.transform.to_human_string(
@@ -590,6 +602,12 @@ class InspectTable:
         specs = self.tbl.metadata.specs()
         manifests = []
         if snapshot:
+            schema = self.tbl.schema()
+            if snapshot.schema_id is not None:
+                if snapshot_schema := self.tbl.metadata.schema_by_id(snapshot.schema_id):
+                    schema = snapshot_schema
+                else:
+                    warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}", stacklevel=2)
             for manifest in snapshot.manifests(self.tbl.io):
                 is_data_file = manifest.content == ManifestContent.DATA
                 is_delete_file = manifest.content == ManifestContent.DELETES
@@ -619,15 +637,22 @@ class InspectTable:
             schema=self._get_all_manifests_schema() if is_all_manifests_table else self._get_manifests_schema(),
         )
 
-    def manifests(self) -> pa.Table:
-        """Return the manifest files for the current snapshot as a PyArrow Table.
+    def manifests(self, snapshot_id: int | None = None) -> pa.Table:
+        """Return the manifest files for a snapshot as a PyArrow Table.
+
+        Args:
+            snapshot_id: Optional snapshot ID. If None, uses the current snapshot.
 
         Returns:
-            pa.Table: Manifest metadata for the current snapshot, or an empty
-                table if the table has no snapshots.
+            pa.Table: Manifest metadata for the selected snapshot, or an empty
+                table if no snapshot ID is supplied and the table has no snapshots.
                 See ``_get_manifests_schema`` for the full column list.
+
+        Raises:
+            ValueError: If the supplied snapshot ID is not found.
         """
-        return self._generate_manifests_table(self.tbl.current_snapshot())
+        snapshot = self._get_snapshot(snapshot_id) if snapshot_id is not None else self.tbl.current_snapshot()
+        return self._generate_manifests_table(snapshot)
 
     def metadata_log_entries(self) -> pa.Table:
         """Return the metadata log of the table as a PyArrow Table.
