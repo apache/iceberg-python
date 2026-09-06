@@ -1411,7 +1411,8 @@ class ManifestWriterV3(ManifestWriterV2):
             field.name: value
             for field, value in zip(MANIFEST_LIST_FILE_SCHEMAS[DEFAULT_READ_VERSION].fields, manifest_file._data, strict=True)
         }
-        return ManifestFile.from_args(_table_format_version=3, first_row_id=self._first_row_id, **args)
+        args["first_row_id"] = self._first_row_id
+        return ManifestFile.from_args(_table_format_version=3, **args)
 
     def new_writer(self) -> AvroOutputFile[ManifestEntry]:
         # Use the V3 record layout so the V3-only data file fields are written
