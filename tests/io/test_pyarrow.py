@@ -73,9 +73,11 @@ from pyiceberg.io.pyarrow import (
     StatsAggregator,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
+    _dataframe_to_data_files,
     _determine_partitions,
     _primitive_to_physical,
     _read_deletes,
+    _sort_table_for_write,
     _task_to_record_batches,
     _to_requested_schema,
     bin_pack_arrow_table,
@@ -91,8 +93,9 @@ from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties, WriteTask
-from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.table.metadata import TableMetadataV2, new_table_metadata
 from pyiceberg.table.name_mapping import create_mapping_from_schema
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.transforms import HourTransform, IdentityTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
@@ -125,6 +128,71 @@ skip_if_pyarrow_too_old = pytest.mark.skipif(
     version.parse(pyarrow.__version__) < version.parse("20.0.0"),
     reason="Requires pyarrow version >= 20.0.0",
 )
+
+
+@pytest.mark.parametrize(
+    "direction, null_order, expected",
+    [
+        (SortDirection.ASC, NullOrder.NULLS_LAST, [1, 2, None]),
+        (SortDirection.ASC, NullOrder.NULLS_FIRST, [None, 1, 2]),
+        (SortDirection.DESC, NullOrder.NULLS_LAST, [2, 1, None]),
+        (SortDirection.DESC, NullOrder.NULLS_FIRST, [None, 2, 1]),
+    ],
+)
+def test_sort_table_for_identity_sort_order(direction: SortDirection, null_order: NullOrder, expected: list[int | None]) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "value", StringType(), required=False),
+    )
+    metadata = new_table_metadata(
+        schema=schema,
+        partition_spec=PartitionSpec(),
+        sort_order=SortOrder(
+            SortField(1, IdentityTransform(), direction, null_order),
+        ),
+        location="file:///tmp/sorted",
+        properties={},
+    )
+    table = pa.table({"id": [2, None, 1], "value": ["b", "null", "a"]})
+
+    sorted_table, sort_order_id = _sort_table_for_write(metadata, table)
+
+    assert sorted_table["id"].to_pylist() == expected
+    assert sort_order_id == metadata.default_sort_order_id
+
+
+def test_write_sorted_data_files_per_partition(tmp_path: str) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "category", StringType(), required=False),
+    )
+    metadata = new_table_metadata(
+        schema=schema,
+        partition_spec=PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="category")),
+        sort_order=SortOrder(
+            SortField(1, IdentityTransform(), SortDirection.ASC, NullOrder.NULLS_LAST),
+        ),
+        location=f"file://{tmp_path}/sorted-partitioned",
+        properties={},
+    )
+    table = pa.table(
+        {
+            "id": [3, None, 1, 2, None, 4],
+            "category": ["a", "b", "b", "a", "a", "b"],
+        }
+    )
+
+    data_files = list(_dataframe_to_data_files(table_metadata=metadata, df=table, io=PyArrowFileIO()))
+
+    assert len(data_files) == 2  # one data file per partition
+    for data_file in data_files:
+        assert data_file.sort_order_id == metadata.default_sort_order_id
+        input_file = PyArrowFileIO().new_input(data_file.file_path)
+        with input_file.open() as f:
+            read_table = pq.read_table(f)
+        assert len(read_table["category"].unique()) == 1  # rows belong to a single partition
+        ids = read_table["id"].to_pylist()
+        assert ids == sorted(ids, key=lambda v: (v is None, v))  # ascending, nulls last
 
 
 def test_pyarrow_infer_local_fs_from_path() -> None:
