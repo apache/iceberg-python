@@ -1939,6 +1939,54 @@ def test_below_int_bounds_in() -> None:
     assert expression_evaluator(schema, NotIn("id", [1, below_min]), True)(Record(IntegerType.min)) is True
 
 
+@pytest.mark.parametrize(
+    "literals",
+    [
+        [IntegerType.max + 1, IntegerType.max + 2],
+        [IntegerType.min - 1, IntegerType.min - 2],
+        [IntegerType.min - 1, IntegerType.max + 1],
+    ],
+)
+def test_int_bounds_in_all_literals_out_of_range(literals: list[int]) -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    in_expr = In("id", literals)
+    not_in_expr = NotIn("id", literals)
+
+    assert in_expr.bind(schema) == AlwaysFalse()
+    assert not_in_expr.bind(schema) == AlwaysTrue()
+    for value in [None, IntegerType.min, 0, IntegerType.max]:
+        assert expression_evaluator(schema, in_expr, True)(Record(value)) is False
+        assert expression_evaluator(schema, not_in_expr, True)(Record(value)) is True
+
+
+def test_int_bounds_in_keeps_multiple_literals() -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    literals = [1, 2, IntegerType.min - 1, IntegerType.max + 1]
+    in_expr = In("id", literals)
+    not_in_expr = NotIn("id", literals)
+
+    assert in_expr.bind(schema) == In("id", [1, 2]).bind(schema)
+    assert not_in_expr.bind(schema) == NotIn("id", [1, 2]).bind(schema)
+    values = [None, 1, 2, 3, IntegerType.min, IntegerType.max]
+    eval_in = expression_evaluator(schema, in_expr, True)
+    eval_not_in = expression_evaluator(schema, not_in_expr, True)
+    assert [value for value in values if eval_in(Record(value))] == [1, 2]
+    assert [value for value in values if eval_not_in(Record(value))] == [None, 3, IntegerType.min, IntegerType.max]
+
+
+@pytest.mark.parametrize(
+    "boundary,out_of_range",
+    [(IntegerType.min, IntegerType.min - 1), (IntegerType.max, IntegerType.max + 1)],
+)
+def test_int_bounds_in_metrics(schema_data_file: Schema, boundary: int, out_of_range: int) -> None:
+    bounds = {1: to_bytes(IntegerType(), boundary)}
+    data_file = _single_value_metrics_file(boundary, lower_bounds=bounds, upper_bounds=bounds)
+
+    assert _InclusiveMetricsEvaluator(schema_data_file, In("id", [1, out_of_range])).eval(data_file) == ROWS_CANNOT_MATCH
+    assert _StrictMetricsEvaluator(schema_data_file, NotIn("id", [1, out_of_range])).eval(data_file) == ROWS_MUST_MATCH
+    assert _StrictMetricsEvaluator(schema_data_file, In("id", [1, boundary, out_of_range])).eval(data_file) == ROWS_MUST_MATCH
+
+
 def test_int_bounds_in_keeps_the_boundary_value() -> None:
     """A sentinel is equal to the boundary literal it clamps to, so it must not absorb it."""
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
