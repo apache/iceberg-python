@@ -517,6 +517,7 @@ class SqlCatalog(MetastoreCatalog):
         with Session(self.engine) as session:
             if current_table:
                 # table exists, update it
+                type_filter = self._iceberg_type_filter()
                 if self.engine.dialect.supports_sane_rowcount:
                     stmt = (
                         update(IcebergTables)
@@ -531,12 +532,14 @@ class SqlCatalog(MetastoreCatalog):
                             previous_metadata_location=current_table.metadata_location,
                         )
                     )
+                    if type_filter is not None:
+                        stmt = stmt.where(type_filter)
                     result = session.execute(stmt)
                     if result.rowcount < 1:
                         raise CommitFailedException(f"Table has been updated by another process: {namespace}.{table_name}")
                 else:
                     try:
-                        tbl = (
+                        query = (
                             session.query(IcebergTables)
                             .with_for_update(of=IcebergTables)
                             .filter(
@@ -545,8 +548,10 @@ class SqlCatalog(MetastoreCatalog):
                                 IcebergTables.table_name == table_name,
                                 IcebergTables.metadata_location == current_table.metadata_location,
                             )
-                            .one()
                         )
+                        if type_filter is not None:
+                            query = query.filter(type_filter)
+                        tbl = query.one()
                         tbl.metadata_location = updated_staged_table.metadata_location
                         tbl.previous_metadata_location = current_table.metadata_location
                     except NoResultFound as e:

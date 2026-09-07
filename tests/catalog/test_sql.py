@@ -18,6 +18,7 @@
 from collections.abc import Generator
 from pathlib import Path
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import Engine, create_engine, inspect, text
@@ -32,6 +33,7 @@ from pyiceberg.catalog.sql import (
     SqlCatalogBaseTable,
 )
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NoSuchPropertyException,
     NoSuchTableError,
     TableAlreadyExistsError,
@@ -384,6 +386,37 @@ def test_rename_table_ignores_view_rows(warehouse: Path) -> None:
     # The view row must not have been renamed.
     with catalog.engine.connect() as conn:
         row = conn.execute(text("SELECT iceberg_type FROM iceberg_tables WHERE table_name = 'a_view'")).fetchone()
+    assert row is not None
+    assert row[0] == "VIEW"
+
+
+def test_commit_table_ignores_view_rows(warehouse: Path) -> None:
+    catalog = SqlCatalog(
+        name="test", uri=f"sqlite:///{warehouse.as_posix()}/test_commit_view.db", warehouse=f"file://{warehouse}"
+    )
+    catalog.create_namespace("ns")
+    schema = Schema(NestedField(1, "id", StringType(), required=True))
+    tbl = catalog.create_table(("ns", "a_table"), schema=schema)
+
+    tx = tbl.transaction()
+    tx.set_properties({"key": "val"})
+    updates = tuple(tx._updates)
+    requirements = tuple(tx._requirements)
+
+    # Tamper the table row into a VIEW (simulating concurrent change to VIEW after load_table)
+    with catalog.engine.connect() as conn:
+        conn.execute(text("UPDATE iceberg_tables SET iceberg_type = 'VIEW' WHERE table_name = 'a_table'"))
+        conn.commit()
+
+    # When load_table returns the pre-loaded table, commit_table must fail in the SQL UPDATE
+    # due to type_filter and not overwrite the VIEW row.
+    with patch.object(catalog, "load_table", return_value=tbl):
+        with pytest.raises(CommitFailedException, match="Table has been updated by another process: ns.a_table"):
+            catalog.commit_table(tbl, requirements=requirements, updates=updates)
+
+    # The view row must remain untouched with iceberg_type == 'VIEW'
+    with catalog.engine.connect() as conn:
+        row = conn.execute(text("SELECT iceberg_type FROM iceberg_tables WHERE table_name = 'a_table'")).fetchone()
     assert row is not None
     assert row[0] == "VIEW"
 
