@@ -77,6 +77,8 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimestampNanoType,
+    TimestamptzNanoType,
 )
 
 
@@ -108,6 +110,20 @@ def test_invert_is_nan_bind() -> None:
 def test_invert_not_nan_bind() -> None:
     schema = Schema(NestedField(2, "a", DoubleType(), required=False), schema_id=1)
     assert ~NotNaN(Reference("a")).bind(schema) == IsNaN(Reference("a")).bind(schema)
+
+
+def test_bind_timestamp_nano() -> None:
+    schema = Schema(NestedField(2, "a", TimestampNanoType(), required=False), schema_id=1)
+
+    assert GreaterThan("a", "2017-08-18T14:21:01.919234567").bind(schema).literal.value == 1503066061919234567
+    # A long is read as microseconds, matching the plain timestamp case
+    assert EqualTo("a", 1503066061919234).bind(schema).literal.value == 1503066061919234000
+
+
+def test_bind_timestamptz_nano() -> None:
+    schema = Schema(NestedField(2, "a", TimestamptzNanoType(), required=False), schema_id=1)
+
+    assert GreaterThan("a", "2017-08-18T14:21:01.919234567+00:00").bind(schema).literal.value == 1503066061919234567
 
 
 def test_bind_expr_does_not_exists() -> None:
