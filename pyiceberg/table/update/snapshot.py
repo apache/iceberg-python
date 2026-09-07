@@ -594,6 +594,8 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         existing_manifests = []
         total_deleted_entries = []
         partial_rewrites_needed = False
+        # Preserve files explicitly requested via delete_data_file() before resetting.
+        explicit_deletes = set(self._deleted_data_files)
         self._deleted_data_files = set()
 
         # Determine the snapshot to read manifests from for deletion
@@ -620,7 +622,10 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
                                 if self._planned_delete_files is not None:
                                     should_delete = entry.data_file in self._planned_delete_files
                                 else:
-                                    should_delete = strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH
+                                    should_delete = (
+                                        entry.data_file in explicit_deletes
+                                        or strict_metrics_evaluator(entry.data_file) == ROWS_MUST_MATCH
+                                    )
 
                                 if should_delete:
                                     # Based on the metadata, it can be dropped right away
