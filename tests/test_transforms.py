@@ -575,6 +575,40 @@ def test_unknown_transform_str() -> None:
     assert str(UnknownTransform("unknown")) == "unknown"
 
 
+def test_unknown_transform_str_preserves_original_name() -> None:
+    # serializing metadata with an unknown transform must not rewrite its name
+    assert str(UnknownTransform("zorder")) == "zorder"
+    assert str(UnknownTransform("bucketv2[4]")) == "bucketv2[4]"
+
+
+def test_parse_transform_unknown_with_known_prefix() -> None:
+    # unknown transforms that share a prefix with known ones must not fail parsing
+    from pyiceberg.transforms import parse_transform
+
+    for name in ("bucketv2[4]", "truncatev2[8]", "bucket", "truncate[x]"):
+        transform = parse_transform(name)
+        assert isinstance(transform, UnknownTransform), name
+        assert str(transform) == name
+
+
+def test_parse_transform_rejects_trailing_text_after_brackets() -> None:
+    # a name that merely starts with a known transform is a different transform, so it has to be
+    # preserved rather than silently rewritten to the known one
+    from pyiceberg.transforms import parse_transform
+
+    for name in ("bucket[4]garbage", "truncate[8]v2"):
+        transform = parse_transform(name)
+        assert isinstance(transform, UnknownTransform), name
+        assert str(transform) == name
+
+
+def test_unknown_transforms_compare_by_name() -> None:
+    # every unknown transform shares the same root value, so equality has to use the preserved name
+    assert UnknownTransform("zorder(x,y)") == UnknownTransform("zorder(x,y)")
+    assert UnknownTransform("zorder(x,y)") != UnknownTransform("bucketv2[4]")
+    assert len({UnknownTransform("zorder(x,y)"), UnknownTransform("bucketv2[4]")}) == 2
+
+
 def test_unknown_transform_repr() -> None:
     assert repr(UnknownTransform("unknown")) == "UnknownTransform(transform='unknown')"
 
