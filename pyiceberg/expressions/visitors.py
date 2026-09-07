@@ -1784,6 +1784,11 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
         if upper_bytes is not None:
             upper = _from_byte_buffer(field.field_type, upper_bytes)
 
+            if self._is_nan(upper):
+                # NaN indicates unreliable bounds.
+                # See the StrictMetricsEvaluator docs for more.
+                return ROWS_MIGHT_NOT_MATCH
+
             literals = {val for val in literals if upper >= val}
 
             if len(literals) == 0:

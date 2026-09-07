@@ -1359,6 +1359,31 @@ def test_strict_not_equal_and_not_in_with_mixed_nans_and_matching_bounds(field_t
 
 
 @pytest.mark.parametrize("field_type", [FloatType(), DoubleType()])
+def test_strict_not_in_with_nan_upper_bound(field_type: PrimitiveType) -> None:
+    schema = Schema(NestedField(1, "x", field_type, required=False))
+    # Column contains {1.0, NaN}: min is 1.0, max is NaN (NaN sorts greatest).
+    # No NaN stats are present, but the row 1.0 is in the literal set, so the
+    # file cannot be proven to fully match NotIn.
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=2,
+        file_size_in_bytes=1,
+        value_counts={1: 2},
+        null_value_counts={1: 0},
+        nan_value_counts={1: 1},
+        lower_bounds={1: to_bytes(field_type, 1.0)},
+        upper_bounds={1: to_bytes(field_type, float("nan"))},
+    )
+
+    should_read = _StrictMetricsEvaluator(schema, NotIn("x", {1.0, 2.0})).eval(data_file)
+    assert should_read == ROWS_MIGHT_NOT_MATCH, (
+        "NaN upper bound makes the bounds unusable: the non-NaN row 1.0 is in the literal set"
+    )
+
+
+@pytest.mark.parametrize("field_type", [FloatType(), DoubleType()])
 def test_strict_not_equal_and_not_in_with_all_nans(field_type: PrimitiveType) -> None:
     schema = Schema(NestedField(1, "x", field_type, required=False))
     data_file = DataFile.from_args(
