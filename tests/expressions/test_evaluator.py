@@ -24,6 +24,8 @@ import pytest
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.expressions import (
+    AlwaysFalse,
+    AlwaysTrue,
     And,
     BooleanExpression,
     EqualTo,
@@ -51,6 +53,7 @@ from pyiceberg.expressions.visitors import (
     ROWS_MUST_MATCH,
     _InclusiveMetricsEvaluator,
     _StrictMetricsEvaluator,
+    expression_evaluator,
 )
 from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema
@@ -1907,3 +1910,30 @@ def test_strict_metrics_eval_bounds_after_promotion(
 
     evaluator = _StrictMetricsEvaluator(schema, op("col", lit))
     assert evaluator.eval(data_file) == expected
+
+
+def test_above_int_bounds_in() -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    above_max = IntegerType.max + 1
+
+    assert In("id", [1, above_max]).bind(schema) == EqualTo("id", 1).bind(schema)
+    assert NotIn("id", [1, above_max]).bind(schema) == NotEqualTo("id", 1).bind(schema)
+    assert In("id", [above_max]).bind(schema) == AlwaysFalse()
+    assert NotIn("id", [above_max]).bind(schema) == AlwaysTrue()
+
+    # The clamped literal used to match the field's maximum
+    assert expression_evaluator(schema, In("id", [1, above_max]), True)(Record(IntegerType.max)) is False
+    assert expression_evaluator(schema, NotIn("id", [1, above_max]), True)(Record(IntegerType.max)) is True
+
+
+def test_below_int_bounds_in() -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    below_min = IntegerType.min - 1
+
+    assert In("id", [1, below_min]).bind(schema) == EqualTo("id", 1).bind(schema)
+    assert NotIn("id", [1, below_min]).bind(schema) == NotEqualTo("id", 1).bind(schema)
+    assert In("id", [below_min]).bind(schema) == AlwaysFalse()
+    assert NotIn("id", [below_min]).bind(schema) == AlwaysTrue()
+
+    assert expression_evaluator(schema, In("id", [1, below_min]), True)(Record(IntegerType.min)) is False
+    assert expression_evaluator(schema, NotIn("id", [1, below_min]), True)(Record(IntegerType.min)) is True
