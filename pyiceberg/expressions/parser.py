@@ -121,6 +121,16 @@ def _(result: ParseResults) -> Literal[bool]:
         return BooleanLiteral(False)
 
 
+# As an operand a bare boolean has to fold to AlwaysTrue/AlwaysFalse. This needs its own
+# copy because `literal` and `literal_set` keep the raw BooleanLiteral for `foo = true`.
+always_boolean = boolean.copy()
+
+
+@always_boolean.add_parse_action
+def _(result: ParseResults) -> BooleanExpression:
+    return AlwaysTrue() if result[0].value else AlwaysFalse()
+
+
 @string.set_parse_action
 def _(result: ParseResults) -> Literal[str]:
     return StringLiteral(result.raw_quoted_string[1:-1].replace("''", "'"))
@@ -265,7 +275,9 @@ def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
         return EqualTo(result.column, StringLiteral(literal_like.value.replace("\\%", "%")))
 
 
-predicate = (between | comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
+predicate = (between | comparison | in_check | null_check | nan_check | starts_check | always_boolean).set_results_name(
+    "predicate"
+)
 
 
 def handle_not(result: ParseResults) -> Not:
