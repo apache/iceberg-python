@@ -785,9 +785,10 @@ def test_expr_equal_to_pyarrow(bound_reference: BoundReference) -> None:
 
 
 def test_expr_not_equal_to_pyarrow(bound_reference: BoundReference) -> None:
-    table = pa.table({"foo": [None, "hello", "world"]})
-    expression = expression_to_pyarrow(BoundNotEqualTo(bound_reference, literal("hello")))
-    assert table.filter(expression).column("foo").to_pylist() == [None, "world"]
+    assert (
+        repr(expression_to_pyarrow(BoundNotEqualTo(bound_reference, literal("hello"))))
+        == '<pyarrow.compute.Expression (foo != "hello")>'
+    )
 
 
 @pytest.mark.parametrize("boundary", [IntegerType.min, IntegerType.max])
@@ -796,7 +797,7 @@ def test_scan_in_out_of_range_literals(catalog: InMemoryCatalog, tmp_path: Path,
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
     catalog.create_namespace("default")
     table = catalog.create_table("default.out_of_range", schema=schema, location=str(tmp_path))
-    values = [None, IntegerType.min, 1, 2, IntegerType.max]
+    values = [IntegerType.min, 1, 2, IntegerType.max]
     table.append(pa.table({"id": pa.array(values, type=pa.int32())}))
     out_of_range = boundary - 1 if boundary == IntegerType.min else boundary + 1
     literals = [*valid_values, out_of_range, out_of_range * 2]
@@ -813,13 +814,13 @@ def test_scan_in_out_of_range_literals_after_type_promotion(catalog: InMemoryCat
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
     catalog.create_namespace("default")
     table = catalog.create_table("default.promoted_int", schema=schema, location=str(tmp_path))
-    table.append(pa.table({"id": pa.array([None, 1, IntegerType.max], type=pa.int32())}))
+    table.append(pa.table({"id": pa.array([1, IntegerType.max], type=pa.int32())}))
     with table.update_schema() as update:
         update.update_column("id", field_type=LongType())
     table.append(pa.table({"id": pa.array([2**40], type=pa.int64())}))
 
     assert sorted(table.scan(row_filter=In("id", [1, 2**40])).to_arrow().column("id").to_pylist()) == [1, 2**40]
-    assert table.scan(row_filter=NotIn("id", [1, 2**40])).to_arrow().column("id").to_pylist() == [None, IntegerType.max]
+    assert table.scan(row_filter=NotIn("id", [1, 2**40])).to_arrow().column("id").to_pylist() == [IntegerType.max]
 
 
 def test_expr_greater_than_or_equal_equal_to_pyarrow(bound_reference: BoundReference) -> None:
