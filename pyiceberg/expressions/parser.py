@@ -126,10 +126,9 @@ def _(result: ParseResults) -> Literal[bool]:
 always_boolean = boolean.copy()
 
 
-@always_boolean.add_parse_action
+@always_boolean.set_parse_action
 def _(result: ParseResults) -> BooleanExpression:
-    return AlwaysTrue() if result[0].value else AlwaysFalse()
-
+    return AlwaysTrue() if strtobool(result[0]) else AlwaysFalse()
 
 @string.set_parse_action
 def _(result: ParseResults) -> Literal[str]:
