@@ -1937,3 +1937,16 @@ def test_below_int_bounds_in() -> None:
 
     assert expression_evaluator(schema, In("id", [1, below_min]), True)(Record(IntegerType.min)) is False
     assert expression_evaluator(schema, NotIn("id", [1, below_min]), True)(Record(IntegerType.min)) is True
+
+
+def test_int_bounds_in_keeps_the_boundary_value() -> None:
+    """A sentinel is equal to the boundary literal it clamps to, so it must not absorb it."""
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    assert In("id", [IntegerType.max, IntegerType.max + 1]).bind(schema) == EqualTo("id", IntegerType.max).bind(schema)
+    assert NotIn("id", [IntegerType.max, IntegerType.max + 1]).bind(schema) == NotEqualTo("id", IntegerType.max).bind(schema)
+    assert In("id", [IntegerType.min, IntegerType.min - 1]).bind(schema) == EqualTo("id", IntegerType.min).bind(schema)
+    assert NotIn("id", [IntegerType.min, IntegerType.min - 1]).bind(schema) == NotEqualTo("id", IntegerType.min).bind(schema)
+
+    assert expression_evaluator(schema, In("id", [IntegerType.max, IntegerType.max + 1]), True)(Record(IntegerType.max)) is True
+    assert expression_evaluator(schema, In("id", [IntegerType.min, IntegerType.min - 1]), True)(Record(IntegerType.min)) is True

@@ -698,12 +698,16 @@ class SetPredicate(UnboundPredicate, ABC):
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
         field_type = bound_term.ref().field.field_type
-        # Literals outside the field's range can never match, so drop them rather
-        # than keep the clamped AboveMax/BelowMin sentinel in the bound set
-        bound_literals = {lit.to(field_type) for lit in self.literals}
-        return self.as_bound(  # type: ignore
-            bound_term, {lit for lit in bound_literals if not isinstance(lit, (AboveMax, BelowMin))}
-        )
+        # Literals outside the field's range can never match, so drop them rather than
+        # keep the clamped AboveMax/BelowMin sentinel in the bound set. Filter while
+        # building the set: a sentinel is equal to the boundary literal it clamps to,
+        # so collecting first would let it absorb a boundary value the user did write.
+        bound_literals = {
+            bound_literal
+            for bound_literal in (lit.to(field_type) for lit in self.literals)
+            if not isinstance(bound_literal, (AboveMax, BelowMin))
+        }
+        return self.as_bound(bound_term, bound_literals)  # type: ignore
 
     def __str__(self) -> str:
         """Return the string representation of the SetPredicate class."""
