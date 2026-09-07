@@ -927,3 +927,53 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+def test_upsert_dictionary_encoded_columns(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_dictionary_encoded_columns"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+        ]
+    )
+    arrow_dict_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.dictionary(pa.int32(), pa.string()), nullable=True),
+        ]
+    )
+
+    # Initial append with plain string
+    initial_df = pa.Table.from_arrays(
+        [pa.array([1, 2], type=pa.int32()), pa.array(["alice", "bob"])],
+        schema=arrow_schema,
+    )
+    tbl.append(initial_df)
+
+    # Upsert with dictionary-encoded column
+    dict_name = pa.DictionaryArray.from_arrays(pa.array([0, 1], type=pa.int32()), pa.array(["alice_updated", "charlie"]))
+    dict_df = pa.Table.from_arrays(
+        [pa.array([1, 3], type=pa.int32()), dict_name],
+        schema=arrow_dict_schema,
+    )
+    result = tbl.upsert(dict_df)
+    assert result.rows_updated == 1
+    assert result.rows_inserted == 1
+
+    # Verify table contents can be read back cleanly as PyArrow table
+    scanned_records = tbl.scan().to_arrow().to_pydict()
+    assert set(zip(scanned_records["id"], scanned_records["name"], strict=True)) == {
+        (1, "alice_updated"),
+        (2, "bob"),
+        (3, "charlie"),
+    }
