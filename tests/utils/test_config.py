@@ -183,3 +183,20 @@ def test_config_lookup_order(
     assert (
         result["catalog"]["default"]["uri"] if result else None  # type: ignore
     ) == expected_result, f"Unexpected configuration result. Expected: {expected_result}, Actual: {result}"
+
+
+@pytest.mark.parametrize("content", ["", "\n", "# only a comment\n"])
+def test_from_configuration_files_without_a_mapping(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory, content: str
+) -> None:
+    """A file that holds no mapping should be treated as absent."""
+    pyiceberg_home = str(tmp_path_factory.mktemp("pyiceberg_home"))
+    empty_dir = str(tmp_path_factory.mktemp("empty"))
+    with open(os.path.join(pyiceberg_home, ".pyiceberg.yaml"), "w", encoding=UTF8) as file:
+        file.write(content)
+
+    monkeypatch.setenv("PYICEBERG_HOME", pyiceberg_home)
+    monkeypatch.setattr(os.path, "expanduser", lambda _: empty_dir)
+    monkeypatch.chdir(empty_dir)
+
+    assert Config()._from_configuration_files() is None
