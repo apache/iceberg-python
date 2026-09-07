@@ -242,9 +242,12 @@ This product includes code from Cython in binary distributions.
 
 * The compiled extension module (pyiceberg.avro.decoder_fast) embeds the
   Cython runtime code that Cython generates into every compiled module.
+  Cython's COPYING.txt states that this generated output is not a derivative
+  work of Cython and carries no additional license restrictions; Cython ships
+  no NOTICE file, so this entry is recorded for completeness only.
 
-Copyright: The Cython Project Developers.
 Home page: https://cython.org/
 License: https://www.apache.org/licenses/LICENSE-2.0
+Notice: https://github.com/cython/cython/blob/master/COPYING.txt
 
 --------------------------------------------------------------------------------
