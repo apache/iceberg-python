@@ -60,6 +60,7 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     GreaterThan,
     Not,
+    NotEqualTo,
     Or,
 )
 from pyiceberg.expressions.literals import literal
@@ -785,8 +786,21 @@ def test_expr_equal_to_pyarrow(bound_reference: BoundReference) -> None:
 def test_expr_not_equal_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(BoundNotEqualTo(bound_reference, literal("hello"))))
-        == '<pyarrow.compute.Expression (foo != "hello")>'
+        == '<pyarrow.compute.Expression (is_null(foo, {nan_is_null=false}) or (foo != "hello"))>'
     )
+
+
+def test_expr_not_equal_to_pyarrow_keeps_nulls(bound_reference: BoundReference) -> None:
+    """A null is not equal to the literal, so it satisfies NotEqualTo, as it does in the other evaluators."""
+    from pyiceberg.expressions.visitors import expression_evaluator
+
+    values = ["hello", "world", None]
+    pushed_down = pa.table({"foo": values}).filter(expression_to_pyarrow(BoundNotEqualTo(bound_reference, literal("hello"))))
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=False))
+    in_memory = expression_evaluator(schema, NotEqualTo("foo", "hello"), True)
+
+    assert pushed_down.column("foo").to_pylist() == ["world", None]
+    assert [value for value in values if in_memory(Record(value))] == ["world", None]
 
 
 def test_expr_greater_than_or_equal_equal_to_pyarrow(bound_reference: BoundReference) -> None:
