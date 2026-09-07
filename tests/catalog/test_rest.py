@@ -65,7 +65,7 @@ from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
-from pyiceberg.typedef import RecursiveDict
+from pyiceberg.typedef import PaginationList, RecursiveDict
 from pyiceberg.types import StringType
 from pyiceberg.utils.config import Config
 from pyiceberg.view import View
@@ -528,6 +528,62 @@ def test_list_tables_paginated_200(rest_mock: Mocker) -> None:
         ("examples", "table3"),
         ("examples", "table4"),
     ]
+
+
+def test_list_tables_returns_pagination_list(rest_mock: Mocker) -> None:
+    """list_tables returns a PaginationList that defers fetching page 2."""
+    namespace = "examples"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table1"},
+                {"namespace": ["examples"], "name": "table2"},
+            ],
+            "next-page-token": "pagetoken",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page — registered but should only be called when iterated past page 1.
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageToken=pagetoken",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table3"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    calls_after_init = rest_mock.call_count  # config endpoint called during __init__
+
+    result = catalog.list_tables(namespace)
+
+    assert isinstance(result, PaginationList)
+
+    # Consuming only the first two items must not trigger the second HTTP request.
+    first_two = []
+    for item in result:
+        first_two.append(item)
+        if len(first_two) == 2:
+            break
+
+    assert first_two == [("examples", "table1"), ("examples", "table2")]
+    # Only the initial list_tables request should have been made beyond __init__.
+    assert rest_mock.call_count == calls_after_init + 1
+
+    # Consuming all items forces the second request.
+    all_tables = list(result)
+    assert all_tables == [
+        ("examples", "table1"),
+        ("examples", "table2"),
+        ("examples", "table3"),
+    ]
+    assert rest_mock.call_count == calls_after_init + 2
 
 
 def test_list_tables_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
