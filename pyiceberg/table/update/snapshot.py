@@ -1293,8 +1293,9 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         """
         refs = self._effective_refs()
 
-        if (to_snapshot_id := refs.get(to_ref)) is None:
+        if (to_snapshot_ref := refs.get(to_ref)) is None:
             raise NoSuchSnapshotRefError(f"Ref does not exist: {to_ref}")
+        to_snapshot_id = to_snapshot_ref.snapshot_id
 
         if from_branch not in refs:
             return self.create_branch(snapshot_id=to_snapshot_id, branch_name=from_branch)
