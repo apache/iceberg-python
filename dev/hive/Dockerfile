@@ -23,7 +23,10 @@ ARG MAVEN_MIRROR=https://repo1.maven.org/maven2
 USER root
 
 # Install curl (separate layer - rarely changes)
-RUN apt-get update -qq && \
+# Debian bullseye (the apache/hive:4.0.0 base) is EOL, so its security repo
+# metadata is no longer refreshed and apt rejects the expired Release file.
+# Skip the freshness check; the signature is still verified.
+RUN apt-get -o Acquire::Check-Valid-Until=false update -qq && \
     apt-get -qq -y install --no-install-recommends curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
