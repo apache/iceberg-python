@@ -840,12 +840,27 @@ def test_new_table_metadata_with_v3_schema() -> None:
         default_sort_order_id=1,
         refs={},
         format_version=3,
+        next_row_id=0,
     )
 
     assert actual.model_dump() == expected.model_dump()
     assert actual.schemas == [expected_schema]
     assert actual.partition_specs == [expected_spec]
     assert actual.sort_orders == [expected_sort_order]
+
+
+def test_new_table_metadata_v3_initializes_next_row_id() -> None:
+    """`next-row-id` is required in V3, so a new table has to start it at 0 rather than leave it unset."""
+    actual = new_table_metadata(
+        schema=Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=False)),
+        partition_spec=PartitionSpec(),
+        sort_order=SortOrder(),
+        location="s3://some_v3_location/",
+        properties={"format-version": "3"},
+    )
+
+    assert actual.next_row_id == 0
+    assert json.loads(actual.model_dump_json())["next-row-id"] == 0
 
 
 @pytest.mark.parametrize(
