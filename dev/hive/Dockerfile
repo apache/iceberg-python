@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM apache/hive:4.0.0
+FROM apache/hive:4.2.1
 
 # Dependency versions - changing these invalidates the JAR download layer
 ARG HADOOP_VERSION=3.3.6
