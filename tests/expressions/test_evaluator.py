@@ -1912,31 +1912,40 @@ def test_strict_metrics_eval_bounds_after_promotion(
     assert evaluator.eval(data_file) == expected
 
 
+def test_bind_preserves_out_of_range_literals() -> None:
+    """Binding keeps the literals the caller wrote, so the bound predicate still round-trips."""
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    literals = [1, IntegerType.max + 1]
+
+    for predicate in [In("id", literals), NotIn("id", literals)]:
+        bound = predicate.bind(schema)
+        assert {lit.value for lit in bound.literals} == set(literals)
+        assert bound.as_unbound(bound.term.ref().field.name, bound.literals) == predicate
+        # Only the values the field can hold reach an evaluator
+        assert bound.value_set == {1}
+
+
 def test_above_int_bounds_in() -> None:
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
     above_max = IntegerType.max + 1
 
-    assert In("id", [1, above_max]).bind(schema) == EqualTo("id", 1).bind(schema)
-    assert NotIn("id", [1, above_max]).bind(schema) == NotEqualTo("id", 1).bind(schema)
-    assert In("id", [above_max]).bind(schema) == AlwaysFalse()
-    assert NotIn("id", [above_max]).bind(schema) == AlwaysTrue()
-
-    # The clamped literal used to match the field's maximum
+    # The out-of-range literal used to be clamped to the maximum and match rows there
     assert expression_evaluator(schema, In("id", [1, above_max]), True)(Record(IntegerType.max)) is False
     assert expression_evaluator(schema, NotIn("id", [1, above_max]), True)(Record(IntegerType.max)) is True
+    assert expression_evaluator(schema, In("id", [1, above_max]), True)(Record(1)) is True
+    assert In("id", [above_max]).bind(schema) == AlwaysFalse()
+    assert NotIn("id", [above_max]).bind(schema) == AlwaysTrue()
 
 
 def test_below_int_bounds_in() -> None:
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
     below_min = IntegerType.min - 1
 
-    assert In("id", [1, below_min]).bind(schema) == EqualTo("id", 1).bind(schema)
-    assert NotIn("id", [1, below_min]).bind(schema) == NotEqualTo("id", 1).bind(schema)
-    assert In("id", [below_min]).bind(schema) == AlwaysFalse()
-    assert NotIn("id", [below_min]).bind(schema) == AlwaysTrue()
-
     assert expression_evaluator(schema, In("id", [1, below_min]), True)(Record(IntegerType.min)) is False
     assert expression_evaluator(schema, NotIn("id", [1, below_min]), True)(Record(IntegerType.min)) is True
+    assert expression_evaluator(schema, In("id", [1, below_min]), True)(Record(1)) is True
+    assert In("id", [below_min]).bind(schema) == AlwaysFalse()
+    assert NotIn("id", [below_min]).bind(schema) == AlwaysTrue()
 
 
 @pytest.mark.parametrize(
@@ -1952,8 +1961,6 @@ def test_int_bounds_in_all_literals_out_of_range(literals: list[int]) -> None:
     in_expr = In("id", literals)
     not_in_expr = NotIn("id", literals)
 
-    assert in_expr.bind(schema) == AlwaysFalse()
-    assert not_in_expr.bind(schema) == AlwaysTrue()
     for value in [None, IntegerType.min, 0, IntegerType.max]:
         assert expression_evaluator(schema, in_expr, True)(Record(value)) is False
         assert expression_evaluator(schema, not_in_expr, True)(Record(value)) is True
@@ -1965,8 +1972,6 @@ def test_int_bounds_in_keeps_multiple_literals() -> None:
     in_expr = In("id", literals)
     not_in_expr = NotIn("id", literals)
 
-    assert in_expr.bind(schema) == In("id", [1, 2]).bind(schema)
-    assert not_in_expr.bind(schema) == NotIn("id", [1, 2]).bind(schema)
     values = [None, 1, 2, 3, IntegerType.min, IntegerType.max]
     eval_in = expression_evaluator(schema, in_expr, True)
     eval_not_in = expression_evaluator(schema, not_in_expr, True)
@@ -1988,13 +1993,13 @@ def test_int_bounds_in_metrics(schema_data_file: Schema, boundary: int, out_of_r
 
 
 def test_int_bounds_in_keeps_the_boundary_value() -> None:
-    """A sentinel is equal to the boundary literal it clamps to, so it must not absorb it."""
+    """A converted out-of-range literal clamps to the boundary, so it must not shadow it."""
     schema = Schema(NestedField(1, "id", IntegerType(), required=False))
 
-    assert In("id", [IntegerType.max, IntegerType.max + 1]).bind(schema) == EqualTo("id", IntegerType.max).bind(schema)
-    assert NotIn("id", [IntegerType.max, IntegerType.max + 1]).bind(schema) == NotEqualTo("id", IntegerType.max).bind(schema)
-    assert In("id", [IntegerType.min, IntegerType.min - 1]).bind(schema) == EqualTo("id", IntegerType.min).bind(schema)
-    assert NotIn("id", [IntegerType.min, IntegerType.min - 1]).bind(schema) == NotEqualTo("id", IntegerType.min).bind(schema)
-
-    assert expression_evaluator(schema, In("id", [IntegerType.max, IntegerType.max + 1]), True)(Record(IntegerType.max)) is True
-    assert expression_evaluator(schema, In("id", [IntegerType.min, IntegerType.min - 1]), True)(Record(IntegerType.min)) is True
+    for boundary, out_of_range in [(IntegerType.max, IntegerType.max + 1), (IntegerType.min, IntegerType.min - 1)]:
+        eval_in = expression_evaluator(schema, In("id", [boundary, out_of_range]), True)
+        eval_not_in = expression_evaluator(schema, NotIn("id", [boundary, out_of_range]), True)
+        assert eval_in(Record(boundary)) is True
+        assert eval_not_in(Record(boundary)) is False
+        assert eval_in(Record(0)) is False
+        assert eval_not_in(Record(0)) is True
