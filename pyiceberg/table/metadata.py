@@ -721,6 +721,7 @@ def new_table_metadata(
             properties=properties,
             last_partition_id=fresh_partition_spec.last_assigned_field_id,
             table_uuid=table_uuid,
+            next_row_id=INITIAL_ROW_ID,
         )
     else:
         raise ValidationError(f"Unknown format version: {format_version}")
