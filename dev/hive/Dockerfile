@@ -15,28 +15,14 @@
 
 FROM apache/hive:4.2.1
 
-# Dependency versions - changing these invalidates the JAR download layer
-ARG HADOOP_VERSION=3.3.6
-ARG AWS_SDK_BUNDLE=1.12.753
-ARG MAVEN_MIRROR=https://repo1.maven.org/maven2
-
 USER root
 
-# Install curl (separate layer - rarely changes)
-RUN apt-get update -qq && \
-    apt-get -qq -y install --no-install-recommends curl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Link the hadoop-aws and AWS SDK jars that the image ships into the metastore classpath
+RUN ln -s /opt/hadoop/share/hadoop/tools/lib/hadoop-aws-*.jar /opt/hive/lib/ && \
+    ln -s /opt/hadoop/share/hadoop/tools/lib/bundle-*.jar /opt/hive/lib/
 
-# Download JARs with retry logic (slow layer - only changes when versions change)
-RUN curl -fsSL --retry 3 --retry-delay 5 \
-        -o /opt/hive/lib/hadoop-aws-${HADOOP_VERSION}.jar \
-        "${MAVEN_MIRROR}/org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" && \
-    curl -fsSL --retry 3 --retry-delay 5 \
-        -o /opt/hive/lib/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar \
-        "${MAVEN_MIRROR}/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE}.jar"
-
-# Copy configuration last (changes more frequently than JARs)
-COPY core-site.xml /opt/hadoop/etc/hadoop/core-site.xml
+# The entrypoint links this directory into the Hive config directory, over its own core-site.xml
+ENV HIVE_CUSTOM_CONF_DIR=/opt/hive/custom-conf
+COPY core-site.xml ${HIVE_CUSTOM_CONF_DIR}/core-site.xml
 
 USER hive
