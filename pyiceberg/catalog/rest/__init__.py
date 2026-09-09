@@ -19,12 +19,11 @@ from __future__ import annotations
 import logging
 import time
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
-    TypeVar,
 )
 from urllib.parse import quote, unquote
 
@@ -98,7 +97,13 @@ from pyiceberg.table.update import (
 from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
-from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool, property_as_int
+from pyiceberg.utils.properties import (
+    get_first_property_value,
+    get_header_properties,
+    property_as_bool,
+    property_as_float,
+    property_as_int,
+)
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
@@ -278,7 +283,8 @@ SIGV4_REGION = "rest.signing-region"
 SIGV4_SERVICE = "rest.signing-name"
 SIGV4_MAX_RETRIES = "rest.sigv4.max-retries"
 SIGV4_MAX_RETRIES_DEFAULT = 10
-REST_CLIENT_REQUEST_TIMEOUT = "rest.client.request-timeout"
+REST_CLIENT_CONNECTION_TIMEOUT_MS = "rest.client.connection-timeout-ms"
+REST_CLIENT_SOCKET_TIMEOUT_MS = "rest.client.socket-timeout-ms"
 REST_CLIENT_MAX_RETRIES = "rest.client.max-retries"
 REST_CLIENT_RETRY_BACKOFF_FACTOR = "rest.client.retry-backoff-factor"
 # Hard-coded internally so users cannot misconfigure the retry policy
@@ -453,29 +459,6 @@ class ListViewsResponse(IcebergBaseModel):
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
-_T = TypeVar("_T", int, float)
-
-
-def _parse_connection_property(
-    properties: Properties,
-    property_name: str,
-    converter: Callable[[Any], _T],
-    type_description: str,
-    is_invalid: Callable[[_T], bool],
-    range_description: str,
-) -> _T | None:
-    raw_value = properties.get(property_name)
-    if raw_value is None:
-        return None
-    try:
-        value = converter(raw_value)
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"`{property_name}` must be {type_description}, got: {raw_value!r}") from e
-    if is_invalid(value):
-        raise ValueError(f"`{property_name}` must be {range_description}, got: {value}")
-    return value
-
-
 class _RetryTimeoutHTTPAdapter(HTTPAdapter):
     """HTTPAdapter that applies a default per-request timeout.
 
@@ -508,37 +491,30 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
     Returns None when no connection properties are supplied, leaving the default
     Session behavior unchanged. Raises ValueError on invalid input.
     """
-    if not any(
-        property_name in properties
-        for property_name in (REST_CLIENT_REQUEST_TIMEOUT, REST_CLIENT_MAX_RETRIES, REST_CLIENT_RETRY_BACKOFF_FACTOR)
-    ):
+    connection_timeout_ms = property_as_int(properties, REST_CLIENT_CONNECTION_TIMEOUT_MS)
+    if connection_timeout_ms is not None and connection_timeout_ms <= 0:
+        raise ValueError(f"`{REST_CLIENT_CONNECTION_TIMEOUT_MS}` must be a positive number, got: {connection_timeout_ms}")
+
+    socket_timeout_ms = property_as_int(properties, REST_CLIENT_SOCKET_TIMEOUT_MS)
+    if socket_timeout_ms is not None and socket_timeout_ms <= 0:
+        raise ValueError(f"`{REST_CLIENT_SOCKET_TIMEOUT_MS}` must be a positive number, got: {socket_timeout_ms}")
+
+    retries = property_as_int(properties, REST_CLIENT_MAX_RETRIES)
+    if retries is not None and retries < 0:
+        raise ValueError(f"`{REST_CLIENT_MAX_RETRIES}` must be non-negative, got: {retries}")
+
+    backoff_factor = property_as_float(properties, REST_CLIENT_RETRY_BACKOFF_FACTOR)
+    if backoff_factor is not None and backoff_factor < 0:
+        raise ValueError(f"`{REST_CLIENT_RETRY_BACKOFF_FACTOR}` must be non-negative, got: {backoff_factor}")
+
+    if all(value is None for value in (connection_timeout_ms, socket_timeout_ms, retries, backoff_factor)):
         return None
 
-    timeout = _parse_connection_property(
-        properties,
-        REST_CLIENT_REQUEST_TIMEOUT,
-        float,
-        "a number",
-        lambda value: value <= 0,
-        "a positive number",
-    )
-
-    retries = _parse_connection_property(
-        properties,
-        REST_CLIENT_MAX_RETRIES,
-        int,
-        "an integer",
-        lambda value: value < 0,
-        "non-negative",
-    )
-    backoff_factor = _parse_connection_property(
-        properties,
-        REST_CLIENT_RETRY_BACKOFF_FACTOR,
-        float,
-        "a number",
-        lambda value: value < 0,
-        "non-negative",
-    )
+    # requests uses a single timeout and cannot split connect vs socket, so follow the Java client
+    # and sum the two (milliseconds), flooring to whole seconds.
+    timeout: float | None = None
+    if connection_timeout_ms is not None or socket_timeout_ms is not None:
+        timeout = ((connection_timeout_ms or 0) + (socket_timeout_ms or 0)) // 1000
 
     return _RetryTimeoutHTTPAdapter(
         timeout=timeout,
