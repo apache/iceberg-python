@@ -68,7 +68,18 @@ from typing_extensions import override
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
-from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
+from pyiceberg.expressions import (
+    AlwaysFalse,
+    AlwaysTrue,
+    BooleanExpression,
+    BoundIsNaN,
+    BoundIsNull,
+    BoundTerm,
+    EqualTo,
+    In,
+    Not,
+    Or,
+)
 from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
@@ -3145,6 +3156,25 @@ def upsert_unique_keys(df: pa.Table, join_cols: list[str]) -> pa.Table:
     Returns a table containing one row per distinct combination of join_cols.
     """
     return df.select(join_cols).group_by(join_cols).aggregate([])
+
+
+def upsert_create_match_filter(df: pa.Table, join_cols: list[str]) -> BooleanExpression:
+    """Build an Iceberg filter expression matching the unique keys in df."""
+    unique_keys = upsert_unique_keys(df, join_cols)
+
+    if len(join_cols) == 1:
+        return In(join_cols[0], unique_keys[0].to_pylist())
+    else:
+        filters = [
+            functools.reduce(operator.and_, [EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()
+        ]
+
+        if len(filters) == 0:
+            return AlwaysFalse()
+        elif len(filters) == 1:
+            return filters[0]
+        else:
+            return Or(*filters)
 
 
 def upsert_has_duplicate_rows(df: pa.Table, join_cols: list[str]) -> bool:
