@@ -2373,10 +2373,10 @@ def test_nanosecond_support_on_catalog(
 
     _create_table(session_catalog, identifier, {"format-version": "3"}, schema=arrow_table_schema_with_all_timestamp_precisions)
 
-    with pytest.raises(NotImplementedError, match="Writing V3 is not yet supported"):
-        catalog.create_table(
-            "ns.table1", schema=arrow_table_schema_with_all_timestamp_precisions, properties={"format-version": "3"}
-        )
+    table_v3 = catalog.create_table(
+        "ns.table1", schema=arrow_table_schema_with_all_timestamp_precisions, properties={"format-version": "3"}
+    )
+    assert table_v3.metadata.format_version == 3
 
     with pytest.raises(
         UnsupportedPyArrowTypeException, match=re.escape("Column 'timestamp_ns' has an unsupported type: timestamp[ns]")
@@ -2384,6 +2384,28 @@ def test_nanosecond_support_on_catalog(
         _create_table(
             session_catalog, identifier, {"format-version": "2"}, schema=arrow_table_schema_with_all_timestamp_precisions
         )
+
+
+@pytest.mark.integration
+def test_spark_reads_v3_table_metadata_written_by_pyiceberg(spark: SparkSession, session_catalog_hive: Catalog) -> None:
+    """Spark should be able to load a V3 table whose metadata file PyIceberg wrote.
+
+    The Hive catalog is used rather than REST because REST has the server build the metadata,
+    which would leave PyIceberg's serialization untested. Rows cannot be written to a V3 table
+    yet (`_manifest_writer` rejects version 3), so this covers the metadata itself.
+    """
+    identifier = "default.test_spark_reads_v3_table_metadata_written_by_pyiceberg"
+    tbl = _create_table(session_catalog_hive, identifier, {"format-version": "3"})
+
+    assert tbl.metadata.format_version == 3
+    assert tbl.metadata.next_row_id == 0
+
+    properties = {row.key: row.value for row in spark.sql(f"SHOW TBLPROPERTIES hive.{identifier}").collect()}
+    assert properties["format-version"] == "3"
+
+    df = spark.table(f"hive.{identifier}")
+    assert df.count() == 0
+    assert df.columns == [field.name for field in tbl.schema().fields]
 
 
 @pytest.mark.integration
