@@ -155,7 +155,7 @@ For Python, `pytest` is used a testing framework in combination with `coverage` 
 make test
 ```
 
-By default, S3 and ADLS tests are ignored because that require minio and azurite to be running.
+By default, S3 and ADLS tests are ignored because that require RustFS and azurite to be running.
 To run the S3 suite:
 
 ```bash
@@ -257,7 +257,7 @@ This command spins up the full integration test infrastructure via Docker Compos
 - **Spark** (with Spark Connect)
 - **Iceberg REST Catalog** (using the [`apache/iceberg-rest-fixture`](https://hub.docker.com/r/apache/iceberg-rest-fixture) image)
 - **Hive Metastore**
-- **S3-compatible object storage** (Minio)
+- **S3-compatible object storage** (RustFS)
 
 **Spark Example Notebook** (`notebooks/spark_integration_example.ipynb`) is based on the [Spark Getting Started](https://iceberg.apache.org/docs/nightly/spark-getting-started/) guide. This notebook demonstrates how to work with PyIceberg alongside Spark, leveraging the Docker-based testing setup for a complete local development environment.
 

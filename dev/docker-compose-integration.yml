@@ -28,7 +28,7 @@ services:
     depends_on:
       - rest
       - hive
-      - minio
+      - rustfs
     ports:
       - 15002:15002 # Spark Connect
       - 4040:4040 # Spark UI
@@ -39,7 +39,7 @@ services:
     links:
       - rest:rest
       - hive:hive
-      - minio:minio
+      - rustfs:rustfs
     healthcheck:
       test: ["CMD", "sh", "-c", "netstat -an | grep 15002 | grep LISTEN"]
       interval: 30s
@@ -59,41 +59,51 @@ services:
       - AWS_REGION=us-east-1
       - CATALOG_WAREHOUSE=s3://warehouse/
       - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
-      - CATALOG_S3_ENDPOINT=http://minio:9000
+      - CATALOG_S3_ENDPOINT=http://rustfs:9000
       - CATALOG_JDBC_STRICT__MODE=true
-  minio:
-    image: minio/minio
-    container_name: pyiceberg-minio
+  rustfs:
+    image: rustfs/rustfs:1.0.0-rc.5
+    container_name: pyiceberg-rustfs
     networks:
       iceberg_net:
         aliases:
-          - warehouse.minio
+          - warehouse.rustfs
     ports:
       - 9001:9001
       - 9000:9000
     environment:
-      - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=password
-      - MINIO_DOMAIN=minio
-    command: ["server", "/data", "--console-address", ":9001"]
-  mc:
-    image: minio/mc
-    container_name: pyiceberg-mc
+      - RUSTFS_ACCESS_KEY=admin
+      - RUSTFS_SECRET_KEY=password
+      - RUSTFS_VOLUMES=/data
+      - RUSTFS_ADDRESS=:9000
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_CONSOLE_ADDRESS=:9001
+      # Resolves virtual-hosted-style `warehouse.rustfs` to the warehouse bucket.
+      # The port is required until rustfs/rustfs#7051 ships.
+      - RUSTFS_SERVER_DOMAINS=rustfs:9000
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+  aws-cli:
+    image: amazon/aws-cli:2.36.40
+    container_name: pyiceberg-aws-cli
     networks:
       iceberg_net:
     depends_on:
-      - minio
+      rustfs:
+        condition: service_healthy
     environment:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
-    entrypoint: >
-      /bin/sh -c "
-      until (/usr/bin/mc alias set minio http://minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
-      /usr/bin/mc mb minio/warehouse;
-      /usr/bin/mc policy set public minio/warehouse;
-      tail -f /dev/null
-      "
+      - AWS_ENDPOINT_URL=http://rustfs:9000
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - "aws s3 mb s3://warehouse"
   hive:
     image: pyiceberg-hive:latest
     build:
