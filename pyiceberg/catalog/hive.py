@@ -507,8 +507,8 @@ class HiveCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
-        # Iceberg commits do not open a metastore transaction, so the lock is marked NO_TXN. Setting it explicitly
-        # also matters for Hive 2.1, which rejects a lock component left at the default UNSET operation type.
+        # Iceberg commits are not executed within a Hive transaction, so the lock component uses operationType=NO_TXN.
+        # Setting it explicitly also matters for Hive 2.1, which rejects a lock component left at the default UNSET operation type.
         lock_component: LockComponent = LockComponent(
             level=LockLevel.TABLE,
             type=LockType.EXCLUSIVE,
