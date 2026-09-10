@@ -361,6 +361,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                 (),
             )
         else:
+            existing_ref = self._transaction.table_metadata.refs.get(self._target_branch)
             return (
                 (
                     add_snapshot_update,
@@ -369,6 +370,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
                         parent_snapshot_id=self._parent_snapshot_id,
                         ref_name=self._target_branch,
                         type=SnapshotRefType.BRANCH,
+                        max_ref_age_ms=existing_ref.max_ref_age_ms if existing_ref else None,
+                        max_snapshot_age_ms=existing_ref.max_snapshot_age_ms if existing_ref else None,
+                        min_snapshots_to_keep=existing_ref.min_snapshots_to_keep if existing_ref else None,
                     ),
                 ),
                 (
@@ -1170,10 +1174,14 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         if self._transaction.table_metadata.snapshot_by_id(target_snapshot_id) is None:
             raise ValueError(f"Cannot set current snapshot to unknown snapshot id: {target_snapshot_id}")
 
+        existing_ref = self._transaction.table_metadata.refs.get(MAIN_BRANCH)
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=target_snapshot_id,
             ref_name=MAIN_BRANCH,
             type=SnapshotRefType.BRANCH,
+            max_ref_age_ms=existing_ref.max_ref_age_ms if existing_ref else None,
+            max_snapshot_age_ms=existing_ref.max_snapshot_age_ms if existing_ref else None,
+            min_snapshots_to_keep=existing_ref.min_snapshots_to_keep if existing_ref else None,
         )
         self._transaction._stage(update, requirement)
         return self
