@@ -548,6 +548,10 @@ class DataFile(Record):
     def first_row_id(self) -> int | None:
         return self._data[16]
 
+    @first_row_id.setter
+    def first_row_id(self, value: int | None) -> None:
+        self._data[16] = value
+
     @property
     def referenced_data_file(self) -> str | None:
         return self._data[17]
@@ -916,11 +920,18 @@ class ManifestFile(Record):
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
             result = []
+            next_row_id = self.first_row_id
 
             for entry in reader:
                 if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
                     continue
                 _inherit_from_manifest(entry, self)
+
+                # Data files without a first_row_id inherit one from the manifest, assigned in file order
+                data_file = entry.data_file
+                if next_row_id is not None and entry.status != ManifestEntryStatus.DELETED and data_file.first_row_id is None:
+                    data_file.first_row_id = next_row_id
+                    next_row_id += data_file.record_count
 
                 if entry_filter is None or entry_filter(entry):
                     result.append(entry)
