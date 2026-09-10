@@ -1483,6 +1483,39 @@ Remove an existing branch:
 table.manage_snapshots().remove_branch("dev").commit()
 ```
 
+### Write-Audit-Publish
+
+Stage a write on a branch, validate it, then publish it to the table with
+`cherry_pick_snapshot`. The staged data is invisible to readers of the table until it is
+published.
+
+```python
+# Write: stage the changes on an audit branch
+table.manage_snapshots().create_branch(
+    snapshot_id=table.metadata.current_snapshot_id,
+    branch_name="audit-2024-01-15",
+).commit()
+
+table = catalog.load_table("db.table")
+table.append(new_rows, branch="audit-2024-01-15", snapshot_properties={"wap.id": "etl-2024-01-15"})
+
+# Audit: validate the staged data without affecting readers of the table
+table = catalog.load_table("db.table")
+staged = table.metadata.refs["audit-2024-01-15"].snapshot_id
+assert len(table.scan(snapshot_id=staged).to_arrow()) > 0
+
+# Publish: replay the staged changes onto the current table state
+table.manage_snapshots().cherry_pick_snapshot(staged).commit()
+```
+
+The published snapshot records `source-snapshot-id`, and `published-wap-id` when the staged
+snapshot carried a `wap.id`. A given `wap.id` can only be published once.
+
+Append snapshots are always replayed, so the wap trail is recorded even when the table has not
+changed since the branch was cut. A snapshot with any other operation is fast-forwarded to when
+its parent is already the current snapshot, and raises otherwise. Picking a snapshot that is
+already an ancestor of the current state does nothing.
+
 ## Table Maintenance
 
 PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.

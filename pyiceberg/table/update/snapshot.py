@@ -86,6 +86,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Snapshot summary properties for Write-Audit-Publish, mirroring Java's SnapshotSummary:
+# https://github.com/apache/iceberg/blob/0d60b2bb8780d781f4ceb69032418d222b649ae5/core/src/main/java/org/apache/iceberg/SnapshotSummary.java#L60-L62
+_STAGED_WAP_ID_PROP = "wap.id"
+_PUBLISHED_WAP_ID_PROP = "published-wap-id"
+_SOURCE_SNAPSHOT_ID_PROP = "source-snapshot-id"
+
 
 def _new_manifest_file_name(num: int, commit_uuid: uuid.UUID) -> str:
     return f"{commit_uuid}-m{num}.avro"
@@ -1177,6 +1183,87 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         )
         self._transaction._stage(update, requirement)
         return self
+
+    def cherry_pick_snapshot(self, snapshot_id: int) -> ManageSnapshots:
+        """Apply the changes in a snapshot to the current table state.
+
+        Creates a new snapshot on top of the current one carrying the data files the picked
+        snapshot added, which is how a Write-Audit-Publish staged write is published. The picked
+        snapshot itself is left in place.
+
+        Append snapshots are always replayed, matching Java's ``CherryPickOperation``. A snapshot
+        with another operation is fast-forwarded to when its parent is already the current
+        snapshot, and rejected otherwise. Picking a snapshot that is already an ancestor of the
+        current state does nothing.
+
+        A snapshot staged with a ``wap.id`` can only be published once. The new snapshot records
+        ``source-snapshot-id``, and ``published-wap-id`` when the picked snapshot carried one.
+
+        Args:
+            snapshot_id: The ID of the snapshot to cherry-pick.
+
+        Returns:
+            This for method chaining.
+
+        Raises:
+            ValueError: If the snapshot does not exist, its ``wap.id`` was already published, or
+                its operation cannot be cherry-picked.
+        """
+        self._commit_if_ref_updates_exist()
+
+        metadata = self._transaction.table_metadata
+        picked = metadata.snapshot_by_id(snapshot_id)
+        if picked is None:
+            raise ValueError(f"Cannot cherry-pick unknown snapshot id: {snapshot_id}")
+
+        if self._is_current_ancestor(snapshot_id):
+            return self
+
+        wap_id = self._validate_wap_publish(picked)
+        operation = picked.summary.operation if picked.summary else None
+
+        if operation == Operation.APPEND:
+            snapshot_properties = {_SOURCE_SNAPSHOT_ID_PROP: str(snapshot_id)}
+            if wap_id is not None:
+                snapshot_properties[_PUBLISHED_WAP_ID_PROP] = wap_id
+
+            with self._transaction.update_snapshot(snapshot_properties=snapshot_properties).fast_append() as append:
+                for data_file in self._added_data_files(picked):
+                    append.append_data_file(data_file)
+            return self
+
+        if picked.parent_snapshot_id == metadata.current_snapshot_id:
+            return self.set_current_snapshot(snapshot_id=snapshot_id)
+
+        raise ValueError(
+            f"Cannot cherry-pick snapshot {snapshot_id}: not append, dynamic overwrite, or fast-forward "
+            f"(operation: {operation}). Only append snapshots can be replayed."
+        )
+
+    def _added_data_files(self, snapshot: Snapshot) -> list[DataFile]:
+        """Return the data files the given snapshot added, excluding entries carried over from its ancestors."""
+        io = self._transaction._table.io
+        return [
+            entry.data_file
+            for manifest in snapshot.manifests(io)
+            if manifest.added_snapshot_id == snapshot.snapshot_id
+            for entry in manifest.fetch_manifest_entry(io, discard_deleted=True)
+            if entry.status == ManifestEntryStatus.ADDED and entry.snapshot_id == snapshot.snapshot_id
+        ]
+
+    def _validate_wap_publish(self, picked: Snapshot) -> str | None:
+        """Return the picked snapshot's staged wap id, rejecting one that an ancestor already published."""
+        wap_id = picked.summary.additional_properties.get(_STAGED_WAP_ID_PROP) if picked.summary else None
+        if not wap_id:
+            return None
+
+        metadata = self._transaction.table_metadata
+        for ancestor in ancestors_of(metadata.current_snapshot(), metadata):
+            props = ancestor.summary.additional_properties if ancestor.summary else {}
+            if wap_id in (props.get(_STAGED_WAP_ID_PROP), props.get(_PUBLISHED_WAP_ID_PROP)):
+                raise ValueError(f"Duplicate request to cherry pick wap id that was published already: {wap_id}")
+
+        return wap_id
 
     def rollback_to_snapshot(self, snapshot_id: int) -> ManageSnapshots:
         """Rollback the table to the given snapshot id.
