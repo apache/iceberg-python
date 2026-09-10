@@ -384,7 +384,7 @@ class HiveCatalog(MetastoreCatalog):
             raise TableAlreadyExistsError(f"Table {hive_table.dbName}.{hive_table.tableName} already exists") from e
 
     def _fetch_hive_table(self, open_client: Client, database_name: str, table_name: str) -> HiveTable:
-        # Hive 4.0.1 removed get_table, and Hive 2 does not have get_table_req
+        # Hive 4.0.1 removed get_table, and Hive 2.2 and older do not have get_table_req
         if self._hive2_compatible:
             return open_client.get_table(dbname=database_name, tbl_name=table_name)
         return open_client.get_table_req(GetTableRequest(dbName=database_name, tblName=table_name)).table
