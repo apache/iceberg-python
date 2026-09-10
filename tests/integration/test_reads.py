@@ -1255,6 +1255,35 @@ def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_read_first_row_ids_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
+    """Data files read by PyIceberg get the same first row IDs that Spark reports through `_row_id`."""
+    identifier = "default.test_read_first_row_ids_written_by_spark"
+    spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+    spark.sql(f"CREATE TABLE {identifier} (id int) USING ICEBERG TBLPROPERTIES ('format-version'='3')")
+    spark.sql(f"INSERT INTO {identifier} VALUES (1), (2), (3)")
+    spark.sql(f"INSERT INTO {identifier} VALUES (4), (5)")
+    # Rewriting manifests stores explicit first row IDs on the existing data files
+    spark.sql(f"CALL rest.system.rewrite_manifests('{identifier}')")
+    spark.sql(f"INSERT INTO {identifier} VALUES (6), (7)")
+
+    expected = {
+        row._file: row.first_row_id
+        for row in spark.sql(f"SELECT _file, MIN(_row_id) AS first_row_id FROM {identifier} GROUP BY _file").collect()
+    }
+
+    table = catalog.load_table(identifier)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    actual = {
+        entry.data_file.file_path: entry.data_file.first_row_id
+        for manifest in snapshot.manifests(table.io)
+        for entry in manifest.fetch_manifest_entry(table.io)
+    }
+    assert actual == expected
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_filter_after_arrow_scan(catalog: Catalog) -> None:
     identifier = "test_partitioned_by_hours"

@@ -228,6 +228,63 @@ def test_fetch_manifest_entry_with_filter(generated_manifest_entry_file: str) ->
     assert len(no_match) == 0
 
 
+def test_fetch_manifest_entry_inherits_first_row_id(tmp_path: Path) -> None:
+    """Data files without a first_row_id inherit one from the manifest in file order, skipping deleted entries."""
+    io = PyArrowFileIO()
+    manifest_path = str(tmp_path / "manifest.avro")
+
+    def entry(status: ManifestEntryStatus, record_count: int, first_row_id: int | None = None) -> ManifestEntry:
+        return ManifestEntry.from_args(
+            _table_format_version=3,
+            status=status,
+            snapshot_id=25,
+            sequence_number=1,
+            file_sequence_number=1,
+            data_file=DataFile.from_args(
+                _table_format_version=3,
+                content=DataFileContent.DATA,
+                file_path=f"s3://bucket/data-{record_count}.parquet",
+                file_format=FileFormat.PARQUET,
+                partition=Record(),
+                record_count=record_count,
+                file_size_in_bytes=1024,
+                first_row_id=first_row_id,
+            ),
+        )
+
+    with AvroOutputFile[ManifestEntry](
+        output_file=io.new_output(manifest_path),
+        file_schema=MANIFEST_ENTRY_SCHEMAS[3],
+        record_schema=MANIFEST_ENTRY_SCHEMAS[3],
+        schema_name="manifest_entry",
+        metadata={"format-version": "3"},
+    ) as writer:
+        writer.write_block(
+            [
+                entry(ManifestEntryStatus.ADDED, 10),
+                entry(ManifestEntryStatus.EXISTING, 5, first_row_id=500),
+                entry(ManifestEntryStatus.DELETED, 7),
+                entry(ManifestEntryStatus.ADDED, 3),
+            ]
+        )
+
+    def first_row_ids(manifest_first_row_id: int | None, discard_deleted: bool) -> list[int | None]:
+        manifest = ManifestFile.from_args(
+            manifest_path=manifest_path,
+            manifest_length=0,
+            partition_spec_id=0,
+            added_snapshot_id=25,
+            sequence_number=1,
+            min_sequence_number=1,
+            first_row_id=manifest_first_row_id,
+        )
+        return [e.data_file.first_row_id for e in manifest.fetch_manifest_entry(io, discard_deleted=discard_deleted)]
+
+    assert first_row_ids(None, discard_deleted=False) == [None, 500, None, None]
+    assert first_row_ids(1000, discard_deleted=False) == [1000, 500, None, 1010]
+    assert first_row_ids(1000, discard_deleted=True) == [1000, 500, 1010]
+
+
 def test_read_manifest_entry_v3_fields(tmp_path: Path) -> None:
     io = PyArrowFileIO()
 
