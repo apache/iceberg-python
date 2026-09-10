@@ -30,6 +30,7 @@ from hive_metastore.ThriftHiveMetastore import Client
 from hive_metastore.ttypes import (
     AlreadyExistsException,
     CheckLockRequest,
+    DataOperationType,
     EnvironmentContext,
     FieldSchema,
     GetTableRequest,
@@ -506,8 +507,15 @@ class HiveCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
+        # Iceberg commits do not open a metastore transaction, so the lock is marked NO_TXN. Setting it explicitly
+        # also matters for Hive 2.1, which rejects a lock component left at the default UNSET operation type.
         lock_component: LockComponent = LockComponent(
-            level=LockLevel.TABLE, type=LockType.EXCLUSIVE, dbname=database_name, tablename=table_name, isTransactional=True
+            level=LockLevel.TABLE,
+            type=LockType.EXCLUSIVE,
+            dbname=database_name,
+            tablename=table_name,
+            operationType=DataOperationType.NO_TXN,
+            isTransactional=True,
         )
 
         lock_request: LockRequest = LockRequest(component=[lock_component], user=getpass.getuser(), hostname=socket.gethostname())
