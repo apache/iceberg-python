@@ -746,12 +746,12 @@ catalog:
 
 | Key                          | Example | Description                          |
 |------------------------------| ------- | ------------------------------------ |
-| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode    |
+| hive.hive2-compatible        | true    | Set to `true` when using a Hive 2.x metastore |
 | hive.kerberos-authentication | true    | Using authentication via Kerberos    |
 | hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
 | ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
 
-When using Hive 2.x, make sure to set the compatibility flag:
+Hive 3 and newer need no extra configuration. When using a Hive 2.x metastore, set the compatibility flag:
 
 ```yaml
 catalog:
