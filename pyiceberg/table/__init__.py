@@ -892,8 +892,12 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import expression_to_pyarrow
-        from pyiceberg.table import upsert_util
+        from pyiceberg.io.pyarrow import (
+            expression_to_pyarrow,
+            upsert_create_match_filter,
+            upsert_get_rows_to_update,
+            upsert_has_duplicate_rows,
+        )
 
         if join_cols is None:
             join_cols = []
@@ -910,7 +914,7 @@ class Transaction:
         if not when_matched_update_all and not when_not_matched_insert_all:
             raise ValueError("no upsert options selected...exiting")
 
-        if upsert_util.has_duplicate_rows(df, join_cols):
+        if upsert_has_duplicate_rows(df, join_cols):
             raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
 
         from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
@@ -924,7 +928,7 @@ class Transaction:
         )
 
         # get list of rows that exist so we don't have to load the entire target table
-        matched_predicate = upsert_util.create_match_filter(df, join_cols)
+        matched_predicate = upsert_create_match_filter(df, join_cols)
 
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
 
@@ -952,17 +956,17 @@ class Transaction:
                 # values have actually changed. We don't want to do just a blanket overwrite for matched
                 # rows if the actual non-key column data hasn't changed.
                 # this extra step avoids unnecessary IO and writes
-                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
+                rows_to_update = upsert_get_rows_to_update(df, rows, join_cols)
 
                 if len(rows_to_update) > 0:
                     # build the match predicate filter
-                    overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
+                    overwrite_mask_predicate = upsert_create_match_filter(rows_to_update, join_cols)
 
                     batches_to_overwrite.append(rows_to_update)
                     overwrite_predicates.append(overwrite_mask_predicate)
 
             if when_not_matched_insert_all:
-                expr_match = upsert_util.create_match_filter(rows, join_cols)
+                expr_match = upsert_create_match_filter(rows, join_cols)
                 expr_match_bound = bind(self.table_metadata.schema(), expr_match, case_sensitive=case_sensitive)
                 expr_match_arrow = expression_to_pyarrow(expr_match_bound)
 
@@ -2663,8 +2667,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:
