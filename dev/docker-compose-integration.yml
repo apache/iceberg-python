@@ -28,7 +28,7 @@ services:
     depends_on:
       - rest
       - hive
-      - rustfs
+      - object-store
     ports:
       - 15002:15002 # Spark Connect
       - 4040:4040 # Spark UI
@@ -39,7 +39,7 @@ services:
     links:
       - rest:rest
       - hive:hive
-      - rustfs:rustfs
+      - object-store:object-store
     healthcheck:
       test: ["CMD", "sh", "-c", "netstat -an | grep 15002 | grep LISTEN"]
       interval: 30s
@@ -59,15 +59,15 @@ services:
       - AWS_REGION=us-east-1
       - CATALOG_WAREHOUSE=s3://warehouse/
       - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
-      - CATALOG_S3_ENDPOINT=http://rustfs:9000
+      - CATALOG_S3_ENDPOINT=http://object-store:9000
       - CATALOG_JDBC_STRICT__MODE=true
-  rustfs:
+  object-store:
     image: rustfs/rustfs:1.0.0-rc.5
-    container_name: pyiceberg-rustfs
+    container_name: pyiceberg-object-store
     networks:
       iceberg_net:
         aliases:
-          - warehouse.rustfs
+          - warehouse.object-store
     ports:
       - 9001:9001
       - 9000:9000
@@ -78,9 +78,9 @@ services:
       - RUSTFS_ADDRESS=:9000
       - RUSTFS_CONSOLE_ENABLE=true
       - RUSTFS_CONSOLE_ADDRESS=:9001
-      # Resolves virtual-hosted-style `warehouse.rustfs` to the warehouse bucket.
-      # The port is required until rustfs/rustfs#7051 ships.
-      - RUSTFS_SERVER_DOMAINS=rustfs:9000
+      # Resolves virtual-hosted-style `warehouse.object-store` to the warehouse
+      # bucket. The port is required until rustfs/rustfs#7051 ships.
+      - RUSTFS_SERVER_DOMAINS=object-store:9000
     healthcheck:
       test: ["CMD-SHELL", "curl --fail http://127.0.0.1:9000/health"]
       interval: 5s
@@ -93,17 +93,17 @@ services:
     networks:
       iceberg_net:
     depends_on:
-      rustfs:
+      object-store:
         condition: service_healthy
     environment:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
-      - AWS_ENDPOINT_URL=http://rustfs:9000
+      - AWS_ENDPOINT_URL=http://object-store:9000
     entrypoint: /bin/sh
     command:
       - -c
-      - "aws s3 mb s3://warehouse"
+      - "aws s3 rb s3://warehouse --force 2>/dev/null; aws s3 mb s3://warehouse"
   hive:
     image: pyiceberg-hive:latest
     build:

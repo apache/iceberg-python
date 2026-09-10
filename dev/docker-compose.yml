@@ -16,9 +16,12 @@
 # under the License.
 
 services:
-  rustfs:
+  object-store:
     image: rustfs/rustfs:1.0.0-rc.5
-    container_name: pyiceberg-rustfs
+    container_name: pyiceberg-object-store
+    ports:
+      - 9001:9001
+      - 9000:9000
     environment:
       - RUSTFS_ACCESS_KEY=admin
       - RUSTFS_SECRET_KEY=password
@@ -26,9 +29,6 @@ services:
       - RUSTFS_ADDRESS=:9000
       - RUSTFS_CONSOLE_ENABLE=true
       - RUSTFS_CONSOLE_ADDRESS=:9001
-    ports:
-      - 9001:9001
-      - 9000:9000
     healthcheck:
       test: ["CMD-SHELL", "curl --fail http://127.0.0.1:9000/health"]
       interval: 5s
@@ -36,16 +36,16 @@ services:
       retries: 10
       start_period: 5s
   aws-cli:
-    depends_on:
-      rustfs:
-        condition: service_healthy
     image: amazon/aws-cli:2.36.40
     container_name: pyiceberg-aws-cli
+    depends_on:
+      object-store:
+        condition: service_healthy
     environment:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
-      - AWS_ENDPOINT_URL=http://rustfs:9000
+      - AWS_ENDPOINT_URL=http://object-store:9000
     entrypoint: /bin/sh
     command:
       - -c

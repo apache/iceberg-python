@@ -20,7 +20,7 @@
 
 set -ex
 
-if [ $(docker ps -q --filter "name=pyiceberg-rustfs" --filter "health=healthy" ) ]; then
+if [ $(docker ps -q --filter "name=pyiceberg-object-store" --filter "health=healthy" ) ]; then
     echo "S3 backend running"
 else
     docker compose -f dev/docker-compose.yml kill
