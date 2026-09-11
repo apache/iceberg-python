@@ -774,6 +774,7 @@ class TruncateTransform(Transform[S, S]):
 
     Args:
       width (int): The truncate width, should be positive.
+
     Raises:
       ValueError: If a type is provided that is incompatible with a Truncate transform.
     """

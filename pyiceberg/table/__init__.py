@@ -852,7 +852,6 @@ class Transaction:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
@@ -1657,7 +1656,6 @@ class Table:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
