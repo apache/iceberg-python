@@ -229,7 +229,7 @@ quote-style = "double"
 testpaths = ["tests"]
 
 markers = [
-  "unmarked: marks a test as a unittest",
+  "unit: marks a test as a unit test",
   "s3: marks a test as requiring access to s3 compliant storage (use with --aws-access-key-id, --aws-secret-access-key, and --endpoint args)",
   "adls: marks a test as requiring access to adls compliant storage (use with --adls.account-name, --adls.account-key, and --adls.endpoint args)",
   "integration: marks integration tests against Apache Spark",

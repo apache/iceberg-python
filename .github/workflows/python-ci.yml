@@ -89,7 +89,7 @@ jobs:
     - name: Install
       run: uv sync --all-extras --no-extra hive-kerberos
     - name: Run unit tests
-      run: uv run python -m pytest tests/ -m unmarked --ignore=tests/integration -v -x
+      run: uv run python -m pytest tests/ -m unit --ignore=tests/integration -v -x
 
   cibw-dev-env-smoke-test:
     runs-on: ubuntu-latest
