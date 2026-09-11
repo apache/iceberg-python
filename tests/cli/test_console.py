@@ -248,7 +248,6 @@ def test_describe_ambiguous_entity(catalog: InMemoryCatalog, namespace_propertie
     runner = CliRunner()
     result = runner.invoke(run, ["describe", "default.my_table"])
     assert result.exit_code == 1
-    assert result.exit_code == 1
     assert " ".join(result.output.split()) == (
         "Identifier default.my_table matches multiple entity types: namespace, table. Use --entity to disambiguate."
     )
