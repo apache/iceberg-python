@@ -391,6 +391,100 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
     assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
 
 
+def test_upsert_after_schema_evolution(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_after_schema_evolution"
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+    initial_arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+        ]
+    )
+    tbl.append(pa.Table.from_pylist([{"city": "Amsterdam", "population": 921402}], schema=initial_arrow_schema))
+
+    snapshot_before_schema_update = tbl.current_snapshot()
+    assert snapshot_before_schema_update is not None
+
+    with tbl.update_schema() as update:
+        update.add_column("country", StringType())
+
+    assert tbl.schema().schema_id != snapshot_before_schema_update.schema_id
+    assert tbl.metadata.current_snapshot_id == snapshot_before_schema_update.snapshot_id
+
+    evolved_arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+            pa.field("country", pa.string()),
+        ]
+    )
+    source = pa.Table.from_pylist(
+        [{"city": "Amsterdam", "population": 934927, "country": "Netherlands"}], schema=evolved_arrow_schema
+    )
+
+    result = tbl.upsert(source)
+
+    assert_upsert_result(result, expected_updated=1, expected_inserted=0)
+    assert tbl.scan().to_arrow().to_pylist() == [{"city": "Amsterdam", "population": 934927, "country": "Netherlands"}]
+
+
+def test_upsert_to_branch_after_schema_evolution(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_to_branch_after_schema_evolution"
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+    initial_arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+        ]
+    )
+    tbl.append(pa.Table.from_pylist([{"city": "Amsterdam", "population": 921402}], schema=initial_arrow_schema))
+
+    initial_snapshot = tbl.current_snapshot()
+    assert initial_snapshot is not None
+
+    branch = "test_branch"
+    tbl.manage_snapshots().create_branch(snapshot_id=initial_snapshot.snapshot_id, branch_name=branch).commit()
+    tbl.delete("city == 'Amsterdam'")
+
+    snapshot_before_schema_update = tbl.current_snapshot()
+    assert snapshot_before_schema_update is not None
+
+    with tbl.update_schema() as update:
+        update.add_column("country", StringType())
+
+    assert tbl.schema().schema_id != snapshot_before_schema_update.schema_id
+    assert tbl.metadata.current_snapshot_id == snapshot_before_schema_update.snapshot_id
+
+    evolved_arrow_schema = pa.schema(
+        [
+            pa.field("city", pa.string(), nullable=False),
+            pa.field("population", pa.int32(), nullable=False),
+            pa.field("country", pa.string()),
+        ]
+    )
+    source = pa.Table.from_pylist(
+        [{"city": "Amsterdam", "population": 934927, "country": "Netherlands"}], schema=evolved_arrow_schema
+    )
+
+    result = tbl.upsert(source, branch=branch)
+
+    assert_upsert_result(result, expected_updated=1, expected_inserted=0)
+    assert tbl.scan().use_ref(branch).to_arrow().to_pylist() == [
+        {"city": "Amsterdam", "population": 934927, "country": "Netherlands"}
+    ]
+    assert tbl.scan().to_arrow().to_pylist() == []
+
+
 def test_upsert_into_empty_table(catalog: Catalog) -> None:
     identifier = "default.test_upsert_into_empty_table"
     _drop_table(catalog, identifier)
