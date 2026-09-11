@@ -146,7 +146,10 @@ class EncryptedKey(IcebergBaseModel):
 
     @field_validator("encrypted_key_metadata", mode="before")
     def decode_encrypted_key_metadata(cls, encrypted_key_metadata: Any) -> Any:
-        return base64.b64decode(encrypted_key_metadata) if isinstance(encrypted_key_metadata, str) else encrypted_key_metadata
+        # validate=True so that malformed base64 raises instead of silently discarding characters
+        if isinstance(encrypted_key_metadata, str):
+            return base64.b64decode(encrypted_key_metadata, validate=True)
+        return encrypted_key_metadata
 
     @field_serializer("encrypted_key_metadata")
     def serialize_encrypted_key_metadata(self, encrypted_key_metadata: bytes) -> str:

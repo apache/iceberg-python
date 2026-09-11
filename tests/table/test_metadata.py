@@ -928,6 +928,20 @@ def test_encrypted_key_missing_required_field(payload: str, missing: str) -> Non
     assert missing in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    "encrypted_key_metadata",
+    [
+        "a2V*5",  # character outside the base64 alphabet
+        "a2V5=extra",
+        "a2V",  # incorrect padding
+        "not base64",
+    ],
+)
+def test_encrypted_key_malformed_base64(encrypted_key_metadata: str) -> None:
+    with pytest.raises(PydanticValidationError, match="encrypted-key-metadata"):
+        EncryptedKey.model_validate({"key-id": "a", "encrypted-key-metadata": encrypted_key_metadata})
+
+
 def test_v3_metadata_parsing_encryption_keys(example_table_metadata_v3: dict[str, Any]) -> None:
     metadata = {
         **example_table_metadata_v3,
