@@ -177,6 +177,48 @@ def test_snapshot_with_properties_repr(snapshot_with_properties: Snapshot) -> No
 
 
 @pytest.fixture
+def snapshot_with_key_id() -> Snapshot:
+    return Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638573590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        key_id="table-key-1",
+    )
+
+
+def test_serialize_snapshot_with_key_id(snapshot_with_key_id: Snapshot) -> None:
+    assert snapshot_with_key_id.model_dump_json() == (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3,"key-id":"table-key-1"}'
+    )
+
+
+def test_deserialize_snapshot_with_key_id(snapshot_with_key_id: Snapshot) -> None:
+    payload = (
+        '{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, '
+        '"manifest-list": "s3:/a/b/c.avro", "summary": {"operation": "append"}, "schema-id": 3, "key-id": "table-key-1"}'
+    )
+    assert Snapshot.model_validate_json(payload) == snapshot_with_key_id
+
+
+def test_snapshot_without_key_id_omits_it(snapshot: Snapshot) -> None:
+    assert snapshot.key_id is None
+    assert "key-id" not in snapshot.model_dump_json()
+
+
+def test_snapshot_with_key_id_repr(snapshot_with_key_id: Snapshot) -> None:
+    assert repr(snapshot_with_key_id) == (
+        "Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, "
+        "manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND), schema_id=3, key_id='table-key-1')"
+    )
+    assert snapshot_with_key_id == eval(repr(snapshot_with_key_id))
+
+
+@pytest.fixture
 def manifest_file() -> ManifestFile:
     return ManifestFile.from_args(
         content=ManifestContent.DATA,
