@@ -216,10 +216,9 @@ License: https://www.apache.org/licenses/LICENSE-2.0
 
 This product includes code from Apache Thrift.
 
-* Includes Python bindings generated from the fb303.thrift file that's part of
-  Hive's thrift service. The bindings are located in vendor/fb303/ in source
-  distributions and shipped as the top-level fb303 package in binary
-  distributions.
+* Includes the generated Python client and type definitions for the fb303
+  service. In source distributions, this code is located in vendor/fb303/; in
+  binary distributions, it is shipped as the top-level fb303 package.
 
 Copyright: 2006-2022 The Apache Software Foundation.
 Home page: https://thrift.apache.org/
