@@ -30,6 +30,7 @@ from hive_metastore.ThriftHiveMetastore import Client
 from hive_metastore.ttypes import (
     AlreadyExistsException,
     CheckLockRequest,
+    DataOperationType,
     EnvironmentContext,
     FieldSchema,
     GetTableRequest,
@@ -383,7 +384,7 @@ class HiveCatalog(MetastoreCatalog):
             raise TableAlreadyExistsError(f"Table {hive_table.dbName}.{hive_table.tableName} already exists") from e
 
     def _fetch_hive_table(self, open_client: Client, database_name: str, table_name: str) -> HiveTable:
-        # Hive 4.0.1 removed get_table, and Hive 2 does not have get_table_req
+        # Hive 4.0.1 removed get_table, and Hive 2.2 and older do not have get_table_req
         if self._hive2_compatible:
             return open_client.get_table(dbname=database_name, tbl_name=table_name)
         return open_client.get_table_req(GetTableRequest(dbName=database_name, tblName=table_name)).table
@@ -506,8 +507,18 @@ class HiveCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
+        # Iceberg commits are not executed within a Hive transaction, so the lock component uses operationType=NO_TXN.
+        # Setting it explicitly also matters for Hive 2.1.0, which rejects a lock component left at the default UNSET
+        # operation type. Hive 2.1.1 relaxed this validation:
+        # https://github.com/apache/hive/blob/rel/release-2.1.1/metastore/src/java/org/apache/hadoop/hive/metastore/txn/TxnHandler.java#L939-L947
+        # operation type.
         lock_component: LockComponent = LockComponent(
-            level=LockLevel.TABLE, type=LockType.EXCLUSIVE, dbname=database_name, tablename=table_name, isTransactional=True
+            level=LockLevel.TABLE,
+            type=LockType.EXCLUSIVE,
+            dbname=database_name,
+            tablename=table_name,
+            operationType=DataOperationType.NO_TXN,
+            isTransactional=True,
         )
 
         lock_request: LockRequest = LockRequest(component=[lock_component], user=getpass.getuser(), hostname=socket.gethostname())
