@@ -63,6 +63,13 @@ def test_key_metadata_defaults() -> None:
     assert key_metadata.file_length is None
 
 
+def test_key_metadata_repr_redacts_encryption_key() -> None:
+    key_metadata = StandardKeyMetadata(encryption_key=AES128_KEY)
+
+    assert "encryption_key" not in repr(key_metadata)
+    assert repr(AES128_KEY) not in repr(key_metadata)
+
+
 def test_key_metadata_empty_buffer() -> None:
     with pytest.raises(ValueError, match="Empty key metadata"):
         StandardKeyMetadata.from_bytes(b"")

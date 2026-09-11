@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pyiceberg.avro.decoder import new_decoder
 from pyiceberg.avro.encoder import BinaryEncoder
@@ -47,7 +47,7 @@ class StandardKeyMetadata:
     byte-compatible with Java's `StandardKeyMetadata`.
     """
 
-    encryption_key: bytes
+    encryption_key: bytes = field(repr=False)
     aad_prefix: bytes | None = None
     file_length: int | None = None
 
