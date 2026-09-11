@@ -779,3 +779,40 @@ def test_overwrite_rejects_explicit_delete_without_parent_snapshot(
         with empty.transaction() as tx:
             with tx.update_snapshot().overwrite() as overwrite:
                 overwrite.delete_data_file(stale_file)
+
+
+def test_manifest_list_receives_first_row_id_for_v3(table_v3: Table) -> None:
+    """The V3 manifest list writer requires first-row-id, so the producer has to supply it."""
+    from unittest import mock
+
+    from pyiceberg.table.update.snapshot import _FastAppendFiles
+
+    txn = table_v3.transaction()
+    append = _FastAppendFiles(operation=Operation.APPEND, transaction=txn, io=table_v3.io)
+
+    with (
+        mock.patch("pyiceberg.table.update.snapshot.write_manifest_list") as writer,
+        mock.patch.object(_FastAppendFiles, "_manifests", return_value=[]),
+    ):
+        append._commit()
+
+    assert writer.call_args.kwargs["format_version"] == 3
+    assert writer.call_args.kwargs["first_row_id"] == table_v3.metadata.next_row_id
+
+
+def test_manifest_list_has_no_first_row_id_for_v2(table_v2: Table) -> None:
+    from unittest import mock
+
+    from pyiceberg.table.update.snapshot import _FastAppendFiles
+
+    txn = table_v2.transaction()
+    append = _FastAppendFiles(operation=Operation.APPEND, transaction=txn, io=table_v2.io)
+
+    with (
+        mock.patch("pyiceberg.table.update.snapshot.write_manifest_list") as writer,
+        mock.patch.object(_FastAppendFiles, "_manifests", return_value=[]),
+    ):
+        append._commit()
+
+    assert writer.call_args.kwargs["format_version"] == 2
+    assert writer.call_args.kwargs["first_row_id"] is None

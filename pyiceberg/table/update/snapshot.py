@@ -334,6 +334,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
         self._written_manifest_lists.append(manifest_list_file_path)
 
+        first_row_id: int | None = None
+
+        if self._transaction.table_metadata.format_version >= 3:
+            first_row_id = self._transaction.table_metadata.next_row_id
+
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
@@ -341,13 +346,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             parent_snapshot_id=self._parent_snapshot_id,
             sequence_number=next_sequence_number,
             avro_compression=self._compression,
+            first_row_id=first_row_id,
         ) as writer:
             writer.add_manifests(new_manifests)
-
-        first_row_id: int | None = None
-
-        if self._transaction.table_metadata.format_version >= 3:
-            first_row_id = self._transaction.table_metadata.next_row_id
 
         snapshot = Snapshot(
             snapshot_id=self._snapshot_id,
