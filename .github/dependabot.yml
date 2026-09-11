@@ -41,3 +41,16 @@ updates:
       codeql-action:
         patterns:
           - "github/codeql-action*"
+  # dev/spark/Dockerfile is not listed: its base image tag comes from an ARG, which Dependabot cannot resolve
+  - package-ecosystem: "docker"
+    directory: "/dev/hive"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+  - package-ecosystem: "docker-compose"
+    directory: "/dev"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
