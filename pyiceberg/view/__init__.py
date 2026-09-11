@@ -23,6 +23,14 @@ from pyiceberg.schema import Schema
 from pyiceberg.typedef import Identifier
 from pyiceberg.view.metadata import SQLViewRepresentation, ViewHistoryEntry, ViewMetadata, ViewVersion
 
+__all__ = [
+    "View",
+    "ViewMetadata",
+    "ViewVersion",
+    "ViewHistoryEntry",
+    "SQLViewRepresentation",
+]
+
 
 class View:
     """An Iceberg view."""

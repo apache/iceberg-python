@@ -173,5 +173,16 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     @override
+    def replace_view(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        view_version: ViewVersion,
+        location: str | None = None,
+        properties: Properties = EMPTY_DICT,
+    ) -> View:
+        raise NotImplementedError
+
+    @override
     def load_view(self, identifier: str | Identifier) -> View:
         raise NotImplementedError
