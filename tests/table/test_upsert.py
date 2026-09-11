@@ -927,3 +927,156 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+def test_upsert_after_adding_column(catalog: Catalog) -> None:
+    """Rows written before an added column must still be comparable against the current schema."""
+    identifier = "default.test_upsert_after_adding_column"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"city": "Amsterdam", "population": 921402}],
+            schema=schema_to_pyarrow(tbl.schema()),
+        )
+    )
+
+    # A schema-only update does not create a data snapshot, so the branch tip keeps the old schema
+    with tbl.update_schema() as update:
+        update.add_column("country", StringType())
+
+    df = pa.Table.from_pylist(
+        [
+            {"city": "Amsterdam", "population": 950000, "country": "NL"},
+            {"city": "Berlin", "population": 3432000, "country": "DE"},
+        ],
+        schema=schema_to_pyarrow(tbl.schema()),
+    )
+    result = tbl.upsert(df)
+
+    assert result.rows_updated == 1
+    assert result.rows_inserted == 1
+    assert sorted(tbl.scan().to_arrow().to_pylist(), key=lambda row: row["city"]) == [
+        {"city": "Amsterdam", "population": 950000, "country": "NL"},
+        {"city": "Berlin", "population": 3432000, "country": "DE"},
+    ]
+
+
+def test_upsert_after_renaming_column(catalog: Catalog) -> None:
+    """Renaming a non-key column must not make identical rows look changed."""
+    identifier = "default.test_upsert_after_renaming_column"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"city": "Amsterdam", "population": 921402}],
+            schema=schema_to_pyarrow(tbl.schema()),
+        )
+    )
+
+    # A rename creates no data snapshot either, so the branch tip keeps the old field name
+    with tbl.update_schema() as update:
+        update.rename_column("population", "inhabitants")
+
+    # The very same row, only under the new column name, so there is nothing to update
+    df = pa.Table.from_pylist(
+        [{"city": "Amsterdam", "inhabitants": 921402}],
+        schema=schema_to_pyarrow(tbl.schema()),
+    )
+    result = tbl.upsert(df)
+
+    assert result.rows_updated == 0
+    assert result.rows_inserted == 0
+
+
+def test_upsert_after_renaming_join_column(catalog: Catalog) -> None:
+    """The join columns are looked up on the matched rows, so those must carry the current names."""
+    identifier = "default.test_upsert_after_renaming_join_column"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"city": "Amsterdam", "population": 921402}],
+            schema=schema_to_pyarrow(tbl.schema()),
+        )
+    )
+
+    with tbl.update_schema() as update:
+        update.rename_column("city", "city_name")
+
+    df = pa.Table.from_pylist(
+        [
+            {"city_name": "Amsterdam", "population": 950000},
+            {"city_name": "Berlin", "population": 3432000},
+        ],
+        schema=schema_to_pyarrow(tbl.schema()),
+    )
+    result = tbl.upsert(df)
+
+    assert result.rows_updated == 1
+    assert result.rows_inserted == 1
+    assert sorted(tbl.scan().to_arrow().to_pylist(), key=lambda row: row["city_name"]) == [
+        {"city_name": "Amsterdam", "population": 950000},
+        {"city_name": "Berlin", "population": 3432000},
+    ]
+
+
+def test_upsert_after_adding_column_in_transaction(catalog: Catalog) -> None:
+    """An upsert must see a column added earlier in the same, still uncommitted, transaction."""
+    identifier = "default.test_upsert_after_adding_column_in_transaction"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"city": "Amsterdam", "population": 921402}],
+            schema=schema_to_pyarrow(tbl.schema()),
+        )
+    )
+
+    evolved_schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        NestedField(3, "country", StringType(), required=False),
+        identifier_field_ids=[1],
+    )
+    df = pa.Table.from_pylist(
+        [{"city": "Amsterdam", "population": 950000, "country": "NL"}],
+        schema=schema_to_pyarrow(evolved_schema),
+    )
+
+    with tbl.transaction() as txn:
+        with txn.update_schema() as update:
+            update.add_column("country", StringType())
+        result = txn.upsert(df)
+
+    assert result.rows_updated == 1
+    assert result.rows_inserted == 0
+    assert tbl.scan().to_arrow().to_pylist() == [{"city": "Amsterdam", "population": 950000, "country": "NL"}]
