@@ -164,6 +164,7 @@ def describe(ctx: Context, entity: Literal["any", "namespace", "table"], identif
         output.describe_table(catalog.load_table(identifier))
         return
 
+    # For the default "any" entity, auto-detect the entity type.
     if len(identifier_tuple) == 1:
         output.describe_properties(catalog.load_namespace_properties(identifier_tuple))
         return
