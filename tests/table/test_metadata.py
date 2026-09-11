@@ -932,11 +932,16 @@ def test_v3_metadata_parsing_encryption_keys(example_table_metadata_v3: dict[str
     metadata = {
         **example_table_metadata_v3,
         "encryption-keys": [
-            {"key-id": "kek-1", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "master-1", "properties": {"a": "b"}},
-            {"key-id": "dek-1", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "kek-1"},
+            {
+                "key-id": "table-key-1",
+                "encrypted-key-metadata": "a2V5",
+                "encrypted-by-id": "external-key-1",
+                "properties": {"a": "b"},
+            },
+            {"key-id": "table-key-2", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "table-key-1"},
         ],
         "snapshots": [
-            {**snapshot, "key-id": "dek-1"} if snapshot["snapshot-id"] == 3055729675574597004 else snapshot
+            {**snapshot, "key-id": "table-key-2"} if snapshot["snapshot-id"] == 3055729675574597004 else snapshot
             for snapshot in example_table_metadata_v3["snapshots"]
         ],
     }
@@ -944,14 +949,14 @@ def test_v3_metadata_parsing_encryption_keys(example_table_metadata_v3: dict[str
     table_metadata = TableMetadataUtil.parse_obj(metadata)
 
     assert isinstance(table_metadata, TableMetadataV3)
-    assert [key.key_id for key in table_metadata.encryption_keys] == ["kek-1", "dek-1"]
+    assert [key.key_id for key in table_metadata.encryption_keys] == ["table-key-1", "table-key-2"]
     assert table_metadata.encryption_keys[0].encrypted_key_metadata == b"key"
     assert table_metadata.encryption_keys[0].properties == {"a": "b"}
-    assert table_metadata.encryption_keys[1].encrypted_by_id == "kek-1"
+    assert table_metadata.encryption_keys[1].encrypted_by_id == "table-key-1"
 
     current_snapshot = table_metadata.snapshot_by_id(3055729675574597004)
     assert current_snapshot is not None
-    assert current_snapshot.key_id == "dek-1"
+    assert current_snapshot.key_id == "table-key-2"
 
 
 def test_v3_metadata_without_encryption_keys(example_table_metadata_v3: dict[str, Any]) -> None:
