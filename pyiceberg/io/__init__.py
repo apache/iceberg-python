@@ -340,6 +340,8 @@ def _import_file_io(io_impl: str, properties: Properties) -> FileIO | None:
         module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
+        if not isinstance(class_, type) or not issubclass(class_, FileIO):
+            raise ValueError(f"py-io-impl should be a subclass of FileIO, got: {io_impl}")
         return class_(properties)
     except ModuleNotFoundError:
         logger.warning(f"Could not initialize FileIO: {io_impl}", exc_info=logger.isEnabledFor(logging.DEBUG))
