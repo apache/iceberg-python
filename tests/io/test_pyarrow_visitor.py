@@ -65,8 +65,11 @@ from pyiceberg.types import (
     StructType,
     TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
+    UUIDType,
 )
 
 
@@ -863,3 +866,110 @@ def test_expression_to_complementary_pyarrow(
         "or is_null(string_field, {nan_is_null=false})) or is_nan(double_field))>"
     )
     assert repr(result) == expected_repr
+
+
+PYARROW_TO_ICEBERG_SUPPORTED: list[tuple[pa.DataType, IcebergType]] = [
+    (pa.null(), UnknownType()),
+    (pa.bool_(), BooleanType()),
+    (pa.int8(), IntegerType()),
+    (pa.int16(), IntegerType()),
+    (pa.int32(), IntegerType()),
+    (pa.int64(), LongType()),
+    (pa.uint8(), IntegerType()),
+    (pa.uint16(), IntegerType()),
+    (pa.uint32(), IntegerType()),
+    (pa.uint64(), LongType()),
+    (pa.float16(), FloatType()),
+    (pa.float32(), FloatType()),
+    (pa.float64(), DoubleType()),
+    (pa.decimal128(24, 2), DecimalType(24, 2)),
+    (pa.string(), StringType()),
+    (pa.large_string(), StringType()),
+    (pa.string_view(), StringType()),
+    (pa.binary(), BinaryType()),
+    (pa.large_binary(), BinaryType()),
+    (pa.binary_view(), BinaryType()),
+    (pa.binary(16), FixedType(16)),
+    (pa.date32(), DateType()),
+    (pa.time64("us"), TimeType()),
+    (pa.timestamp("s"), TimestampType()),
+    (pa.timestamp("ms"), TimestampType()),
+    (pa.timestamp("us"), TimestampType()),
+    (pa.timestamp("ns"), TimestampNanoType()),
+    (pa.timestamp("us", tz="UTC"), TimestamptzType()),
+    (pa.timestamp("ns", tz="UTC"), TimestamptzNanoType()),
+    (pa.uuid(), UUIDType()),
+    (pa.dictionary(pa.int32(), pa.string()), StringType()),
+    (
+        pa.list_(pa.field("element", pa.int32(), nullable=True, metadata={"PARQUET:field_id": "1"})),
+        ListType(element_id=1, element_type=IntegerType(), element_required=False),
+    ),
+    (
+        pa.large_list(pa.field("element", pa.int32(), nullable=True, metadata={"PARQUET:field_id": "1"})),
+        ListType(element_id=1, element_type=IntegerType(), element_required=False),
+    ),
+    (
+        pa.list_(pa.field("element", pa.int32(), nullable=True, metadata={"PARQUET:field_id": "1"}), 3),
+        ListType(element_id=1, element_type=IntegerType(), element_required=False),
+    ),
+    (
+        pa.struct([pa.field("x", pa.int32(), nullable=True, metadata={"PARQUET:field_id": "1"})]),
+        StructType(NestedField(1, "x", IntegerType(), required=False)),
+    ),
+    (
+        pa.map_(
+            pa.field("key", pa.string(), nullable=False, metadata={"PARQUET:field_id": "1"}),
+            pa.field("value", pa.int32(), nullable=True, metadata={"PARQUET:field_id": "2"}),
+        ),
+        MapType(key_id=1, key_type=StringType(), value_id=2, value_type=IntegerType(), value_required=False),
+    ),
+]
+
+PYARROW_TO_ICEBERG_UNSUPPORTED: list[tuple[pa.DataType, str]] = [
+    (pa.decimal32(4, 2), "Unsupported type: decimal32(4, 2)"),
+    (pa.decimal64(10, 2), "Unsupported type: decimal64(10, 2)"),
+    (pa.decimal256(60, 2), "Unsupported type: decimal256(60, 2)"),
+    (pa.date64(), "Unsupported type: date64[ms]"),
+    (pa.time32("s"), "Unsupported type: time32[s]"),
+    (pa.time32("ms"), "Unsupported type: time32[ms]"),
+    (pa.time64("ns"), "Unsupported type: time64[ns]"),
+    (pa.timestamp("us", tz="America/New_York"), "Unsupported type: timestamp[us, tz=America/New_York]"),
+    (pa.duration("us"), "Unsupported type: duration[us]"),
+    (pa.month_day_nano_interval(), "Unsupported type: month_day_nano_interval"),
+    (pa.list_view(pa.int32()), "Expected primitive type, got: <class 'pyarrow.lib.ListViewType'>"),
+    (pa.large_list_view(pa.int32()), "Expected primitive type, got: <class 'pyarrow.lib.LargeListViewType'>"),
+    (pa.run_end_encoded(pa.int32(), pa.string()), "Unsupported type: run_end_encoded<run_ends: int32, values: string>"),
+    (pa.dense_union([pa.field("a", pa.int32())]), "Expected primitive type, got: <class 'pyarrow.lib.DenseUnionType'>"),
+    (pa.sparse_union([pa.field("a", pa.int32())]), "Expected primitive type, got: <class 'pyarrow.lib.SparseUnionType'>"),
+    *([(pa.json_(), "Unsupported type: extension<arrow.json>")] if hasattr(pa, "json_") else []),
+]
+
+
+@pytest.mark.parametrize("pyarrow_type, expected", PYARROW_TO_ICEBERG_SUPPORTED, ids=str)
+def test_pyarrow_type_enumeration_to_iceberg(pyarrow_type: pa.DataType, expected: IcebergType) -> None:
+    assert visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3)) == expected
+
+
+@pytest.mark.parametrize(
+    "pyarrow_type, expected_error",
+    PYARROW_TO_ICEBERG_UNSUPPORTED,
+    ids=[str(pyarrow_type) for pyarrow_type, _ in PYARROW_TO_ICEBERG_UNSUPPORTED],
+)
+def test_pyarrow_type_enumeration_unsupported(pyarrow_type: pa.DataType, expected_error: str) -> None:
+    with pytest.raises(TypeError, match=re.escape(expected_error)):
+        visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3))
+
+
+def test_pyarrow_type_enumeration_is_exhaustive() -> None:
+    """Fail when a PyArrow upgrade introduces a type that the enumeration above does not classify."""
+    covered_type_ids = {pyarrow_type.id for pyarrow_type, _ in PYARROW_TO_ICEBERG_SUPPORTED} | {
+        pyarrow_type.id for pyarrow_type, _ in PYARROW_TO_ICEBERG_UNSUPPORTED
+    }
+    # The legacy interval types cannot be constructed from the public Python API
+    unconstructible = {"Type_INTERVAL_MONTHS", "Type_INTERVAL_DAY_TIME"}
+    missing = {
+        name
+        for name in dir(pa.lib)
+        if name.startswith("Type_") and name not in unconstructible and getattr(pa.lib, name) not in covered_type_ids
+    }
+    assert not missing, f"PyArrow types missing from the enumeration: {missing}"
