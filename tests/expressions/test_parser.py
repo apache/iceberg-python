@@ -24,6 +24,7 @@ from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
     And,
+    BooleanExpression,
     EqualTo,
     GreaterThan,
     GreaterThanOrEqual,
@@ -272,3 +273,24 @@ def test_valid_between_with_numerics() -> None:
     ) == parser.parse("foo between '2025-01-01T00:00:00.000000' and '2025-01-10T12:00:00.000000'")
 
     assert parser.parse("foo between 1 and 3") == parser.parse("1 <= foo and foo <= 3")
+
+
+@pytest.mark.parametrize(
+    "expression, expected",
+    [
+        ("true and foo = 1", EqualTo(Reference("foo"), literal(1))),
+        ("foo = 1 and true", EqualTo(Reference("foo"), literal(1))),
+        ("foo = 1 or false", EqualTo(Reference("foo"), literal(1))),
+        ("foo = 1 or true", AlwaysTrue()),
+        ("foo = 1 and false", AlwaysFalse()),
+        ("not true", AlwaysFalse()),
+        ("not false", AlwaysTrue()),
+    ],
+)
+def test_boolean_as_operand(expression: str, expected: BooleanExpression) -> None:
+    assert parser.parse(expression) == expected
+
+
+def test_boolean_as_literal_is_unchanged() -> None:
+    assert parser.parse("foo = true") == EqualTo(Reference("foo"), literal(True))
+    assert parser.parse("foo in (true, false)") == In(Reference("foo"), {literal(True), literal(False)})
