@@ -206,10 +206,9 @@ def test_token_200(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
 
 
 @pytest.mark.filterwarnings(
@@ -226,10 +225,9 @@ def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
 
 
 @pytest.mark.filterwarnings(
@@ -248,12 +246,9 @@ def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog(
-            "rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience=TEST_AUDIENCE, resource=TEST_RESOURCE
-        )._session.headers["Authorization"]
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience=TEST_AUDIENCE, resource=TEST_RESOURCE)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
     assert TEST_AUDIENCE in mock_request.last_request.text
     assert TEST_RESOURCE in mock_request.last_request.text
 
@@ -274,10 +269,9 @@ def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="")._session.headers["Authorization"]
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="")
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
     assert TEST_AUDIENCE not in mock_request.last_request.text
     assert TEST_RESOURCE not in mock_request.last_request.text
 
@@ -298,9 +292,9 @@ def test_token_with_default_scope(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
     assert "catalog" in mock_request.last_request.text
 
 
@@ -320,10 +314,9 @@ def test_token_with_custom_scope(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, scope=TEST_SCOPE)._session.headers["Authorization"]
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, scope=TEST_SCOPE)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
     assert TEST_SCOPE in mock_request.last_request.text
 
 
@@ -343,14 +336,9 @@ def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    # pylint: disable=W0212
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: OAUTH2_SERVER_URI})._session.headers[
-            "Authorization"
-        ]
-        == f"Bearer {TEST_TOKEN}"
-    )
-    # pylint: enable=W0212
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: TEST_OAUTH2_SERVER_URI})
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
 
 
 @pytest.mark.filterwarnings(
@@ -377,7 +365,8 @@ def test_config_200(requests_mock: Mocker) -> None:
     RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, warehouse="s3://some-bucket")
 
     assert requests_mock.called
-    assert requests_mock.call_count == 2
+    # The token is fetched for the config request, and again for the catalog session
+    assert requests_mock.call_count == 3
 
     history = requests_mock.request_history
     assert history[1].method == "GET"
@@ -2904,7 +2893,10 @@ def test_auth_header(rest_mock: Mocker) -> None:
     )
 
     RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="", **{"header.Custom": "Value"})
-    assert mock_request.last_request.text == "grant_type=client_credentials&client_id=client&client_secret=secret&scope=catalog"
+    assert (
+        mock_request.last_request.text
+        == "grant_type=client_credentials&client_id=client&client_secret=secret_with%3Acolon&scope=catalog"
+    )
 
 
 def test_client_version_header(rest_mock: Mocker) -> None:

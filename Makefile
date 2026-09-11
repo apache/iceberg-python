@@ -104,7 +104,7 @@ lint: ## Run code linters via prek (pre-commit hooks)
 ##@ Testing
 
 test: ## Run all unit tests (excluding integration)
-	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" $(PYTEST_ARGS)
+	$(TEST_RUNNER) pytest tests/ -m unmarked $(PYTEST_ARGS)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
