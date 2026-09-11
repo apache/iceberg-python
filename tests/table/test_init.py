@@ -32,6 +32,8 @@ from pyiceberg.expressions import (
     And,
     EqualTo,
     In,
+    LessThan,
+    Or,
 )
 from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
@@ -354,6 +356,44 @@ def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snap
     assert list(scan.plan_files()) == []
     assert scan.count() == 0
     assert len(scan.to_arrow()) == 0
+
+
+def test_data_scan_count_with_less_than_on_null_identity_partition(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "x", IntegerType(), required=False),
+        NestedField(2, "y", IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "x"))
+    table = catalog.create_table("default.null_identity_partition", schema=schema, partition_spec=spec)
+    table.append(
+        pa.table(
+            {
+                "x": pa.array([None, None], type=pa.int32()),
+                "y": pa.array([0, 2], type=pa.int32()),
+            }
+        )
+    )
+
+    # To exercise the residual evaluator code path, include y == 2 so partition pruning keeps the file.
+    #
+    # Partition pruning:
+    #   x < 1 -> false for the null x partition
+    #   y == 2 -> unknown because y is not partitioned
+    #   false OR unknown -> keep the file
+    #
+    # Residual evaluation:
+    #   x < 1 -> false for the null x partition
+    #   y == 2 -> retained because no partition value is available for y
+    #   false OR y == 2 -> residual is y == 2
+    scan = table.scan(row_filter=Or(LessThan("x", 1), EqualTo("y", 2)))
+    tasks = list(scan.plan_files())
+
+    assert len(tasks) == 1
+    assert tasks[0].residual == EqualTo("y", 2)
+    assert scan.count() == 1  # Only the y == 2 row matches.
 
 
 def test_incremental_append_scan_default(table_v2: Table) -> None:
