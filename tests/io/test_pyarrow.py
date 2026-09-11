@@ -3309,6 +3309,12 @@ def test_retry_strategy() -> None:
         io.new_input("s3://bucket/path/to/file")
 
 
+def test_retry_strategy_wrong_type() -> None:
+    io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "pyiceberg.io.FileIO"})
+    with pytest.raises(ValueError, match="retry-strategy-impl should be a subclass of S3RetryStrategy"):
+        io.new_input("s3://bucket/path/to/file")
+
+
 def test_retry_strategy_not_found() -> None:
     io = PyArrowFileIO(properties={S3_RETRY_STRATEGY_IMPL: "pyiceberg.DoesNotExist"})
     with pytest.warns(UserWarning, match="Could not initialize S3 retry strategy: pyiceberg.DoesNotExist"):
