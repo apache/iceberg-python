@@ -103,11 +103,14 @@ if TYPE_CHECKING:
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
+# Markers for suites that run separately from the unit tests
+NON_UNIT_TEST_MARKERS = {"integration", "s3", "adls", "gcs", "notebook", "benchmark"}
+
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
-        if not any(item.iter_markers()):
-            item.add_marker("unmarked")
+        if not any(marker.name in NON_UNIT_TEST_MARKERS for marker in item.iter_markers()):
+            item.add_marker("unit")
 
 
 @pytest.fixture(autouse=True, scope="session")
