@@ -508,7 +508,9 @@ class HiveCatalog(MetastoreCatalog):
 
     def _create_lock_request(self, database_name: str, table_name: str) -> LockRequest:
         # Iceberg commits are not executed within a Hive transaction, so the lock component uses operationType=NO_TXN.
-        # Setting it explicitly also matters for Hive 2.1, which rejects a lock component left at the default UNSET
+        # Setting it explicitly also matters for Hive 2.1.0, which rejects a lock component left at the default UNSET
+        # operation type. Hive 2.1.1 relaxed this validation:
+        # https://github.com/apache/hive/blob/rel/release-2.1.1/metastore/src/java/org/apache/hadoop/hive/metastore/txn/TxnHandler.java#L939-L947
         # operation type.
         lock_component: LockComponent = LockComponent(
             level=LockLevel.TABLE,
