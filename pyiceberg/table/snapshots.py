@@ -259,6 +259,9 @@ class Snapshot(IcebergBaseModel):
     added_rows: int | None = Field(
         alias="added-rows", default=None, description="The upper bound of the number of rows with assigned row IDs"
     )
+    key_id: str | None = Field(
+        alias="key-id", default=None, description="ID of the encryption key that encrypts the manifest list key metadata"
+    )
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
@@ -280,6 +283,7 @@ class Snapshot(IcebergBaseModel):
             f"schema_id={self.schema_id}" if self.schema_id is not None else None,
             f"first_row_id={self.first_row_id}" if self.first_row_id is not None else None,
             f"added_rows={self.added_rows}" if self.added_rows is not None else None,
+            f"key_id='{self.key_id}'" if self.key_id is not None else None,
         ]
         filtered_fields = [field for field in fields if field is not None]
         return f"Snapshot({', '.join(filtered_fields)})"

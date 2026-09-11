@@ -24,12 +24,14 @@ from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.serializers import FromByteStream
 from pyiceberg.table.metadata import (
+    EncryptedKey,
     TableMetadataUtil,
     TableMetadataV1,
     TableMetadataV2,
@@ -876,3 +878,86 @@ def test_new_table_metadata_format_v2_with_v3_schema_fails(field_type: Primitive
             location="s3://some_v1_location/",
             properties={"format-version": "2"},
         )
+
+
+def test_encrypted_key_minimal() -> None:
+    # Mirrors Java's TestEncryptedKeyParser, where the key metadata is base64 of b"key"
+    key = EncryptedKey.model_validate_json('{"key-id": "a", "encrypted-key-metadata": "a2V5"}')
+
+    assert key.key_id == "a"
+    assert key.encrypted_key_metadata == b"key"
+    assert key.encrypted_by_id is None
+    assert key.properties == {}
+
+
+def test_encrypted_key_full() -> None:
+    key = EncryptedKey.model_validate_json(
+        '{"key-id": "a", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "b", "properties": {"test": "value"}}'
+    )
+
+    assert key.key_id == "a"
+    assert key.encrypted_key_metadata == b"key"
+    assert key.encrypted_by_id == "b"
+    assert key.properties == {"test": "value"}
+
+
+def test_encrypted_key_serialize() -> None:
+    key = EncryptedKey(key_id="a", encrypted_key_metadata=b"key", encrypted_by_id="b", properties={"test": "value"})
+
+    expected = '{"key-id":"a","encrypted-key-metadata":"a2V5","encrypted-by-id":"b","properties":{"test":"value"}}'
+    assert key.model_dump_json() == expected
+
+
+def test_encrypted_key_serialize_minimal() -> None:
+    key = EncryptedKey(key_id="a", encrypted_key_metadata=b"key")
+
+    assert key.model_dump_json() == '{"key-id":"a","encrypted-key-metadata":"a2V5","properties":{}}'
+
+
+@pytest.mark.parametrize(
+    "payload, missing",
+    [
+        ('{"encrypted-key-metadata": "a2V5"}', "key-id"),
+        ('{"key-id": "a"}', "encrypted-key-metadata"),
+    ],
+)
+def test_encrypted_key_missing_required_field(payload: str, missing: str) -> None:
+    with pytest.raises(PydanticValidationError) as exc_info:
+        EncryptedKey.model_validate_json(payload)
+
+    assert missing in str(exc_info.value)
+
+
+def test_v3_metadata_parsing_encryption_keys(example_table_metadata_v3: dict[str, Any]) -> None:
+    metadata = {
+        **example_table_metadata_v3,
+        "encryption-keys": [
+            {"key-id": "kek-1", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "master-1", "properties": {"a": "b"}},
+            {"key-id": "dek-1", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "kek-1"},
+        ],
+        "snapshots": [
+            {**snapshot, "key-id": "dek-1"} if snapshot["snapshot-id"] == 3055729675574597004 else snapshot
+            for snapshot in example_table_metadata_v3["snapshots"]
+        ],
+    }
+
+    table_metadata = TableMetadataUtil.parse_obj(metadata)
+
+    assert isinstance(table_metadata, TableMetadataV3)
+    assert [key.key_id for key in table_metadata.encryption_keys] == ["kek-1", "dek-1"]
+    assert table_metadata.encryption_keys[0].encrypted_key_metadata == b"key"
+    assert table_metadata.encryption_keys[0].properties == {"a": "b"}
+    assert table_metadata.encryption_keys[1].encrypted_by_id == "kek-1"
+
+    current_snapshot = table_metadata.snapshot_by_id(3055729675574597004)
+    assert current_snapshot is not None
+    assert current_snapshot.key_id == "dek-1"
+
+
+def test_v3_metadata_without_encryption_keys(example_table_metadata_v3: dict[str, Any]) -> None:
+    table_metadata = TableMetadataUtil.parse_obj(example_table_metadata_v3)
+
+    assert isinstance(table_metadata, TableMetadataV3)
+    assert table_metadata.encryption_keys == []
+    for snapshot in table_metadata.snapshots:
+        assert snapshot.key_id is None

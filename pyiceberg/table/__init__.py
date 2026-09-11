@@ -198,6 +198,10 @@ class TableProperties:
     FORMAT_VERSION = "format-version"
     DEFAULT_FORMAT_VERSION: TableVersion = 2
 
+    ENCRYPTION_KEY_ID = "encryption.key-id"
+    ENCRYPTION_DATA_KEY_LENGTH = "encryption.data-key-length"
+    ENCRYPTION_DATA_KEY_LENGTH_DEFAULT = 16
+
     MANIFEST_TARGET_SIZE_BYTES = "commit.manifest.target-size-bytes"
     MANIFEST_TARGET_SIZE_BYTES_DEFAULT = 8 * 1024 * 1024  # 8 MB
 
