@@ -21,9 +21,9 @@ import datetime
 import uuid
 from collections.abc import Iterable
 from copy import copy
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from pydantic import Field, field_serializer, field_validator, model_validator
+from pydantic import Field, field_serializer, field_validator, model_serializer, model_validator
 from pydantic import ValidationError as PydanticValidationError
 
 from pyiceberg.exceptions import ValidationError
@@ -48,6 +48,9 @@ from pyiceberg.typedef import (
 from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
+
+if TYPE_CHECKING:
+    from pydantic.functional_serializers import ModelWrapSerializerWithoutInfo
 
 CURRENT_SNAPSHOT_ID = "current-snapshot-id"
 CURRENT_SCHEMA_ID = "current-schema-id"
@@ -617,6 +620,14 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
 
     encryption_keys: list[EncryptedKey] = Field(alias="encryption-keys", default_factory=list)
     """An optional list of encryption keys used for table encryption."""
+
+    @model_serializer(mode="wrap")
+    def serialize_model(self, handler: ModelWrapSerializerWithoutInfo) -> dict[str, Any]:
+        """Set custom serializer to leave out `encryption-keys` when it is empty."""
+        serialized: dict[str, Any] = handler(self)
+        if not self.encryption_keys:
+            serialized.pop("encryption-keys", None)
+        return serialized
 
     def model_dump_json(self, exclude_none: bool = True, exclude: Any | None = None, by_alias: bool = True, **kwargs: Any) -> str:
         raise NotImplementedError("Writing V3 is not yet supported, see: https://github.com/apache/iceberg-python/issues/1551")

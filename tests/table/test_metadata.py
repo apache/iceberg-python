@@ -980,3 +980,15 @@ def test_v3_metadata_without_encryption_keys(example_table_metadata_v3: dict[str
     assert table_metadata.encryption_keys == []
     for snapshot in table_metadata.snapshots:
         assert snapshot.key_id is None
+
+    assert "encryption-keys" not in table_metadata.model_dump(mode="json")
+
+
+def test_v3_metadata_with_encryption_keys_serializes_them(example_table_metadata_v3: dict[str, Any]) -> None:
+    table_metadata = TableMetadataUtil.parse_obj(
+        {**example_table_metadata_v3, "encryption-keys": [{"key-id": "a", "encrypted-key-metadata": "a2V5"}]}
+    )
+
+    assert table_metadata.model_dump(mode="json")["encryption-keys"] == [
+        {"key-id": "a", "encrypted-key-metadata": "a2V5", "properties": {}}
+    ]
