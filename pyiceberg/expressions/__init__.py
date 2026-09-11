@@ -30,7 +30,7 @@ from pydantic_core.core_schema import ValidatorFunctionWrapHandler
 from pyiceberg.expressions.literals import AboveMax, BelowMin, Literal, literal
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, LiteralValue, StructProtocol
-from pyiceberg.types import DoubleType, FloatType, NestedField
+from pyiceberg.types import DoubleType, FloatType, IcebergType, NestedField
 from pyiceberg.utils.singleton import Singleton
 
 
@@ -47,6 +47,12 @@ def _to_literal(value: L | Literal[L]) -> Literal[L]:
         return value
     else:
         return literal(value)
+
+
+def _to_bound_literal(lit: LiteralValue, field_type: IcebergType) -> LiteralValue | None:
+    """Convert a literal to the field's type, or None when the field can never hold its value."""
+    converted = lit.to(field_type)
+    return None if isinstance(converted, (AboveMax, BelowMin)) else converted
 
 
 class BooleanExpression(IcebergBaseModel, ABC):
@@ -697,8 +703,14 @@ class SetPredicate(UnboundPredicate, ABC):
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
-        literal_set = self.literals
-        return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore
+        field_type = bound_term.ref().field.field_type
+        # An out-of-range literal converts to an AboveMax/BelowMin sentinel that carries the
+        # clamped boundary value, which would then match rows at the boundary. Keep the original
+        # literal instead, so the bound set still round-trips to what the caller wrote.
+        bound_literals = {
+            converted if (converted := _to_bound_literal(lit, field_type)) is not None else lit for lit in self.literals
+        }
+        return self.as_bound(bound_term, bound_literals)  # type: ignore
 
     def __str__(self) -> str:
         """Return the string representation of the SetPredicate class."""
@@ -735,7 +747,10 @@ class BoundSetPredicate(BoundPredicate, ABC):
 
     @cached_property
     def value_set(self) -> set[Any]:
-        return {lit.value for lit in self.literals}
+        field_type = self.term.ref().field.field_type
+        # `literals` keeps every literal the caller wrote so the predicate round-trips, but a
+        # value the field can never hold must not reach an evaluator.
+        return {converted.value for lit in self.literals if (converted := _to_bound_literal(lit, field_type)) is not None}
 
     def __str__(self) -> str:
         """Return the string representation of the BoundSetPredicate class."""
