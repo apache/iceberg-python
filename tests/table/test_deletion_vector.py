@@ -14,18 +14,91 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import struct
+import zlib
 from os import path
 
 import pytest
 from pyroaring import BitMap
 
-from pyiceberg.table.deletion_vector import DeletionVector
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+from pyiceberg.table.deletion_vector import (
+    _DV_BLOB_MAGIC_NUMBER,
+    DeletionVector,
+    _deserialize_dv_blob,
+    has_deletion_vector_content_reference,
+)
 
 
 def _open_file(file: str) -> bytes:
     cur_dir = path.dirname(path.realpath(__file__))
     with open(f"{cur_dir}/bitmaps/{file}", "rb") as f:
         return f.read()
+
+
+def _dv_blob(bitmap_payload: bytes) -> bytes:
+    bitmap_data = struct.pack("<I", _DV_BLOB_MAGIC_NUMBER) + bitmap_payload
+    return struct.pack(">I", len(bitmap_data)) + bitmap_data + struct.pack(">I", zlib.crc32(bitmap_data) & 0xFFFFFFFF)
+
+
+def _bitmap_payload() -> bytes:
+    return (1).to_bytes(8, byteorder="little") + (0).to_bytes(4, byteorder="little") + BitMap([1, 3, 5]).serialize()
+
+
+def test_deserialize_deletion_vector_blob() -> None:
+    actual = _deserialize_dv_blob(_dv_blob(_bitmap_payload()), record_count=3)
+
+    assert actual == [BitMap([1, 3, 5])]
+
+
+def test_deserialize_deletion_vector_blob_invalid_length() -> None:
+    with pytest.raises(ValueError, match="Invalid bitmap data length"):
+        _deserialize_dv_blob(_dv_blob(_bitmap_payload())[:-1])
+
+
+def test_deserialize_deletion_vector_blob_invalid_magic() -> None:
+    bitmap_data = struct.pack("<I", _DV_BLOB_MAGIC_NUMBER + 1) + _bitmap_payload()
+    blob = struct.pack(">I", len(bitmap_data)) + bitmap_data + struct.pack(">I", zlib.crc32(bitmap_data) & 0xFFFFFFFF)
+
+    with pytest.raises(ValueError, match="Invalid magic number"):
+        _deserialize_dv_blob(blob)
+
+
+def test_deserialize_deletion_vector_blob_invalid_crc() -> None:
+    blob = bytearray(_dv_blob(_bitmap_payload()))
+    blob[-1] ^= 1
+
+    with pytest.raises(ValueError, match="Invalid CRC"):
+        _deserialize_dv_blob(bytes(blob))
+
+
+def test_deserialize_deletion_vector_blob_invalid_cardinality() -> None:
+    with pytest.raises(ValueError, match="Invalid cardinality"):
+        _deserialize_dv_blob(_dv_blob(_bitmap_payload()), record_count=4)
+
+
+def _data_file(
+    content_offset: int | None = None,
+    content_size_in_bytes: int | None = None,
+    referenced_data_file: str | None = None,
+) -> DataFile:
+    return DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path="deletes.puffin",
+        file_format=FileFormat.PUFFIN,
+        record_count=1,
+        content_offset=content_offset,
+        content_size_in_bytes=content_size_in_bytes,
+        referenced_data_file=referenced_data_file,
+    )
+
+
+def test_has_deletion_vector_content_reference() -> None:
+    assert not has_deletion_vector_content_reference(_data_file())
+    assert has_deletion_vector_content_reference(_data_file(content_offset=0))
+    assert has_deletion_vector_content_reference(_data_file(content_size_in_bytes=1))
+    assert has_deletion_vector_content_reference(_data_file(referenced_data_file="data.parquet"))
 
 
 def test_map_empty() -> None:
