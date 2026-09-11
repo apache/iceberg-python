@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
-    from pyiceberg.table.update.snapshot import ExpireSnapshots
+    from pyiceberg.table.update.snapshot import ExpireSnapshots, RewriteManifests
 
 
 class MaintenanceTable:
@@ -43,3 +43,17 @@ class MaintenanceTable:
         from pyiceberg.table.update.snapshot import ExpireSnapshots
 
         return ExpireSnapshots(transaction=Transaction(self.tbl, autocommit=True))
+
+    def rewrite_manifests(self) -> RewriteManifests:
+        """Return a RewriteManifests operation that merges the current snapshot's data manifests.
+
+        Entries are rewritten as EXISTING, keeping their sequence numbers; delete
+        manifests are kept as-is. The result is committed as a `replace` snapshot.
+
+        Returns:
+            RewriteManifests operation; call commit() to execute it.
+        """
+        from pyiceberg.table import Transaction
+        from pyiceberg.table.update.snapshot import RewriteManifests
+
+        return RewriteManifests(transaction=Transaction(self.tbl, autocommit=True), io=self.tbl.io)
