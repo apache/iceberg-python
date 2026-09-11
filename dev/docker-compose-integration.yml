@@ -88,7 +88,7 @@ services:
       retries: 10
       start_period: 5s
   aws-cli:
-    image: amazon/aws-cli:2.36.40
+    image: amazon/aws-cli:2.36.44
     container_name: pyiceberg-aws-cli
     networks:
       iceberg_net:
