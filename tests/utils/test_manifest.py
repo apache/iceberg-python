@@ -25,10 +25,11 @@ import pytest
 
 import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
-from pyiceberg.avro.file import AvroOutputFile
+from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
+    DATA_FILE_TYPE,
     MANIFEST_ENTRY_SCHEMAS,
     MANIFEST_LIST_FILE_SCHEMAS,
     DataFile,
@@ -50,7 +51,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.typedef import Record, TableVersion
-from pyiceberg.types import IntegerType, NestedField
+from pyiceberg.types import IntegerType, ListType, LongType, NestedField, StructType
 
 
 @pytest.fixture(autouse=True)
@@ -292,6 +293,57 @@ def test_read_manifest_entry_v3_fields(tmp_path: Path) -> None:
     assert delete_file.referenced_data_file == "s3://bucket/data.parquet"
     assert delete_file.content_offset == 1
     assert delete_file.content_size_in_bytes == 46
+
+
+def test_read_legacy_long_equality_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Manifests written by older PyIceberg versions with equality_ids as list<long> can still be read.
+
+    PyIceberg previously wrote the wrong schema, list<long>, for equality_ids; the Iceberg spec requires list<int>.
+    The default schema now uses list<int>, so reading existing manifests relies on the fallback in the Avro resolver.
+    See: https://github.com/apache/iceberg-python/issues/3840
+    See: https://iceberg.apache.org/spec/#manifests
+    """
+    io = PyArrowFileIO()
+    manifest_path = str(tmp_path / "manifest.avro")
+
+    entry = ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=1,
+        sequence_number=1,
+        file_sequence_number=1,
+        data_file=DataFile.from_args(
+            content=DataFileContent.EQUALITY_DELETES,
+            file_path="s3://bucket/deletes.parquet",
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=10,
+            file_size_in_bytes=1024,
+            equality_ids=[1, 2],
+        ),
+    )
+
+    # Write the manifest as older PyIceberg versions did, with equality_ids as list<long>
+    legacy_data_file_type = StructType(
+        *[
+            NestedField(135, "equality_ids", ListType(136, LongType()), required=False) if field.field_id == 135 else field
+            for field in DATA_FILE_TYPE[2].fields
+        ]
+    )
+    with monkeypatch.context() as legacy:
+        legacy.setitem(DATA_FILE_TYPE, 2, legacy_data_file_type)
+        with write_manifest(
+            format_version=2,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=Schema(NestedField(1, "foo", IntegerType(), False)),
+            output_file=io.new_output(manifest_path),
+            snapshot_id=1,
+            avro_compression="null",
+        ) as writer:
+            writer.add_entry(entry)
+    with AvroFile[ManifestEntry](io.new_input(manifest_path)) as avro_file:
+        assert avro_file.schema.find_field("data_file.equality_ids").field_type == ListType(136, LongType())
+
+    assert writer.to_manifest_file().fetch_manifest_entry(io)[0].data_file.equality_ids == [1, 2]
 
 
 def test_read_manifest_list(generated_manifest_file_file_v1: str) -> None:
