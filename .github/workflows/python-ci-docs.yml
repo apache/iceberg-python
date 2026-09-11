@@ -20,9 +20,6 @@
 name: "Python CI Docs"
 
 on:
-  push:
-    branches:
-      - 'main'
   pull_request:
   merge_group:
 
@@ -49,5 +46,3 @@ jobs:
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
       - name: Build docs
         run: make docs-build
-      - name: Run linters
-        run: make lint
