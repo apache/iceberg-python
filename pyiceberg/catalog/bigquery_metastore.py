@@ -335,7 +335,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
 
     @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
-        dataset_name = self.identifier_to_database(namespace)
+        dataset_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
 
         try:
             dataset = self.client.get_dataset(DatasetReference(project=self.project_id, dataset_id=dataset_name))
