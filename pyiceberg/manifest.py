@@ -464,9 +464,14 @@ def data_file_with_partition(partition_type: StructType, format_version: TableVe
 
 class DataFile(Record):
     @classmethod
-    def from_args(cls, _table_format_version: TableVersion = DEFAULT_READ_VERSION, **arguments: Any) -> DataFile:
+    def from_args(
+        cls, _table_format_version: TableVersion = DEFAULT_READ_VERSION, *, spec_id: int | None = None, **arguments: Any
+    ) -> DataFile:
         struct = DATA_FILE_TYPE[_table_format_version]
-        return super()._bind(struct, **arguments)
+        data_file = super()._bind(struct, **arguments)
+        if spec_id is not None:
+            data_file.spec_id = spec_id
+        return data_file
 
     @property
     def content(self) -> DataFileContent:
