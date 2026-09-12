@@ -250,13 +250,13 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: Ta
         "sort_order_id": 4,
         "spec_id": 3,
     }
-    data_file_v2 = DataFile.from_args(content=DataFileContent.DATA, **common_data_file_args)  # type: ignore
-    assert data_file_v2.spec_id == 3
+    data_file = DataFile.from_args(content=DataFileContent.DATA, **common_data_file_args)  # type: ignore
+    assert data_file.spec_id == 3
 
     entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
-        data_file=data_file_v2,
+        data_file=data_file,
     )
 
     with TemporaryDirectory() as tmpdir:
@@ -289,8 +289,8 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: Ta
 
             if format_version == 1:
                 data_file_v1 = DataFile.from_args(
-                    block_size_in_bytes=DEFAULT_BLOCK_SIZE,
                     _table_format_version=format_version,
+                    block_size_in_bytes=DEFAULT_BLOCK_SIZE,
                     **common_data_file_args,  # type: ignore
                 )
 
