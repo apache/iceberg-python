@@ -225,7 +225,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
             fa_entry = next(it)
 
         v2_entry = todict(entry)
-        for field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
+        for field in ("first_row_id", "content_offset", "content_size_in_bytes"):
             del v2_entry["data_file"][field]
 
         assert v2_entry == fa_entry
