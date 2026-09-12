@@ -90,6 +90,12 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - The Apache License header is required on every new source file (enforced by `./dev/check-license`).
 - Run `make lint` and `make test` before pushing; CI runs both plus the lockfile check.
 
+## GitHub Write Approval
+
+- **Never** modify GitHub state without explicit user approval for that specific action in the current session; treat GitHub as read-only by default.
+- **Ask first** before any GitHub write: show the exact target and action, including the full proposed content when applicable, then wait for explicit approval. This includes creating, editing, or deleting issues, pull requests, comments, reviews, labels, and branches, as well as merges, releases, and workflow runs.
+- **Never** treat a request to investigate, implement, fix, draft, or prepare as approval to write to GitHub, or infer, reuse, or bypass approval.
+
 ## Boundaries
 
 - **Never** add a hard (non-optional) dependency without discussion — keep heavy/integration libraries as optional extras.
