@@ -2336,6 +2336,80 @@ def match_metrics_mode(mode: str) -> MetricsMode:
         raise ValueError(f"Unsupported metrics mode: {mode}")
 
 
+class _LimitFieldIds(PreOrderSchemaVisitor[set[int]]):
+    """Select fields that should receive inferred default metrics."""
+
+    def __init__(self, limit: int) -> None:
+        self._limit = limit
+        self._field_ids: set[int] = set()
+
+    def _should_continue(self) -> bool:
+        return len(self._field_ids) < self._limit
+
+    @staticmethod
+    def _metrics_eligible(field_type: IcebergType) -> bool:
+        return isinstance(field_type, PrimitiveType)
+
+    def schema(self, schema: Schema, struct_result: Callable[[], set[int]]) -> set[int]:
+        struct_result()
+        return self._field_ids
+
+    def struct(
+        self,
+        struct: StructType,
+        field_results: builtins.list[Callable[[], set[int]]],
+    ) -> set[int]:
+        # Prefer primitive fields at the current struct level before
+        # descending into nested structures.
+        for field in struct.fields:
+            if not self._should_continue():
+                break
+
+            if self._metrics_eligible(field.field_type):
+                self._field_ids.add(field.field_id)
+
+        for result in field_results:
+            if not self._should_continue():
+                break
+            result()
+
+        return self._field_ids
+
+    def field(self, field: NestedField, field_result: Callable[[], set[int]]) -> set[int]:
+        field_result()
+        return self._field_ids
+
+    def list(self, list_type: ListType, element_result: Callable[[], set[int]]) -> set[int]:
+        if self._should_continue() and self._metrics_eligible(list_type.element_type):
+            self._field_ids.add(list_type.element_id)
+
+        element_result()
+        return self._field_ids
+
+    def map(
+        self,
+        map_type: MapType,
+        key_result: Callable[[], set[int]],
+        value_result: Callable[[], set[int]],
+    ) -> set[int]:
+        if self._should_continue() and self._metrics_eligible(map_type.key_type):
+            self._field_ids.add(map_type.key_id)
+
+        if self._should_continue() and self._metrics_eligible(map_type.value_type):
+            self._field_ids.add(map_type.value_id)
+
+        key_result()
+        value_result()
+        return self._field_ids
+
+    def primitive(self, primitive: PrimitiveType) -> set[int]:
+        return self._field_ids
+
+
+def _limit_field_ids(schema: Schema, limit: int) -> set[int]:
+    return pre_order_visit(schema, _LimitFieldIds(limit))
+
+
 @dataclass(frozen=True)
 class StatisticsCollector:
     field_id: int
@@ -2349,15 +2423,44 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[list[StatisticsCollector]
     _schema: Schema
     _properties: dict[str, str]
     _default_mode: str
+    _inferred_field_ids: set[int] | None
 
     def __init__(self, schema: Schema, properties: dict[str, str]):
         from pyiceberg.table import TableProperties
 
         self._schema = schema
         self._properties = properties
-        self._default_mode = self._properties.get(
-            TableProperties.DEFAULT_WRITE_METRICS_MODE, TableProperties.DEFAULT_WRITE_METRICS_MODE_DEFAULT
-        )
+
+        configured_default_mode = self._properties.get(TableProperties.DEFAULT_WRITE_METRICS_MODE)
+
+        if configured_default_mode is not None:
+            # An explicitly configured default applies to all columns.
+            self._default_mode = configured_default_mode
+            self._inferred_field_ids = None
+        else:
+            self._default_mode = TableProperties.DEFAULT_WRITE_METRICS_MODE_DEFAULT
+
+            max_inferred_columns = property_as_int(
+                self._properties,
+                TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS,
+                TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT,
+            )
+
+            if max_inferred_columns is None:
+                max_inferred_columns = TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT
+
+            if max_inferred_columns < 0:
+                logger.warning(
+                    "Invalid value for %s (negative): %s, falling back to %s",
+                    TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS,
+                    max_inferred_columns,
+                    TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT,
+                )
+                max_inferred_columns = TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT
+
+            self._inferred_field_ids = (
+                _limit_field_ids(schema, max_inferred_columns) if len(schema.field_ids) > max_inferred_columns else None
+            )
 
     def schema(
         self, schema: Schema, struct_result: Callable[[], builtins.list[StatisticsCollector]]
@@ -2402,6 +2505,9 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[list[StatisticsCollector]
 
         metrics_mode = match_metrics_mode(self._default_mode)
 
+        if self._inferred_field_ids is not None and self._field_id not in self._inferred_field_ids:
+            metrics_mode = MetricsMode(MetricModeTypes.NONE)
+
         col_mode = self._properties.get(f"{TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX}.{column_name}")
         if col_mode:
             metrics_mode = match_metrics_mode(col_mode)
@@ -2411,11 +2517,6 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[list[StatisticsCollector]
             and metrics_mode.type == MetricModeTypes.TRUNCATE
         ):
             metrics_mode = MetricsMode(MetricModeTypes.FULL)
-
-        is_nested = column_name.find(".") >= 0
-
-        if is_nested and metrics_mode.type in [MetricModeTypes.TRUNCATE, MetricModeTypes.FULL]:
-            metrics_mode = MetricsMode(MetricModeTypes.COUNTS)
 
         return [StatisticsCollector(field_id=self._field_id, iceberg_type=primitive, mode=metrics_mode, column_name=column_name)]
 
@@ -2429,9 +2530,9 @@ def compute_statistics_plan(
 
     The resulting list is assumed to have the same length and same order as the columns in the pyarrow table.
     This allows the list to map from the column index to the Iceberg column ID.
-    For each element, the desired metrics collection that was provided by the user in the configuration
-    is computed and then adjusted according to the data type of the column. For nested columns the minimum
-    and maximum values are not computed. And truncation is only applied to text of binary strings.
+    For each element, the desired metrics collection configured by the user is
+    computed and adjusted according to the data type of the column. Truncation
+    is only applied to string and binary types.
 
     Args:
         table_properties (from pyiceberg.table.metadata.TableMetadata): The Iceberg table metadata properties.
