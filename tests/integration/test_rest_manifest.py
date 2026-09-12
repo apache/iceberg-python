@@ -16,46 +16,21 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
-import inspect
-from copy import copy
-from enum import Enum
 from tempfile import TemporaryDirectory
-from typing import Any
 
 import pytest
 from fastavro import reader
 
+from conftest import record_to_fastavro
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import PyArrowFileIO
-from pyiceberg.manifest import DataFile, write_manifest
+from pyiceberg.manifest import (
+    data_file_with_partition,
+    manifest_entry_schema_with_data_file,
+    write_manifest,
+)
 from pyiceberg.table import Table
-from pyiceberg.typedef import Record
-from pyiceberg.utils.lazydict import LazyDict
-
-
-# helper function to serialize our objects to dicts to enable
-# direct comparison with the dicts returned by fastavro
-def todict(obj: Any, spec_keys: list[str]) -> Any:
-    if type(obj) is Record:
-        return {key: obj[pos] for key, pos in zip(spec_keys, range(len(obj)), strict=True)}
-    if isinstance(obj, dict) or isinstance(obj, LazyDict):
-        data = []
-        for k, v in obj.items():
-            data.append({"key": k, "value": v})
-        return data
-    elif isinstance(obj, Enum):
-        return obj.value
-    elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
-        return [todict(v, spec_keys) for v in obj]
-    elif hasattr(obj, "__dict__"):
-        return {
-            key: todict(value, spec_keys)
-            for key, value in inspect.getmembers(obj)
-            if not callable(value) and not key.startswith("_")
-        }
-    else:
-        return obj
 
 
 @pytest.fixture()
@@ -89,31 +64,16 @@ def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCom
     entry = test_manifest_entries[0]
     test_schema = table_test_all_types.schema()
     test_spec = table_test_all_types.spec()
-    wrapped_data_file_v2_debug = DataFile.from_args(
-        format_version=2,
-        content=entry.data_file.content,
-        file_path=entry.data_file.file_path,
-        file_format=entry.data_file.file_format,
-        partition=entry.data_file.partition,
-        record_count=entry.data_file.record_count,
-        file_size_in_bytes=entry.data_file.file_size_in_bytes,
-        column_sizes=entry.data_file.column_sizes,
-        value_counts=entry.data_file.value_counts,
-        null_value_counts=entry.data_file.null_value_counts,
-        nan_value_counts=entry.data_file.nan_value_counts,
-        lower_bounds=entry.data_file.lower_bounds,
-        upper_bounds=entry.data_file.upper_bounds,
-        key_metadata=entry.data_file.key_metadata,
-        split_offsets=entry.data_file.split_offsets,
-        equality_ids=entry.data_file.equality_ids,
-        sort_order_id=entry.data_file.sort_order_id,
-        spec_id=entry.data_file.spec_id,
+    data_file_v3_type = data_file_with_partition(
+        partition_type=test_spec.partition_type(test_schema),
+        format_version=3,
     )
-    wrapped_entry_v2 = copy(entry)
-    wrapped_entry_v2.data_file = wrapped_data_file_v2_debug
-    wrapped_entry_v2_dict = todict(wrapped_entry_v2, [field.name for field in test_spec.fields])
-    for field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
-        del wrapped_entry_v2_dict["data_file"][field]
+    data_file_v2_type = data_file_with_partition(
+        partition_type=test_spec.partition_type(test_schema),
+        format_version=2,
+    )
+    entry_v3_type = manifest_entry_schema_with_data_file(format_version=3, data_file=data_file_v3_type).as_struct()
+    entry_v2_type = manifest_entry_schema_with_data_file(format_version=2, data_file=data_file_v2_type).as_struct()
 
     with TemporaryDirectory() as tmpdir:
         tmp_avro_file = tmpdir + "/test_write_manifest.avro"
@@ -134,4 +94,4 @@ def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCom
             it = iter(r)
             fa_entry = next(it)
 
-            assert fa_entry == wrapped_entry_v2_dict
+            assert fa_entry == record_to_fastavro(entry, record_struct=entry_v3_type, file_struct=entry_v2_type)

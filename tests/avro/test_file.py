@@ -14,18 +14,16 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-import inspect
 from _decimal import Decimal
 from datetime import datetime
-from enum import Enum
 from tempfile import TemporaryDirectory
-from typing import Any
 from uuid import UUID
 
 import pytest
 from fastavro import reader, writer
 
 import pyiceberg.avro.file as avro
+from conftest import record_to_fastavro
 from pyiceberg.avro.codecs.deflate import DeflateCodec
 from pyiceberg.avro.file import AvroFileHeader
 from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -87,24 +85,6 @@ def test_missing_schema() -> None:
     assert "No schema found in Avro file headers" in str(exc_info.value)
 
 
-# helper function to serialize our objects to dicts to enable
-# direct comparison with the dicts returned by fastavro
-def todict(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        data = []
-        for k, v in obj.items():
-            data.append({"key": k, "value": v})
-        return data
-    elif isinstance(obj, Enum):
-        return obj.value
-    elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
-        return [todict(v) for v in obj]
-    elif isinstance(obj, Record):
-        return {key: todict(value) for key, value in inspect.getmembers(obj) if not callable(value) and not key.startswith("_")}
-    else:
-        return obj
-
-
 def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
@@ -157,7 +137,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
 
             fa_entry = next(it)
 
-        v2_entry = todict(entry)
+        v2_entry = record_to_fastavro(entry)
 
         # These are not written in V1
         del v2_entry["sequence_number"]
@@ -173,10 +153,10 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
         assert v2_entry == fa_entry
 
 
-def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
+def test_write_v2_manifest_entry_with_fastavro() -> None:
     data_file = DataFile.from_args(
-        content=DataFileContent.DATA,
-        file_path="s3://some-path/some-file.parquet",
+        content=DataFileContent.POSITION_DELETES,
+        file_path="s3://some-path/delete-file.parquet",
         file_format=FileFormat.PARQUET,
         partition=Record(),
         record_count=131327,
@@ -191,7 +171,9 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
         split_offsets=[4, 133697593],
         equality_ids=[],
         sort_order_id=4,
+        referenced_data_file="s3://some-path/data-file.parquet",
     )
+
     entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
@@ -209,6 +191,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
             file_schema=MANIFEST_ENTRY_SCHEMAS[2],
             schema_name="manifest_entry",
+            record_schema=MANIFEST_ENTRY_SCHEMAS[3],
             metadata=additional_metadata,
         ) as out:
             out.write_block([entry])
@@ -224,11 +207,15 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
 
             fa_entry = next(it)
 
-        v2_entry = todict(entry)
-        for field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
-            del v2_entry["data_file"][field]
-
-        assert v2_entry == fa_entry
+        assert fa_entry["data_file"]["referenced_data_file"] == data_file.referenced_data_file
+        assert (
+            record_to_fastavro(
+                entry,
+                record_struct=MANIFEST_ENTRY_SCHEMAS[3].as_struct(),
+                file_struct=MANIFEST_ENTRY_SCHEMAS[2].as_struct(),
+            )
+            == fa_entry
+        )
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -266,7 +253,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: Ta
         schema = AvroSchemaConversion().iceberg_to_avro(MANIFEST_ENTRY_SCHEMAS[format_version], schema_name="manifest_entry")
 
         with open(tmp_avro_file, "wb") as out:
-            writer(out, schema, [todict(entry)])
+            writer(out, schema, [record_to_fastavro(entry)])
 
         # Read as V2
         with avro.AvroFile[ManifestEntry](

@@ -25,13 +25,15 @@ and the built-in pytest fixture request should be used as an additional argument
 retrieved using `request.getfixturevalue(fixture_name)`.
 """
 
+import inspect
 import os
 import re
 import string
 import time
 import uuid
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from datetime import date, datetime, timezone
+from enum import Enum
 from pathlib import Path
 from random import choice, randint
 from tempfile import TemporaryDirectory
@@ -72,7 +74,7 @@ from pyiceberg.table import FileScanTask, Table
 from pyiceberg.table.metadata import TableMetadataV1, TableMetadataV2, TableMetadataV3
 from pyiceberg.table.sorting import NullOrder, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
-from pyiceberg.typedef import Identifier
+from pyiceberg.typedef import Identifier, Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -102,6 +104,43 @@ if TYPE_CHECKING:
     from pyspark.sql import SparkSession
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
+
+
+def record_to_fastavro(
+    obj: Any,
+    record_struct: StructType | None = None,
+    file_struct: StructType | None = None,
+) -> Any:
+    """Convert a manifest record to the representation returned by FastAvro."""
+    if isinstance(obj, Record):
+        if record_struct is not None:
+            record_positions = {field.field_id: pos for pos, field in enumerate(record_struct.fields)}
+            result = {}
+            for file_field in (file_struct or record_struct).fields:
+                if (pos := record_positions.get(file_field.field_id)) is None:
+                    result[file_field.name] = file_field.write_default
+                    continue
+
+                record_field = record_struct.fields[pos]
+                result[file_field.name] = record_to_fastavro(
+                    obj[pos],
+                    record_field.field_type if isinstance(record_field.field_type, StructType) else None,
+                    file_field.field_type if isinstance(file_field.field_type, StructType) else None,
+                )
+            return result
+        return {
+            key: record_to_fastavro(value)
+            for key, value in inspect.getmembers(obj)
+            if not callable(value) and not key.startswith("_")
+        }
+    if isinstance(obj, Mapping):
+        return [{"key": key, "value": value} for key, value in obj.items()]
+    if isinstance(obj, Enum):
+        return obj.value
+    if hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
+        return [record_to_fastavro(value) for value in obj]
+    return obj
+
 
 # Markers for suites that run separately from the unit tests
 NON_UNIT_TEST_MARKERS = {"integration", "s3", "adls", "gcs", "notebook", "benchmark"}
