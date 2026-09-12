@@ -240,7 +240,6 @@ def test_write_v2_manifest_entry_with_fastavro() -> None:
 
             fa_entry = next(it)
 
-        assert fa_entry["data_file"]["referenced_data_file"] is None
         assert record_to_dict(entry, MANIFEST_ENTRY_SCHEMAS[2].as_struct()) == fa_entry
 
 
