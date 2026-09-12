@@ -65,7 +65,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     ViewAlreadyExistsError,
 )
-from pyiceberg.io import load_file_io
+from pyiceberg.io import ARROW_FILE_IO, FSSPEC_FILE_IO, PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
@@ -3371,6 +3371,32 @@ def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_me
     assert table.io.properties["s3.access-key-id"] == "vended-key"
     assert table.io.properties["s3.secret-access-key"] == "vended-secret"
     assert table.io.properties["s3.session-token"] == "vended-token"
+
+
+def test_load_table_catalog_config_outranks_table_properties(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": {
+                **example_table_metadata_with_snapshot_v1,
+                "properties": {PY_IO_IMPL: FSSPEC_FILE_IO, "s3.proxy-uri": "http://table-only-proxy"},
+            },
+            "config": {"s3.region": "from-config"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PY_IO_IMPL: ARROW_FILE_IO, "s3.region": "from-catalog"})
+    table = catalog.load_table(("fokko", "table"))
+
+    assert table.io.properties[PY_IO_IMPL] == ARROW_FILE_IO
+    # Server config and a key the catalog leaves unset keep working.
+    assert table.io.properties["s3.region"] == "from-config"
+    assert table.io.properties["s3.proxy-uri"] == "http://table-only-proxy"
 
 
 def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
