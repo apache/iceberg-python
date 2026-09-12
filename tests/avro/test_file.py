@@ -209,6 +209,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
             file_schema=MANIFEST_ENTRY_SCHEMAS[2],
             schema_name="manifest_entry",
+            record_schema=MANIFEST_ENTRY_SCHEMAS[3],
             metadata=additional_metadata,
         ) as out:
             out.write_block([entry])
