@@ -61,6 +61,7 @@ from pyarrow import ChunkedArray
 from pyarrow._s3fs import S3RetryStrategy
 from pyarrow.fs import (
     FileInfo,
+    FileSelector,
     FileSystem,
     FileType,
 )
@@ -116,6 +117,7 @@ from pyiceberg.io import (
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    FileEntry,
     FileIO,
     InputFile,
     InputStream,
@@ -693,6 +695,38 @@ class PyArrowFileIO(FileIO):
             elif e.errno == 13 or "AWS Error [code 15]" in str(e):
                 raise PermissionError(f"Cannot delete file, access denied: {location}") from e
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
+
+    @override
+    def list_prefix(self, location: str) -> Iterator[FileEntry]:
+        """Recursively list every file under the given location.
+
+        Args:
+            location (str): A URI or a path to recursively list.
+
+        Returns:
+            Iterator[FileEntry]: The metadata of every file under the location.
+        """
+        scheme, netloc, path = self.parse_location(location, self.properties)
+        fs = self.fs_by_scheme(scheme, netloc)
+        selector = FileSelector(path, recursive=True, allow_not_found=True)
+
+        # PyArrow reports paths without a scheme, and for object stores the bucket is part of
+        # the path, so the prefix that reconstructs the original URI differs per scheme.
+        original_scheme = "" if _is_local_path(location) else urlparse(location).scheme
+        if original_scheme in ("hdfs", "viewfs"):
+            uri_prefix = f"{original_scheme}://{netloc}"
+        elif original_scheme:
+            uri_prefix = f"{original_scheme}://"
+        else:
+            uri_prefix = ""
+
+        for info in fs.get_file_info(selector):
+            if info.type == FileType.File:
+                yield FileEntry(
+                    location=f"{uri_prefix}{info.path}",
+                    size=info.size or 0,
+                    last_modified=info.mtime,
+                )
 
     def __getstate__(self) -> dict[str, Any]:
         """Create a dictionary of the PyArrowFileIO fields used when pickling."""

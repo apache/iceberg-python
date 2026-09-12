@@ -22,8 +22,9 @@ import json
 import logging
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from copy import copy
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
@@ -86,6 +87,7 @@ from pyiceberg.io import (
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
     S3_SSE_KMS_KEY_ID,
+    FileEntry,
     FileIO,
     InputFile,
     InputStream,
@@ -490,6 +492,40 @@ class FsspecFileIO(FileIO):
         uri = urlparse(str_location)
         fs = self._get_fs_from_uri(uri, str_location)
         fs.rm(str_location)
+
+    @override
+    def list_prefix(self, location: str) -> Iterator[FileEntry]:
+        """Recursively list every file under the given location.
+
+        Args:
+            location (str): A URI or a path to recursively list.
+
+        Returns:
+            Iterator[FileEntry]: The metadata of every file under the location.
+        """
+        uri = urlparse(location)
+        fs = self._get_fs_from_uri(uri, location)
+        # On Windows a drive letter parses as a URI scheme, so local paths are reported as-is.
+        scheme = "" if _is_local_path(location) else uri.scheme
+
+        for path, info in fs.find(location, detail=True).items():
+            if info.get("type", "file") != "file":
+                continue
+
+            mtime = info.get("mtime") or info.get("LastModified") or info.get("last_modified")
+            last_modified: datetime | None
+            if isinstance(mtime, datetime):
+                last_modified = mtime
+            elif isinstance(mtime, (int, float)):
+                last_modified = datetime.fromtimestamp(mtime, tz=timezone.utc)
+            else:
+                last_modified = None
+
+            yield FileEntry(
+                location=path if scheme in ("", "file") else f"{scheme}://{path}",
+                size=int(info.get("size") or 0),
+                last_modified=last_modified,
+            )
 
     def _get_fs_from_uri(self, uri: "ParseResult", location: str = "") -> AbstractFileSystem:
         """Get a filesystem from a parsed URI, using hostname for ADLS account resolution."""
