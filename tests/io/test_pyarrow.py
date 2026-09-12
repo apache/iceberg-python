@@ -63,7 +63,7 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
+from pyiceberg.io import ADLS_ACCOUNT_NAME, S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PYARROW_PARQUET_FIELD_ID_KEY,
@@ -2326,6 +2326,30 @@ def test_parse_location() -> None:
     check_results("/root/foo.txt", "file", "", os.path.abspath("/root/foo.txt"))
     check_results("/root/tmp/foo.txt", "file", "", os.path.abspath("/root/tmp/foo.txt"))
 
+    check_results("s3://bucket/root/foo.txt", "s3", "bucket", "bucket/root/foo.txt")
+
+
+@pytest.mark.parametrize("scheme", ["abfs", "abfss", "wasb", "wasbs"])
+def test_parse_location_adls_account_qualified(scheme: str) -> None:
+    """The account must not leak into the path, PyArrow takes it on the filesystem instead."""
+    scheme_, netloc, path = PyArrowFileIO.parse_location(
+        f"{scheme}://mycontainer@myaccount.dfs.core.windows.net/wh/db/tbl/data.parquet"
+    )
+
+    assert scheme_ == scheme
+    assert netloc == "mycontainer@myaccount.dfs.core.windows.net"
+    assert path == "mycontainer/wh/db/tbl/data.parquet"
+
+
+@pytest.mark.parametrize("scheme", ["abfs", "abfss", "wasb", "wasbs"])
+def test_parse_location_adls_container_only(scheme: str) -> None:
+    """Locations without an account keep the netloc as the container."""
+    scheme_, netloc, path = PyArrowFileIO.parse_location(f"{scheme}://mycontainer/wh/db/tbl/data.parquet")
+
+    assert scheme_ == scheme
+    assert netloc == "mycontainer"
+    assert path == "mycontainer/wh/db/tbl/data.parquet"
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only behavior")
 def test_parse_location_windows_drive_letter() -> None:
@@ -3208,6 +3232,46 @@ def test__to_requested_schema_float_promotion(
 
     assert result.schema[0].type == expected_arrow_type
     assert result.column(0).to_pylist() == [1.5, 2.25, 3.0, None]
+
+
+@skip_if_pyarrow_too_old
+@pytest.mark.parametrize("scheme", ["abfs", "abfss", "wasb", "wasbs"])
+def test_adls_account_name_from_location(scheme: str) -> None:
+    """The account in an account qualified location is used when the property is not set."""
+    with patch("pyarrow.fs.AzureFileSystem") as mock_azure_fs:
+        PyArrowFileIO().fs_by_scheme(scheme, "mycontainer@myaccount.dfs.core.windows.net")
+
+    assert mock_azure_fs.call_args.kwargs["account_name"] == "myaccount"
+
+
+@skip_if_pyarrow_too_old
+def test_adls_account_name_property_wins_over_location() -> None:
+    """An explicit adls.account-name is not overridden by the account in the location."""
+    with patch("pyarrow.fs.AzureFileSystem") as mock_azure_fs:
+        PyArrowFileIO({ADLS_ACCOUNT_NAME: "configured"}).fs_by_scheme("abfss", "mycontainer@myaccount.dfs.core.windows.net")
+
+    assert mock_azure_fs.call_args.kwargs["account_name"] == "configured"
+
+
+@skip_if_pyarrow_too_old
+def test_adls_no_account_name_from_container_only_location() -> None:
+    """A container only netloc carries no account, so nothing should be inferred from it."""
+    with patch("pyarrow.fs.AzureFileSystem") as mock_azure_fs:
+        PyArrowFileIO().fs_by_scheme("abfss", "warehouse")
+
+    assert "account_name" not in mock_azure_fs.call_args.kwargs
+
+
+@skip_if_pyarrow_too_old
+def test_adls_account_name_per_location() -> None:
+    """Two accounts served by one FileIO must each get their own filesystem."""
+    file_io = PyArrowFileIO()
+
+    with patch("pyarrow.fs.AzureFileSystem") as mock_azure_fs:
+        file_io.fs_by_scheme("abfss", "data@accountone.dfs.core.windows.net")
+        file_io.fs_by_scheme("abfss", "data@accounttwo.dfs.core.windows.net")
+
+    assert [call.kwargs["account_name"] for call in mock_azure_fs.call_args_list] == ["accountone", "accounttwo"]
 
 
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
