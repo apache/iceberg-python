@@ -90,7 +90,7 @@ def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCom
     test_schema = table_test_all_types.schema()
     test_spec = table_test_all_types.spec()
     wrapped_data_file_v2_debug = DataFile.from_args(
-        format_version=2,
+        _table_format_version=2,
         content=entry.data_file.content,
         file_path=entry.data_file.file_path,
         file_format=entry.data_file.file_format,
