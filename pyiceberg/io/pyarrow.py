@@ -209,6 +209,7 @@ MAP_KEY_NAME = "key"
 MAP_VALUE_NAME = "value"
 DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
+ADLS_SCHEMES = frozenset({"abfs", "abfss", "wasb", "wasbs"})
 
 T = TypeVar("T")
 
@@ -421,6 +422,11 @@ class PyArrowFileIO(FileIO):
             return default_scheme, default_netloc, os.path.abspath(location)
         elif uri.scheme in ("hdfs", "viewfs"):
             return uri.scheme, uri.netloc, uri.path
+        elif uri.scheme in ADLS_SCHEMES and uri.username:
+            # Azure locations are <container>@<account>.<host>/<path>. The account is
+            # configured on the AzureFileSystem itself, which expects paths of the form
+            # <container>/<path>, so only the container belongs in the path here.
+            return uri.scheme, uri.netloc, f"{uri.username}{uri.path}"
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
@@ -438,7 +444,7 @@ class PyArrowFileIO(FileIO):
         elif scheme in {"gs", "gcs"}:
             return self._initialize_gcs_fs()
 
-        elif scheme in {"abfs", "abfss", "wasb", "wasbs"}:
+        elif scheme in ADLS_SCHEMES:
             return self._initialize_azure_fs()
 
         elif scheme in {"file"}:
