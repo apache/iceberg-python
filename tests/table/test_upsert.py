@@ -33,7 +33,7 @@ from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.transforms import DayTransform
-from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
+from pyiceberg.types import IntegerType, LongType, NestedField, StringType, StructType, TimestampType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -927,3 +927,239 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+def test_upsert_after_schema_evolution(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_after_schema_evolution"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    # Initial write with 2 columns
+    arrow_schema_v0 = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+        ]
+    )
+    df_v0 = pa.Table.from_pylist([{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}], schema=arrow_schema_v0)
+    tbl.append(df_v0)
+
+    # Record initial data file before evolution & upsert
+    initial_files = [f.file.file_path for f in tbl.scan().plan_files()]
+    assert len(initial_files) == 1
+
+    # Schema evolution: add column 'city'
+    with tbl.update_schema() as update:
+        update.add_column("city", StringType())
+
+    # Upsert with 3 columns: update id=1 with new city, insert id=3
+    arrow_schema_v1 = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+            pa.field("city", pa.string(), nullable=True),
+        ]
+    )
+    df_v1 = pa.Table.from_pylist(
+        [
+            {"id": 1, "name": "Alice", "city": "NYC"},
+            {"id": 3, "name": "Charlie", "city": "LA"},
+        ],
+        schema=arrow_schema_v1,
+    )
+    result = tbl.upsert(df_v1)
+    assert result.rows_updated == 1
+    assert result.rows_inserted == 1
+
+    # Verify that the old V0 data file was replaced (Copy-on-Write overwrite)
+    current_files = [f.file.file_path for f in tbl.scan().plan_files()]
+    assert initial_files[0] not in current_files
+
+    # Verify snapshot operations include both OVERWRITE and APPEND
+    operations = [s.summary.operation for s in tbl.snapshots() if s.summary is not None]
+    assert Operation.OVERWRITE in operations
+    assert Operation.APPEND in operations
+
+    # Verify scanned table rows contain updated evolved values
+    scanned_rows = tbl.scan().to_arrow().to_pylist()
+    assert sorted(scanned_rows, key=lambda x: x["id"]) == [
+        {"id": 1, "name": "Alice", "city": "NYC"},
+        {"id": 2, "name": "Bob", "city": None},
+        {"id": 3, "name": "Charlie", "city": "LA"},
+    ]
+
+
+def test_upsert_after_schema_evolution_union_by_name(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_after_schema_evolution_union_by_name"
+    _drop_table(catalog, identifier)
+
+    arrow_schema_v0 = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+            pa.field("age", pa.int32(), nullable=True),
+        ]
+    )
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+        NestedField(3, "age", IntegerType(), required=False),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    df_v0 = pa.Table.from_pylist(
+        [
+            {"id": 1, "name": "Alice", "age": 30},
+            {"id": 2, "name": "Bob", "age": 25},
+        ],
+        schema=arrow_schema_v0,
+    )
+    tbl.append(df_v0)
+
+    # Schema evolution via union_by_name with a new column 'city'
+    arrow_schema_v1 = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+            pa.field("age", pa.int32(), nullable=True),
+            pa.field("city", pa.string(), nullable=True),
+        ]
+    )
+    with tbl.update_schema() as update:
+        update.union_by_name(arrow_schema_v1)
+
+    # Upsert with 4 columns: update id=1 (change age & city), unchanged id=2, insert id=3
+    df_v1 = pa.Table.from_pylist(
+        [
+            {"id": 1, "name": "Alice", "age": 31, "city": "Taipei"},
+            {"id": 2, "name": "Bob", "age": 25, "city": None},
+            {"id": 3, "name": "Charlie", "age": 40, "city": "Tokyo"},
+        ],
+        schema=arrow_schema_v1,
+    )
+    result = tbl.upsert(df_v1)
+    assert result.rows_updated == 1
+    assert result.rows_inserted == 1
+
+    scanned_rows = tbl.scan().to_arrow().to_pylist()
+    assert sorted(scanned_rows, key=lambda x: x["id"]) == [
+        {"id": 1, "name": "Alice", "age": 31, "city": "Taipei"},
+        {"id": 2, "name": "Bob", "age": 25, "city": None},
+        {"id": 3, "name": "Charlie", "age": 40, "city": "Tokyo"},
+    ]
+
+
+def test_upsert_after_multiple_schema_evolutions_with_composite_keys(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_after_multiple_schema_evolutions_with_composite_keys"
+    _drop_table(catalog, identifier)
+
+    # Step 1: Create table with V0 schema (id, dept, name)
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "dept", StringType(), required=True),
+        NestedField(3, "name", StringType(), required=False),
+        identifier_field_ids=[1, 2],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema_v0 = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("dept", pa.string(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+        ]
+    )
+    tbl.append(pa.Table.from_pylist([{"id": 1, "dept": "ENG", "name": "Alice"}], schema=arrow_schema_v0))
+
+    # Step 2: Evolve to V1 by adding 'salary'
+    with tbl.update_schema() as update:
+        update.add_column("salary", LongType())
+
+    arrow_schema_v1 = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("dept", pa.string(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+            pa.field("salary", pa.int64(), nullable=True),
+        ]
+    )
+    tbl.append(pa.Table.from_pylist([{"id": 2, "dept": "HR", "name": "Bob", "salary": 50000}], schema=arrow_schema_v1))
+
+    # Step 3: Evolve to V2 by adding 'city'
+    with tbl.update_schema() as update:
+        update.add_column("city", StringType())
+
+    arrow_schema_v2 = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("dept", pa.string(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+            pa.field("salary", pa.int64(), nullable=True),
+            pa.field("city", pa.string(), nullable=True),
+        ]
+    )
+
+    # Step 4: Upsert spanning V0, V1, and V2 rows
+    df_v2 = pa.Table.from_pylist(
+        [
+            {"id": 1, "dept": "ENG", "name": "Alice", "salary": 80000, "city": "Taipei"},  # Update V0 row (salary + city added)
+            {"id": 2, "dept": "HR", "name": "Bob", "salary": 50000, "city": "London"},  # Update V1 row (city added)
+            {"id": 3, "dept": "MKT", "name": "Charlie", "salary": 60000, "city": "Tokyo"},  # Insert new V2 row
+        ],
+        schema=arrow_schema_v2,
+    )
+    result = tbl.upsert(df_v2)
+    assert result.rows_updated == 2
+    assert result.rows_inserted == 1
+
+    scanned_rows = tbl.scan().to_arrow().to_pylist()
+    assert sorted(scanned_rows, key=lambda x: (x["id"], x["dept"])) == [
+        {"id": 1, "dept": "ENG", "name": "Alice", "salary": 80000, "city": "Taipei"},
+        {"id": 2, "dept": "HR", "name": "Bob", "salary": 50000, "city": "London"},
+        {"id": 3, "dept": "MKT", "name": "Charlie", "salary": 60000, "city": "Tokyo"},
+    ]
+
+
+def test_upsert_after_schema_evolution_noop_and_nulls(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_after_schema_evolution_noop_and_nulls"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "name", StringType(), required=False),
+        identifier_field_ids=[1],
+    )
+    tbl = catalog.create_table(identifier, schema=schema)
+
+    arrow_schema_v0 = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+        ]
+    )
+    tbl.append(pa.Table.from_pylist([{"id": 1, "name": "Alice"}], schema=arrow_schema_v0))
+
+    # Evolve schema
+    with tbl.update_schema() as update:
+        update.add_column("extra", StringType())
+
+    arrow_schema_v1 = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("name", pa.string(), nullable=True),
+            pa.field("extra", pa.string(), nullable=True),
+        ]
+    )
+
+    # Upsert with identical row where new column is None -> should be no-op (0 updated, 0 inserted)
+    df_noop = pa.Table.from_pylist([{"id": 1, "name": "Alice", "extra": None}], schema=arrow_schema_v1)
+    result = tbl.upsert(df_noop)
+    assert result.rows_updated == 0
+    assert result.rows_inserted == 0
