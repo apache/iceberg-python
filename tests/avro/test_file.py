@@ -208,6 +208,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
         with avro.AvroOutputFile[ManifestEntry](
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
             file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            record_schema=MANIFEST_ENTRY_SCHEMAS[3],
             schema_name="manifest_entry",
             metadata=additional_metadata,
         ) as out:
@@ -225,10 +226,42 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
             fa_entry = next(it)
 
         v2_entry = todict(entry)
-        for field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
+        for field in ("first_row_id", "content_offset", "content_size_in_bytes"):
             del v2_entry["data_file"][field]
 
         assert v2_entry == fa_entry
+
+
+def test_write_v2_referenced_data_file_with_fastavro() -> None:
+    referenced_data_file = "s3://some-path/data-file.parquet"
+    entry = ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=25,
+        data_file=DataFile.from_args(
+            content=DataFileContent.POSITION_DELETES,
+            file_path="s3://some-path/delete-file.parquet",
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=3,
+            file_size_in_bytes=47,
+            referenced_data_file=referenced_data_file,
+        ),
+    )
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/manifest_entry.avro"
+        with avro.AvroOutputFile[ManifestEntry](
+            output_file=PyArrowFileIO().new_output(tmp_avro_file),
+            file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            record_schema=MANIFEST_ENTRY_SCHEMAS[3],
+            schema_name="manifest_entry",
+        ) as out:
+            out.write_block([entry])
+
+        with open(tmp_avro_file, "rb") as fo:
+            fa_entry = next(reader(fo))
+
+        assert fa_entry["data_file"]["referenced_data_file"] == referenced_data_file
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
