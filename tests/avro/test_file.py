@@ -51,6 +51,7 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    StructType,
     TimestampType,
     TimestamptzType,
     TimeType,
@@ -103,6 +104,18 @@ def todict(obj: Any) -> Any:
         return {key: todict(value) for key, value in inspect.getmembers(obj) if not callable(value) and not key.startswith("_")}
     else:
         return obj
+
+
+def record_to_dict(record: Record, struct: StructType) -> dict[str, Any]:
+    result = {}
+    for pos, field in enumerate(struct.fields):
+        value = record[pos]
+        result[field.name] = (
+            record_to_dict(value, field.field_type)
+            if isinstance(value, Record) and isinstance(field.field_type, StructType)
+            else todict(value)
+        )
+    return result
 
 
 def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
@@ -227,33 +240,8 @@ def test_write_v2_manifest_entry_with_fastavro() -> None:
 
             fa_entry = next(it)
 
-        v2_entry = {
-            "status": ManifestEntryStatus.ADDED.value,
-            "snapshot_id": 8638475580105682862,
-            "sequence_number": 0,
-            "file_sequence_number": 0,
-            "data_file": {
-                "content": 0,
-                "file_path": "s3://some-path/some-file.parquet",
-                "file_format": "PARQUET",
-                "partition": {},
-                "record_count": 131327,
-                "file_size_in_bytes": 220669226,
-                "column_sizes": [{"key": 1, "value": 220661854}],
-                "value_counts": [{"key": 1, "value": 131327}],
-                "null_value_counts": [{"key": 1, "value": 0}],
-                "nan_value_counts": [],
-                "lower_bounds": [{"key": 1, "value": b"aaaaaaaaaaaaaaaa"}],
-                "upper_bounds": [{"key": 1, "value": b"zzzzzzzzzzzzzzzz"}],
-                "key_metadata": b"\xde\xad\xbe\xef",
-                "split_offsets": [4, 133697593],
-                "equality_ids": [],
-                "sort_order_id": 4,
-                "referenced_data_file": None,
-            },
-        }
-
-        assert v2_entry == fa_entry
+        assert fa_entry["data_file"]["referenced_data_file"] is None
+        assert record_to_dict(entry, MANIFEST_ENTRY_SCHEMAS[2].as_struct()) == fa_entry
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
