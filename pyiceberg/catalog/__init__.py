@@ -833,8 +833,15 @@ class Catalog(ABC):
 
         return tuple_identifier[0], tuple_identifier[1]
 
-    def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
-        return load_file_io({**self.properties, **properties}, location)
+    def _load_file_io(
+        self,
+        properties: Properties = EMPTY_DICT,
+        location: str | None = None,
+        table_properties: Properties = EMPTY_DICT,
+    ) -> FileIO:
+        # table_properties ranks lowest: a principal who can commit to a table must not
+        # be able to redirect its readers.
+        return load_file_io({**table_properties, **self.properties, **properties}, location)
 
     @staticmethod
     def _convert_schema_if_needed(
@@ -1020,7 +1027,7 @@ class MetastoreCatalog(Catalog, ABC):
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
-        io = self._load_file_io(properties=properties, location=metadata_location)
+        io = self._load_file_io(location=metadata_location, table_properties=properties)
         return StagedTable(
             identifier=(database_name, table_name),
             metadata=metadata,
@@ -1054,7 +1061,7 @@ class MetastoreCatalog(Catalog, ABC):
             identifier=table_identifier,
             metadata=updated_metadata,
             metadata_location=new_metadata_location,
-            io=self._load_file_io(properties=updated_metadata.properties, location=new_metadata_location),
+            io=self._load_file_io(location=new_metadata_location, table_properties=updated_metadata.properties),
             catalog=self,
         )
 
