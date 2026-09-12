@@ -341,7 +341,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             dataset = self.client.get_dataset(DatasetReference(project=self.project_id, dataset_id=dataset_name))
 
             if dataset and dataset.external_catalog_dataset_options:
-                return dataset.external_catalog_dataset_options.to_api_repr()
+                return dict(dataset.external_catalog_dataset_options.parameters or {})
         except NotFound as e:
             raise NoSuchNamespaceError(f"Namespace {namespace} not found") from e
         return {}
