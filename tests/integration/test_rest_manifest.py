@@ -16,7 +16,6 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
-import inspect
 from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -42,9 +41,17 @@ from pyiceberg.utils.lazydict import LazyDict
 
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
-def todict(obj: Any, spec_keys: list[str]) -> Any:
-    if type(obj) is Record:
-        return {key: obj[pos] for key, pos in zip(spec_keys, range(len(obj)), strict=True)}
+def todict(obj: Any, struct: StructType | None = None) -> Any:
+    if isinstance(obj, Record):
+        if struct is None:
+            raise ValueError("A struct is required to convert a record")
+        return {
+            field.name: todict(
+                obj[pos],
+                field.field_type if isinstance(field.field_type, StructType) else None,
+            )
+            for pos, field in enumerate(struct.fields)
+        }
     if isinstance(obj, dict) or isinstance(obj, LazyDict):
         data = []
         for k, v in obj.items():
@@ -53,27 +60,9 @@ def todict(obj: Any, spec_keys: list[str]) -> Any:
     elif isinstance(obj, Enum):
         return obj.value
     elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
-        return [todict(v, spec_keys) for v in obj]
-    elif hasattr(obj, "__dict__"):
-        return {
-            key: todict(value, spec_keys)
-            for key, value in inspect.getmembers(obj)
-            if not callable(value) and not key.startswith("_")
-        }
+        return [todict(v) for v in obj]
     else:
         return obj
-
-
-def record_to_dict(record: Record, struct: StructType, spec_keys: list[str]) -> dict[str, Any]:
-    result = {}
-    for pos, field in enumerate(struct.fields):
-        value = record[pos]
-        result[field.name] = (
-            record_to_dict(value, field.field_type, spec_keys)
-            if isinstance(value, Record) and isinstance(field.field_type, StructType)
-            else todict(value, spec_keys)
-        )
-    return result
 
 
 @pytest.fixture()
@@ -160,4 +149,4 @@ def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCom
             it = iter(r)
             fa_entry = next(it)
 
-            assert fa_entry == record_to_dict(entry_v2, entry_v2_type, [field.name for field in test_spec.fields])
+            assert fa_entry == todict(entry_v2, entry_v2_type)

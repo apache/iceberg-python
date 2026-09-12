@@ -90,7 +90,7 @@ def test_missing_schema() -> None:
 
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
-def todict(obj: Any) -> Any:
+def todict(obj: Any, struct: StructType | None = None) -> Any:
     if isinstance(obj, dict):
         data = []
         for k, v in obj.items():
@@ -101,21 +101,17 @@ def todict(obj: Any) -> Any:
     elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
         return [todict(v) for v in obj]
     elif isinstance(obj, Record):
+        if struct is not None:
+            return {
+                field.name: todict(
+                    obj[pos],
+                    field.field_type if isinstance(field.field_type, StructType) else None,
+                )
+                for pos, field in enumerate(struct.fields)
+            }
         return {key: todict(value) for key, value in inspect.getmembers(obj) if not callable(value) and not key.startswith("_")}
     else:
         return obj
-
-
-def record_to_dict(record: Record, struct: StructType) -> dict[str, Any]:
-    result = {}
-    for pos, field in enumerate(struct.fields):
-        value = record[pos]
-        result[field.name] = (
-            record_to_dict(value, field.field_type)
-            if isinstance(value, Record) and isinstance(field.field_type, StructType)
-            else todict(value)
-        )
-    return result
 
 
 def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
@@ -240,7 +236,7 @@ def test_write_v2_manifest_entry_with_fastavro() -> None:
 
             fa_entry = next(it)
 
-        assert record_to_dict(entry, MANIFEST_ENTRY_SCHEMAS[2].as_struct()) == fa_entry
+        assert todict(entry, MANIFEST_ENTRY_SCHEMAS[2].as_struct()) == fa_entry
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
