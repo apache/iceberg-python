@@ -30,7 +30,6 @@ from pyiceberg.avro.codecs.deflate import DeflateCodec
 from pyiceberg.avro.file import AvroFileHeader
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
-    DATA_FILE_TYPE,
     DEFAULT_BLOCK_SIZE,
     MANIFEST_ENTRY_SCHEMAS,
     DataFile,
@@ -175,25 +174,26 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
 
 
 def test_write_v2_manifest_entry_with_fastavro() -> None:
-    data_file = DataFile.from_args(
-        _table_format_version=2,
-        content=DataFileContent.DATA,
-        file_path="s3://some-path/some-file.parquet",
-        file_format=FileFormat.PARQUET,
-        partition=Record(),
-        record_count=131327,
-        file_size_in_bytes=220669226,
-        column_sizes={1: 220661854},
-        value_counts={1: 131327},
-        null_value_counts={1: 0},
-        nan_value_counts={},
-        lower_bounds={1: b"aaaaaaaaaaaaaaaa"},
-        upper_bounds={1: b"zzzzzzzzzzzzzzzz"},
-        key_metadata=b"\xde\xad\xbe\xef",
-        split_offsets=[4, 133697593],
-        equality_ids=[],
-        sort_order_id=4,
-    )
+    data_file_values = {
+        "content": DataFileContent.DATA,
+        "file_path": "s3://some-path/some-file.parquet",
+        "file_format": FileFormat.PARQUET,
+        "partition": Record(),
+        "record_count": 131327,
+        "file_size_in_bytes": 220669226,
+        "column_sizes": {1: 220661854},
+        "value_counts": {1: 131327},
+        "null_value_counts": {1: 0},
+        "nan_value_counts": {},
+        "lower_bounds": {1: b"aaaaaaaaaaaaaaaa"},
+        "upper_bounds": {1: b"zzzzzzzzzzzzzzzz"},
+        "key_metadata": b"\xde\xad\xbe\xef",
+        "split_offsets": [4, 133697593],
+        "equality_ids": [],
+        "sort_order_id": 4,
+        "referenced_data_file": None,
+    }
+    data_file = DataFile.from_args(_table_format_version=2, **data_file_values)
     entry = ManifestEntry.from_args(
         _table_format_version=2,
         status=ManifestEntryStatus.ADDED,
@@ -228,11 +228,12 @@ def test_write_v2_manifest_entry_with_fastavro() -> None:
             fa_entry = next(it)
 
         v2_entry = {
-            field.name: todict(entry[pos])
-            for pos, field in enumerate(MANIFEST_ENTRY_SCHEMAS[2].fields)
-            if field.name != "data_file"
+            "status": ManifestEntryStatus.ADDED.value,
+            "snapshot_id": 8638475580105682862,
+            "sequence_number": 0,
+            "file_sequence_number": 0,
+            "data_file": {name: todict(value) for name, value in data_file_values.items()},
         }
-        v2_entry["data_file"] = {field.name: todict(data_file[pos]) for pos, field in enumerate(DATA_FILE_TYPE[2].fields)}
 
         assert v2_entry == fa_entry
 
