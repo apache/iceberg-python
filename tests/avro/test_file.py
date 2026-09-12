@@ -173,7 +173,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
         assert v2_entry == fa_entry
 
 
-def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
+def test_write_v3_manifest_entry_as_v2_with_fastavro() -> None:
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
         file_path="s3://some-path/some-file.parquet",
