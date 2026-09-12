@@ -159,11 +159,12 @@ def test_list_namespace(catalog: InMemoryCatalog) -> None:
     assert result.output == "default.my_table\n"
 
 
-def test_describe_namespace(catalog: InMemoryCatalog, namespace_properties: Properties) -> None:
+@pytest.mark.parametrize("entity_args", [[], ["--entity", "namespace"]], ids=["any", "namespace"])
+def test_describe_namespace(catalog: InMemoryCatalog, namespace_properties: Properties, entity_args: list[str]) -> None:
     catalog.create_namespace(TEST_TABLE_NAMESPACE, namespace_properties)
 
     runner = CliRunner()
-    result = runner.invoke(run, ["describe", "default"])
+    result = runner.invoke(run, ["describe", *entity_args, "default"])
 
     assert result.exit_code == 0
     assert result.output == "location  s3://warehouse/database/location\n"
@@ -220,6 +221,36 @@ def test_describe_table_does_not_exists(catalog: InMemoryCatalog) -> None:
     result = runner.invoke(run, ["describe", "default.doesnotexist"])
     assert result.exit_code == 1
     assert result.output == "Table or namespace does not exist: default.doesnotexist\n"
+
+
+@pytest.mark.parametrize("entity_args", [[], ["--entity", "table"]], ids=["any", "table"])
+def test_describe_table_entity_detection(catalog: InMemoryCatalog, mock_datetime_now: None, entity_args: list[str]) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["describe", *entity_args, "default.my_table"])
+
+    assert result.exit_code == 0
+    assert "Table UUID" in result.output
+    assert "Current schema" in result.output
+
+
+def test_describe_ambiguous_entity(catalog: InMemoryCatalog, namespace_properties: Properties) -> None:
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(identifier=TEST_TABLE_IDENTIFIER, schema=TEST_TABLE_SCHEMA)
+    catalog.create_namespace(TEST_TABLE_IDENTIFIER, namespace_properties)
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["describe", "default.my_table"])
+    assert result.exit_code == 1
+    assert " ".join(result.output.split()) == (
+        "Identifier default.my_table matches multiple entity types: namespace, table. Use --entity to disambiguate."
+    )
 
 
 def test_schema(catalog: InMemoryCatalog) -> None:

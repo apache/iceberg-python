@@ -31,8 +31,9 @@ from pyiceberg.catalog import URI, Catalog, load_catalog
 from pyiceberg.cli.output import ConsoleOutput, JsonOutput, Output
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchPropertyException, NoSuchTableError
 from pyiceberg.io import WAREHOUSE
-from pyiceberg.table import TableProperties
+from pyiceberg.table import Table, TableProperties
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
+from pyiceberg.typedef import Properties
 from pyiceberg.utils.properties import property_as_int
 
 
@@ -142,37 +143,61 @@ def list(ctx: Context, parent: str | None) -> None:  # pylint: disable=redefined
 
 
 @run.command()
-@click.option("--entity", type=click.Choice(["any", "namespace", "table"]), default="any")
+@click.option(
+    "--entity",
+    type=click.Choice(["any", "namespace", "table"]),
+    default="any",
+    help="Entity type. 'any' auto-detects and requires --entity when ambiguous.",
+)
 @click.argument("identifier")
 @click.pass_context
 @catch_exception()
-def describe(ctx: Context, entity: Literal["name", "namespace", "table"], identifier: str) -> None:
+def describe(ctx: Context, entity: Literal["any", "namespace", "table"], identifier: str) -> None:
     """Describe a namespace or a table."""
     catalog, output = _catalog_and_output(ctx)
     identifier_tuple = Catalog.identifier_to_tuple(identifier)
 
-    is_namespace = False
-    if entity in {"namespace", "any"} and len(identifier_tuple) > 0:
-        try:
-            namespace_properties = catalog.load_namespace_properties(identifier_tuple)
-            output.describe_properties(namespace_properties)
-            is_namespace = True
-        except NoSuchNamespaceError as exc:
-            if entity != "any" or len(identifier_tuple) == 1:  # type: ignore
-                raise exc
+    if entity == "namespace":
+        output.describe_properties(catalog.load_namespace_properties(identifier_tuple))
+        return
+    if entity == "table":
+        output.describe_table(catalog.load_table(identifier))
+        return
 
-    is_table = False
-    if entity in {"table", "any"} and len(identifier_tuple) > 1:
-        try:
-            catalog_table = catalog.load_table(identifier)
-            output.describe_table(catalog_table)
-            is_table = True
-        except NoSuchTableError as exc:
-            if entity != "any":
-                raise exc
+    # For the default "any" entity, auto-detect the entity type.
+    if len(identifier_tuple) == 1:
+        output.describe_properties(catalog.load_namespace_properties(identifier_tuple))
+        return
 
-    if is_namespace is False and is_table is False:
+    matches: tuple[str, ...] = ()
+    namespace_properties: Properties | None = None
+    catalog_table: Table | None = None
+
+    try:
+        namespace_properties = catalog.load_namespace_properties(identifier_tuple)
+        matches += ("namespace",)
+    except NoSuchNamespaceError:
+        pass
+
+    try:
+        catalog_table = catalog.load_table(identifier)
+        matches += ("table",)
+    except NoSuchTableError:
+        pass
+
+    if len(matches) > 1:
+        raise ValueError(
+            f"Identifier {identifier} matches multiple entity types: {', '.join(matches)}. Use --entity to disambiguate."
+        )
+    if not matches:
         raise NoSuchTableError(f"Table or namespace does not exist: {identifier}")
+
+    if matches[0] == "namespace":
+        assert namespace_properties is not None
+        output.describe_properties(namespace_properties)
+    else:
+        assert catalog_table is not None
+        output.describe_table(catalog_table)
 
 
 @run.command()

@@ -116,7 +116,7 @@ dev = [
     "typing-extensions==4.16.0",
     "pytest-mock==3.15.1",
     "pyspark[connect]==4.0.1",
-    "protobuf==7.36.0", # match Spark Connect's gencode
+    "protobuf==7.36.1", # match Spark Connect's gencode
     "cython>=3.0.0",
     "deptry>=0.14",
     "docutils!=0.21.post1",
@@ -132,10 +132,10 @@ dev = [
 # for mkdocs
 docs = [
     "mkdocs==1.6.1",
-    "griffe==2.2.0",
+    "griffe==2.3.0",
     "jinja2==3.1.6",
     "mkdocstrings==1.0.6",
-    "mkdocstrings-python==2.0.7",
+    "mkdocstrings-python==2.0.8",
     "mkdocs-literate-nav==0.6.3",
     "mkdocs-autorefs==1.4.4",
     "mkdocs-gen-files==0.6.1",
