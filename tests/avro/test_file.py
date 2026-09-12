@@ -30,6 +30,7 @@ from pyiceberg.avro.codecs.deflate import DeflateCodec
 from pyiceberg.avro.file import AvroFileHeader
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
+    DATA_FILE_TYPE,
     DEFAULT_BLOCK_SIZE,
     MANIFEST_ENTRY_SCHEMAS,
     DataFile,
@@ -173,8 +174,9 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
         assert v2_entry == fa_entry
 
 
-def test_write_v3_manifest_entry_as_v2_with_fastavro() -> None:
+def test_write_v2_manifest_entry_with_fastavro() -> None:
     data_file = DataFile.from_args(
+        _table_format_version=2,
         content=DataFileContent.DATA,
         file_path="s3://some-path/some-file.parquet",
         file_format=FileFormat.PARQUET,
@@ -193,6 +195,7 @@ def test_write_v3_manifest_entry_as_v2_with_fastavro() -> None:
         sort_order_id=4,
     )
     entry = ManifestEntry.from_args(
+        _table_format_version=2,
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
         sequence_number=0,
@@ -209,7 +212,6 @@ def test_write_v3_manifest_entry_as_v2_with_fastavro() -> None:
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
             file_schema=MANIFEST_ENTRY_SCHEMAS[2],
             schema_name="manifest_entry",
-            record_schema=MANIFEST_ENTRY_SCHEMAS[3],
             metadata=additional_metadata,
         ) as out:
             out.write_block([entry])
@@ -225,9 +227,12 @@ def test_write_v3_manifest_entry_as_v2_with_fastavro() -> None:
 
             fa_entry = next(it)
 
-        v2_entry = todict(entry)
-        for field in ("first_row_id", "content_offset", "content_size_in_bytes"):
-            del v2_entry["data_file"][field]
+        v2_entry = {
+            field.name: todict(entry[pos])
+            for pos, field in enumerate(MANIFEST_ENTRY_SCHEMAS[2].fields)
+            if field.name != "data_file"
+        }
+        v2_entry["data_file"] = {field.name: todict(data_file[pos]) for pos, field in enumerate(DATA_FILE_TYPE[2].fields)}
 
         assert v2_entry == fa_entry
 
