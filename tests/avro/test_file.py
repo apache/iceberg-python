@@ -156,8 +156,8 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
 def test_write_v2_manifest_entry_with_fastavro() -> None:
     data_file = DataFile.from_args(
         _table_format_version=2,
-        content=DataFileContent.DATA,
-        file_path="s3://some-path/some-file.parquet",
+        content=DataFileContent.POSITION_DELETES,
+        file_path="s3://some-path/delete-file.parquet",
         file_format=FileFormat.PARQUET,
         partition=Record(),
         record_count=131327,
@@ -172,8 +172,13 @@ def test_write_v2_manifest_entry_with_fastavro() -> None:
         split_offsets=[4, 133697593],
         equality_ids=[],
         sort_order_id=4,
-        referenced_data_file=None,
+        referenced_data_file="s3://some-path/data-file.parquet",
     )
+    assert data_file.first_row_id is None
+    assert data_file.referenced_data_file == "s3://some-path/data-file.parquet"
+    assert data_file.content_offset is None
+    assert data_file.content_size_in_bytes is None
+
     entry = ManifestEntry.from_args(
         _table_format_version=2,
         status=ManifestEntryStatus.ADDED,
