@@ -106,17 +106,28 @@ if TYPE_CHECKING:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
 
-def record_to_fastavro(obj: Any, struct: StructType | None = None) -> Any:
+def record_to_fastavro(
+    obj: Any,
+    record_struct: StructType | None = None,
+    file_struct: StructType | None = None,
+) -> Any:
     """Convert a manifest record to the representation returned by FastAvro."""
     if isinstance(obj, Record):
-        if struct is not None:
-            return {
-                field.name: record_to_fastavro(
+        if record_struct is not None:
+            record_positions = {field.field_id: pos for pos, field in enumerate(record_struct.fields)}
+            result = {}
+            for file_field in (file_struct or record_struct).fields:
+                if (pos := record_positions.get(file_field.field_id)) is None:
+                    result[file_field.name] = file_field.write_default
+                    continue
+
+                record_field = record_struct.fields[pos]
+                result[file_field.name] = record_to_fastavro(
                     obj[pos],
-                    field.field_type if isinstance(field.field_type, StructType) else None,
+                    record_field.field_type if isinstance(record_field.field_type, StructType) else None,
+                    file_field.field_type if isinstance(file_field.field_type, StructType) else None,
                 )
-                for pos, field in enumerate(struct.fields)
-            }
+            return result
         return {
             key: record_to_fastavro(value)
             for key, value in inspect.getmembers(obj)

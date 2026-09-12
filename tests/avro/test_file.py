@@ -155,7 +155,6 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
 
 def test_write_v2_manifest_entry_with_fastavro() -> None:
     data_file = DataFile.from_args(
-        _table_format_version=2,
         content=DataFileContent.POSITION_DELETES,
         file_path="s3://some-path/delete-file.parquet",
         file_format=FileFormat.PARQUET,
@@ -174,13 +173,8 @@ def test_write_v2_manifest_entry_with_fastavro() -> None:
         sort_order_id=4,
         referenced_data_file="s3://some-path/data-file.parquet",
     )
-    assert data_file.first_row_id is None
-    assert data_file.referenced_data_file == "s3://some-path/data-file.parquet"
-    assert data_file.content_offset is None
-    assert data_file.content_size_in_bytes is None
 
     entry = ManifestEntry.from_args(
-        _table_format_version=2,
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
         sequence_number=0,
@@ -197,6 +191,7 @@ def test_write_v2_manifest_entry_with_fastavro() -> None:
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
             file_schema=MANIFEST_ENTRY_SCHEMAS[2],
             schema_name="manifest_entry",
+            record_schema=MANIFEST_ENTRY_SCHEMAS[3],
             metadata=additional_metadata,
         ) as out:
             out.write_block([entry])
@@ -212,7 +207,15 @@ def test_write_v2_manifest_entry_with_fastavro() -> None:
 
             fa_entry = next(it)
 
-        assert record_to_fastavro(entry, MANIFEST_ENTRY_SCHEMAS[2].as_struct()) == fa_entry
+        assert fa_entry["data_file"]["referenced_data_file"] == data_file.referenced_data_file
+        assert (
+            record_to_fastavro(
+                entry,
+                record_struct=MANIFEST_ENTRY_SCHEMAS[3].as_struct(),
+                file_struct=MANIFEST_ENTRY_SCHEMAS[2].as_struct(),
+            )
+            == fa_entry
+        )
 
 
 @pytest.mark.parametrize("format_version", [1, 2])

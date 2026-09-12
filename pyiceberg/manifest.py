@@ -541,21 +541,19 @@ class DataFile(Record):
 
     @property
     def first_row_id(self) -> int | None:
-        return self._data[16] if len(self._data) >= len(DATA_FILE_TYPE[3].fields) else None
+        return self._data[16]
 
     @property
     def referenced_data_file(self) -> str | None:
-        if len(self._data) == len(DATA_FILE_TYPE[2].fields):
-            return self._data[16]
-        return self._data[17] if len(self._data) >= len(DATA_FILE_TYPE[3].fields) else None
+        return self._data[17]
 
     @property
     def content_offset(self) -> int | None:
-        return self._data[18] if len(self._data) >= len(DATA_FILE_TYPE[3].fields) else None
+        return self._data[18]
 
     @property
     def content_size_in_bytes(self) -> int | None:
-        return self._data[19] if len(self._data) >= len(DATA_FILE_TYPE[3].fields) else None
+        return self._data[19]
 
     # Spec ID should not be stored in the file
     _spec_id: int

@@ -26,8 +26,6 @@ from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
-    DataFile,
-    ManifestEntry,
     data_file_with_partition,
     manifest_entry_schema_with_data_file,
     write_manifest,
@@ -66,38 +64,15 @@ def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCom
     entry = test_manifest_entries[0]
     test_schema = table_test_all_types.schema()
     test_spec = table_test_all_types.spec()
-    data_file_v2 = DataFile.from_args(
-        _table_format_version=2,
-        content=entry.data_file.content,
-        file_path=entry.data_file.file_path,
-        file_format=entry.data_file.file_format,
-        partition=entry.data_file.partition,
-        record_count=entry.data_file.record_count,
-        file_size_in_bytes=entry.data_file.file_size_in_bytes,
-        column_sizes=entry.data_file.column_sizes,
-        value_counts=entry.data_file.value_counts,
-        null_value_counts=entry.data_file.null_value_counts,
-        nan_value_counts=entry.data_file.nan_value_counts,
-        lower_bounds=entry.data_file.lower_bounds,
-        upper_bounds=entry.data_file.upper_bounds,
-        key_metadata=entry.data_file.key_metadata,
-        split_offsets=entry.data_file.split_offsets,
-        equality_ids=entry.data_file.equality_ids,
-        sort_order_id=entry.data_file.sort_order_id,
-        referenced_data_file=entry.data_file.referenced_data_file,
-    )
-    entry_v2 = ManifestEntry.from_args(
-        _table_format_version=2,
-        status=entry.status,
-        snapshot_id=entry.snapshot_id,
-        sequence_number=entry.sequence_number,
-        file_sequence_number=entry.file_sequence_number,
-        data_file=data_file_v2,
+    data_file_v3_type = data_file_with_partition(
+        partition_type=test_spec.partition_type(test_schema),
+        format_version=3,
     )
     data_file_v2_type = data_file_with_partition(
         partition_type=test_spec.partition_type(test_schema),
         format_version=2,
     )
+    entry_v3_type = manifest_entry_schema_with_data_file(format_version=3, data_file=data_file_v3_type).as_struct()
     entry_v2_type = manifest_entry_schema_with_data_file(format_version=2, data_file=data_file_v2_type).as_struct()
 
     with TemporaryDirectory() as tmpdir:
@@ -119,4 +94,4 @@ def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCom
             it = iter(r)
             fa_entry = next(it)
 
-            assert fa_entry == record_to_fastavro(entry_v2, entry_v2_type)
+            assert fa_entry == record_to_fastavro(entry, record_struct=entry_v3_type, file_struct=entry_v2_type)
