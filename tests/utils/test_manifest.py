@@ -228,6 +228,40 @@ def test_fetch_manifest_entry_with_filter(generated_manifest_entry_file: str) ->
     assert len(no_match) == 0
 
 
+def test_read_manifest_entry_v2_referenced_data_file(tmp_path: Path) -> None:
+    io = PyArrowFileIO()
+    manifest_path = str(tmp_path / "manifest.avro")
+    referenced_data_file = "s3://bucket/data.parquet"
+    entry = ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=25,
+        sequence_number=1,
+        file_sequence_number=1,
+        data_file=DataFile.from_args(
+            content=DataFileContent.POSITION_DELETES,
+            file_path="s3://bucket/deletes.parquet",
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=3,
+            file_size_in_bytes=47,
+            referenced_data_file=referenced_data_file,
+        ),
+    )
+
+    with write_manifest(
+        format_version=2,
+        spec=UNPARTITIONED_PARTITION_SPEC,
+        schema=Schema(NestedField(1, "foo", IntegerType(), required=False)),
+        output_file=io.new_output(manifest_path),
+        snapshot_id=25,
+        avro_compression="null",
+    ) as writer:
+        writer.add_entry(entry)
+
+    manifest = writer.to_manifest_file()
+    assert manifest.fetch_manifest_entry(io)[0].data_file.referenced_data_file == referenced_data_file
+
+
 def test_read_manifest_entry_v3_fields(tmp_path: Path) -> None:
     io = PyArrowFileIO()
 

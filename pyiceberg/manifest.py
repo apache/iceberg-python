@@ -306,6 +306,13 @@ DATA_FILE_TYPE: dict[int, StructType] = {
             required=False,
             doc="ID representing sort order for this file",
         ),
+        NestedField(
+            field_id=143,
+            name="referenced_data_file",
+            field_type=StringType(),
+            required=False,
+            doc="Fully qualified location (URI with FS scheme) of a data file that all deletes reference",
+        ),
     ),
     3: StructType(
         NestedField(
