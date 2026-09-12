@@ -14,18 +14,16 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-import inspect
 from _decimal import Decimal
 from datetime import datetime
-from enum import Enum
 from tempfile import TemporaryDirectory
-from typing import Any
 from uuid import UUID
 
 import pytest
 from fastavro import reader, writer
 
 import pyiceberg.avro.file as avro
+from conftest import record_to_fastavro
 from pyiceberg.avro.codecs.deflate import DeflateCodec
 from pyiceberg.avro.file import AvroFileHeader
 from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -51,7 +49,6 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
-    StructType,
     TimestampType,
     TimestamptzType,
     TimeType,
@@ -86,32 +83,6 @@ def test_missing_schema() -> None:
         header.get_schema()
 
     assert "No schema found in Avro file headers" in str(exc_info.value)
-
-
-# helper function to serialize our objects to dicts to enable
-# direct comparison with the dicts returned by fastavro
-def todict(obj: Any, struct: StructType | None = None) -> Any:
-    if isinstance(obj, dict):
-        data = []
-        for k, v in obj.items():
-            data.append({"key": k, "value": v})
-        return data
-    elif isinstance(obj, Enum):
-        return obj.value
-    elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
-        return [todict(v) for v in obj]
-    elif isinstance(obj, Record):
-        if struct is not None:
-            return {
-                field.name: todict(
-                    obj[pos],
-                    field.field_type if isinstance(field.field_type, StructType) else None,
-                )
-                for pos, field in enumerate(struct.fields)
-            }
-        return {key: todict(value) for key, value in inspect.getmembers(obj) if not callable(value) and not key.startswith("_")}
-    else:
-        return obj
 
 
 def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
@@ -166,7 +137,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v1() -> None:
 
             fa_entry = next(it)
 
-        v2_entry = todict(entry)
+        v2_entry = record_to_fastavro(entry)
 
         # These are not written in V1
         del v2_entry["sequence_number"]
@@ -236,7 +207,7 @@ def test_write_v2_manifest_entry_with_fastavro() -> None:
 
             fa_entry = next(it)
 
-        assert todict(entry, MANIFEST_ENTRY_SCHEMAS[2].as_struct()) == fa_entry
+        assert record_to_fastavro(entry, MANIFEST_ENTRY_SCHEMAS[2].as_struct()) == fa_entry
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
@@ -274,7 +245,7 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: Ta
         schema = AvroSchemaConversion().iceberg_to_avro(MANIFEST_ENTRY_SCHEMAS[format_version], schema_name="manifest_entry")
 
         with open(tmp_avro_file, "wb") as out:
-            writer(out, schema, [todict(entry)])
+            writer(out, schema, [record_to_fastavro(entry)])
 
         # Read as V2
         with avro.AvroFile[ManifestEntry](

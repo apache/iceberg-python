@@ -16,13 +16,12 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
-from enum import Enum
 from tempfile import TemporaryDirectory
-from typing import Any
 
 import pytest
 from fastavro import reader
 
+from conftest import record_to_fastavro
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import PyArrowFileIO
@@ -34,35 +33,6 @@ from pyiceberg.manifest import (
     write_manifest,
 )
 from pyiceberg.table import Table
-from pyiceberg.typedef import Record
-from pyiceberg.types import StructType
-from pyiceberg.utils.lazydict import LazyDict
-
-
-# helper function to serialize our objects to dicts to enable
-# direct comparison with the dicts returned by fastavro
-def todict(obj: Any, struct: StructType | None = None) -> Any:
-    if isinstance(obj, Record):
-        if struct is None:
-            raise ValueError("A struct is required to convert a record")
-        return {
-            field.name: todict(
-                obj[pos],
-                field.field_type if isinstance(field.field_type, StructType) else None,
-            )
-            for pos, field in enumerate(struct.fields)
-        }
-    if isinstance(obj, dict) or isinstance(obj, LazyDict):
-        data = []
-        for k, v in obj.items():
-            data.append({"key": k, "value": v})
-        return data
-    elif isinstance(obj, Enum):
-        return obj.value
-    elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
-        return [todict(v) for v in obj]
-    else:
-        return obj
 
 
 @pytest.fixture()
@@ -149,4 +119,4 @@ def test_write_sample_manifest(table_test_all_types: Table, compression: AvroCom
             it = iter(r)
             fa_entry = next(it)
 
-            assert fa_entry == todict(entry_v2, entry_v2_type)
+            assert fa_entry == record_to_fastavro(entry_v2, entry_v2_type)
