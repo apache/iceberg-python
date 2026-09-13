@@ -1727,8 +1727,6 @@ sql_representation = view.sql_for("spark")
 print(sql_representation.sql)
 ```
 
-Views returned by the REST catalog's create, load, and register operations expose response configuration as `view.config`, defaulting to an empty dictionary when omitted. This transient configuration is separate from `view.properties`, which contains persistent view metadata properties.
-
 ## Check if a view exists
 
 To check whether the `some_view` view exists:
