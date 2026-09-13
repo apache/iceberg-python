@@ -1764,6 +1764,7 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
     )
     assert actual == expected
+    assert actual.config == example_view_metadata_rest_json["config"]
 
 
 def test_create_view_409(
@@ -1799,7 +1800,10 @@ def test_create_view_409(
     assert "View already exists" in str(e.value)
 
 
-def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+@pytest.mark.parametrize("include_config", [True, False])
+def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any], include_config: bool) -> None:
+    if not include_config:
+        del example_view_metadata_rest_json["config"]
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/views/view",
         json=example_view_metadata_rest_json,
@@ -1810,6 +1814,7 @@ def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[
     actual = catalog.load_view(("fokko", "view"))
     expected = View(identifier=("fokko", "view"), metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]))
     assert actual == expected
+    assert actual.config == example_view_metadata_rest_json.get("config", {})
 
 
 def test_load_view_404(rest_mock: Mocker) -> None:
@@ -2769,6 +2774,7 @@ def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: d
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
     )
     assert actual == expected
+    assert actual.config == example_view_metadata_rest_json["config"]
 
 
 def test_register_view_409_view(rest_mock: Mocker) -> None:
