@@ -945,6 +945,61 @@ def test_view_exists_multilevel_namespace_404(rest_mock: Mocker) -> None:
     assert not catalog.view_exists((multilevel_namespace, view))
 
 
+def test_view_exists_fallback_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=example_view_metadata_rest_json,
+        request_headers=TEST_HEADERS,
+    )
+    for config in ({"endpoints": [str(Capability.V1_LOAD_VIEW)]}, {"defaults": {"view-endpoints-supported": "true"}}):
+        rest_mock.get(f"{TEST_URI}v1/config", json={"defaults": {}, "overrides": {}, **config})
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.view_exists(("fokko", "view"))
+        assert rest_mock.last_request.method == "GET"
+
+
+def test_view_exists_fallback_404(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_VIEW)]},
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    assert not catalog.view_exists(("fokko", "view"))
+    assert rest_mock.last_request.method == "GET"
+
+
+def test_view_exists_fallback_500(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_VIEW)]},
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        status_code=500,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    with pytest.raises(ServerError):
+        catalog.view_exists(("fokko", "view"))
+    assert rest_mock.last_request.method == "GET"
+
+
+def test_view_exists_fallback_unsupported(rest_mock: Mocker) -> None:
+    rest_mock.get(f"{TEST_URI}v1/config", json={"defaults": {}, "overrides": {}})
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    with pytest.raises(NotImplementedError, match="Server does not support endpoint"):
+        catalog.view_exists(("fokko", "view"))
+
+
 def test_list_namespaces_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces",
