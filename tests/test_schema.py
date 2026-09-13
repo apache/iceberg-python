@@ -130,25 +130,27 @@ def test_empty_schema_equality() -> None:
     assert nonempty != schema
 
 
-@pytest.mark.parametrize("other", [None, False, 0, [], {}, StructType()])
-def test_empty_schema_not_equal_to_non_schema(other: object) -> None:
-    assert Schema() != other
+def test_empty_schema_not_equal_to_non_schema() -> None:
+    non_schema_values: list[object] = [None, False, 0, [], {}, StructType()]
+    for other in non_schema_values:
+        assert Schema() != other
 
 
-@pytest.mark.parametrize(
-    ("identifier_field_ids", "expected"),
-    [([2, 1], True), ([1], False), ([2], False), ([], False)],
-)
-def test_schema_equality_identifier_fields(identifier_field_ids: list[int], expected: bool) -> None:
+def test_schema_equality_identifier_fields() -> None:
     fields = (
         NestedField(field_id=1, name="foo", field_type=LongType(), required=True),
         NestedField(field_id=2, name="bar", field_type=LongType(), required=True),
     )
     schema = Schema(*fields, identifier_field_ids=[1, 2])
-    other = Schema(*fields, schema_id=99, identifier_field_ids=identifier_field_ids)
+    other = Schema(*fields, schema_id=99, identifier_field_ids=[2, 1])
 
-    assert (schema == other) is expected
-    assert (other == schema) is expected
+    assert schema == other
+    assert other == schema
+
+    for identifier_field_ids in [[1], [2], []]:
+        other = Schema(*fields, schema_id=99, identifier_field_ids=identifier_field_ids)
+        assert schema != other
+        assert other != schema
 
 
 def test_schema_raise_on_duplicate_names() -> None:
