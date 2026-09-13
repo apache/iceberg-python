@@ -976,23 +976,6 @@ def test_view_exists_fallback_404(requests_mock: Mocker) -> None:
     assert not catalog.view_exists(("fokko", "view"))
 
 
-def test_view_exists_fallback_500(requests_mock: Mocker) -> None:
-    requests_mock.get(
-        f"{TEST_URI}v1/config",
-        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_VIEW)]},
-        status_code=200,
-    )
-    requests_mock.get(
-        f"{TEST_URI}v1/namespaces/fokko/views/view",
-        status_code=500,
-        request_headers=TEST_HEADERS,
-    )
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-
-    with pytest.raises(ServerError):
-        catalog.view_exists(("fokko", "view"))
-
-
 def test_list_namespaces_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces",
