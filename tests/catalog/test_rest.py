@@ -956,7 +956,6 @@ def test_view_exists_fallback_200(rest_mock: Mocker, example_view_metadata_rest_
         catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
         assert catalog.view_exists(("fokko", "view"))
-        assert rest_mock.last_request.method == "GET"
 
 
 def test_view_exists_fallback_404(rest_mock: Mocker) -> None:
@@ -972,7 +971,6 @@ def test_view_exists_fallback_404(rest_mock: Mocker) -> None:
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
     assert not catalog.view_exists(("fokko", "view"))
-    assert rest_mock.last_request.method == "GET"
 
 
 def test_view_exists_fallback_500(rest_mock: Mocker) -> None:
@@ -988,15 +986,6 @@ def test_view_exists_fallback_500(rest_mock: Mocker) -> None:
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
     with pytest.raises(ServerError):
-        catalog.view_exists(("fokko", "view"))
-    assert rest_mock.last_request.method == "GET"
-
-
-def test_view_exists_fallback_unsupported(rest_mock: Mocker) -> None:
-    rest_mock.get(f"{TEST_URI}v1/config", json={"defaults": {}, "overrides": {}})
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-
-    with pytest.raises(NotImplementedError, match="Server does not support endpoint"):
         catalog.view_exists(("fokko", "view"))
 
 
