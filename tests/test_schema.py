@@ -119,6 +119,38 @@ def test_schema_repr_two_fields() -> None:
     assert expected == actual
 
 
+def test_empty_schema_equality() -> None:
+    schema = Schema()
+    other = Schema(schema_id=99)
+    nonempty = Schema(NestedField(field_id=1, name="foo", field_type=LongType()))
+
+    assert schema == other
+    assert other == schema
+    assert schema != nonempty
+    assert nonempty != schema
+
+
+@pytest.mark.parametrize("other", [None, False, 0, [], {}, StructType()])
+def test_empty_schema_not_equal_to_non_schema(other: object) -> None:
+    assert Schema() != other
+
+
+@pytest.mark.parametrize(
+    ("identifier_field_ids", "expected"),
+    [([2, 1], True), ([1], False), ([2], False), ([], False)],
+)
+def test_schema_equality_identifier_fields(identifier_field_ids: list[int], expected: bool) -> None:
+    fields = (
+        NestedField(field_id=1, name="foo", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=LongType(), required=True),
+    )
+    schema = Schema(*fields, identifier_field_ids=[1, 2])
+    other = Schema(*fields, schema_id=99, identifier_field_ids=identifier_field_ids)
+
+    assert (schema == other) is expected
+    assert (other == schema) is expected
+
+
 def test_schema_raise_on_duplicate_names() -> None:
     """Test schema representation"""
     with pytest.raises(ValueError) as exc_info:
