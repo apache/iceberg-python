@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 import pyarrow as pa
 import pytest
 
+from pyiceberg import __version__
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import ValidationException
 from pyiceberg.io.pyarrow import _dataframe_to_data_files
@@ -707,6 +708,47 @@ def overwrite_table(catalog: Catalog, arrow_table_simple: pa.Table) -> Table:
     table = catalog.create_table("default.overwrite", arrow_table_simple.schema)
     table.append(arrow_table_simple)
     return table
+
+
+def test_snapshot_writes_include_engine_metadata(
+    enable_environment_context: None, catalog: Catalog, arrow_table_simple: pa.Table
+) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.engine_metadata", arrow_table_simple.schema)
+    table.append(arrow_table_simple)
+    table.overwrite(arrow_table_simple)
+    table.delete()
+
+    table.refresh()
+    snapshots = table.snapshots()
+    assert snapshots
+    for snapshot in snapshots:
+        assert snapshot.summary is not None
+        assert snapshot.summary["engine-name"] == "pyiceberg"
+        assert snapshot.summary["engine-version"] == __version__
+
+
+def test_snapshot_engine_metadata_overrides_snapshot_properties(
+    enable_environment_context: None, catalog: Catalog, arrow_table_simple: pa.Table
+) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.engine_metadata", arrow_table_simple.schema)
+    table.append(
+        arrow_table_simple,
+        snapshot_properties={
+            "engine-name": "custom-engine",
+            "engine-version": "custom-version",
+            "job-id": "snapshot-job",
+        },
+    )
+
+    table.refresh()
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.summary is not None
+    assert snapshot.summary["engine-name"] == "pyiceberg"
+    assert snapshot.summary["engine-version"] == __version__
+    assert snapshot.summary["job-id"] == "snapshot-job"
 
 
 def _write_data_file(table: Table, rows: pa.Table) -> DataFile:
