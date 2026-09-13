@@ -947,18 +947,34 @@ def test_view_exists_multilevel_namespace_404(rest_mock: Mocker) -> None:
 
 def test_view_exists_fallback_200(requests_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
     requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_VIEW)]},
+        status_code=200,
+    )
+    requests_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/views/view",
         json=example_view_metadata_rest_json,
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    for config_response in (
-        {"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_VIEW)]},
-        {"defaults": {"view-endpoints-supported": "true"}, "overrides": {}},
-    ):
-        requests_mock.get(f"{TEST_URI}v1/config", json=config_response, status_code=200)
-        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-        assert catalog.view_exists(("fokko", "view"))
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.view_exists(("fokko", "view"))
+
+
+def test_view_exists_fallback_200_legacy_server(requests_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {"view-endpoints-supported": "true"}, "overrides": {}},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.view_exists(("fokko", "view"))
 
 
 def test_view_exists_fallback_404(requests_mock: Mocker) -> None:
