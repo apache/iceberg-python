@@ -1405,6 +1405,9 @@ tbl.overwrite(df, snapshot_properties={"abc": "def"})
 assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
 ```
 
+New snapshot summaries automatically include `engine-name` (`pyiceberg`) and `engine-version`
+(the installed PyIceberg version). These values override same-named entries in `snapshot_properties`.
+
 ## Snapshot Management
 
 Manage snapshots with operations through the `Table` API:

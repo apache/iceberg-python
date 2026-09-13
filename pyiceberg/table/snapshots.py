@@ -410,8 +410,10 @@ def update_snapshot_summaries(summary: Summary, previous_summary: Mapping[str, s
         removed_property=REMOVED_EQUALITY_DELETES,
     )
 
-    for key, value in EnvironmentContext.get().items():
-        summary[key] = value
+    if context := EnvironmentContext.get():
+        # Defensively select only engine fields so future context additions cannot overwrite snapshot metadata.
+        summary["engine-name"] = context["engine-name"]
+        summary["engine-version"] = context["engine-version"]
 
     return summary
 

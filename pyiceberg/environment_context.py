@@ -19,25 +19,12 @@ from pyiceberg import __version__
 
 
 class EnvironmentContext:
-    _PROPERTIES: dict[str, str] = {
-        "engine-name": "pyiceberg",
-        "engine-version": __version__,
-    }
+    """Environment context carrying the engine name and version for snapshot summaries."""
 
-    def __init__(self) -> None:
-        raise NotImplementedError("EnvironmentContext is a utility class and cannot be instantiated.")
-
-    @classmethod
-    def get(cls) -> dict[str, str]:
-        """Return a read-only copy of all properties."""
-        return cls._PROPERTIES.copy()
-
-    @classmethod
-    def put(cls, key: str, value: str) -> None:
-        """Will add the given key/value pair in a global properties map."""
-        cls._PROPERTIES[key] = value
-
-    @classmethod
-    def remove(cls, key: str) -> str | None:
-        """Remove the key from the global properties map."""
-        return cls._PROPERTIES.pop(key, None)
+    @staticmethod
+    def get() -> dict[str, str]:
+        """Return a new dictionary containing only the engine name and version."""
+        return {
+            "engine-name": "pyiceberg",
+            "engine-version": __version__,
+        }

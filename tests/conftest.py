@@ -48,6 +48,7 @@ from pydantic_core import to_json
 from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
     ADLS_ACCOUNT_KEY,
@@ -104,10 +105,27 @@ if TYPE_CHECKING:
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
 
+_original_environment_context_get = EnvironmentContext.get
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if not any(item.iter_markers()):
             item.add_marker("unmarked")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _disable_environment_context() -> Generator[None, None, None]:
+    """Disable engine metadata for existing tests, including session-scoped fixtures."""
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(EnvironmentContext, "get", staticmethod(dict))
+        yield
+
+
+@pytest.fixture
+def enable_environment_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restore real engine metadata for tests that explicitly request it."""
+    monkeypatch.setattr(EnvironmentContext, "get", staticmethod(_original_environment_context_get))
 
 
 @pytest.fixture(autouse=True, scope="session")

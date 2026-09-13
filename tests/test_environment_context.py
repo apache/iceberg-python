@@ -18,25 +18,15 @@ from pyiceberg import __version__
 from pyiceberg.environment_context import EnvironmentContext
 
 
-def test_default_value() -> None:
-    assert EnvironmentContext.get() == {
+def test_get_returns_fresh_engine_metadata(enable_environment_context: None) -> None:
+    first = EnvironmentContext.get()
+    second = EnvironmentContext.get()
+    assert first is not second
+
+    first.clear()
+
+    assert second == {
         "engine-name": "pyiceberg",
         "engine-version": __version__,
     }
-
-
-def test_get_returns_copy() -> None:
-    actual = EnvironmentContext.get()
-    actual["test-key"] = "test-value"
-
-    assert "test-key" not in EnvironmentContext.get()
-
-
-def test_put_and_remove() -> None:
-    try:
-        EnvironmentContext.put("test-key", "test-value")
-        assert EnvironmentContext.get()["test-key"] == "test-value"
-        assert EnvironmentContext.remove("test-key") == "test-value"
-        assert "test-key" not in EnvironmentContext.get()
-    finally:
-        EnvironmentContext.remove("test-key")
+    assert EnvironmentContext.get() == second
