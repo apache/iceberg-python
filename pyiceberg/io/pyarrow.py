@@ -3059,17 +3059,15 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
     elif TableProperties.PARQUET_PAGE_ROW_LIMIT in table_properties:
         warnings.warn(f"{TableProperties.PARQUET_PAGE_ROW_LIMIT} requires pyarrow >= 23.0.0", stacklevel=2)
 
-    # Unlike the properties above, which PyArrow's writer never supports and are safe to silently
-    # drop, CDC is a version-gated feature: silently ignoring it would produce a table that no longer
-    # has the content-defined chunk boundaries the user explicitly asked for, so this raises instead.
+    # Unlike the unsupported options warned about above, a CDC request must not be dropped:
+    # writing without the requested chunk boundaries silently defeats the point, so raise instead.
     if property_as_bool(
         properties=table_properties,
         property_name=TableProperties.PARQUET_CDC_ENABLED,
         default=TableProperties.PARQUET_CDC_ENABLED_DEFAULT,
     ):
         _require_pyarrow_version("21.0.0", "Parquet content-defined chunking")
-        # PyArrow itself validates these values (e.g. max-chunk-size > min-chunk-size) and raises a
-        # clear OSError, so there's no need to duplicate that validation here.
+        # PyArrow validates these values itself (e.g. max-chunk-size > min-chunk-size).
         kwargs["use_content_defined_chunking"] = {
             "min_chunk_size": property_as_int(
                 properties=table_properties,
