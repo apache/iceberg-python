@@ -497,7 +497,7 @@ def test_v1_write_metadata_for_v2() -> None:
         - partition-spec is no longer required and should be omitted; use partition-specs and default-spec-id instead
     """
 
-    minimal_example_v1 = {
+    minimal_example_v1: dict[str, Any] = {
         "format-version": 1,
         "location": "s3://bucket/test/location",
         "last-updated-ms": 1602638573874,
@@ -571,7 +571,7 @@ def test_v2_ref_creation(example_table_metadata_v2: dict[str, Any]) -> None:
 
 
 def test_metadata_v1() -> None:
-    valid_v1 = {
+    valid_v1: dict[str, Any] = {
         "format-version": 1,
         "table-uuid": "bf289591-dcc0-4234-ad4f-5c3eed811a29",
         "location": "s3://tabular-wh-us-west-2-dev/8bcb0838-50fc-472d-9ddb-8feb89ef5f1e/bf289591-dcc0-4234-ad4f-5c3eed811a29",

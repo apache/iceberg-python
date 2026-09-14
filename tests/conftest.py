@@ -667,7 +667,7 @@ def all_avro_types() -> dict[str, Any]:
     }
 
 
-EXAMPLE_TABLE_METADATA_V1 = {
+EXAMPLE_TABLE_METADATA_V1: dict[str, Any] = {
     "format-version": 1,
     "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
     "location": "s3://bucket/test/location",
@@ -693,7 +693,7 @@ def example_table_metadata_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V1
 
 
-EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1 = {
+EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1: dict[str, Any] = {
     "format-version": 1,
     "table-uuid": "b55d9dda-6561-423a-8bfc-787980ce421f",
     "location": "s3://warehouse/database/table",
@@ -767,7 +767,7 @@ def example_table_metadata_with_snapshot_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1
 
 
-EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1 = {
+EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1: dict[str, Any] = {
     "format-version": 1,
     "table-uuid": "bf289591-dcc0-4234-ad4f-5c3eed811a29",
     "location": "s3://warehouse/database/table",
@@ -891,7 +891,7 @@ def example_table_metadata_v2_with_extensive_snapshots() -> dict[str, Any]:
     }
 
 
-EXAMPLE_TABLE_METADATA_V2 = {
+EXAMPLE_TABLE_METADATA_V2: dict[str, Any] = {
     "format-version": 2,
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
     "location": "s3://bucket/test/location",
@@ -953,7 +953,7 @@ EXAMPLE_TABLE_METADATA_V2 = {
     "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
 }
 
-EXAMPLE_TABLE_METADATA_V3 = {
+EXAMPLE_TABLE_METADATA_V3: dict[str, Any] = {
     "format-version": 3,
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
     "location": "s3://bucket/test/location",

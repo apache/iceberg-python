@@ -174,6 +174,9 @@ def literal(value: L) -> Literal[L]:
 
 
 class AboveMax(Literal[L]):
+    def __init__(self, value: Any, value_type: type[Any], /, **data: Any) -> None:
+        super().__init__(value, value_type, **data)
+
     def __repr__(self) -> str:
         """Return the string representation of the AboveMax class."""
         return f"{self.__class__.__name__}()"
@@ -184,6 +187,9 @@ class AboveMax(Literal[L]):
 
 
 class BelowMin(Literal[L]):
+    def __init__(self, value: Any, value_type: type[Any], /, **data: Any) -> None:
+        super().__init__(value, value_type, **data)
+
     def __repr__(self) -> str:
         """Return the string representation of the BelowMin class."""
         return f"{self.__class__.__name__}()"
