@@ -174,7 +174,7 @@ def literal(value: L) -> Literal[L]:
 
 
 class AboveMax(Literal[L]):
-    def __init__(self, value: Any, value_type: type[Any], /, **data: Any) -> None:
+    def __init__(self, value: L, value_type: type[L], /, **data: Any) -> None:
         super().__init__(value, value_type, **data)
 
     def __repr__(self) -> str:
