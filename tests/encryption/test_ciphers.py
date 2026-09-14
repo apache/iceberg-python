@@ -24,6 +24,40 @@ from pyiceberg.exceptions import NotInstalledError
 AES128_KEY = b"0123456789012345"
 PLAINTEXT = b"the quick brown fox"
 
+# Known-answer vectors from McGrew & Viega, "The Galois/Counter Mode of Operation
+# (GCM)", shared with the NIST GCM validation suite and the Java and iceberg-rust
+# test suites. They pin the `nonce || ciphertext || tag` layout against changes
+# that stay self-consistent on round trip but break cross-client interoperability.
+GCM_TEST_VECTORS = [
+    pytest.param(
+        "feffe9928665731c6d6a8f9467308308",
+        "cafebabefacedbaddecaf888",
+        "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255",
+        "",
+        "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f5985",
+        "4d5c2af327cd64a62cf35abd2ba6fab4",
+        id="aes128-no-aad",
+    ),
+    pytest.param(
+        "feffe9928665731c6d6a8f9467308308",
+        "cafebabefacedbaddecaf888",
+        "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39",
+        "feedfacedeadbeeffeedfacedeadbeefabaddad2",
+        "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091",
+        "5bc94fbc3221a5db94fae95ae7121a47",
+        id="aes128-with-aad",
+    ),
+    pytest.param(
+        "feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308",
+        "cafebabefacedbaddecaf888",
+        "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39",
+        "feedfacedeadbeeffeedfacedeadbeefabaddad2",
+        "522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662",
+        "76fc6ece0f4e1768cddf8853bb2d551b",
+        id="aes256-with-aad",
+    ),
+]
+
 
 @pytest.mark.parametrize(
     "key_length, key_size",
@@ -71,6 +105,24 @@ def test_encrypt_decrypt_round_trip(key_size: AesKeySize, aad: bytes | None) -> 
 
     assert ciphertext != PLAINTEXT
     assert cipher.decrypt(ciphertext, aad) == PLAINTEXT
+
+
+@pytest.mark.parametrize("key, nonce, plaintext, aad, ciphertext, tag", GCM_TEST_VECTORS)
+def test_decrypt_known_answer(key: str, nonce: str, plaintext: str, aad: str, ciphertext: str, tag: str) -> None:
+    cipher = AesGcmCipher(SecureKey(bytes.fromhex(key)))
+    stored = bytes.fromhex(nonce + ciphertext + tag)
+
+    assert cipher.decrypt(stored, bytes.fromhex(aad) or None) == bytes.fromhex(plaintext)
+
+
+@pytest.mark.parametrize("key, nonce, plaintext, aad, ciphertext, tag", GCM_TEST_VECTORS)
+def test_encrypt_known_answer(
+    monkeypatch: pytest.MonkeyPatch, key: str, nonce: str, plaintext: str, aad: str, ciphertext: str, tag: str
+) -> None:
+    monkeypatch.setattr("pyiceberg.encryption.ciphers.os.urandom", lambda _: bytes.fromhex(nonce))
+    cipher = AesGcmCipher(SecureKey(bytes.fromhex(key)))
+
+    assert cipher.encrypt(bytes.fromhex(plaintext), bytes.fromhex(aad) or None) == bytes.fromhex(nonce + ciphertext + tag)
 
 
 def test_encrypt_empty_plaintext() -> None:
