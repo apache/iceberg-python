@@ -152,7 +152,7 @@ jobs:
         include-hidden-files: true
 
   integration-coverage-report:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     needs: [integration-test, integration-test-s3, integration-test-adls, integration-test-gcs]
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -178,7 +178,7 @@ jobs:
   python-integration-required:
     if: ${{ always() }}
     needs: [integration-test, integration-test-s3, integration-test-adls, integration-test-gcs, integration-coverage-report]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
     - name: Verify Python integration jobs succeeded
       env:
