@@ -919,7 +919,10 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return pc.field(self._get_field_name(term)) == _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_not_equal(self, term: BoundTerm, literal: Literal[Any]) -> pc.Expression:
-        return pc.field(self._get_field_name(term)) != _convert_scalar(literal.value, term.ref().field.field_type)
+        # A null is not equal to the literal, but an Arrow comparison yields null for it and
+        # the row would be dropped. Keep it explicitly to match the other evaluators.
+        ref = pc.field(self._get_field_name(term))
+        return ref.is_null(nan_is_null=False) | (ref != _convert_scalar(literal.value, term.ref().field.field_type))
 
     def visit_greater_than_or_equal(self, term: BoundTerm, literal: Literal[Any]) -> pc.Expression:
         return pc.field(self._get_field_name(term)) >= _convert_scalar(literal.value, term.ref().field.field_type)
