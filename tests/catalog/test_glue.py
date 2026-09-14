@@ -106,7 +106,7 @@ def test_create_table_with_database_location(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -140,7 +140,7 @@ def test_create_v1_table(
     table_name: str,
 ) -> None:
     catalog_name = "glue"
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table((database_name, table_name), table_schema_nested, properties={"format-version": "1"})
     assert table.format_version == 1
@@ -168,7 +168,9 @@ def test_create_table_with_default_warehouse(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -182,7 +184,7 @@ def test_create_table_with_given_location(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(
         identifier=identifier, schema=table_schema_nested, location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
@@ -198,7 +200,7 @@ def test_create_table_removes_trailing_slash_in_location(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     location = f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, location=f"{location}/")
@@ -218,7 +220,7 @@ def test_create_table_with_pyarrow_schema(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(
         identifier=identifier,
@@ -236,7 +238,7 @@ def test_create_table_with_no_location(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     with pytest.raises(ValueError):
         test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
@@ -248,7 +250,7 @@ def test_create_table_with_strips(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db/"})
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -261,7 +263,7 @@ def test_create_table_with_strips_bucket_root(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     table_strip = test_catalog.create_table(identifier, table_schema_nested)
     assert table_strip.name() == identifier
@@ -274,7 +276,7 @@ def test_create_table_with_no_database(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
 
@@ -287,7 +289,7 @@ def test_create_table_with_glue_catalog_id(
     catalog_id = "444444444444"
     identifier = (database_name, table_name)
     test_catalog = GlueCatalog(
-        catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.id": catalog_id}
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.id": catalog_id}
     )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
@@ -305,7 +307,7 @@ def test_create_duplicated_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     with pytest.raises(TableAlreadyExistsError):
@@ -318,7 +320,9 @@ def test_load_table(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
@@ -333,7 +337,9 @@ def test_load_table_from_self_identifier(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     intermediate = test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(intermediate.name())
@@ -344,7 +350,7 @@ def test_load_table_from_self_identifier(
 @mock_aws
 def test_load_non_exist_table(_bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     with pytest.raises(NoSuchTableError):
         test_catalog.load_table(identifier)
@@ -356,7 +362,9 @@ def test_drop_table(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
@@ -373,7 +381,9 @@ def test_drop_table_from_self_identifier(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
@@ -389,7 +399,7 @@ def test_drop_table_from_self_identifier(
 @mock_aws
 def test_drop_non_exist_table(_bucket_initialize: None, moto_endpoint_url: str, database_name: str, table_name: str) -> None:
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     with pytest.raises(NoSuchTableError):
         test_catalog.drop_table(identifier)
 
@@ -401,7 +411,7 @@ def test_rename_table(
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (database_name, new_table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -424,7 +434,7 @@ def test_rename_table_from_self_identifier(
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (database_name, new_table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -449,7 +459,7 @@ def test_rename_table_no_params(
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (new_database_name, new_table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_namespace(namespace=new_database_name)
     _glue.create_table(
@@ -468,7 +478,7 @@ def test_rename_non_iceberg_table(
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (new_database_name, new_table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_namespace(namespace=new_database_name)
     _glue.create_table(
@@ -491,7 +501,7 @@ def test_list_tables(
     database_name: str,
     table_list: list[str],
 ) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
 
     non_iceberg_table_name = "non_iceberg_table"
@@ -526,7 +536,7 @@ def test_list_tables(
 
 @mock_aws
 def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, database_list: list[str]) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     for database_name in database_list:
         test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
@@ -536,7 +546,7 @@ def test_list_namespaces(_bucket_initialize: None, moto_endpoint_url: str, datab
 
 @mock_aws
 def test_create_namespace_no_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
     assert len(loaded_database_list) == 1
@@ -552,7 +562,7 @@ def test_create_namespace_with_comment_and_location(_bucket_initialize: None, mo
         "comment": "this is a test description",
         "location": test_location,
     }
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties=test_properties)
     loaded_database_list = test_catalog.list_namespaces()
     assert len(loaded_database_list) == 1
@@ -564,7 +574,7 @@ def test_create_namespace_with_comment_and_location(_bucket_initialize: None, mo
 
 @mock_aws
 def test_create_duplicated_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
     assert len(loaded_database_list) == 1
@@ -575,7 +585,7 @@ def test_create_duplicated_namespace(_bucket_initialize: None, moto_endpoint_url
 
 @mock_aws
 def test_drop_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     loaded_database_list = test_catalog.list_namespaces()
     assert len(loaded_database_list) == 1
@@ -590,7 +600,7 @@ def test_drop_non_empty_namespace(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     assert len(test_catalog.list_tables(database_name)) == 1
@@ -602,7 +612,7 @@ def test_drop_non_empty_namespace(
 def test_drop_namespace_that_contains_non_iceberg_tables(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.glue.create_table(DatabaseName=database_name, TableInput={"Name": "hive_table"})
 
@@ -612,7 +622,7 @@ def test_drop_namespace_that_contains_non_iceberg_tables(
 
 @mock_aws
 def test_drop_non_exist_namespace(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.drop_namespace(database_name)
 
@@ -627,7 +637,7 @@ def test_load_namespace_properties(_bucket_initialize: None, moto_endpoint_url: 
         "test_property2": "2",
         "test_property3": "3",
     }
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(database_name, test_properties)
     listed_properties = test_catalog.load_namespace_properties(database_name)
     for k, v in listed_properties.items():
@@ -637,7 +647,7 @@ def test_load_namespace_properties(_bucket_initialize: None, moto_endpoint_url: 
 
 @mock_aws
 def test_load_non_exist_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     with pytest.raises(NoSuchNamespaceError):
         test_catalog.load_namespace_properties(database_name)
 
@@ -653,7 +663,7 @@ def test_update_namespace_properties(_bucket_initialize: None, moto_endpoint_url
     }
     removals = {"test_property1", "test_property2", "test_property3", "should_not_removed"}
     updates = {"test_property4": "4", "test_property5": "5", "comment": "updated test description"}
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(database_name, test_properties)
     update_report = test_catalog.update_namespace_properties(database_name, removals, updates)
     for k in updates.keys():
@@ -669,7 +679,7 @@ def test_update_namespace_properties(_bucket_initialize: None, moto_endpoint_url
 
 @mock_aws
 def test_load_empty_namespace_properties(_bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(database_name)
     listed_properties = test_catalog.load_namespace_properties(database_name)
     assert listed_properties == {}
@@ -679,7 +689,7 @@ def test_load_empty_namespace_properties(_bucket_initialize: None, moto_endpoint
 def test_load_default_namespace_properties(_glue, _bucket_initialize: None, moto_endpoint_url: str, database_name: str) -> None:  # type: ignore
     # simulate creating database with default settings through AWS Glue Web Console
     _glue.create_database(DatabaseInput={"Name": database_name})
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     listed_properties = test_catalog.load_namespace_properties(database_name)
     assert listed_properties == {}
 
@@ -697,7 +707,7 @@ def test_update_namespace_properties_overlap_update_removal(
     }
     removals = {"test_property1", "test_property2", "test_property3", "should_not_removed"}
     updates = {"test_property1": "4", "test_property5": "5", "comment": "updated test description"}
-    test_catalog = GlueCatalog("glue", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(database_name, test_properties)
     with pytest.raises(ValueError):
         test_catalog.update_namespace_properties(database_name, removals, updates)
@@ -762,7 +772,9 @@ def test_commit_table_update_schema(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     original_table_metadata = table.metadata
@@ -821,7 +833,9 @@ def test_commit_table_properties(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a"})
 
@@ -851,7 +865,9 @@ def test_commit_append_table_snapshot_properties(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
 
@@ -878,7 +894,9 @@ def test_commit_overwrite_table_snapshot_properties(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
 
@@ -924,7 +942,9 @@ def test_create_table_transaction(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
     test_catalog.create_namespace(namespace=database_name)
 
     with test_catalog.create_table_transaction(
@@ -965,7 +985,9 @@ def test_table_exists(
 ) -> None:
     catalog_name = "glue"
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier=identifier, schema=table_schema_simple)
     # Act and Assert for an existing table
@@ -981,7 +1003,9 @@ def test_register_table_with_given_location(
     catalog_name = "glue"
     identifier = (database_name, table_name)
     location = metadata_location
-    test_catalog = GlueCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.register_table(identifier, location)
     assert table.name() == identifier
@@ -993,7 +1017,9 @@ def test_glue_endpoint_override(_bucket_initialize: None, moto_endpoint_url: str
     catalog_name = "glue"
     test_endpoint = "https://test-endpoint"
     test_catalog = GlueCatalog(
-        catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": test_endpoint}
+        catalog_name,
+        client=None,
+        **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}", "glue.endpoint": test_endpoint},
     )
     assert test_catalog.glue.meta.endpoint_url == test_endpoint
 
@@ -1031,7 +1057,7 @@ def test_create_table_s3tables(
     _patch_moto_for_s3tables(monkeypatch)
 
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("s3tables", client=None, **{"s3.endpoint": moto_endpoint_url})
     _create_s3tables_database(test_catalog, database_name)
 
     table = test_catalog.create_table(identifier, table_schema_nested)
@@ -1054,7 +1080,7 @@ def test_create_table_s3tables_rejects_location(
     _patch_moto_for_s3tables(monkeypatch)
 
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("s3tables", client=None, **{"s3.endpoint": moto_endpoint_url})
     _create_s3tables_database(test_catalog, database_name)
 
     with pytest.raises(ValueError, match="Cannot specify a location for S3 Tables table"):
@@ -1073,7 +1099,7 @@ def test_create_table_s3tables_duplicate(
     _patch_moto_for_s3tables(monkeypatch)
 
     identifier = (database_name, table_name)
-    test_catalog = GlueCatalog("s3tables", **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = GlueCatalog("s3tables", client=None, **{"s3.endpoint": moto_endpoint_url})
     _create_s3tables_database(test_catalog, database_name)
 
     test_catalog.create_table(identifier, table_schema_nested)

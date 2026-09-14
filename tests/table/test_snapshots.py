@@ -588,8 +588,8 @@ def test_latest_ancestor_before_timestamp() -> None:
     from pyiceberg.table.metadata import TableMetadataV2
 
     # Create metadata with 4 snapshots at ordered timestamps
-    metadata = TableMetadataV2(
-        **{
+    metadata = TableMetadataV2.model_validate(
+        {
             "format-version": 2,
             "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
             "location": "s3://bucket/test/location",
