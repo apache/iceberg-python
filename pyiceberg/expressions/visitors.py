@@ -1812,31 +1812,32 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
 
 
 class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
-    """Finds the residuals for an Expression the partitions in the given PartitionSpec.
+    """Find residuals for an expression using partition values.
 
     A residual expression is made by partially evaluating an expression using partition values.
     For example, if a table is partitioned by day(utc_timestamp) and is read with a filter expression
-    utc_timestamp > a and utc_timestamp < b, then there are 4 possible residuals expressions
+    utc_timestamp > a and utc_timestamp < b, then there are 4 possible residual expressions
     for the partition data, d:
 
-
-    1. If d > day(a) and d &lt; day(b), the residual is always true
+    1. If d > day(a) and d < day(b), the residual is always true
     2. If d == day(a) and d != day(b), the residual is utc_timestamp > a
-    3. if d == day(b) and d != day(a), the residual is utc_timestamp < b
+    3. If d == day(b) and d != day(a), the residual is utc_timestamp < b
     4. If d == day(a) == day(b), the residual is utc_timestamp > a and utc_timestamp < b
-    Partition data is passed using StructLike. Residuals are returned by residualFor(StructLike).
     """
 
     schema: Schema
     spec: PartitionSpec
     case_sensitive: bool
     expr: BooleanExpression
+    partition_schema: Schema
+    struct: Record
 
     def __init__(self, schema: Schema, spec: PartitionSpec, case_sensitive: bool, expr: BooleanExpression) -> None:
         self.schema = schema
         self.spec = spec
         self.case_sensitive = case_sensitive
         self.expr = expr
+        self.partition_schema = Schema(*spec.partition_type(schema).fields)
 
     def eval(self, partition_data: Record) -> BooleanExpression:
         self.struct = partition_data
@@ -1957,17 +1958,12 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
         if parts == []:
             return predicate
 
-        def struct_to_schema(struct: StructType) -> Schema:
-            return Schema(*struct.fields)
-
         for part in parts:
             strict_projection = part.transform.strict_project(part.name, predicate)
             strict_result = None
 
             if strict_projection is not None:
-                bound = strict_projection.bind(
-                    struct_to_schema(self.spec.partition_type(self.schema)), case_sensitive=self.case_sensitive
-                )
+                bound = strict_projection.bind(self.partition_schema, case_sensitive=self.case_sensitive)
                 if isinstance(bound, BoundPredicate):
                     strict_result = super().visit_bound_predicate(bound)
                 else:
@@ -1980,9 +1976,7 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
             inclusive_projection = part.transform.project(part.name, predicate)
             inclusive_result = None
             if inclusive_projection is not None:
-                bound_inclusive = inclusive_projection.bind(
-                    struct_to_schema(self.spec.partition_type(self.schema)), case_sensitive=self.case_sensitive
-                )
+                bound_inclusive = inclusive_projection.bind(self.partition_schema, case_sensitive=self.case_sensitive)
                 if isinstance(bound_inclusive, BoundPredicate):
                     # using predicate method specific to inclusive
                     inclusive_result = super().visit_bound_predicate(bound_inclusive)
