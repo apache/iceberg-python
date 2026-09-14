@@ -25,8 +25,8 @@ import array
 
 
 cdef extern from "decoder_basic.c":
-  void decode_zigzag_ints(const unsigned char **buffer, const uint64_t count, uint64_t *result);
-  void skip_zigzag_int(const unsigned char **buffer);
+  int decode_zigzag_ints(const unsigned char **buffer, const unsigned char *end, const uint64_t count, uint64_t *result);
+  int skip_zigzag_int(const unsigned char **buffer, const unsigned char *end);
 
 unsigned_long_long_array_template = cython.declare(array.array, array.array('Q', []))
 
@@ -61,6 +61,14 @@ cdef class CythonBinaryDecoder:
     def __dealloc__(self):
         PyMem_Free(self._data)
 
+    cdef inline void _ensure_available(self, uint64_t length):
+        if length > <uint64_t>(self._end - self._current):
+            raise EOFError(f"EOF: read {length} bytes")
+
+    cdef inline void _decode_zigzag_ints(self, uint64_t count, uint64_t *result):
+        if not decode_zigzag_ints(&self._current, self._end, count, result):
+            raise EOFError("EOF: read 1 bytes")
+
     cpdef unsigned int tell(self):
         """Return the current stream position."""
         return self._current - self._data
@@ -69,9 +77,11 @@ cdef class CythonBinaryDecoder:
         """Read n bytes."""
         if n < 0:
             raise ValueError(f"Requested {n} bytes to read, expected positive integer.")
+        cdef uint64_t length = n
+        self._ensure_available(length)
         cdef const unsigned char *r = self._current
-        self._current += n
-        return r[0:n]
+        self._current += length
+        return r[0:length]
 
     def read_boolean(self) -> bool:
         """Reads a value from the stream as a boolean.
@@ -79,6 +89,7 @@ cdef class CythonBinaryDecoder:
         A boolean is written as a single byte
         whose value is either 0 (false) or 1 (true).
         """
+        self._ensure_available(1)
         self._current += 1;
         return self._current[-1] != 0
 
@@ -88,46 +99,43 @@ cdef class CythonBinaryDecoder:
         int/long values are written using variable-length, zigzag coding.
         """
         cdef uint64_t result;
-        if self._current >= self._end:
-          raise EOFError(f"EOF: read 1 bytes")
-        decode_zigzag_ints(&self._current, 1, &result)
+        self._decode_zigzag_ints(1, &result)
         return result
 
     def read_ints(self, count: int) -> array.array[int]:
         """Reads a list of integers."""
         newarray = array.clone(unsigned_long_long_array_template, count, zero=False)
-        if self._current >= self._end:
-          raise EOFError(f"EOF: read 1 bytes")
-        decode_zigzag_ints(&self._current, count, <uint64_t *>newarray.data.as_ulonglongs)
+        self._decode_zigzag_ints(count, <uint64_t *>newarray.data.as_ulonglongs)
         return newarray
 
     cpdef void read_int_bytes_dict(self, count: int, dest: Dict[int, bytes]):
         """Reads a dictionary of integers for keys and bytes for values into a destination dict."""
-        cdef uint64_t result[2];
-        if self._current >= self._end:
-          raise EOFError(f"EOF: read 1 bytes")
+        cdef uint64_t raw_result[2];
+        cdef int64_t key
+        cdef int64_t length
 
         for _ in range(count):
-          decode_zigzag_ints(&self._current, 2, <uint64_t *>&result)
-          if result[1] <= 0:
-              dest[result[0]] = b""
+          self._decode_zigzag_ints(2, raw_result)
+          key = <int64_t>raw_result[0]
+          length = <int64_t>raw_result[1]
+          if length <= 0:
+              dest[key] = b""
           else:
-              dest[result[0]] = self._current[0:result[1]]
-              self._current += result[1]
+              self._ensure_available(<uint64_t>length)
+              dest[key] = self._current[0:length]
+              self._current += length
 
     cpdef inline bytes read_bytes(self):
         """Bytes are encoded as a long followed by that many bytes of data."""
-        cdef uint64_t length;
-        if self._current >= self._end:
-          raise EOFError(f"EOF: read 1 bytes")
+        cdef uint64_t raw_length;
+        self._decode_zigzag_ints(1, &raw_length)
 
-        decode_zigzag_ints(&self._current, 1, &length)
-
-        if length <= 0:
+        if <int64_t>raw_length <= 0:
             return b""
+        self._ensure_available(raw_length)
         cdef const unsigned char *r = self._current
-        self._current += length
-        return r[0:length]
+        self._current += raw_length
+        return r[0:raw_length]
 
     cpdef float read_float(self):
         """Reads a value from the stream as a float.
@@ -156,25 +164,32 @@ cdef class CythonBinaryDecoder:
         return self.read_bytes().decode("utf-8")
 
     def skip_int(self) -> None:
-        skip_zigzag_int(&self._current)
-        return
+        if not skip_zigzag_int(&self._current, self._end):
+            raise EOFError("EOF: read 1 bytes")
 
     def skip(self, n: int) -> None:
-        self._current += n
+        if n < 0:
+            raise ValueError(f"Requested {n} bytes to skip, expected positive integer.")
+        cdef uint64_t length = n
+        self._ensure_available(length)
+        self._current += length
 
     def skip_boolean(self) -> None:
-        self._current += 1
+        self.skip(1)
 
     def skip_float(self) -> None:
-        self._current += 4
+        self.skip(4)
 
     def skip_double(self) -> None:
-        self._current += 8
+        self.skip(8)
 
     def skip_bytes(self) -> None:
-        cdef uint64_t result;
-        decode_zigzag_ints(&self._current, 1, &result)
-        self._current += result
+        cdef uint64_t raw_length;
+        self._decode_zigzag_ints(1, &raw_length)
+        if <int64_t>raw_length <= 0:
+            return
+        self._ensure_available(raw_length)
+        self._current += raw_length
 
     def skip_utf8(self) -> None:
         self.skip_bytes()
