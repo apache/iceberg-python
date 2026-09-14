@@ -40,7 +40,7 @@ class AesKeySize(IntEnum):
     @property
     def key_length(self) -> int:
         """Return the key length in bytes."""
-        return self // 8
+        return self.value // 8
 
     @classmethod
     def from_key_length(cls, key_length: int) -> AesKeySize:
