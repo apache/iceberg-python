@@ -56,6 +56,10 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 
 - Large/integration libraries must be **optional extras** in `pyproject.toml`, not core `dependencies`.
 
+### Documentation
+
+- Any external URL mentioned in the docs should have `<!-- markdown-link-check-disable-next-line -->` on the previous line.
+
 ## Testing
 
 - Bias towards adding tests to existing files, rather than creating new files.
