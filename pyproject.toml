@@ -252,6 +252,8 @@ filterwarnings = [
   "ignore:As the c extension couldn't be imported:RuntimeWarning:google_crc32c",
   # Ignore Spark 4.0.1 pandas conversion warning under pandas 3.0
   "ignore:The copy keyword is deprecated and will be removed in a future version.*",
+  # Deprecated config key migration (backwards compat)
+  "ignore:Config key 'downcast-ns-timestamp-to-us-on-write'.*:DeprecationWarning",
 ]
 
 [tool.mypy]

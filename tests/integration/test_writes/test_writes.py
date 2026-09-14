@@ -1536,7 +1536,7 @@ def test_write_all_timestamp_precision(
     arrow_table_schema_with_all_microseconds_timestamp_precisions: pa.Schema,
 ) -> None:
     identifier = "default.table_all_timestamp_precision"
-    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
+    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US": "True"})
 
     tbl = _create_table(
         session_catalog,
