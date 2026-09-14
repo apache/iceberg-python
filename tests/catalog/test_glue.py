@@ -21,6 +21,7 @@ import pyarrow as pa
 import pytest
 from moto import mock_aws
 
+from pyiceberg.catalog import _get_aws_session_with_assumed_role
 from pyiceberg.catalog.glue import GLUE_CONNECTION_S3_TABLES, GlueCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
@@ -749,6 +750,83 @@ def test_passing_unified_session_properties_to_glue() -> None:
         botocore_session=None,
     )
     assert test_catalog.glue is mock_session().client()
+
+
+@mock_aws
+def test_glue_assume_role_with_unified_role_properties() -> None:
+    role_arn = "arn:aws:iam::123456789012:role/my-glue-role"
+    session_properties: Properties = {
+        "client.role-arn": role_arn,
+        "client.role-session-name": "my-session",
+        "client.region": "us-east-1",
+    }
+
+    with mock.patch(
+        "pyiceberg.catalog.glue._get_aws_session_with_assumed_role",
+        wraps=_get_aws_session_with_assumed_role,
+    ) as mock_assume_role:
+        GlueCatalog("glue", **session_properties)
+
+    mock_assume_role.assert_called_once_with(
+        session=mock.ANY,
+        role_arn=role_arn,
+        role_session_name="my-session",
+        region_name="us-east-1",
+    )
+
+
+@mock_aws
+def test_glue_assume_role_prefixed_properties_take_precedence() -> None:
+    session_properties: Properties = {
+        "glue.role-arn": "arn:aws:iam::123456789012:role/glue-specific-role",
+        "glue.role-session-name": "glue-session",
+        "client.role-arn": "arn:aws:iam::123456789012:role/unified-role",
+        "client.role-session-name": "unified-session",
+        "client.region": "us-east-1",
+    }
+
+    with mock.patch(
+        "pyiceberg.catalog.glue._get_aws_session_with_assumed_role",
+        wraps=_get_aws_session_with_assumed_role,
+    ) as mock_assume_role:
+        GlueCatalog("glue", **session_properties)
+
+    mock_assume_role.assert_called_once_with(
+        session=mock.ANY,
+        role_arn="arn:aws:iam::123456789012:role/glue-specific-role",
+        role_session_name="glue-session",
+        region_name="us-east-1",
+    )
+
+
+@mock_aws
+def test_glue_no_role_arn_does_not_assume_role() -> None:
+    with mock.patch("pyiceberg.catalog.glue._get_aws_session_with_assumed_role") as mock_assume_role:
+        GlueCatalog("glue", **{"client.region": "us-east-1"})
+
+    mock_assume_role.assert_not_called()
+
+
+@mock_aws
+def test_get_aws_session_with_assumed_role_returns_temporary_credentials() -> None:
+    base_session = boto3.Session(
+        aws_access_key_id="base-access-key",
+        aws_secret_access_key="base-secret-key",
+        region_name="us-east-1",
+    )
+
+    assumed_session = _get_aws_session_with_assumed_role(
+        session=base_session,
+        role_arn="arn:aws:iam::123456789012:role/my-role",
+        role_session_name="test-session",
+        region_name="us-east-1",
+    )
+
+    credentials = assumed_session.get_credentials()
+    assert credentials is not None
+    # Temporary credentials from STS AssumeRole always carry a session token.
+    assert credentials.token is not None
+    assert assumed_session.region_name == "us-east-1"
 
 
 @mock_aws
