@@ -2073,9 +2073,12 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         if isinstance(list_array, (pa.ListArray, pa.LargeListArray, pa.FixedSizeListArray)) and value_array is not None:
             list_initializer = pa.large_list if isinstance(list_array, pa.LargeListArray) else pa.list_
             if isinstance(value_array, pa.StructArray):
-                # This can be removed once this has been fixed:
-                # https://github.com/apache/arrow/issues/38809
-                list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)
+                # Rebuilding is what applies the projection to the element struct. A plain
+                # cast would not do: Iceberg renames by field-id, while cast matches the
+                # element fields by name and would silently null out any renamed one. The
+                # mask has to be carried over because the offsets buffer alone cannot
+                # express a null list, only an empty one.
+                list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array, mask=list_array.is_null())
             value_array = self._cast_if_needed(list_type.element_field, value_array)
             arrow_field = list_initializer(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
