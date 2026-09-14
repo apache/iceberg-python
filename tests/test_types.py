@@ -43,7 +43,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -935,3 +937,22 @@ def test_decimal_precision_validation() -> None:
 
     with pytest.raises(ValidationError, match="Decimal precision must be between 1 and 38"):
         DecimalType(-5, 2)
+
+
+@pytest.mark.parametrize(
+    "field_type, expected_json",
+    [
+        (TimestampNanoType(), "2017-11-16T22:31:08.123456789"),
+        (TimestamptzNanoType(), "2017-11-16T22:31:08.123456789+00:00"),
+    ],
+)
+def test_nested_field_nanosecond_defaults(field_type: PrimitiveType, expected_json: str) -> None:
+    """Nanosecond timestamp defaults serialize to ISO8601 and survive a round-trip."""
+    nanos = 1510871468123456789
+    field = NestedField(1, "ts", field_type, required=False, initial_default=nanos, write_default=nanos)
+
+    serialized = field.model_dump_json()
+    assert f'"initial-default":"{expected_json}"' in serialized
+    assert f'"write-default":"{expected_json}"' in serialized
+
+    assert NestedField.model_validate_json(serialized) == field
