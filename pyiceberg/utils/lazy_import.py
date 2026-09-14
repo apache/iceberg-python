@@ -24,23 +24,6 @@ import types
 from pyiceberg.exceptions import NotInstalledError
 
 
-def not_installed(module_name: str, extras_name: str | None = None) -> NotInstalledError:
-    """Return the error to raise when `module_name` is unavailable.
-
-    Use this when the import has to be spelled out to keep the imported names statically typed;
-    prefer `try_import` otherwise.
-
-    Args:
-        module_name (str): The module that could not be imported.
-        extras_name (str | None): The pyiceberg extra that provides it, if any.
-    """
-    if extras_name:
-        msg = f'{module_name} needs to be installed. pip install "pyiceberg[{extras_name}]"'
-    else:
-        msg = f"{module_name} needs to be installed."
-    return NotInstalledError(msg)
-
-
 def try_import(module_name: str, extras_name: str | None = None) -> types.ModuleType:
     """Import `module_name`, raising `NotInstalledError` with an install hint when it is missing.
 
@@ -51,4 +34,8 @@ def try_import(module_name: str, extras_name: str | None = None) -> types.Module
     try:
         return importlib.import_module(module_name)
     except ImportError:
-        raise not_installed(module_name, extras_name) from None
+        if extras_name:
+            msg = f'{module_name} needs to be installed. pip install "pyiceberg[{extras_name}]"'
+        else:
+            msg = f"{module_name} needs to be installed."
+        raise NotInstalledError(msg) from None

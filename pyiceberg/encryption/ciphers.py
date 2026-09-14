@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
-from pyiceberg.utils.lazy_import import not_installed
+from pyiceberg.utils.lazy_import import try_import
 
 if TYPE_CHECKING:
     from cryptography.exceptions import InvalidTag
@@ -82,14 +82,11 @@ class AesGcmCipher:
     TAG_LENGTH = 16
 
     def __init__(self, key: SecureKey) -> None:
-        try:
-            from cryptography.exceptions import InvalidTag
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        except ImportError:
-            raise not_installed("cryptography", extras_name="encryption") from None
+        aead = try_import("cryptography.hazmat.primitives.ciphers.aead", extras_name="encryption")
+        exceptions = try_import("cryptography.exceptions", extras_name="encryption")
 
-        self._aes_gcm: AESGCM = AESGCM(key.key)
-        self._invalid_tag: type[InvalidTag] = InvalidTag
+        self._aes_gcm: AESGCM = aead.AESGCM(key.key)
+        self._invalid_tag: type[InvalidTag] = exceptions.InvalidTag
 
     def encrypt(self, plaintext: bytes, aad: bytes | None = None) -> bytes:
         """Encrypt `plaintext`, authenticating `aad` alongside it.

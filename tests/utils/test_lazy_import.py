@@ -19,7 +19,7 @@ import importlib
 import pytest
 
 from pyiceberg.exceptions import NotInstalledError
-from pyiceberg.utils.lazy_import import not_installed, try_import
+from pyiceberg.utils.lazy_import import try_import
 
 
 def test_try_import_returns_the_module() -> None:
@@ -34,7 +34,3 @@ def test_try_import_missing_module_with_extras() -> None:
 def test_try_import_missing_module_without_extras() -> None:
     with pytest.raises(NotInstalledError, match="nonexistent needs to be installed."):
         try_import("nonexistent")
-
-
-def test_not_installed_returns_rather_than_raises() -> None:
-    assert isinstance(not_installed("nonexistent", extras_name="some-extra"), NotInstalledError)
