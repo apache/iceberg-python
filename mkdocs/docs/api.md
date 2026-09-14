@@ -1893,6 +1893,7 @@ This will return a Pandas dataframe:
 [116981 rows x 3 columns]
 ```
 
+<!-- markdown-link-check-disable-next-line -->
 It is recommended to use Pandas 2 or later, because it stores the data in an [Apache Arrow backend](https://datapythonista.me/blog/pandas-20-and-the-arrow-revolution-part-i) which avoids copies of data.
 
 ### DuckDB
@@ -1961,6 +1962,7 @@ Dataset(
 )
 ```
 
+<!-- markdown-link-check-disable-next-line -->
 Using [Ray Dataset API](https://docs.ray.io/en/latest/data/api/dataset.html) to interact with the dataset:
 
 ```python
@@ -1981,6 +1983,7 @@ print(ray_dataset.take(2))
 
 ### Bodo
 
+<!-- markdown-link-check-disable-next-line -->
 PyIceberg interfaces closely with Bodo Dataframes (see [Bodo Iceberg Quick Start](https://docs.bodo.ai/latest/quick_start/quickstart_local_iceberg/)),
 which provides a drop-in replacement for Pandas that applies query, compiler and HPC optimizations automatically.
 Bodo accelerates and scales Python code from single laptops to large clusters without code rewrites.
@@ -2027,6 +2030,7 @@ Bodo is optimized to take advantage of Iceberg features such as hidden partition
 
 ### Daft
 
+<!-- markdown-link-check-disable-next-line -->
 PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://docs.daft.ai/en/stable/io/iceberg/)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
 
 <!-- prettier-ignore-start -->
