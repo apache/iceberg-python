@@ -128,6 +128,7 @@ dev = [
     "papermill>=2.6.0",
     "nbformat>=5.10.0",
     "ipykernel>=6.29.0",
+    "ty==0.0.80",
 ]
 # for mkdocs
 docs = [
@@ -265,6 +266,18 @@ disallow_any_generics = true
 disallow_untyped_defs = true
 implicit_reexport = false
 ignore_missing_imports = true
+
+[tool.ty.src]
+exclude = ["vendor/"]
+
+[tool.ty.environment]
+# The vendored Hive Metastore client is packaged from vendor/, so it must stay importable
+extra-paths = ["vendor"]
+
+[tool.ty.analysis]
+# pyiceberg_core.datafusion is registered at runtime by its compiled extension; griffe and
+# mkdocs_gen_files are only installed with the docs dependency group
+allowed-unresolved-imports = ["pyiceberg_core.datafusion", "griffe", "mkdocs_gen_files"]
 
 [tool.coverage.run]
 source = ['pyiceberg/']
