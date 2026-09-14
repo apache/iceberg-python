@@ -127,6 +127,11 @@ skip_if_pyarrow_too_old = pytest.mark.skipif(
     reason="Requires pyarrow version >= 20.0.0",
 )
 
+skip_if_pyarrow_too_old_for_cdc = pytest.mark.skipif(
+    version.parse(pyarrow.__version__) < version.parse("21.0.0"),
+    reason="Requires pyarrow version >= 21.0.0",
+)
+
 
 def test_pyarrow_infer_local_fs_from_path() -> None:
     """Test path with `file` scheme and no scheme both use LocalFileSystem"""
@@ -5469,15 +5474,16 @@ def test_dictionary_columns_produces_dict_encoded_output(tmpdir: str) -> None:
     "table_properties,expected",
     [
         ({}, None),
-        (
+        pytest.param(
             {TableProperties.PARQUET_CDC_ENABLED: "true"},
             {
                 "min_chunk_size": TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE_DEFAULT,
                 "max_chunk_size": TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE_DEFAULT,
                 "norm_level": TableProperties.PARQUET_CDC_NORM_LEVEL_DEFAULT,
             },
+            marks=skip_if_pyarrow_too_old_for_cdc,
         ),
-        (
+        pytest.param(
             {
                 TableProperties.PARQUET_CDC_ENABLED: "true",
                 TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE: "4096",
@@ -5485,6 +5491,7 @@ def test_dictionary_columns_produces_dict_encoded_output(tmpdir: str) -> None:
                 TableProperties.PARQUET_CDC_NORM_LEVEL: "2",
             },
             {"min_chunk_size": 4096, "max_chunk_size": 8192, "norm_level": 2},
+            marks=skip_if_pyarrow_too_old_for_cdc,
         ),
     ],
 )
@@ -5499,6 +5506,7 @@ def test_get_parquet_writer_kwargs_cdc_enabled_unsupported_pyarrow_version(monke
         _get_parquet_writer_kwargs({TableProperties.PARQUET_CDC_ENABLED: "true"})
 
 
+@skip_if_pyarrow_too_old_for_cdc
 def test_get_parquet_writer_kwargs_cdc_invalid_chunk_sizes_raises_from_pyarrow() -> None:
     """PyArrow validates min/max chunk sizes itself; pyiceberg doesn't duplicate that check."""
     kwargs = _get_parquet_writer_kwargs(
@@ -5514,6 +5522,7 @@ def test_get_parquet_writer_kwargs_cdc_invalid_chunk_sizes_raises_from_pyarrow()
             writer.write_table(table)
 
 
+@skip_if_pyarrow_too_old_for_cdc
 def test_write_file_with_content_defined_chunking_enabled(tmp_path: Path) -> None:
     """Writing a table with CDC enabled should forward use_content_defined_chunking to pq.ParquetWriter."""
     from pyiceberg.table import WriteTask
