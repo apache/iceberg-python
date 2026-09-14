@@ -179,6 +179,9 @@ class Record(StructProtocol):
 
     @classmethod
     def _bind(cls, struct: StructType, **arguments: Any) -> Self:
+        field_names = {field.name for field in struct.fields}
+        if unknown_fields := arguments.keys() - field_names:
+            raise TypeError(f"Unexpected {cls.__name__} fields: {', '.join(sorted(unknown_fields))}")
         return cls(*[arguments[field.name] if field.name in arguments else field.initial_default for field in struct.fields])
 
     def __init__(self, *data: Any) -> None:

@@ -208,6 +208,7 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
         with avro.AvroOutputFile[ManifestEntry](
             output_file=PyArrowFileIO().new_output(tmp_avro_file),
             file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            record_schema=MANIFEST_ENTRY_SCHEMAS[3],
             schema_name="manifest_entry",
             metadata=additional_metadata,
         ) as out:
@@ -225,16 +226,47 @@ def test_write_manifest_entry_with_iceberg_read_with_fastavro_v2() -> None:
             fa_entry = next(it)
 
         v2_entry = todict(entry)
-        for field in ("first_row_id", "referenced_data_file", "content_offset", "content_size_in_bytes"):
+        for field in ("first_row_id", "content_offset", "content_size_in_bytes"):
             del v2_entry["data_file"][field]
 
         assert v2_entry == fa_entry
 
 
+def test_write_v2_referenced_data_file_with_fastavro() -> None:
+    referenced_data_file = "s3://some-path/data-file.parquet"
+    entry = ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=25,
+        data_file=DataFile.from_args(
+            content=DataFileContent.POSITION_DELETES,
+            file_path="s3://some-path/delete-file.parquet",
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=3,
+            file_size_in_bytes=47,
+            referenced_data_file=referenced_data_file,
+        ),
+    )
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/manifest_entry.avro"
+        with avro.AvroOutputFile[ManifestEntry](
+            output_file=PyArrowFileIO().new_output(tmp_avro_file),
+            file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            record_schema=MANIFEST_ENTRY_SCHEMAS[3],
+            schema_name="manifest_entry",
+        ) as out:
+            out.write_block([entry])
+
+        with open(tmp_avro_file, "rb") as fo:
+            fa_entry = next(reader(fo))
+
+        assert fa_entry["data_file"]["referenced_data_file"] == referenced_data_file
+
+
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: TableVersion) -> None:
-    data_file_dict = {
-        "content": DataFileContent.DATA,
+    common_data_file_args = {
         "file_path": "s3://some-path/some-file.parquet",
         "file_format": FileFormat.PARQUET,
         "partition": Record(),
@@ -248,16 +280,16 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: Ta
         "upper_bounds": {1: b"zzzzzzzzzzzzzzzz"},
         "key_metadata": b"\xde\xad\xbe\xef",
         "split_offsets": [4, 133697593],
-        "equality_ids": [],
         "sort_order_id": 4,
         "spec_id": 3,
     }
-    data_file_v2 = DataFile.from_args(**data_file_dict)  # type: ignore
+    data_file = DataFile.from_args(content=DataFileContent.DATA, **common_data_file_args)  # type: ignore
+    assert data_file.spec_id == 3
 
     entry = ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
         snapshot_id=8638475580105682862,
-        data_file=data_file_v2,
+        data_file=data_file,
     )
 
     with TemporaryDirectory() as tmpdir:
@@ -289,7 +321,11 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: Ta
             avro_entry = next(it)
 
             if format_version == 1:
-                data_file_v1 = DataFile.from_args(**data_file_dict, _table_format_version=format_version)
+                data_file_v1 = DataFile.from_args(
+                    _table_format_version=format_version,
+                    block_size_in_bytes=DEFAULT_BLOCK_SIZE,
+                    **common_data_file_args,  # type: ignore
+                )
 
                 assert avro_entry == ManifestEntry.from_args(
                     status=1,
