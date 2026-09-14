@@ -32,6 +32,9 @@ from pyiceberg.expressions import (
     And,
     EqualTo,
     In,
+    IsNull,
+    Or,
+    Reference,
 )
 from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
@@ -2036,3 +2039,68 @@ def test_static_table_forwards_location_to_table_file_io(metadata_location: str,
 
     assert seen_locations, "expected at least one load_file_io call"
     assert all(loc is not None for loc in seen_locations), f"load_file_io called without a location: {seen_locations}"
+
+
+def test_build_partition_predicate_with_evolved_fields(table_v2: Table) -> None:
+    tx = table_v2.transaction()
+    records = {Record("A", "us")}
+    fields = ["category", "region"]
+
+    # Without evolved fields
+    pred = tx._build_partition_predicate(records, fields)
+    assert pred == And(EqualTo(Reference("category"), "A"), EqualTo(Reference("region"), "us"))
+
+    # With evolved fields
+    pred_evolved = tx._build_partition_predicate(records, fields, evolved_fields={"region"})
+    assert pred_evolved == And(
+        EqualTo(Reference("category"), "A"),
+        Or(EqualTo(Reference("region"), "us"), IsNull(Reference("region"))),
+    )
+
+
+def test_dynamic_partition_overwrite_with_partition_spec_evolution(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "region", StringType(), required=False),
+        NestedField(3, "value", LongType(), required=False),
+    )
+    spec_v0 = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"))
+    table = catalog.create_table("default.test_evolve", schema=schema, partition_spec=spec_v0)
+
+    # Write under spec 0 (category only)
+    table.append(
+        pa.table(
+            {
+                "category": ["A", "A", "B"],
+                "region": pa.array([None, None, None], type=pa.string()),
+                "value": [1, 2, 10],
+            }
+        )
+    )
+
+    # Evolve spec to add region
+    with table.update_spec() as u:
+        u.add_field("region", IdentityTransform(), "region")
+    table = catalog.load_table("default.test_evolve")
+
+    # Write under spec 1 (category + region)
+    table.append(pa.table({"category": ["A", "B"], "region": ["us", "us"], "value": [100, 200]}))
+    table.append(pa.table({"category": ["A"], "region": ["eu"], "value": [555]}))
+
+    # Overwrite category=A, region=us — should delete A under spec-0 and (A, us) under spec-1,
+    # while preserving (A, eu) and all B rows
+    table.dynamic_partition_overwrite(pa.table({"category": ["A"], "region": ["us"], "value": [999]}))
+
+    result = table.scan().to_arrow().to_pydict()
+    rows = list(zip(result["category"], result["region"], result["value"], strict=True))
+
+    # Verify category A rows
+    a_rows = [r for r in rows if r[0] == "A"]
+    assert sorted(a_rows, key=lambda x: (x[0], x[1] or "", x[2])) == [("A", "eu", 555), ("A", "us", 999)]
+
+    # Verify category B rows are untouched
+    b_rows = [r for r in rows if r[0] == "B"]
+    assert sorted(b_rows, key=lambda x: (x[0], x[1] or "", x[2])) == [("B", None, 10), ("B", "us", 200)]
