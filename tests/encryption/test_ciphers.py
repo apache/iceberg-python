@@ -151,7 +151,7 @@ def test_nonce_is_not_reused() -> None:
 def test_decrypt_with_wrong_key() -> None:
     ciphertext = AesGcmCipher(SecureKey(AES128_KEY)).encrypt(PLAINTEXT)
 
-    with pytest.raises(ValueError, match="AES-GCM decryption failed"):
+    with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
         AesGcmCipher(SecureKey(b"5432109876543210")).decrypt(ciphertext)
 
 
@@ -160,7 +160,7 @@ def test_decrypt_with_mismatched_aad() -> None:
 
     ciphertext = cipher.encrypt(PLAINTEXT, b"aad")
 
-    with pytest.raises(ValueError, match="AES-GCM decryption failed"):
+    with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
         cipher.decrypt(ciphertext, b"other aad")
 
 
@@ -170,7 +170,7 @@ def test_decrypt_tampered_ciphertext() -> None:
     ciphertext = bytearray(cipher.encrypt(PLAINTEXT))
     ciphertext[-1] ^= 0xFF
 
-    with pytest.raises(ValueError, match="AES-GCM decryption failed"):
+    with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
         cipher.decrypt(bytes(ciphertext))
 
 

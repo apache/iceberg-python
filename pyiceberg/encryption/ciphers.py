@@ -117,4 +117,4 @@ class AesGcmCipher:
         try:
             return self._aes_gcm.decrypt(nonce, encrypted, aad)
         except self._invalid_tag as e:
-            raise ValueError("AES-GCM decryption failed") from e
+            raise ValueError("GCM tag check failed. Possible reasons: wrong decryption key; or corrupt/tampered data") from e
