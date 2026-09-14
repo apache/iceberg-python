@@ -24,6 +24,8 @@ import pytest
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.expressions import (
+    AlwaysFalse,
+    AlwaysTrue,
     And,
     BooleanExpression,
     EqualTo,
@@ -51,6 +53,7 @@ from pyiceberg.expressions.visitors import (
     ROWS_MUST_MATCH,
     _InclusiveMetricsEvaluator,
     _StrictMetricsEvaluator,
+    expression_evaluator,
 )
 from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema
@@ -1907,3 +1910,96 @@ def test_strict_metrics_eval_bounds_after_promotion(
 
     evaluator = _StrictMetricsEvaluator(schema, op("col", lit))
     assert evaluator.eval(data_file) == expected
+
+
+def test_bind_preserves_out_of_range_literals() -> None:
+    """Binding keeps the literals the caller wrote, so the bound predicate still round-trips."""
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    literals = [1, IntegerType.max + 1]
+
+    for predicate in [In("id", literals), NotIn("id", literals)]:
+        bound = predicate.bind(schema)
+        assert {lit.value for lit in bound.literals} == set(literals)
+        assert bound.as_unbound(bound.term.ref().field.name, bound.literals) == predicate
+        # Only the values the field can hold reach an evaluator
+        assert bound.value_set == {1}
+
+
+def test_above_int_bounds_in() -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    above_max = IntegerType.max + 1
+
+    # The out-of-range literal used to be clamped to the maximum and match rows there
+    assert expression_evaluator(schema, In("id", [1, above_max]), True)(Record(IntegerType.max)) is False
+    assert expression_evaluator(schema, NotIn("id", [1, above_max]), True)(Record(IntegerType.max)) is True
+    assert expression_evaluator(schema, In("id", [1, above_max]), True)(Record(1)) is True
+    assert In("id", [above_max]).bind(schema) == AlwaysFalse()
+    assert NotIn("id", [above_max]).bind(schema) == AlwaysTrue()
+
+
+def test_below_int_bounds_in() -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    below_min = IntegerType.min - 1
+
+    assert expression_evaluator(schema, In("id", [1, below_min]), True)(Record(IntegerType.min)) is False
+    assert expression_evaluator(schema, NotIn("id", [1, below_min]), True)(Record(IntegerType.min)) is True
+    assert expression_evaluator(schema, In("id", [1, below_min]), True)(Record(1)) is True
+    assert In("id", [below_min]).bind(schema) == AlwaysFalse()
+    assert NotIn("id", [below_min]).bind(schema) == AlwaysTrue()
+
+
+@pytest.mark.parametrize(
+    "literals",
+    [
+        [IntegerType.max + 1, IntegerType.max + 2],
+        [IntegerType.min - 1, IntegerType.min - 2],
+        [IntegerType.min - 1, IntegerType.max + 1],
+    ],
+)
+def test_int_bounds_in_all_literals_out_of_range(literals: list[int]) -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    in_expr = In("id", literals)
+    not_in_expr = NotIn("id", literals)
+
+    for value in [None, IntegerType.min, 0, IntegerType.max]:
+        assert expression_evaluator(schema, in_expr, True)(Record(value)) is False
+        assert expression_evaluator(schema, not_in_expr, True)(Record(value)) is True
+
+
+def test_int_bounds_in_keeps_multiple_literals() -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    literals = [1, 2, IntegerType.min - 1, IntegerType.max + 1]
+    in_expr = In("id", literals)
+    not_in_expr = NotIn("id", literals)
+
+    values = [None, 1, 2, 3, IntegerType.min, IntegerType.max]
+    eval_in = expression_evaluator(schema, in_expr, True)
+    eval_not_in = expression_evaluator(schema, not_in_expr, True)
+    assert [value for value in values if eval_in(Record(value))] == [1, 2]
+    assert [value for value in values if eval_not_in(Record(value))] == [None, 3, IntegerType.min, IntegerType.max]
+
+
+@pytest.mark.parametrize(
+    "boundary,out_of_range",
+    [(IntegerType.min, IntegerType.min - 1), (IntegerType.max, IntegerType.max + 1)],
+)
+def test_int_bounds_in_metrics(schema_data_file: Schema, boundary: int, out_of_range: int) -> None:
+    bounds = {1: to_bytes(IntegerType(), boundary)}
+    data_file = _single_value_metrics_file(boundary, lower_bounds=bounds, upper_bounds=bounds)
+
+    assert _InclusiveMetricsEvaluator(schema_data_file, In("id", [1, out_of_range])).eval(data_file) == ROWS_CANNOT_MATCH
+    assert _StrictMetricsEvaluator(schema_data_file, NotIn("id", [1, out_of_range])).eval(data_file) == ROWS_MUST_MATCH
+    assert _StrictMetricsEvaluator(schema_data_file, In("id", [1, boundary, out_of_range])).eval(data_file) == ROWS_MUST_MATCH
+
+
+def test_int_bounds_in_keeps_the_boundary_value() -> None:
+    """A converted out-of-range literal clamps to the boundary, so it must not shadow it."""
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    for boundary, out_of_range in [(IntegerType.max, IntegerType.max + 1), (IntegerType.min, IntegerType.min - 1)]:
+        eval_in = expression_evaluator(schema, In("id", [boundary, out_of_range]), True)
+        eval_not_in = expression_evaluator(schema, NotIn("id", [boundary, out_of_range]), True)
+        assert eval_in(Record(boundary)) is True
+        assert eval_not_in(Record(boundary)) is False
+        assert eval_in(Record(0)) is False
+        assert eval_not_in(Record(0)) is True
