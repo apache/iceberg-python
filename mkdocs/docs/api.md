@@ -506,6 +506,21 @@ long: [[2.349014],[4.896029],[6.0989],[-122.431297]]
 
 PyIceberg supports upsert operations, meaning that it is able to merge an Arrow table into an Iceberg table. Rows are considered the same based on the [identifier field](https://iceberg.apache.org/spec/?column-projection#identifier-field-ids). If a row is already in the table, it will update that row. If a row cannot be found, it will insert that new row.
 
+<!-- prettier-ignore-start -->
+
+<!-- markdownlint-disable MD046 -- Allowing indented multi-line formatting in admonition-->
+
+!!! note "Join columns"
+    Use `join_cols` to pick the top-level columns to match on; when omitted, the table's identifier fields are used. Unsupported join columns are rejected with a descriptive error before anything is written.
+
+    - **Supported**: boolean, integer, long, decimal, date, time, timestamp, string, and binary columns.
+    - **Not supported**: `float` and `double` columns, because floating-point equality is unreliable; nested columns (structs, lists, and maps), including identifier fields nested inside a struct; and UUID columns.
+    - **Input requirements**: each join column must be present, must not contain null values, and the input rows must be unique on the join columns. Dictionary-encoded, `string_view`, `binary_view`, extension-type, and `pa.null()` columns must be cast or decoded to a plain type first.
+
+<!-- markdownlint-enable MD046 -->
+
+<!-- prettier-ignore-end -->
+
 Consider the following table, with some data:
 
 ```python

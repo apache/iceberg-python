@@ -16,6 +16,7 @@
 # under the License.
 import functools
 import operator
+from collections import Counter
 
 import pyarrow as pa
 from pyarrow import Table as pyarrow_table
@@ -28,6 +29,62 @@ from pyiceberg.expressions import (
     In,
     Or,
 )
+
+
+def validate_join_cols(df: pyarrow_table, join_cols: list[str], table_schema: pa.Schema) -> None:
+    """Validate join-key presence and types before Arrow comparison or hashing."""
+    if not isinstance(join_cols, (list, tuple)):
+        raise ValueError(f"join_cols must be a list of column names, got {type(join_cols).__name__}.")
+    duplicates = sorted(col for col, count in Counter(join_cols).items() if count > 1)
+    if duplicates:
+        raise ValueError(f"Duplicate join columns: {', '.join(duplicates)}.")
+
+    df_column_names = set(df.schema.names)
+
+    for col in join_cols:
+        if col not in table_schema.names:
+            raise ValueError(
+                f"Join column '{col}' does not exist in the table schema. Only top-level columns can be used as join keys. "
+                f"Available columns: {', '.join(table_schema.names)}."
+            )
+        table_field = table_schema.field(col)
+        # Table-level rejections: These types are fundamentally unreliable or
+        # unsupported as join keys regardless of the input data format.
+        if pa.types.is_floating(table_field.type):
+            raise ValueError(
+                f"Floating point column '{col}' cannot be used as a join key in upsert. "
+                "Floating point equality is unreliable; choose a different join column."
+            )
+        if pa.types.is_nested(table_field.type):
+            raise ValueError(
+                f"Nested column '{col}' of type '{table_field.type}' cannot be used as a join key in upsert. "
+                "Only primitive types are supported."
+            )
+        if isinstance(table_field.type, pa.BaseExtensionType):
+            raise NotImplementedError(
+                f"Column '{col}' of type '{table_field.type}' is not currently supported as a join key in upsert."
+            )
+
+        # Schema compatibility permits missing optional fields, but upsert needs every join key.
+        if col not in df_column_names:
+            raise ValueError(f"Join column '{col}' does not exist in the source schema.")
+        # Some source representations are unsupported even when the table type is valid.
+        arr = df.column(col)
+        if pa.types.is_dictionary(arr.type):
+            raise NotImplementedError(f"Dictionary-encoded column '{col}' is not currently supported as a join key in upsert.")
+        if pa.types.is_null(arr.type):
+            raise ValueError(f"Null-type column '{col}' cannot be used as a join key in upsert.")
+        if pa.types.is_string_view(arr.type) or pa.types.is_binary_view(arr.type):
+            raise NotImplementedError(
+                f"View-typed column '{col}' of type '{arr.type}' is not currently supported as a join key in upsert."
+            )
+        if isinstance(arr.type, pa.BaseExtensionType):
+            raise NotImplementedError(
+                f"Extension type '{arr.type}' for column '{col}' is not currently supported as a join key in upsert."
+            )
+        # Null keys cannot be expressed as Iceberg literals in the match filter.
+        if arr.null_count > 0:
+            raise ValueError(f"Join column '{col}' contains null values, which cannot be used as join keys in upsert.")
 
 
 def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
