@@ -21,6 +21,7 @@ from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
     And,
+    BooleanExpression,
     EqualTo,
     GreaterThan,
     GreaterThanOrEqual,
@@ -28,6 +29,7 @@ from pyiceberg.expressions import (
     IsNaN,
     IsNull,
     LessThan,
+    LessThanOrEqual,
     NotIn,
     NotNaN,
     NotNull,
@@ -233,6 +235,24 @@ def test_is_not_nan() -> None:
 
     residual = res_eval.residual_for(Record(2))
     assert residual == AlwaysTrue()
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pytest.param(LessThan("x", 1), id="less-than"),
+        pytest.param(LessThanOrEqual("x", 1), id="less-than-or-equal"),
+        pytest.param(GreaterThan("x", 1), id="greater-than"),
+        pytest.param(GreaterThanOrEqual("x", 1), id="greater-than-or-equal"),
+    ],
+)
+def test_ordered_comparison_residual_for_null_identity_partition(predicate: BooleanExpression) -> None:
+    schema = Schema(NestedField(50, "x", IntegerType(), required=False))
+    spec = PartitionSpec(PartitionField(50, 1050, IdentityTransform(), "x_part"))
+
+    res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
+
+    assert res_eval.residual_for(Record(None)) == AlwaysFalse()
 
 
 def test_not_in_timestamp() -> None:
