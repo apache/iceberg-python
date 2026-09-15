@@ -222,6 +222,21 @@ def test_pyarrow_output_file() -> None:
         assert len(output_file) == 3
 
 
+def test_pyarrow_file_buffer_sizes() -> None:
+    # Constructor default
+    assert PyArrowFile("buffered.bin", path="buffered.bin", fs=LocalFileSystem())._buffer_size == 8 * 1024 * 1024
+
+    # No override
+    io = PyArrowFileIO()
+    assert io.new_input("buffered.bin")._buffer_size == 8 * 1024 * 1024
+    assert io.new_output("buffered.bin")._buffer_size == 8 * 1024 * 1024
+
+    # Custom override
+    io = PyArrowFileIO({"buffer-size": "4096"})
+    assert io.new_input("buffered.bin")._buffer_size == 4096
+    assert io.new_output("buffered.bin")._buffer_size == 4096
+
+
 def test_pyarrow_invalid_scheme() -> None:
     """Test that a ValueError is raised if a location is provided with an invalid scheme"""
 
