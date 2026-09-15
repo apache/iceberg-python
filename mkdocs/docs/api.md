@@ -185,6 +185,21 @@ with catalog.create_table_transaction(identifier="docs_example.bids", schema=sch
     txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
 ```
 
+## Replace a table
+
+Atomically replace an existing table's schema, partition spec, sort order, location, and properties via `replace_table_transaction`. The table UUID and history (snapshots, schemas, specs, sort orders, metadata log) are preserved; the current snapshot is cleared (the `main` branch ref is removed). Open the transaction with the new definition, stage any additional changes (writes, property updates, schema evolution), and commit — for example, an RTAS (replace-table-as-select) that swaps the schema and writes the new data atomically:
+
+```python
+with catalog.replace_table_transaction(identifier="docs_example.bids", schema=df.schema) as txn:
+    txn.append(df)
+```
+
+Field IDs are reused by name from the previous schema; new columns get fresh IDs above `last-column-id`.
+
+Table properties are *merged* on replace: properties you don't pass are preserved on the table. To remove a property, drop it explicitly within the transaction.
+
+Pass `format-version` in `properties` to upgrade the table's format version as part of the replace.
+
 ## Register a table
 
 To register a table using existing metadata:
