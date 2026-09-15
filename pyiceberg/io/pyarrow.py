@@ -2959,8 +2959,6 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
         ),
     }
 
-    # Unlike the unsupported options warned about above, a CDC request must not be dropped:
-    # writing without the requested chunk boundaries silently defeats the point, so raise instead.
     if property_as_bool(
         properties=table_properties,
         property_name=TableProperties.PARQUET_CDC_ENABLED,
