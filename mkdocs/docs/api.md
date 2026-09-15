@@ -522,7 +522,7 @@ PyIceberg supports upsert operations, meaning that it is able to merge an Arrow 
 <!-- markdownlint-disable MD046 -- Allowing indented multi-line formatting in admonition-->
 
 !!! note "Join columns"
-    Use `join_cols` to pick the top-level columns to match on; when omitted, the table's identifier fields are used. Unsupported join columns are rejected with a descriptive error before anything is written.
+    Use `join_cols` to pick the columns to match on; when omitted, the table's identifier fields are used. Unsupported join columns are rejected with a descriptive error before anything is written.
 
     - **Supported**: boolean, integer, long, decimal, date, time, timestamp, string, and binary columns.
     - **Not supported**: `float` and `double` columns, because floating-point equality is unreliable; nested columns (structs, lists, and maps), including identifier fields nested inside a struct; and UUID columns.

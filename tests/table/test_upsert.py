@@ -345,7 +345,7 @@ def test_key_cols_misaligned(catalog: Catalog) -> None:
 
     df_src = ctx.sql("select 1 as item_id, date '2021-05-01' as order_date, 'B' as order_type").to_arrow_table()
 
-    with pytest.raises(ValueError, match="Join column 'order_id' does not exist in the source schema"):
+    with pytest.raises(ValueError, match="Join column 'order_id' is missing from the input"):
         table.upsert(df=df_src, join_cols=["order_id"])
 
 
@@ -690,8 +690,8 @@ def test_upsert_with_struct_field_as_join_key(catalog: Catalog) -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "Nested column 'nested_type' of type 'struct<sub1: large_string not null, sub2: large_string not null>' "
-            "cannot be used as a join key in upsert"
+            "Join column 'nested_type' has nested type 'struct<sub1: large_string not null, sub2: large_string not null>'; "
+            "only primitive columns can be join keys"
         ),
     ):
         _ = tbl.upsert(update_data, join_cols=["nested_type"])
@@ -960,69 +960,69 @@ _MAP = pa.map_(pa.string(), pa.int32())
 @pytest.mark.parametrize(
     "table_type, source_key, expected_error, match",
     [
-        pytest.param(pa.float32(), pa.array([1.0], pa.float32()), ValueError, "Floating point column 'k'", id="float32"),
-        pytest.param(pa.float64(), pa.array([1.0], pa.float64()), ValueError, "Floating point column 'k'", id="float64"),
+        pytest.param(pa.float32(), pa.array([1.0], pa.float32()), ValueError, "Join column 'k' is floating point", id="float32"),
+        pytest.param(pa.float64(), pa.array([1.0], pa.float64()), ValueError, "Join column 'k' is floating point", id="float64"),
         pytest.param(
-            _STRUCT, pa.array([{"a": 1}], _STRUCT), ValueError, "Nested column 'k' of type 'struct<a: int32>'", id="struct"
+            _STRUCT, pa.array([{"a": 1}], _STRUCT), ValueError, "Join column 'k' has nested type 'struct<a: int32>'", id="struct"
         ),
         pytest.param(
             pa.list_(pa.int32()),
             pa.array([[1]], pa.list_(pa.int32())),
             ValueError,
-            "Nested column 'k' of type 'large_list",
+            "Join column 'k' has nested type 'large_list",
             id="list",
         ),
         pytest.param(
-            _MAP, pa.array([[("a", 1)]], _MAP), ValueError, "Nested column 'k' of type 'map<large_string, int32>'", id="map"
+            _MAP, pa.array([[("a", 1)]], _MAP), ValueError, "Join column 'k' has nested type 'map<large_string, int32>'", id="map"
         ),
         pytest.param(
             pa.uuid(),
             pa.array([_UUID_BYTES], pa.uuid()),
             NotImplementedError,
-            "Column 'k' of type 'extension<arrow.uuid>'",
+            "Join column 'k' has type 'extension<arrow.uuid>'",
             id="uuid-table",
         ),
         pytest.param(
             pa.uuid(),
             pa.array([_UUID_BYTES], pa.binary(16)),
             NotImplementedError,
-            "Column 'k' of type 'extension<arrow.uuid>'",
+            "Join column 'k' has type 'extension<arrow.uuid>'",
             id="uuid-table-fixed-source",
         ),
         pytest.param(
             pa.string(),
             pa.array([_UUID_BYTES], pa.uuid()),
             NotImplementedError,
-            "Extension type 'extension<arrow.uuid>' for column 'k'",
+            "Input column 'k' has extension type 'extension<arrow.uuid>'",
             id="uuid-extension-source",
         ),
         pytest.param(
             pa.string(),
             pa.array(["a"]).dictionary_encode(),
             NotImplementedError,
-            "Dictionary-encoded column 'k'",
+            "Input column 'k' is dictionary-encoded",
             id="dictionary-string",
         ),
         pytest.param(
             pa.int64(),
             pa.array([1]).dictionary_encode(),
             NotImplementedError,
-            "Dictionary-encoded column 'k'",
+            "Input column 'k' is dictionary-encoded",
             id="dictionary-int",
         ),
-        pytest.param(pa.int32(), pa.array([None], pa.null()), ValueError, "Null-type column 'k'", id="null-type"),
+        pytest.param(pa.int32(), pa.array([None], pa.null()), ValueError, "Input column 'k' has the null type", id="null-type"),
         pytest.param(
             pa.string(),
             pa.array(["a"], pa.string_view()),
             NotImplementedError,
-            "View-typed column 'k' of type 'string_view'",
+            "Input column 'k' has type 'string_view'",
             id="string-view",
         ),
         pytest.param(
             pa.binary(),
             pa.array([b"a"], pa.binary_view()),
             NotImplementedError,
-            "View-typed column 'k' of type 'binary_view'",
+            "Input column 'k' has type 'binary_view'",
             id="binary-view",
         ),
         pytest.param(
@@ -1033,10 +1033,10 @@ _MAP = pa.map_(pa.string(), pa.int32())
             id="run-end-encoded",
         ),
         pytest.param(
-            pa.int32(), pa.array([1, None], pa.int32()), ValueError, "Join column 'k' contains null values", id="null-values"
+            pa.int32(), pa.array([1, None], pa.int32()), ValueError, "Input column 'k' contains null values", id="null-values"
         ),
         pytest.param(
-            pa.int32(), pa.array([None], pa.int32()), ValueError, "Join column 'k' contains null values", id="all-null-values"
+            pa.int32(), pa.array([None], pa.int32()), ValueError, "Input column 'k' contains null values", id="all-null-values"
         ),
         pytest.param(pa.int32(), pa.array(["1"]), ValueError, "Mismatch in fields", id="wrong-type-source"),
     ],
@@ -1059,16 +1059,14 @@ def test_upsert_rejects_unsupported_join_key(
 @pytest.mark.parametrize(
     "join_cols, identifier_field_ids, drop_source_columns, match",
     [
-        pytest.param(["missing"], [], [], "Join column 'missing' does not exist in the table schema", id="not-in-table"),
-        pytest.param(["K"], [], [], "Join column 'K' does not exist in the table schema", id="case-mismatch"),
-        pytest.param(["k"], [], ["k"], "Join column 'k' does not exist in the source schema", id="required-not-in-source"),
-        pytest.param(["opt"], [], ["opt"], "Join column 'opt' does not exist in the source schema", id="optional-not-in-source"),
-        pytest.param(
-            ["k", "opt"], [], ["opt"], "Join column 'opt' does not exist in the source schema", id="composite-second-missing"
-        ),
-        pytest.param(["k", "k"], [], [], "Duplicate join columns: k", id="duplicate-join-cols"),
-        pytest.param(["s.x"], [], [], "Only top-level columns can be used as join keys", id="nested-path"),
-        pytest.param(None, [4], [], "Only top-level columns can be used as join keys", id="nested-identifier-field"),
+        pytest.param(["missing"], [], [], "Join column 'missing' does not exist in the table", id="not-in-table"),
+        pytest.param(["K"], [], [], "Join column 'K' does not exist in the table", id="case-mismatch"),
+        pytest.param(["k"], [], ["k"], "Join column 'k' is missing from the input", id="required-not-in-source"),
+        pytest.param(["opt"], [], ["opt"], "Join column 'opt' is missing from the input", id="optional-not-in-source"),
+        pytest.param(["k", "opt"], [], ["opt"], "Join column 'opt' is missing from the input", id="composite-second-missing"),
+        pytest.param(["k", "k"], [], [], "join_cols contains duplicates: k", id="duplicate-join-cols"),
+        pytest.param(["s.x"], [], [], "Join column 's.x' is a field inside struct 's'", id="nested-path"),
+        pytest.param(None, [4], [], "Join column 's.x' is a field inside struct 's'", id="nested-identifier-field"),
         pytest.param([], [], [], "Join columns could not be found", id="empty-join-cols"),
         pytest.param(None, [], [], "Join columns could not be found", id="no-identifier-fields"),
         pytest.param("k", [], [], "join_cols must be a list of column names, got str", id="string-not-list"),
