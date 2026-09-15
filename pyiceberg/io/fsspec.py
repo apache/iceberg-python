@@ -265,17 +265,23 @@ def _adls(properties: Properties, hostname: str | None = None) -> AbstractFileSy
     from azure.core.credentials import AccessToken
     from azure.core.credentials_async import AsyncTokenCredential
 
-    for key, sas_token in {
+    # These are resolved into locals rather than written back into `properties`. The same
+    # properties dict is shared by every location this FileIO serves, so storing an account
+    # name derived from one location would apply it to all the later ones as well.
+    account_name = properties.get(ADLS_ACCOUNT_NAME)
+    sas_token = properties.get(ADLS_SAS_TOKEN)
+
+    for key, per_account_sas_token in {
         key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(f"{ADLS_SAS_TOKEN}.")
     }.items():
-        if ADLS_ACCOUNT_NAME not in properties:
-            properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]
-        if ADLS_SAS_TOKEN not in properties:
-            properties[ADLS_SAS_TOKEN] = sas_token
+        if account_name is None:
+            account_name = key.split(".")[0]
+        if sas_token is None:
+            sas_token = per_account_sas_token
 
     # Fallback: extract account_name from URI hostname (e.g. "account.dfs.core.windows.net" -> "account")
-    if hostname and ADLS_ACCOUNT_NAME not in properties:
-        properties[ADLS_ACCOUNT_NAME] = hostname.split(".")[0]
+    if hostname and account_name is None:
+        account_name = hostname.split(".")[0]
 
     class StaticTokenCredential(AsyncTokenCredential):
         _DEFAULT_EXPIRY_SECONDS = 3600
@@ -298,9 +304,9 @@ def _adls(properties: Properties, hostname: str | None = None) -> AbstractFileSy
     return AzureBlobFileSystem(
         connection_string=properties.get(ADLS_CONNECTION_STRING),
         credential=credential,
-        account_name=properties.get(ADLS_ACCOUNT_NAME),
+        account_name=account_name,
         account_key=properties.get(ADLS_ACCOUNT_KEY),
-        sas_token=properties.get(ADLS_SAS_TOKEN),
+        sas_token=sas_token,
         tenant_id=properties.get(ADLS_TENANT_ID),
         client_id=properties.get(ADLS_CLIENT_ID),
         client_secret=properties.get(ADLS_CLIENT_SECRET),
