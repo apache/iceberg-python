@@ -274,7 +274,7 @@ class OutputFile(ABC):
 
 @dataclass(frozen=True)
 class FileEntry:
-    """Metadata only for a single file."""
+    """Metadata of a single file."""
 
     location: str
     size: int

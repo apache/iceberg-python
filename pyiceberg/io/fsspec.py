@@ -511,9 +511,6 @@ class FsspecFileIO(FileIO):
         scheme = "" if _is_local_path(location) else uri.scheme
 
         for path, info in fs.find(location, detail=True).items():
-            if info.get("type", "file") != "file":
-                continue
-
             mtime = info.get("mtime") or info.get("LastModified") or info.get("last_modified")
             last_modified: datetime | None
             if isinstance(mtime, datetime):
