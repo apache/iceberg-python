@@ -1972,7 +1972,6 @@ def test_add_snapshot_update_fails_without_added_rows(table_v3: Table) -> None:
 
 
 def test_add_snapshot_update_keeps_next_row_id_unset_below_v3(table_v2: Table) -> None:
-    """`next-row-id` only exists in V3, so a V2 commit must not gain one."""
     new_snapshot = Snapshot(
         snapshot_id=25,
         parent_snapshot_id=3055729675574597004,

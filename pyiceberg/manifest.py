@@ -920,16 +920,18 @@ class ManifestFile(Record):
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
             result = []
-            next_row_id = self.first_row_id
+            next_row_id = self.first_row_id if self.content == ManifestContent.DATA else None
 
             for entry in reader:
                 if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
                     continue
                 _inherit_from_manifest(entry, self)
 
-                # Data files without a first_row_id inherit one from the manifest, assigned in file order
+                # Inherit first row IDs, which are only valid when a data manifest has a first_row_id
                 data_file = entry.data_file
-                if next_row_id is not None and entry.status != ManifestEntryStatus.DELETED and data_file.first_row_id is None:
+                if next_row_id is None:
+                    data_file.first_row_id = None
+                elif entry.status != ManifestEntryStatus.DELETED and data_file.first_row_id is None:
                     data_file.first_row_id = next_row_id
                     next_row_id += data_file.record_count
 

@@ -1257,7 +1257,6 @@ def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog")])
 def test_read_first_row_ids_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
-    """Data files read by PyIceberg get the same first row IDs that Spark reports through `_row_id`."""
     identifier = "default.test_read_first_row_ids_written_by_spark"
     spark.sql(f"DROP TABLE IF EXISTS {identifier}")
     spark.sql(f"CREATE TABLE {identifier} (id int) USING ICEBERG TBLPROPERTIES ('format-version'='3')")

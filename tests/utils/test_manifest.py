@@ -229,7 +229,7 @@ def test_fetch_manifest_entry_with_filter(generated_manifest_entry_file: str) ->
 
 
 def test_fetch_manifest_entry_inherits_first_row_id(tmp_path: Path) -> None:
-    """Data files without a first_row_id inherit one from the manifest in file order, skipping deleted entries."""
+    """Data files inherit first row IDs from data manifests in file order, and have them cleared otherwise."""
     io = PyArrowFileIO()
     manifest_path = str(tmp_path / "manifest.avro")
 
@@ -268,11 +268,14 @@ def test_fetch_manifest_entry_inherits_first_row_id(tmp_path: Path) -> None:
             ]
         )
 
-    def first_row_ids(manifest_first_row_id: int | None, discard_deleted: bool) -> list[int | None]:
+    def first_row_ids(
+        manifest_first_row_id: int | None, discard_deleted: bool, content: ManifestContent = ManifestContent.DATA
+    ) -> list[int | None]:
         manifest = ManifestFile.from_args(
             manifest_path=manifest_path,
             manifest_length=0,
             partition_spec_id=0,
+            content=content,
             added_snapshot_id=25,
             sequence_number=1,
             min_sequence_number=1,
@@ -280,9 +283,10 @@ def test_fetch_manifest_entry_inherits_first_row_id(tmp_path: Path) -> None:
         )
         return [e.data_file.first_row_id for e in manifest.fetch_manifest_entry(io, discard_deleted=discard_deleted)]
 
-    assert first_row_ids(None, discard_deleted=False) == [None, 500, None, None]
     assert first_row_ids(1000, discard_deleted=False) == [1000, 500, None, 1010]
     assert first_row_ids(1000, discard_deleted=True) == [1000, 500, 1010]
+    assert first_row_ids(None, discard_deleted=False) == [None, None, None, None]
+    assert first_row_ids(1000, discard_deleted=False, content=ManifestContent.DELETES) == [None, None, None, None]
 
 
 def test_read_manifest_entry_v3_fields(tmp_path: Path) -> None:
@@ -314,6 +318,7 @@ def test_read_manifest_entry_v3_fields(tmp_path: Path) -> None:
             added_snapshot_id=25,
             sequence_number=1,
             min_sequence_number=1,
+            first_row_id=0,
         )
         return manifest.fetch_manifest_entry(io)[0].data_file
 
