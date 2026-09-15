@@ -18,7 +18,7 @@ from decimal import Decimal
 
 import pytest
 
-from pyiceberg.utils.decimal import decimal_required_bytes, decimal_to_bytes
+from pyiceberg.utils.decimal import bytes_required, decimal_required_bytes, decimal_to_bytes
 
 
 def test_decimal_required_bytes() -> None:
@@ -42,8 +42,26 @@ def test_decimal_required_bytes() -> None:
     assert "(0, 40]" in str(exc_info.value)
 
 
+def test_bytes_required() -> None:
+    assert bytes_required(0) == 1
+    assert bytes_required(127) == 1
+    assert bytes_required(128) == 2
+    # Check negative signed-byte boundaries and their neighbors.
+    assert bytes_required(-127) == 1
+    assert bytes_required(-128) == 1
+    assert bytes_required(-129) == 2
+    assert bytes_required(-32768) == 2
+    assert bytes_required(-8388608) == 3
+    assert bytes_required(Decimal("1.27")) == 1
+    assert bytes_required(Decimal("-1.28")) == 1
+    assert bytes_required(Decimal("-327.68")) == 2
+
+
 def test_decimal_to_bytes() -> None:
     # Check the boundary between 2 and 3 bytes.
     # 2 bytes has a minimum of -32,768 and a maximum value of 32,767 (inclusive).
     assert decimal_to_bytes(Decimal("32767.")) == b"\x7f\xff"
     assert decimal_to_bytes(Decimal("32768.")) == b"\x00\x80\x00"
+    # Unscaled values -128 and -32768 require no sign padding.
+    assert decimal_to_bytes(Decimal("-1.28")) == b"\x80"
+    assert decimal_to_bytes(Decimal("-327.68")) == b"\x80\x00"

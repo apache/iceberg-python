@@ -146,6 +146,20 @@ def test_fsspec_getting_length_of_file(fsspec_fileio: FsspecFileIO) -> None:
     fsspec_fileio.delete(output_file)
 
 
+@pytest.mark.parametrize("size_key", ["Size", "size"])
+def test_fsspec_getting_zero_length_of_file(size_key: str) -> None:
+    """Test getting zero-byte lengths from object metadata."""
+    location = "s3://warehouse/empty-file"
+    fs = mock.Mock(spec=AbstractFileSystem)
+    fs.info.return_value = {size_key: 0}
+
+    output_file = fsspec.FsspecOutputFile(location=location, fs=fs)
+    assert len(output_file) == 0
+
+    input_file = fsspec.FsspecInputFile(location=location, fs=fs)
+    assert len(input_file) == 0
+
+
 @pytest.mark.s3
 def test_fsspec_file_tell(fsspec_fileio: FsspecFileIO) -> None:
     """Test finding cursor position for an fsspec file-io file"""
@@ -306,9 +320,20 @@ def test_fsspec_s3_session_properties() -> None:
         )
 
 
-def test_fsspec_s3_session_properties_force_virtual_addressing() -> None:
+@pytest.mark.parametrize(
+    ("force_virtual_addressing", "config_kwargs"),
+    [
+        ("true", {"s3": {"addressing_style": "virtual"}}),
+        ("false", {}),
+        (True, {"s3": {"addressing_style": "virtual"}}),
+        (False, {}),
+    ],
+)
+def test_fsspec_s3_session_properties_force_virtual_addressing(
+    force_virtual_addressing: str | bool, config_kwargs: Properties
+) -> None:
     session_properties: Properties = {
-        "s3.force-virtual-addressing": True,
+        "s3.force-virtual-addressing": force_virtual_addressing,
         "s3.endpoint": "http://localhost:9000",
         "s3.access-key-id": "admin",
         "s3.secret-access-key": "password",
@@ -332,7 +357,7 @@ def test_fsspec_s3_session_properties_force_virtual_addressing() -> None:
                 "region_name": "us-east-1",
                 "aws_session_token": "s3.session-token",
             },
-            config_kwargs={"s3": {"addressing_style": "virtual"}},
+            config_kwargs=config_kwargs,
         )
 
 
@@ -389,6 +414,42 @@ def test_fsspec_unified_session_properties() -> None:
             },
             config_kwargs={},
         )
+
+
+def test_fsspec_s3_encryption_additional_kwargs() -> None:
+    session_properties: Properties = {
+        "s3.server-side-encryption": "aws:kms",
+        "s3.sse-kms-key-id": "arn:aws:kms:us-east-1:123456789012:key/test-key",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        call_kwargs = mock_s3fs.call_args.kwargs
+        assert call_kwargs["s3_additional_kwargs"] == {
+            "ServerSideEncryption": "aws:kms",
+            "SSEKMSKeyId": "arn:aws:kms:us-east-1:123456789012:key/test-key",
+        }
+
+
+def test_fsspec_s3_encryption_additional_kwargs_partial() -> None:
+    session_properties: Properties = {
+        "s3.server-side-encryption": "AES256",
+        **UNIFIED_AWS_SESSION_PROPERTIES,
+    }
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        s3_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        s3_fileio.new_input(location=f"s3://warehouse/{filename}")
+
+        call_kwargs = mock_s3fs.call_args.kwargs
+        assert call_kwargs["s3_additional_kwargs"] == {"ServerSideEncryption": "AES256"}
 
 
 @pytest.mark.adls

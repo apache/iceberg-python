@@ -128,6 +128,12 @@ def test_pyarrow_int64_to_iceberg() -> None:
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pyarrow_type
 
 
+def test_pyarrow_float16_to_iceberg() -> None:
+    pyarrow_type = pa.float16()
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+    assert converted_iceberg_type == FloatType()
+
+
 def test_pyarrow_float32_to_iceberg() -> None:
     pyarrow_type = pa.float32()
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())

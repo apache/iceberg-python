@@ -365,6 +365,17 @@ for buf in tbl.scan().to_arrow_batch_reader():
     print(f"Buffer contains {len(buf)} rows")
 ```
 
+### Streaming writes from a `RecordBatchReader`
+
+`tbl.append()` and `tbl.overwrite()` also accept a `pyarrow.RecordBatchReader` directly, which lets you write datasets that don't fit in memory without materialising them as a `pa.Table` first. PyIceberg consumes the reader once and microbatches it into Parquet files of approximately `write.target-file-size-bytes` (default 512 MiB), keeping memory usage bounded by the target size. All files are committed in a single snapshot.
+
+```python
+reader = pa.RecordBatchReader.from_batches(schema, batch_iter)
+tbl.append(reader)
+```
+
+Streaming writes are currently only supported on **unpartitioned** tables. For a partitioned table, materialise the reader as a `pa.Table` first, or follow [#2152](https://github.com/apache/iceberg-python/issues/2152) for the partitioned support tracked as a follow-up.
+
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
 
 ```python
@@ -425,7 +436,7 @@ You can overwrite the record of `Paris` with a record of `New York`:
 from pyiceberg.expressions import EqualTo
 df = pa.Table.from_pylist(
     [
-        {"city": "New York", "lat": 40.7128, "long": 74.0060},
+        {"city": "New York", "lat": 40.7128, "long": -74.0060},
     ]
 )
 tbl.overwrite(df, overwrite_filter=EqualTo('city', "Paris"))
@@ -441,7 +452,7 @@ long: double
 ----
 city: [["New York"],["Amsterdam","San Francisco","Drachten"]]
 lat: [[40.7128],[52.371807,37.773972,53.11254]]
-long: [[74.006],[4.896029,-122.431297,6.0989]]
+long: [[-74.006],[4.896029,-122.431297,6.0989]]
 ```
 
 If the PyIceberg table is partitioned, you can use `tbl.dynamic_partition_overwrite(df)` to replace the existing partitions with new ones provided in the dataframe. The partitions to be replaced are detected automatically from the provided arrow table.
@@ -1179,7 +1190,7 @@ You can also initiate a transaction if you want to make more changes than just e
 ```python
 with table.transaction() as transaction:
     with transaction.update_schema() as update_schema:
-        update.add_column("some_other_field", IntegerType(), "doc")
+        update_schema.add_column("some_other_field", IntegerType(), "doc")
     # ... Update properties etc
 ```
 
@@ -1414,6 +1425,9 @@ tbl.overwrite(df, snapshot_properties={"abc": "def"})
 assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
 ```
 
+New snapshot summaries automatically include `engine-name` (`pyiceberg`) and `engine-version`
+(the installed PyIceberg version). These values override same-named entries in `snapshot_properties`.
+
 ## Snapshot Management
 
 Manage snapshots with operations through the `Table` API:
@@ -1492,6 +1506,110 @@ Remove an existing branch:
 table.manage_snapshots().remove_branch("dev").commit()
 ```
 
+#### Fast-forwarding a branch
+
+Fast-forward the `main` branch to the `audit-branch` branch:
+
+```python
+with table.manage_snapshots() as ms:
+    ms.fast_forward_branch(from_branch="main", to_ref="audit-branch")
+```
+
+Fast-forward `from_branch` to point at the snapshot referenced by `to_ref`.
+`to_ref` may be a branch or tag. `from_branch` must be a branch.
+
+<!-- markdownlint-disable MD046 -- Allowing indented multi-line formatting in admonition-->
+
+!!! info "Fast Forward Behavior"
+
+    * Case 1: If `from_branch` does not yet exist it is created and pointing at `to_ref`'s
+        snapshot. The default retention properties are applied on the auto-created snapshot.
+    * Case 2:** If both already point at the same snapshot the call is a no-op.
+    * Case 3: Otherwise `from_branch`'s current snapshot must be an ancestor of `to_ref`'s snapshot;
+    if not, `NotAncestorError` is raised.
+
+<!-- markdownlint-enable MD046 -->
+
+#### Example Use-Case: write-audit-publish (WAP)
+
+The use of branching & fast-forwarding enable the usage of the write-audit-publish (WAP) process:
+
+1. Writes proceed on a side branch
+2. Audit Validation runs against that branch
+3. Publish the new data by fast-forwarding the main branch
+
+```mermaid
+---
+title: Conceptually Illustration of the WAP Process
+---
+flowchart LR
+
+    subgraph audit [audit branch]
+        s1_audit["snapshot_1"] -- "1.2 append(new_rows)" --> s2_audit["snapshot_2"]
+        v@{ shape: comment, label: '2. Validation Performed & Passed' }
+         s2_audit ~~~ v
+         v -.-> s2_audit
+    end
+
+    subgraph main [main branch]
+        s1["snapshot_1"]
+        s2_main["snapshot_2"]
+
+    end
+
+    s1 -. "1.1 create_branch" .-> s1_audit
+    s2_audit -. "3. fast_forward_branch" .-> s2_main
+
+```
+
+If validation fails, callers simply skip the fast-forward step. The
+audit branch (and its data files) can then be inspected, rewritten,
+or removed via `remove_branch` and subsequent snapshot expiration -
+without ever having polluted the data on `main`.
+
+##### Programmatic Example
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("prod")
+table = catalog.load_table("sales.orders")
+
+# 1. WRITE — create a side branch off main and append to it.
+# 1.1 Create the Branch
+main_snapshot_id = table.current_snapshot().snapshot_id
+table.manage_snapshots().create_branch(
+    snapshot_id=main_snapshot_id,
+    branch_name="audit",
+).commit()
+
+new_rows = pa.table({
+    "order_id": [1001, 1002, 1003],
+    "amount":   [ 49.99, 129.00, 12.50],
+})
+
+# 1.2 Write into the branch
+table.append(new_rows, branch="audit")
+
+# 2. AUDIT — scan the audit branch and run whatever validation your data-quality contract requires.
+#    Nothing on `main` has changed yet, so readers of `main` still see the pre-write state.
+audit_snapshot_id = table.refs()["audit"].snapshot_id
+audit_data = table.scan(snapshot_id=audit_snapshot_id).to_arrow()
+
+assert audit_data.num_rows > 0, "audit branch is empty"
+assert pc.all(pc.greater(audit_data["amount"], 0)).as_py(), \
+    "found non-positive amounts"
+
+# 3. PUBLISH — validation passed; fast-forward main to audit.
+#    fast-forward can occur because the audit branch was created from main and
+#    main's current snapshot is an ancestor of audit's snapshot.
+with table.manage_snapshots() as ms:
+    ms.fast_forward_branch("main", "audit")
+    ms.remove_branch("audit")  # optional: clean up the side branch
+```
+
 ## Table Maintenance
 
 PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.
@@ -1538,15 +1656,69 @@ cleanup_old_snapshots("analytics.user_events", [12345, 67890, 11111])
 
 ## Views
 
-PyIceberg supports view operations.
-
-### Check if a view exists
+If PyIceberg is unable to automatically determine view support on your REST Catalog, you can manually specify, `"view-endpoints-supported": "true"`:
 
 ```python
 from pyiceberg.catalog import load_catalog
 
+catalog = load_catalog(
+    "docs",
+    **{
+        "uri": "http://127.0.0.1:8181",
+        "py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO",
+        "s3.endpoint": "http://127.0.0.1:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+        "view-endpoints-supported": "true",
+    }
+)
+```
+
+## Create a view
+
+To create a view from the catalog:
+
+```python
+from pyiceberg.catalog import load_catalog
+from pyiceberg.schema import Schema
+from pyiceberg.types import IntegerType, NestedField
+from pyiceberg.view import SQLViewRepresentation, ViewVersion
+
 catalog = load_catalog("default")
-catalog.view_exists("default.bar")
+
+schema = Schema(NestedField(field_id=1, name="some_col", field_type=IntegerType(), required=False))
+view_version = ViewVersion(
+    schema_id=1,
+    summary={"engine-name": "pyiceberg", "engine-version": "0.11.1"},
+    representations=[
+        SQLViewRepresentation(
+            type="sql",
+            sql="SELECT 1 as some_col",
+            dialect="spark",
+        )
+    ],
+    default_namespace=["default"],
+)
+
+catalog.create_view(
+    identifier="default.some_view",
+    schema=schema,
+    view_version=view_version,
+)
+```
+
+`catalog.create_view` also accepts a PyArrow schema, so the following is equivalent:
+
+```python
+import pyarrow as pa
+
+schema = pa.schema([pa.field("some_col", pa.int32())])
+
+catalog.create_view(
+    identifier="default.some_view",
+    schema=schema,
+    view_version=view_version,
+)
 ```
 
 ## Register a view
@@ -1558,6 +1730,48 @@ catalog.register_view(
     identifier="docs_example.bids",
     metadata_location="s3://warehouse/path/to/metadata.json"
 )
+```
+
+## Load a view
+
+Loading the `some_view` view:
+
+```python
+view = catalog.load_view("default.some_view")
+# Equivalent to:
+view = catalog.load_view(("default", "some_view"))
+# The tuple syntax can be used if the namespace or view contains a dot.
+```
+
+This returns a `View` that represents an Iceberg view. You can access the SQL representation for a specific dialect:
+
+```python
+sql_representation = view.sql_for("spark")
+print(sql_representation.sql)
+```
+
+## Check if a view exists
+
+To check whether the `some_view` view exists:
+
+```python
+catalog.view_exists("default.some_view")
+```
+
+## List views
+
+To list views in the `default` namespace:
+
+```python
+catalog.list_views("default")
+```
+
+## Drop a view
+
+To drop a view:
+
+```python
+catalog.drop_view("default.some_view")
 ```
 
 ## Table Statistics Management
@@ -1607,6 +1821,8 @@ scan = table.scan(
 
 [task.file.file_path for task in scan.plan_files()]
 ```
+
+When the REST catalog returns `scan-planning-mode=server` and advertises the plan endpoint, `plan_files()` / `to_arrow()` use server-side scan planning. The mode can also be returned per table in the `loadTable` response `config`, which takes precedence over the catalog-level setting, so a server can require server-side planning for some tables while others keep client-side planning. Catalogs that return async plans (`status=submitted`) are polled automatically until they reach a terminal state; see [REST Catalog configuration](configuration.md#rest-catalog).
 
 The low level API `plan_files` methods returns a set of tasks that provide the files that might contain matching rows:
 
@@ -1697,6 +1913,7 @@ This will return a Pandas dataframe:
 [116981 rows x 3 columns]
 ```
 
+<!-- markdown-link-check-disable-next-line -->
 It is recommended to use Pandas 2 or later, because it stores the data in an [Apache Arrow backend](https://datapythonista.me/blog/pandas-20-and-the-arrow-revolution-part-i) which avoids copies of data.
 
 ### DuckDB
@@ -1765,6 +1982,7 @@ Dataset(
 )
 ```
 
+<!-- markdown-link-check-disable-next-line -->
 Using [Ray Dataset API](https://docs.ray.io/en/latest/data/api/dataset.html) to interact with the dataset:
 
 ```python
@@ -1785,6 +2003,7 @@ print(ray_dataset.take(2))
 
 ### Bodo
 
+<!-- markdown-link-check-disable-next-line -->
 PyIceberg interfaces closely with Bodo Dataframes (see [Bodo Iceberg Quick Start](https://docs.bodo.ai/latest/quick_start/quickstart_local_iceberg/)),
 which provides a drop-in replacement for Pandas that applies query, compiler and HPC optimizations automatically.
 Bodo accelerates and scales Python code from single laptops to large clusters without code rewrites.
@@ -1831,6 +2050,7 @@ Bodo is optimized to take advantage of Iceberg features such as hidden partition
 
 ### Daft
 
+<!-- markdown-link-check-disable-next-line -->
 PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://docs.daft.ai/en/stable/io/iceberg/)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
 
 <!-- prettier-ignore-start -->
@@ -2036,7 +2256,7 @@ PyIceberg integrates with [Apache DataFusion](https://datafusion.apache.org/) th
 
     The integration has a few caveats:
 
-    - Only works with `datafusion == 51`, aligns with the version used in `pyiceberg-core`
+    - Only works with `datafusion == 53`, aligns with the version used in `pyiceberg-core`
     - Depends directly on `iceberg-rust` instead of PyIceberg's implementation
     - Has limited features compared to the full PyIceberg API
 

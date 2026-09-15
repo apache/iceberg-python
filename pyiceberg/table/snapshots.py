@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, PrivateAttr, model_serializer
 
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -84,6 +85,13 @@ class Operation(Enum):
     def __repr__(self) -> str:
         """Return the string representation of the Operation class."""
         return f"Operation.{self.name}"
+
+
+class IsolationLevel(str, Enum):
+    """Transaction isolation level for concurrent write validation."""
+
+    SERIALIZABLE = "serializable"
+    SNAPSHOT = "snapshot"
 
 
 class UpdateMetrics:
@@ -252,6 +260,9 @@ class Snapshot(IcebergBaseModel):
     added_rows: int | None = Field(
         alias="added-rows", default=None, description="The upper bound of the number of rows with assigned row IDs"
     )
+    key_id: str | None = Field(
+        alias="key-id", default=None, description="ID of the encryption key that encrypts the manifest list key metadata"
+    )
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
@@ -273,6 +284,7 @@ class Snapshot(IcebergBaseModel):
             f"schema_id={self.schema_id}" if self.schema_id is not None else None,
             f"first_row_id={self.first_row_id}" if self.first_row_id is not None else None,
             f"added_rows={self.added_rows}" if self.added_rows is not None else None,
+            f"key_id='{self.key_id}'" if self.key_id is not None else None,
         ]
         filtered_fields = [field for field in fields if field is not None]
         return f"Snapshot({', '.join(filtered_fields)})"
@@ -402,6 +414,11 @@ def update_snapshot_summaries(summary: Summary, previous_summary: Mapping[str, s
         removed_property=REMOVED_EQUALITY_DELETES,
     )
 
+    if context := EnvironmentContext.get():
+        # Defensively select only engine fields so future context additions cannot overwrite snapshot metadata.
+        summary["engine-name"] = context["engine-name"]
+        summary["engine-version"] = context["engine-version"]
+
     return summary
 
 
@@ -429,6 +446,55 @@ def ancestors_between(from_snapshot: Snapshot | None, to_snapshot: Snapshot, tab
                 break
     else:
         yield from ancestors_of(to_snapshot, table_metadata)
+
+
+def ancestors_between_ids(
+    from_snapshot_id_exclusive: int | None,
+    to_snapshot_id_inclusive: int,
+    table_metadata: TableMetadata,
+) -> Iterable[Snapshot]:
+    """Get the ancestors of and including the given "to" snapshot, up to but not including the "from" snapshot.
+
+    If ``from_snapshot_id_exclusive`` is None, all ancestors of the "to" snapshot are returned.
+
+    Raises:
+        ValueError: if ``to_snapshot_id_inclusive`` is not present in the table metadata.
+    """
+    to_snapshot = table_metadata.snapshot_by_id(to_snapshot_id_inclusive)
+    if to_snapshot is None:
+        raise ValueError(f"Cannot find snapshot: {to_snapshot_id_inclusive}")
+
+    if from_snapshot_id_exclusive is not None:
+        for snapshot in ancestors_of(to_snapshot, table_metadata):
+            if snapshot.snapshot_id == from_snapshot_id_exclusive:
+                break
+            yield snapshot
+    else:
+        yield from ancestors_of(to_snapshot, table_metadata)
+
+
+def is_ancestor_of(snapshot_id: int, ancestor_snapshot_id: int, table_metadata: TableMetadata) -> bool:
+    """Return whether ``ancestor_snapshot_id`` is ``snapshot_id`` itself or one of its ancestors.
+
+    Raises:
+        ValueError: if ``snapshot_id`` is not present in the table metadata.
+    """
+    snapshot = table_metadata.snapshot_by_id(snapshot_id)
+    if snapshot is None:
+        raise ValueError(f"Cannot find snapshot: {snapshot_id}")
+    return any(ancestor.snapshot_id == ancestor_snapshot_id for ancestor in ancestors_of(snapshot, table_metadata))
+
+
+def is_parent_ancestor_of(snapshot_id: int, ancestor_parent_snapshot_id: int, table_metadata: TableMetadata) -> bool:
+    """Return whether any ancestor of ``snapshot_id`` has ``ancestor_parent_snapshot_id`` as its parent.
+
+    Raises:
+        ValueError: if ``snapshot_id`` is not present in the table metadata.
+    """
+    snapshot = table_metadata.snapshot_by_id(snapshot_id)
+    if snapshot is None:
+        raise ValueError(f"Cannot find snapshot: {snapshot_id}")
+    return any(ancestor.parent_snapshot_id == ancestor_parent_snapshot_id for ancestor in ancestors_of(snapshot, table_metadata))
 
 
 def latest_ancestor_before_timestamp(table_metadata: TableMetadata, timestamp_ms: int) -> Snapshot | None:

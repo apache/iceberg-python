@@ -41,7 +41,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import DoubleType, FloatType, IntegerType, NestedField, TimestampType
+from pyiceberg.types import DoubleType, FloatType, IntegerType, NestedField, StringType, TimestampType
 
 
 def test_identity_transform_residual() -> None:
@@ -211,6 +211,9 @@ def test_is_not_nan() -> None:
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
     residual = res_eval.residual_for(Record(None))
+    assert residual == AlwaysTrue()
+
+    residual = res_eval.residual_for(Record(float("nan")))
     assert residual == AlwaysFalse()
 
     residual = res_eval.residual_for(Record(2))
@@ -223,6 +226,9 @@ def test_is_not_nan() -> None:
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
     residual = res_eval.residual_for(Record(None))
+    assert residual == AlwaysTrue()
+
+    residual = res_eval.residual_for(Record(float("nan")))
     assert residual == AlwaysFalse()
 
     residual = res_eval.residual_for(Record(2))
@@ -249,3 +255,29 @@ def test_not_in_timestamp() -> None:
     ts_day += 3  # type: ignore
     residual = res_eval.residual_for(Record(ts_day))
     assert residual == AlwaysTrue()
+
+
+def test_starts_with() -> None:
+    schema = Schema(NestedField(1, "x", StringType()))
+    spec = PartitionSpec(PartitionField(1, 1001, IdentityTransform(), "x_part"))
+
+    predicate = StartsWith("x", "a")
+    res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
+
+    assert res_eval.residual_for(Record("bb")) == AlwaysFalse()
+    assert res_eval.residual_for(Record("abc")) == AlwaysTrue()
+    assert res_eval.residual_for(Record("a")) == AlwaysTrue()
+    assert res_eval.residual_for(Record("zoo")) == AlwaysFalse()
+
+
+def test_not_starts_with() -> None:
+    schema = Schema(NestedField(1, "x", StringType()))
+    spec = PartitionSpec(PartitionField(1, 1001, IdentityTransform(), "x_part"))
+
+    predicate = NotStartsWith("x", "a")
+    res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
+
+    assert res_eval.residual_for(Record("bb")) == AlwaysTrue()
+    assert res_eval.residual_for(Record("abc")) == AlwaysFalse()
+    assert res_eval.residual_for(Record("a")) == AlwaysFalse()
+    assert res_eval.residual_for(Record("zoo")) == AlwaysTrue()

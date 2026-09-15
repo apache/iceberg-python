@@ -138,7 +138,7 @@ cdef class CythonBinaryDecoder:
         """
         return float(STRUCT_FLOAT.unpack(self.read(4))[0])
 
-    cpdef float read_double(self):
+    cpdef double read_double(self):
         """Reads a value from the stream as a double.
 
         A double is written as 8 bytes.

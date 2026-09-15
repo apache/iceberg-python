@@ -31,6 +31,8 @@ from typing import (
     cast,
 )
 
+from typing_extensions import override
+
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
     NoSuchNamespaceError,
@@ -802,8 +804,13 @@ class Catalog(ABC):
         return ".".join(segment.strip() for segment in tuple_identifier)
 
     @abstractmethod
-    def supports_server_side_planning(self) -> bool:
-        """Check if the catalog supports server-side scan planning."""
+    def supports_server_side_planning(self, table_config: Properties = EMPTY_DICT) -> bool:
+        """Check if server-side scan planning should be used.
+
+        Args:
+            table_config: Table configuration returned by the catalog when loading the table,
+                which may override the catalog-level scan planning mode for a single table.
+        """
 
     @staticmethod
     def identifier_to_database(
@@ -904,9 +911,11 @@ class MetastoreCatalog(Catalog, ABC):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
 
-    def supports_server_side_planning(self) -> bool:
+    @override
+    def supports_server_side_planning(self, table_config: Properties = EMPTY_DICT) -> bool:
         return False
 
+    @override
     def create_table_transaction(
         self,
         identifier: str | Identifier,
@@ -920,6 +929,7 @@ class MetastoreCatalog(Catalog, ABC):
             self._create_staged_table(identifier, schema, location, partition_spec, sort_order, properties)
         )
 
+    @override
     def table_exists(self, identifier: str | Identifier) -> bool:
         try:
             self.load_table(identifier)
@@ -927,6 +937,7 @@ class MetastoreCatalog(Catalog, ABC):
         except NoSuchTableError:
             return False
 
+    @override
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         """Check if a namespace exists.
 
@@ -942,6 +953,7 @@ class MetastoreCatalog(Catalog, ABC):
         except NoSuchNamespaceError:
             return False
 
+    @override
     def purge_table(self, identifier: str | Identifier) -> None:
         table = self.load_table(identifier)
         self.drop_table(identifier)
@@ -962,6 +974,7 @@ class MetastoreCatalog(Catalog, ABC):
         delete_files(io, prev_metadata_files, PREVIOUS_METADATA)
         delete_files(io, {table.metadata_location}, METADATA)
 
+    @override
     def create_view(
         self,
         identifier: str | Identifier,

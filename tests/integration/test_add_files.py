@@ -151,7 +151,7 @@ def _create_table(
 
 
 @pytest.fixture(name="format_version", params=[pytest.param(1, id="format_version=1"), pytest.param(2, id="format_version=2")])
-def format_version_fixure(request: pytest.FixtureRequest) -> Iterator[int]:
+def format_version_fixture(request: pytest.FixtureRequest) -> Iterator[int]:
     """Fixture to run tests with different table format versions."""
     yield request.param
 

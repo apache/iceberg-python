@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from collections import defaultdict
 from collections.abc import Iterator
 
 from pyiceberg.exceptions import ValidationException
@@ -40,17 +41,21 @@ VALIDATE_ADDED_DELETE_FILES_OPERATIONS: set[Operation] = {Operation.DELETE, Oper
 
 def _validation_history(
     table: Table,
-    from_snapshot: Snapshot,
+    from_snapshot: Snapshot | None,
     to_snapshot: Snapshot,
     matching_operations: set[Operation],
     manifest_content_filter: ManifestContent,
 ) -> tuple[list[ManifestFile], set[int]]:
     """Return newly added manifests and snapshot IDs between the starting snapshot and parent snapshot.
 
+    Walks from to_snapshot backwards towards from_snapshot, collecting manifests from
+    snapshots whose operations match. from_snapshot is excluded from results. A None
+    from_snapshot walks the entire history of to_snapshot down to the root.
+
     Args:
         table: Table to get the history from
-        from_snapshot: Parent snapshot to get the history from
-        to_snapshot: Starting snapshot
+        from_snapshot: Snapshot where the walk stops (exclusive), or None to walk the whole history
+        to_snapshot: Snapshot where the walk starts
         matching_operations: Operations to match on
         manifest_content_filter: Manifest content type to filter
 
@@ -60,11 +65,17 @@ def _validation_history(
     Returns:
         List of manifest files and set of snapshots ID's matching conditions
     """
+    if from_snapshot is not None and from_snapshot.snapshot_id == to_snapshot.snapshot_id:
+        return [], set()
+
     manifests_files: list[ManifestFile] = []
     snapshots: set[int] = set()
 
     last_snapshot = None
     for snapshot in ancestors_between(from_snapshot, to_snapshot, table.metadata):
+        if from_snapshot is not None and snapshot.snapshot_id == from_snapshot.snapshot_id:
+            last_snapshot = snapshot
+            break
         last_snapshot = snapshot
         summary = snapshot.summary
         if summary is None:
@@ -73,7 +84,6 @@ def _validation_history(
             continue
 
         snapshots.add(snapshot.snapshot_id)
-        # TODO: Maybe do the IO in a separate thread at some point, and collect at the bottom (we can easily merge the sets
         manifests_files.extend(
             [
                 manifest
@@ -82,7 +92,7 @@ def _validation_history(
             ]
         )
 
-    if last_snapshot is not None and last_snapshot.snapshot_id != from_snapshot.snapshot_id:
+    if from_snapshot is not None and (last_snapshot is None or last_snapshot.snapshot_id != from_snapshot.snapshot_id):
         raise ValidationException("No matching snapshot found.")
 
     return manifests_files, snapshots
@@ -149,9 +159,6 @@ def _deleted_data_files(
         List of conflicting manifest-entries
     """
     # if there is no current table state, no files have been deleted
-    if parent_snapshot is None:
-        return
-
     manifests, snapshot_ids = _validation_history(
         table,
         parent_snapshot,
@@ -172,7 +179,7 @@ def _validate_deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
     data_filter: BooleanExpression | None,
-    parent_snapshot: Snapshot,
+    parent_snapshot: Snapshot | None,
 ) -> None:
     """Validate that no files matching a filter have been deleted from the table since a starting snapshot.
 
@@ -187,6 +194,33 @@ def _validate_deleted_data_files(
     if any(conflicting_entries):
         conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries}
         raise ValidationException(f"Deleted data files were found matching the filter for snapshots {conflicting_snapshots}!")
+
+
+def _validate_data_files_exist(
+    table: Table,
+    starting_snapshot: Snapshot,
+    data_files: set[DataFile],
+    parent_snapshot: Snapshot | None,
+) -> None:
+    """Validate that explicitly replaced data files have not been concurrently deleted.
+
+    Args:
+        table: Table to validate
+        starting_snapshot: Snapshot at the end of the validation window
+        data_files: Data files that must still exist
+        parent_snapshot: Snapshot at the start of the validation window, excluded from the scan
+    """
+    partition_set: dict[int, set[Record]] = defaultdict(set)
+    for data_file in data_files:
+        partition_set[data_file.spec_id].add(data_file.partition)
+
+    conflicting_paths = {
+        entry.data_file.file_path
+        for entry in _deleted_data_files(table, starting_snapshot, None, partition_set, parent_snapshot)
+        if entry.data_file in data_files
+    }
+    if conflicting_paths:
+        raise ValidationException(f"Data files were concurrently deleted: {sorted(conflicting_paths)}")
 
 
 def _added_data_files(
@@ -208,9 +242,6 @@ def _added_data_files(
     Returns:
         Iterator of manifest entries for added data files matching the conditions
     """
-    if parent_snapshot is None:
-        return
-
     manifests, snapshot_ids = _validation_history(
         table,
         parent_snapshot,
@@ -244,7 +275,7 @@ def _added_delete_files(
     Returns:
         DeleteFileIndex
     """
-    if parent_snapshot is None or table.format_version < 2:
+    if table.format_version < 2:
         return DeleteFileIndex()
 
     manifests, snapshot_ids = _validation_history(
@@ -344,7 +375,7 @@ def _validate_no_new_deletes_for_data_files(
         parent_snapshot: Ending snapshot on the branch being validated
     """
     # If there is no current state, or no files has been added
-    if parent_snapshot is None or table.format_version < 2:
+    if table.format_version < 2:
         return
 
     deletes = _added_delete_files(table, starting_snapshot, data_filter, None, parent_snapshot)

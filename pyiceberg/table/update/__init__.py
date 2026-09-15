@@ -21,6 +21,7 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import singledispatch
+from types import TracebackType
 from typing import TYPE_CHECKING, Annotated, Any, Generic, Literal, TypeVar, cast
 
 from pydantic import Field, field_validator, model_serializer, model_validator
@@ -71,9 +72,10 @@ class UpdateTableMetadata(ABC, Generic[U]):
     def commit(self) -> None:
         self._transaction._apply(*self._commit())
 
-    def __exit__(self, _: Any, value: Any, traceback: Any) -> None:
-        """Close and commit the change."""
-        self.commit()
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
+        """Close and commit the change if no exceptions have been raised."""
+        if exctype is None and excinst is None and exctb is None:
+            self.commit()
 
     def __enter__(self) -> U:
         """Update the table."""

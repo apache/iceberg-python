@@ -17,9 +17,7 @@
 
 import base64
 import datetime as py_datetime
-import importlib
 import struct
-import types
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from enum import IntEnum
@@ -31,7 +29,6 @@ from uuid import UUID
 import mmh3
 from pydantic import Field, PositiveInt, PrivateAttr
 
-from pyiceberg.exceptions import NotInstalledError
 from pyiceberg.expressions import (
     BoundEqualTo,
     BoundGreaterThan,
@@ -73,6 +70,8 @@ from pyiceberg.types import (
     DateType,
     DecimalType,
     FixedType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     LongType,
@@ -86,6 +85,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.utils import datetime
 from pyiceberg.utils.decimal import decimal_to_bytes, truncate_decimal
+from pyiceberg.utils.lazy_import import try_import
 from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
 
@@ -108,17 +108,6 @@ HOUR = "hour"
 
 BUCKET_PARSER = ParseNumberFromBrackets(BUCKET)
 TRUNCATE_PARSER = ParseNumberFromBrackets(TRUNCATE)
-
-
-def _try_import(module_name: str, extras_name: str | None = None) -> types.ModuleType:
-    try:
-        return importlib.import_module(module_name)
-    except ImportError:
-        if extras_name:
-            msg = f'{module_name} needs to be installed. pip install "pyiceberg[{extras_name}]"'
-        else:
-            msg = f"{module_name} needs to be installed."
-        raise NotInstalledError(msg) from None
 
 
 def _transform_literal(func: Callable[[Any], Any], lit: Literal[L]) -> Literal[L]:
@@ -393,7 +382,7 @@ class BucketTransform(Transform[S, int]):
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
+        pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.bucket, self._num_buckets)
 
 
@@ -507,8 +496,8 @@ class YearTransform(TimeTransform[S]):
         return "YearTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pa = _try_import("pyarrow")
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
+        pa = try_import("pyarrow")
+        pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.year, expected_type=pa.int32())
 
 
@@ -567,8 +556,8 @@ class MonthTransform(TimeTransform[S]):
         return "MonthTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pa = _try_import("pyarrow")
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
+        pa = try_import("pyarrow")
+        pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.month, expected_type=pa.int32())
 
@@ -636,8 +625,8 @@ class DayTransform(TimeTransform[S]):
         return "DayTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pa = _try_import("pyarrow", extras_name="pyarrow")
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
+        pa = try_import("pyarrow", extras_name="pyarrow")
+        pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.day, expected_type=pa.int32())
 
@@ -689,7 +678,7 @@ class HourTransform(TimeTransform[S]):
         return "HourTransform()"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
+        pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.hour)
 
@@ -717,7 +706,7 @@ class IdentityTransform(Transform[S, S]):
         return lambda v: v
 
     def can_transform(self, source: IcebergType) -> bool:
-        return source.is_primitive
+        return source.is_primitive and not isinstance(source, (GeographyType, GeometryType))
 
     def result_type(self, source: IcebergType) -> IcebergType:
         return source
@@ -813,7 +802,16 @@ class TruncateTransform(Transform[S, S]):
                 return _truncate_number(name, pred, self.transform(field_type))
         elif isinstance(field_type, (BinaryType, StringType)):
             if isinstance(pred, BoundLiteralPredicate):
-                return _truncate_array(name, pred, self.transform(field_type))
+                if isinstance(pred, BoundNotStartsWith):
+                    literal_width = len(pred.literal.value)
+                    if literal_width < self.width:
+                        return pred.as_unbound(name, pred.literal.value)
+                    elif literal_width == self.width:
+                        return NotEqualTo(name, pred.literal.value)
+                    else:
+                        return None
+                else:
+                    return _truncate_array(name, pred, self.transform(field_type))
 
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         field_type = pred.term.ref().field.field_type
@@ -907,7 +905,7 @@ class TruncateTransform(Transform[S, S]):
         return f"TruncateTransform(width={self._width})"
 
     def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
-        pyiceberg_core_transform = _try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
+        pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.truncate, self._width)
 

@@ -20,6 +20,7 @@ Consolidated behavior tests for InMemoryCatalog and SqlCatalog.
 """
 
 import os
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -941,6 +942,26 @@ def test_add_column_with_statement(catalog: Catalog, table_schema_simple: Schema
     assert table.schema().schema_id == 2
 
 
+def test_update_schema_with_statement_does_not_commit_on_exception(
+    catalog: Catalog, table_schema_simple: Schema, random_table_identifier: Identifier
+) -> None:
+    namespace = Catalog.namespace_from(random_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(random_table_identifier, table_schema_simple)
+
+    with pytest.raises(ValueError):
+        with table.update_schema() as tx:
+            tx.add_column(path="should_not_commit", field_type=IntegerType())
+            int("boom")
+
+    assert table.schema() == table_schema_simple
+    assert table.schema().schema_id == 0
+
+    reloaded = catalog.load_table(random_table_identifier)
+    assert reloaded.schema() == table_schema_simple
+    assert reloaded.schema().schema_id == 0
+
+
 # Namespace tests
 
 
@@ -1190,3 +1211,164 @@ def test_drop_namespace_raises_error_when_namespace_not_empty(
     catalog.create_table(test_table_identifier, table_schema_nested)
     with pytest.raises(NamespaceNotEmptyError, match=f"Namespace {'.'.join(namespace)} is not empty"):
         catalog.drop_namespace(namespace)
+
+
+# RecordBatchReader streaming append/overwrite tests
+#
+# Streaming writes accept a pa.RecordBatchReader and microbatch it into target-sized
+# Parquet files instead of materialising the full Arrow Table in memory. Tracks
+# https://github.com/apache/iceberg-python/issues/2152.
+
+
+def _simple_arrow_table() -> pa.Table:
+    return pa.Table.from_pydict(
+        {"foo": ["a", None, "z"]},
+        schema=pa.schema([pa.field("foo", pa.large_string(), nullable=True)]),
+    )
+
+
+def _simple_record_batch_reader(num_batches: int = 3) -> tuple[pa.RecordBatchReader, int]:
+    """Build an N-batch reader of the simple schema. Returns (reader, total_rows)."""
+    pa_table = _simple_arrow_table()
+    batches = pa_table.to_batches() * num_batches
+    reader = pa.RecordBatchReader.from_batches(pa_table.schema, iter(batches))
+    return reader, sum(b.num_rows for b in batches)
+
+
+def test_append_record_batch_reader(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.append_record_batch_reader_{catalog.name}"
+    reader, total_rows = _simple_record_batch_reader(num_batches=3)
+    tbl = catalog.create_table(identifier=identifier, schema=reader.schema)
+
+    tbl.append(reader)
+
+    assert len(tbl.scan().to_arrow()) == total_rows
+
+
+def test_append_record_batch_reader_microbatched(catalog: Catalog) -> None:
+    """A reader bigger than the per-file target produces multiple Parquet files
+    in a single snapshot — verifying the byte-budget microbatching path."""
+    catalog.create_namespace("default")
+    identifier = f"default.append_record_batch_reader_microbatch_{catalog.name}"
+    reader, total_rows = _simple_record_batch_reader(num_batches=8)
+    # Force every batch to roll a new file by setting an absurdly small target size.
+    tbl = catalog.create_table(
+        identifier=identifier,
+        schema=reader.schema,
+        properties={TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: "1"},
+    )
+
+    tbl.append(reader)
+
+    snapshot = tbl.metadata.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.summary is not None
+    added_files = snapshot.summary["added-data-files"]
+    assert added_files is not None and int(added_files) > 1, snapshot.summary
+    assert len(tbl.scan().to_arrow()) == total_rows
+
+
+def test_append_record_batch_reader_empty(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.append_record_batch_reader_empty_{catalog.name}"
+    schema = _simple_arrow_table().schema
+    reader = pa.RecordBatchReader.from_batches(schema, iter([]))
+    tbl = catalog.create_table(identifier=identifier, schema=schema)
+
+    tbl.append(reader)
+
+    assert len(tbl.scan().to_arrow()) == 0
+
+
+def test_overwrite_record_batch_reader(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.overwrite_record_batch_reader_{catalog.name}"
+    pa_table = _simple_arrow_table()
+    tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema)
+    tbl.append(pa_table)
+    assert len(tbl.scan().to_arrow()) == pa_table.num_rows
+
+    reader, total_rows = _simple_record_batch_reader(num_batches=2)
+    tbl.overwrite(reader)
+
+    assert len(tbl.scan().to_arrow()) == total_rows
+
+
+def test_append_record_batch_reader_to_partitioned_table_raises(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.append_record_batch_reader_partitioned_{catalog.name}"
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "bucket", StringType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="bucket"),
+    )
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema, partition_spec=partition_spec)
+
+    arrow_schema = schema_to_pyarrow(iceberg_schema)
+    reader = pa.RecordBatchReader.from_batches(arrow_schema, iter([]))
+    with pytest.raises(NotImplementedError, match="partitioned table"):
+        tbl.append(reader)
+
+
+def test_append_invalid_input_type_raises(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.append_invalid_input_{catalog.name}"
+    pa_table = _simple_arrow_table()
+    tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema)
+    with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader"):
+        tbl.append("not an arrow object")
+
+
+def test_record_batch_reader_consumed_exactly_once(catalog: Catalog) -> None:
+    """The streaming path must consume the underlying generator exactly once.
+    A regression that drained the reader twice (e.g. an extra .schema access
+    that materialised the iterator, or a retry-loop without a fresh reader)
+    would silently lose data — the second pass is empty.
+    """
+    catalog.create_namespace("default")
+    identifier = f"default.record_batch_reader_consumed_once_{catalog.name}"
+    pa_table = _simple_arrow_table()
+    consumed_batches = 0
+
+    def tracking_batches() -> Generator[pa.RecordBatch, None, None]:
+        nonlocal consumed_batches
+        for batch in pa_table.to_batches() * 3:
+            consumed_batches += 1
+            yield batch
+
+    reader = pa.RecordBatchReader.from_batches(pa_table.schema, tracking_batches())
+    tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema)
+
+    tbl.append(reader)
+
+    # The generator should have been driven to exhaustion exactly once: 3 batches.
+    assert consumed_batches == 3
+    assert len(tbl.scan().to_arrow()) == pa_table.num_rows * 3
+
+
+def test_record_batch_reader_schema_mismatch_writes_no_files(catalog: Catalog) -> None:
+    """A schema mismatch must fail before any data files are written. Otherwise
+    we'd leak orphan parquet files in storage (and a partial commit that picks
+    them up later via add_files would be a correctness disaster).
+    """
+    catalog.create_namespace("default")
+    identifier = f"default.record_batch_reader_schema_mismatch_{catalog.name}"
+    iceberg_schema = Schema(NestedField(1, "foo", StringType(), required=False))
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema)
+
+    bad_schema = pa.schema([pa.field("foo", pa.int64(), nullable=True)])
+    bad_reader = pa.RecordBatchReader.from_batches(
+        bad_schema,
+        iter([pa.RecordBatch.from_pylist([{"foo": 1}], schema=bad_schema)]),
+    )
+
+    with pytest.raises(ValueError):
+        tbl.append(bad_reader)
+
+    # No snapshot should have been produced: the schema check runs before
+    # _append_snapshot_producer opens.
+    assert tbl.metadata.current_snapshot() is None
+    assert len(tbl.scan().to_arrow()) == 0

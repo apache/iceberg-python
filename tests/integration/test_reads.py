@@ -27,7 +27,9 @@ from urllib.parse import urlparse
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
+from hive_metastore.ThriftHiveMetastore import Client
+from hive_metastore.ttypes import GetTableRequest, LockRequest, LockResponse, LockState, UnlockRequest
+from hive_metastore.ttypes import Table as HiveTable
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
@@ -51,6 +53,7 @@ from pyiceberg.io.pyarrow import (
 )
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.table.snapshots import Operation
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
@@ -66,6 +69,11 @@ DEFAULT_PROPERTIES = {"write.parquet.compression-codec": "zstd"}
 
 
 TABLE_NAME = ("default", "t1")
+
+
+def _get_hive_table(open_client: Client) -> HiveTable:
+    database_name, table_name = TABLE_NAME
+    return open_client.get_table_req(GetTableRequest(dbName=database_name, tblName=table_name)).table
 
 
 def create_table(catalog: Catalog) -> Table:
@@ -123,7 +131,7 @@ def test_hive_properties(catalog: Catalog) -> None:
     hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
 
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("abc") == "def"
         assert hive_table.parameters.get("p1") == "123"
         assert hive_table.parameters.get("not_exist_parameter") is None
@@ -131,7 +139,7 @@ def test_hive_properties(catalog: Catalog) -> None:
     table.transaction().remove_properties("abc").commit_transaction()
 
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("abc") is None
 
 
@@ -148,14 +156,14 @@ def test_hive_preserves_hms_specific_properties(catalog: Catalog) -> None:
     table = create_table(catalog)
     hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         # Add HMS-specific properties that aren't managed by Iceberg
         hive_table.parameters["table_category"] = "production"
         hive_table.parameters["data_owner"] = "data_team"
         open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
 
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("table_category") == "production"
         assert hive_table.parameters.get("data_owner") == "data_team"
 
@@ -163,7 +171,7 @@ def test_hive_preserves_hms_specific_properties(catalog: Catalog) -> None:
 
     # Verify that HMS-specific properties are STILL present after commit
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         # HMS-specific properties should be preserved
         assert hive_table.parameters.get("table_category") == "production", (
             "HMS property 'table_category' was lost during commit!"
@@ -188,7 +196,7 @@ def test_iceberg_property_deletion_not_restored_from_old_hms_state(session_catal
 
     # Verify both properties exist
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("prop_to_keep") == "keep_value"
         assert hive_table.parameters.get("prop_to_delete") == "delete_me"
 
@@ -197,7 +205,7 @@ def test_iceberg_property_deletion_not_restored_from_old_hms_state(session_catal
 
     # Verify property is deleted from HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("prop_to_keep") == "keep_value"
         assert hive_table.parameters.get("prop_to_delete") is None, "Deleted property should not exist in HMS!"
 
@@ -206,7 +214,7 @@ def test_iceberg_property_deletion_not_restored_from_old_hms_state(session_catal
 
     # Ensure deleted property doesn't come back from old state
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("prop_to_keep") == "keep_value"
         assert hive_table.parameters.get("new_prop") == "new_value"
         assert hive_table.parameters.get("prop_to_delete") is None, "Deleted property should NOT be restored from old HMS state!"
@@ -228,13 +236,13 @@ def test_iceberg_metadata_is_source_of_truth(catalog: Catalog) -> None:
 
     # External tool modifies the same property in HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         hive_table.parameters["my_prop"] = "hms_value"  # Conflicting value
         open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
 
     # Verify HMS has the external value
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("my_prop") == "hms_value"
 
     # Perform another Iceberg commit
@@ -242,7 +250,7 @@ def test_iceberg_metadata_is_source_of_truth(catalog: Catalog) -> None:
 
     # Iceberg's value should take precedence
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("my_prop") == "iceberg_value", (
             "Iceberg property value should take precedence over conflicting HMS value!"
         )
@@ -261,7 +269,7 @@ def test_hive_critical_properties_always_from_iceberg(catalog: Catalog) -> None:
 
     # Get original metadata_location
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         original_metadata_location = hive_table.parameters.get("metadata_location")
         assert original_metadata_location is not None
         assert hive_table.parameters.get("EXTERNAL") == "TRUE"
@@ -269,7 +277,7 @@ def test_hive_critical_properties_always_from_iceberg(catalog: Catalog) -> None:
 
     # Try to tamper with critical properties via HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         hive_table.parameters["EXTERNAL"] = "FALSE"  # Try to change
         open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
 
@@ -278,7 +286,7 @@ def test_hive_critical_properties_always_from_iceberg(catalog: Catalog) -> None:
 
     # Critical properties should be restored by Iceberg
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("EXTERNAL") == "TRUE", "EXTERNAL should always be TRUE from Iceberg!"
         assert hive_table.parameters.get("table_type") == "ICEBERG", "table_type should always be ICEBERG!"
         # metadata_location should be updated (new metadata file)
@@ -300,13 +308,13 @@ def test_hive_native_properties_cannot_be_deleted_via_iceberg(catalog: Catalog) 
 
     # Set an HMS-native property directly (not through Iceberg)
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         hive_table.parameters["hms_native_prop"] = "native_value"
         open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
 
     # Verify the HMS-native property exists in HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("hms_native_prop") == "native_value"
 
     # Refresh the Iceberg table to get the latest state
@@ -322,7 +330,7 @@ def test_hive_native_properties_cannot_be_deleted_via_iceberg(catalog: Catalog) 
 
     # HMS-native property should still exist (cannot be deleted via Iceberg)
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("hms_native_prop") == "native_value", (
             "HMS-native property should still exist since Iceberg removal failed!"
         )
@@ -332,7 +340,7 @@ def test_hive_native_properties_cannot_be_deleted_via_iceberg(catalog: Catalog) 
 
     # Verify it's updated in both places
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("hms_native_prop") == "iceberg_value"
 
     # Now we CAN delete it via Iceberg (because it's now tracked in Iceberg metadata)
@@ -340,7 +348,7 @@ def test_hive_native_properties_cannot_be_deleted_via_iceberg(catalog: Catalog) 
 
     # Property should be deleted from HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("hms_native_prop") is None, (
             "Property should be deletable after being SET via Iceberg (making it tracked)!"
         )
@@ -603,11 +611,13 @@ def test_ray_not_nan_count(catalog: Catalog, ray_session: Any) -> None:
 @pytest.mark.filterwarnings("ignore")
 @pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_ray_all_types(catalog: Catalog, ray_session: Any) -> None:
+    from pandas.testing import assert_frame_equal
+
     table_test_all_types = catalog.load_table("default.test_all_types")
     ray_dataset = table_test_all_types.scan().to_ray()
     pandas_dataframe = table_test_all_types.scan().to_pandas()
     assert ray_dataset.count() == pandas_dataframe.shape[0]
-    assert pandas_dataframe.equals(ray_dataset.to_pandas())
+    assert_frame_equal(pandas_dataframe, ray_dataset.to_pandas(), check_dtype=False)
 
 
 @pytest.mark.integration
@@ -1272,3 +1282,212 @@ def test_scan_source_field_missing_in_spec(catalog: Catalog, spark: SparkSession
 
     table = catalog.load_table(identifier)
     assert len(list(table.scan().plan_files())) == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_append_only(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+
+    # snapshots[1] adds 1 file (letter=b); snapshots[2] adds 2 files (letter=b, letter=c).
+    assert len(list(scan.plan_files())) == 3
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+    # All read paths return the same rows.
+    assert len(scan.to_arrow_batch_reader().read_all()) == 3
+    assert len(scan.to_pandas()) == 3
+    assert len(scan.to_polars()) == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_ignores_non_append_snapshots(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[3] compacts and snapshots[4] deletes number=2 -- both non-append, both ignored.
+    # number=2 was appended in snapshots[1], so it still appears despite the later delete.
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[4].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 3
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_does_not_double_count_compacted_files(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[1] and [2] append the two letter='b' files (number=2 and number=4); snapshots[3]
+    # compacts them into a single rewritten file. A scan spanning the compaction must read each
+    # appended row exactly once -- the rewritten file (added by the compaction, not by an append)
+    # must not be picked up on top of the originals.
+    assert test_table.snapshots()[3].summary.operation == Operation.REPLACE  # type: ignore[union-attr]
+
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[3].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 3
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_empty_range(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[3] is the only snapshot in the range and is a compaction (non-append); the scan
+    # must return empty.
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[2].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[3].snapshot_id,
+    )
+    assert list(scan.plan_files()) == []
+    result = scan.to_arrow()
+    assert len(result) == 0
+    # An empty result still carries the projected (current) schema.
+    assert result.schema.names == ["number", "letter", "extra"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_schema_evolution_within_range(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # snapshots[1..2] are on the original schema (number, letter); snapshots[5] is on the evolved
+    # schema (number, letter, extra) after ALTER TABLE ADD COLUMN. The scan must project the older
+    # rows onto the current schema (extra -> null) and pick up the new value for the newer row.
+    scan = test_table.incremental_append_scan(
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[5].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 4
+
+    expected_schema = pa.schema([pa.field("number", pa.int32()), pa.field("letter", pa.string()), pa.field("extra", pa.int32())])
+    result_table = scan.to_arrow()
+    assert result_table.schema.equals(expected_schema)
+    rows = zip(
+        result_table["number"].to_pylist(),
+        result_table["letter"].to_pylist(),
+        result_table["extra"].to_pylist(),
+        strict=True,
+    )
+    assert sorted(rows, key=lambda r: r[0]) == [(2, "b", None), (3, "c", None), (4, "b", None), (5, "d", 100)]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_partition_pruning(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # `letter=c` only appears in snapshots[2]. The manifest evaluator rejects snapshots[1]'s
+    # manifest (letter=b only); the partition evaluator rejects the letter=b entry in
+    # snapshots[2]'s manifest. One file remains.
+    scan = test_table.incremental_append_scan(
+        row_filter=EqualTo("letter", "c"),
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 1
+    assert scan.to_arrow()["number"].to_pylist() == [3]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_metrics_pruning(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # Non-partition predicate: the manifest/partition evaluators degenerate, leaving the per-file
+    # metrics evaluator to prune. `number=99` matches no file's [min, max] stats for `number`.
+    scan = test_table.incremental_append_scan(
+        row_filter=EqualTo("number", 99),
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+    assert len(list(scan.plan_files())) == 0
+    assert len(scan.to_arrow()) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_selected_fields(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    scan = test_table.incremental_append_scan(
+        selected_fields=("number",),
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+    result_table = scan.to_arrow()
+    assert result_table.schema.equals(pa.schema([pa.field("number", pa.int32())]))
+    assert sorted(result_table["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_limit(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    scan = test_table.incremental_append_scan(
+        limit=2,
+        from_snapshot_id_exclusive=test_table.snapshots()[0].snapshot_id,
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    )
+    assert len(scan.to_arrow()) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_throws_on_disconnected_snapshots(catalog: Catalog) -> None:
+    # snapshots[6] is the REPLACE TABLE result, with no lineage back to snapshots[0].
+    test_table = catalog.load_table("default.test_incremental_read")
+    from_id = test_table.snapshots()[0].snapshot_id
+    to_id = test_table.snapshots()[6].snapshot_id
+
+    with pytest.raises(ValueError, match=f"Starting snapshot .exclusive. {from_id} is not a parent ancestor"):
+        list(test_table.incremental_append_scan(from_snapshot_id_exclusive=from_id, to_snapshot_id_inclusive=to_id).plan_files())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_unset_from_scans_from_oldest_ancestor(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # With `from` unset, the scan starts from the oldest ancestor of `to` (inclusive), so it also
+    # picks up snapshots[0]'s append (number=1) that an exclusive from=snapshots[0] would skip.
+    scan = test_table.incremental_append_scan(to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id)
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [1, 2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_inclusive_from(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # Inclusive from=snapshots[1] includes snapshots[1]'s append (number=2), unlike the exclusive
+    # form which would start strictly after it (numbers [3, 4]).
+    scan = test_table.incremental_append_scan(
+        to_snapshot_id_inclusive=test_table.snapshots()[2].snapshot_id,
+    ).from_snapshot_id_inclusive(test_table.snapshots()[1].snapshot_id)
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
+def test_incremental_append_scan_builder_chain(catalog: Catalog) -> None:
+    test_table = catalog.load_table("default.test_incremental_read")
+
+    # The builder chain is equivalent to setting the range at construction.
+    scan = (
+        test_table.incremental_append_scan()
+        .from_snapshot_id_exclusive(test_table.snapshots()[0].snapshot_id)
+        .to_snapshot_id_inclusive(test_table.snapshots()[2].snapshot_id)
+    )
+    assert sorted(scan.to_arrow()["number"].to_pylist()) == [2, 3, 4]

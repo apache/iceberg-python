@@ -3,6 +3,8 @@
 .cache
 tmp/
 site
+.env
+dev/.env
 
 # intellij files
 .idea
@@ -21,6 +23,7 @@ __pycache__/
 .tox/
 env/
 venv/
+.venv/
 *.egg-info/
 test-reports
 build/

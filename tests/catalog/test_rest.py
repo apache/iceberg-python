@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import base64
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any, cast
 from unittest import mock
 
@@ -35,6 +36,11 @@ from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
+    PAGE_SIZE,
+    REST_CLIENT_CONNECTION_TIMEOUT_MS,
+    REST_CLIENT_MAX_RETRIES,
+    REST_CLIENT_RETRY_BACKOFF_FACTOR,
+    REST_CLIENT_SOCKET_TIMEOUT_MS,
     SIGV4_MAX_RETRIES,
     SIGV4_MAX_RETRIES_DEFAULT,
     SNAPSHOT_LOADING_MODE,
@@ -42,6 +48,8 @@ from pyiceberg.catalog.rest import (
     Endpoint,
     HttpMethod,
     RestCatalog,
+    ScanPlanningMode,
+    _RetryTimeoutHTTPAdapter,
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -53,6 +61,7 @@ from pyiceberg.exceptions import (
     NoSuchViewError,
     OAuthError,
     ServerError,
+    ServiceUnavailableError,
     TableAlreadyExistsError,
     ViewAlreadyExistsError,
 )
@@ -102,9 +111,12 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_DELETE_TABLE,
     Capability.V1_RENAME_TABLE,
     Capability.V1_REGISTER_TABLE,
+    Capability.V1_UNREGISTER_TABLE,
+    Capability.V1_LOAD_CREDENTIALS,
     Capability.V1_LIST_VIEWS,
     Capability.V1_LOAD_VIEW,
     Capability.V1_VIEW_EXISTS,
+    Capability.V1_CREATE_VIEW,
     Capability.V1_REGISTER_VIEW,
     Capability.V1_DELETE_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
@@ -196,10 +208,9 @@ def test_token_200(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
 
 
 @pytest.mark.filterwarnings(
@@ -216,10 +227,9 @@ def test_token_200_without_optional_fields(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"]  # pylint: disable=W0212
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
 
 
 @pytest.mark.filterwarnings(
@@ -238,12 +248,9 @@ def test_token_with_optional_oauth_params(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog(
-            "rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience=TEST_AUDIENCE, resource=TEST_RESOURCE
-        )._session.headers["Authorization"]
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience=TEST_AUDIENCE, resource=TEST_RESOURCE)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
     assert TEST_AUDIENCE in mock_request.last_request.text
     assert TEST_RESOURCE in mock_request.last_request.text
 
@@ -264,10 +271,9 @@ def test_token_with_optional_oauth_params_as_empty(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="")._session.headers["Authorization"]
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="")
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
     assert TEST_AUDIENCE not in mock_request.last_request.text
     assert TEST_RESOURCE not in mock_request.last_request.text
 
@@ -288,9 +294,9 @@ def test_token_with_default_scope(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)._session.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
     assert "catalog" in mock_request.last_request.text
 
 
@@ -310,10 +316,9 @@ def test_token_with_custom_scope(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, scope=TEST_SCOPE)._session.headers["Authorization"]
-        == f"Bearer {TEST_TOKEN}"
-    )
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, scope=TEST_SCOPE)
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
     assert TEST_SCOPE in mock_request.last_request.text
 
 
@@ -333,14 +338,9 @@ def test_token_200_w_oauth2_server_uri(rest_mock: Mocker) -> None:
         status_code=200,
         request_headers=OAUTH_TEST_HEADERS,
     )
-    # pylint: disable=W0212
-    assert (
-        RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: OAUTH2_SERVER_URI})._session.headers[
-            "Authorization"
-        ]
-        == f"Bearer {TEST_TOKEN}"
-    )
-    # pylint: enable=W0212
+    catalog = RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, **{OAUTH2_SERVER_URI: TEST_OAUTH2_SERVER_URI})
+    prepared = catalog._session.prepare_request(Request("GET", TEST_URI))
+    assert prepared.headers["Authorization"] == f"Bearer {TEST_TOKEN}"
 
 
 @pytest.mark.filterwarnings(
@@ -367,7 +367,8 @@ def test_config_200(requests_mock: Mocker) -> None:
     RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, warehouse="s3://some-bucket")
 
     assert requests_mock.called
-    assert requests_mock.call_count == 2
+    # The token is fetched for the config request, and again for the catalog session
+    assert requests_mock.call_count == 3
 
     history = requests_mock.request_history
     assert history[1].method == "GET"
@@ -477,6 +478,113 @@ def test_list_tables_200(rest_mock: Mocker) -> None:
     )
 
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace) == [("examples", "fooshare")]
+
+
+def test_list_tables_paginated_200(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table1"},
+                {"namespace": ["examples"], "name": "table2"},
+            ],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageToken=page2token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table3"},
+            ],
+            "next-page-token": "page3token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Third page without next-page-token (last page)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageToken=page3token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table4"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)
+    assert result == [
+        ("examples", "table1"),
+        ("examples", "table2"),
+        ("examples", "table3"),
+        ("examples", "table4"),
+    ]
+
+
+def test_list_tables_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table1"},
+                {"namespace": ["examples"], "name": "table2"},
+            ],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # The last page with NONE next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageToken=page2token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table3"},
+            ],
+            "next-page-token": None,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)
+    assert result == [
+        ("examples", "table1"),
+        ("examples", "table2"),
+        ("examples", "table3"),
+    ]
+
+
+def test_list_tables_page_size(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "table1"},
+                {"namespace": ["examples"], "name": "table2"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_tables(namespace)
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/tables?pageSize=100"
+
+    assert result == [
+        ("examples", "table1"),
+        ("examples", "table2"),
+    ]
 
 
 def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
@@ -641,6 +749,132 @@ def test_list_views_200(rest_mock: Mocker) -> None:
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace) == [("examples", "fooshare")]
 
 
+def test_list_views_paginated_200(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views?pageToken=page2token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view3"},
+            ],
+            "next-page-token": "page3token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Third page without next-page-token (last page)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views?pageToken=page3token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view4"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+    assert result == [
+        ("examples", "view1"),
+        ("examples", "view2"),
+        ("examples", "view3"),
+        ("examples", "view4"),
+    ]
+
+
+def test_list_views_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # The last page with NONE next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views?pageToken=page2token",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view3"},
+            ],
+            "next-page-token": None,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace)
+    assert result == [
+        ("examples", "view1"),
+        ("examples", "view2"),
+        ("examples", "view3"),
+    ]
+
+
+def test_list_views_page_size(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_views(namespace)
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/views?pageSize=100"
+
+    assert result == [
+        ("examples", "view1"),
+        ("examples", "view2"),
+    ]
+
+
+def test_list_views_invalid_page_size(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/views",
+        json={
+            "identifiers": [
+                {"namespace": ["examples"], "name": "view1"},
+                {"namespace": ["examples"], "name": "view2"},
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(ValueError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "0"}).list_views(namespace)
+    assert str(e.value) == "rest-page-size must be a positive integer"
+
+
 def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
     rest_mock.get(
@@ -735,6 +969,124 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     )
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",)) == [
         ("accounting", "tax"),
+    ]
+
+
+def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "namespaces": [["ns1"], ["ns2"]],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page2token",
+        json={
+            "namespaces": [["ns3"], ["ns4"]],
+            "next-page-token": "page3token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Third page without next-page-token (last page)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page3token",
+        json={
+            "namespaces": [["ns5"]],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces()
+    assert result == [
+        ("ns1",),
+        ("ns2",),
+        ("ns3",),
+        ("ns4",),
+        ("ns5",),
+    ]
+
+
+def test_list_namespaces_with_parent_paginated_200(rest_mock: Mocker) -> None:
+    # First page
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?parent=accounting",
+        json={
+            "namespaces": [["accounting", "tax"]],
+            "next-page-token": "page2",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # Second page (last)
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?parent=accounting&pageToken=page2",
+        json={
+            "namespaces": [["accounting", "payroll"]],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",))
+    assert result == [
+        ("accounting", "tax"),
+        ("accounting", "payroll"),
+    ]
+
+
+def test_list_namespaces_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
+    # First page with next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "namespaces": [["ns1"], ["ns2"]],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    # The last page with None next-page-token
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces?pageToken=page2token",
+        json={
+            "namespaces": [["ns3"]],
+            "next-page-token": None,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces()
+    assert result == [
+        ("ns1",),
+        ("ns2",),
+        ("ns3",),
+    ]
+
+
+def test_list_namespaces_page_size(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={
+            "namespaces": [["ns1"], ["ns2"]],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_namespaces()
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces?pageSize=100"
+
+    assert result == [
+        ("ns1",),
+        ("ns2",),
     ]
 
 
@@ -1393,8 +1745,6 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
         identifier=("fokko", "fokko2"),
         schema=table_schema_simple,
         view_version=ViewVersion(
-            version_id=1,
-            timestamp_ms=12345,
             schema_id=1,
             summary={"engine-name": "spark", "engineVersion": "3.3"},
             representations=[
@@ -1438,8 +1788,6 @@ def test_create_view_409(
             identifier=("fokko", "fokko2"),
             schema=table_schema_simple,
             view_version=ViewVersion(
-                version_id=1,
-                timestamp_ms=12345,
                 schema_id=1,
                 summary={"engine-name": "spark", "engineVersion": "3.3"},
                 representations=[],
@@ -1642,6 +1990,46 @@ def test_register_table_overwrite(
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual.metadata_location == expected.metadata_location
     assert actual.name() == expected.name()
+
+
+def test_unregister_table_200(
+    rest_mock: Mocker, table_schema_simple: Schema, example_table_metadata_no_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    unregister_response = {
+        "metadata-location": "s3://warehouse/database/table/metadata.json",
+        "metadata": example_table_metadata_no_snapshot_v1_rest_json["metadata"],
+    }
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/tables/my_table/unregister",
+        json=unregister_response,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    metadata_location, metadata = catalog.unregister_table(identifier=("default", "my_table"))
+
+    assert metadata_location == "s3://warehouse/database/table/metadata.json"
+    assert metadata.model_dump() == TableMetadataV1(**example_table_metadata_no_snapshot_v1_rest_json["metadata"]).model_dump()
+
+
+def test_unregister_table_404(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/tables/does_not_exist/unregister",
+        json={
+            "error": {
+                "message": "Table does not exist: default.does_not_exist",
+                "type": "NoSuchTableException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchTableError) as e:
+        catalog.unregister_table(identifier=("default", "does_not_exist"))
+    assert "Table does not exist" in str(e.value)
 
 
 def test_delete_namespace_204(rest_mock: Mocker) -> None:
@@ -1932,6 +2320,182 @@ def test_request_session_with_ssl_client_cert() -> None:
         # Missing namespace
         RestCatalog("rest", **catalog_properties)  # type: ignore
     assert "Could not find the TLS certificate file, invalid path: path_to_client_cert" in str(e.value)
+
+
+def test_session_without_connection_config_uses_default_adapter(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    for adapter in catalog._session.adapters.values():
+        assert not isinstance(adapter, _RetryTimeoutHTTPAdapter)
+
+
+def test_session_with_connection_timeout_and_retries(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        REST_CLIENT_CONNECTION_TIMEOUT_MS: "5000",
+        REST_CLIENT_SOCKET_TIMEOUT_MS: "60000",
+        REST_CLIENT_MAX_RETRIES: "5",
+        REST_CLIENT_RETRY_BACKOFF_FACTOR: "1.0",
+    }
+    catalog = RestCatalog("rest", **catalog_properties)
+
+    https_adapter = catalog._session.adapters["https://"]
+    http_adapter = catalog._session.adapters["http://"]
+    assert isinstance(https_adapter, _RetryTimeoutHTTPAdapter)
+    assert https_adapter is http_adapter
+    assert https_adapter._timeout == 65  # (5000 + 60000) ms floored to whole seconds
+    assert https_adapter.max_retries.total == 5
+    assert https_adapter.max_retries.backoff_factor == 1.0
+    # Internal retry policy: transient codes and idempotent methods only.
+    assert https_adapter.max_retries.status_forcelist == [429, 500, 502, 503, 504]
+    allowed_methods = https_adapter.max_retries.allowed_methods or frozenset()
+    assert set(allowed_methods) == {"GET", "HEAD", "OPTIONS", "PUT", "DELETE"}
+
+
+def test_session_with_connection_timeout_only(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        REST_CLIENT_CONNECTION_TIMEOUT_MS: "5000",
+    }
+    catalog = RestCatalog("rest", **catalog_properties)
+    adapter = catalog._session.adapters["https://"]
+    assert isinstance(adapter, _RetryTimeoutHTTPAdapter)
+    assert adapter._timeout == 5  # 5000 ms floored to whole seconds
+    # Default retry policy (total=0) is a no-op when only a timeout is configured.
+    assert adapter.max_retries.total == 0
+
+
+def test_session_with_socket_timeout_only(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        REST_CLIENT_SOCKET_TIMEOUT_MS: "60000",
+    }
+    catalog = RestCatalog("rest", **catalog_properties)
+    adapter = catalog._session.adapters["https://"]
+    assert isinstance(adapter, _RetryTimeoutHTTPAdapter)
+    assert adapter._timeout == 60  # 60000 ms floored to whole seconds
+    assert adapter.max_retries.total == 0
+
+
+@contextmanager
+def _local_rest_server_503_then_200(num_failures: int) -> Iterator[dict[str, Any]]:
+    """Stand up a loopback HTTP server that returns `num_failures` 503s for `/v1/namespaces` then a 200.
+
+    Used in place of `requests_mock`, which replaces the HTTPAdapter and would bypass the retry logic.
+
+    Yields a dict with `port` and `namespace_calls` keys (the latter is updated in-place as requests arrive).
+    """
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    state: dict[str, Any] = {"namespace_calls": 0}
+    config_body = json.dumps(
+        {"defaults": {}, "overrides": {}, "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS]}
+    ).encode()
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path.endswith("/v1/config"):
+                self._respond(200, config_body)
+            elif self.path.endswith("/v1/namespaces"):
+                state["namespace_calls"] += 1
+                if state["namespace_calls"] <= num_failures:
+                    self._respond(503, b"")
+                else:
+                    self._respond(200, json.dumps({"namespaces": [["foo"]]}).encode())
+            else:
+                self._respond(404, b"")
+
+        def _respond(self, status: int, body: bytes) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:  # silence default access logs
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    state["port"] = server.server_address[1]
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        yield state
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_session_retries_on_transient_5xx_then_succeeds() -> None:
+    """The catalog should retry on transient 5xx and succeed once the server stabilizes."""
+    with _local_rest_server_503_then_200(num_failures=3) as server:
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                # backoff-factor=0 keeps the test fast; retries=3 covers three 503s + the eventual 200.
+                REST_CLIENT_MAX_RETRIES: "3",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+            },
+        )
+        assert catalog.list_namespaces() == [("foo",)]
+        assert server["namespace_calls"] == 4
+
+
+def test_session_exhausted_retries_surfaces_typed_exception() -> None:
+    """When retries are exhausted, the typed exception from `_handle_non_200_response` should be raised
+    (e.g. `ServiceUnavailableError` for 503), not the urllib3 `MaxRetryError` / `RetryError`."""
+    # `num_failures` greater than `retries + 1` guarantees the server never returns success.
+    with _local_rest_server_503_then_200(num_failures=100) as server:
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                REST_CLIENT_MAX_RETRIES: "2",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+            },
+        )
+        with pytest.raises(ServiceUnavailableError):
+            catalog.list_namespaces()
+        # retries=2 means 1 initial attempt + 2 retries = 3 calls
+        assert server["namespace_calls"] == 3
+
+
+def test_session_with_invalid_connection_timeout_raises(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        REST_CLIENT_CONNECTION_TIMEOUT_MS: "-1",
+    }
+    with pytest.raises(ValueError, match="`rest.client.connection-timeout-ms` must be a positive number"):
+        RestCatalog("rest", **catalog_properties)
+
+
+def test_session_with_invalid_socket_timeout_raises(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        REST_CLIENT_SOCKET_TIMEOUT_MS: "0",
+    }
+    with pytest.raises(ValueError, match="`rest.client.socket-timeout-ms` must be a positive number"):
+        RestCatalog("rest", **catalog_properties)
+
+
+def test_session_with_invalid_connection_retries_raises(rest_mock: Mocker) -> None:
+    catalog_properties = {
+        "uri": TEST_URI,
+        "token": TEST_TOKEN,
+        REST_CLIENT_MAX_RETRIES: "-1",
+    }
+    with pytest.raises(ValueError, match="`rest.client.max-retries` must be non-negative"):
+        RestCatalog("rest", **catalog_properties)
 
 
 def test_rest_catalog_with_basic_auth_type(rest_mock: Mocker) -> None:
@@ -2371,7 +2935,10 @@ def test_auth_header(rest_mock: Mocker) -> None:
     )
 
     RestCatalog("rest", uri=TEST_URI, credential=TEST_CREDENTIALS, audience="", resource="", **{"header.Custom": "Value"})
-    assert mock_request.last_request.text == "grant_type=client_credentials&client_id=client&client_secret=secret&scope=catalog"
+    assert (
+        mock_request.last_request.text
+        == "grant_type=client_credentials&client_id=client&client_secret=secret_with%3Acolon&scope=catalog"
+    )
 
 
 def test_client_version_header(rest_mock: Mocker) -> None:
@@ -2462,7 +3029,7 @@ class TestRestCatalogClose:
             "rest",
             uri=TEST_URI,
             token=TEST_TOKEN,
-            **{"rest-scan-planning-enabled": "true"},
+            **{"scan-planning-mode": ScanPlanningMode.SERVER.value},
         )
 
         assert catalog.supports_server_side_planning() is True
@@ -2478,7 +3045,7 @@ class TestRestCatalogClose:
             "rest",
             uri=TEST_URI,
             token=TEST_TOKEN,
-            **{"rest-scan-planning-enabled": "true"},
+            **{"scan-planning-mode": ScanPlanningMode.SERVER.value},
         )
 
         assert catalog.supports_server_side_planning() is False
@@ -2488,7 +3055,7 @@ class TestRestCatalogClose:
             "rest",
             uri=TEST_URI,
             token=TEST_TOKEN,
-            **{"rest-scan-planning-enabled": "false"},
+            **{"scan-planning-mode": ScanPlanningMode.CLIENT.value},
         )
 
         assert catalog.supports_server_side_planning() is False
@@ -2497,7 +3064,7 @@ class TestRestCatalogClose:
         rest_mock.get(
             f"{TEST_URI}v1/config",
             json={
-                "defaults": {"rest-scan-planning-enabled": "true"},
+                "defaults": {"scan-planning-mode": "server"},
                 "overrides": {},
                 "endpoints": ["POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan"],
             },
@@ -2506,6 +3073,60 @@ class TestRestCatalogClose:
         catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
         assert catalog.supports_server_side_planning() is True
+
+    def test_server_side_planning_enabled_by_table_config(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.supports_server_side_planning() is False
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.SERVER.value}) is True
+
+    def test_server_side_planning_table_config_overrides_catalog_property(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"scan-planning-mode": ScanPlanningMode.SERVER.value},
+        )
+
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.CLIENT.value}) is False
+
+    def test_server_side_planning_table_config_ignored_when_endpoint_unsupported(self, requests_mock: Mocker) -> None:
+        requests_mock.get(
+            f"{TEST_URI}v1/config",
+            json={"defaults": {}, "overrides": {}},
+            status_code=200,
+        )
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.SERVER.value}) is False
+
+    def test_server_side_planning_invalid_mode(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+        with pytest.raises(ValueError, match="Invalid scan-planning-mode: remote"):
+            catalog.supports_server_side_planning({"scan-planning-mode": "remote"})
+
+    def test_server_side_planning_invalid_catalog_mode_falls_back_to_default(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"scan-planning-mode": "servr"},
+        )
+
+        # Bad catalog config is ignored; default remains client-side planning.
+        assert catalog.supports_server_side_planning() is False
+
+    def test_server_side_planning_table_override_survives_invalid_catalog_mode(self, rest_mock: Mocker) -> None:
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            token=TEST_TOKEN,
+            **{"scan-planning-mode": "servr"},
+        )
+
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.SERVER.value}) is True
+        assert catalog.supports_server_side_planning({"scan-planning-mode": ScanPlanningMode.CLIENT.value}) is False
 
     def test_supported_endpoint(self, requests_mock: Mocker) -> None:
         requests_mock.get(
@@ -2792,6 +3413,38 @@ def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_me
     assert table.io.properties["s3.access-key-id"] == "vended-key"
     assert table.io.properties["s3.secret-access-key"] == "vended-secret"
     assert table.io.properties["s3.session-token"] == "vended-token"
+
+
+def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
+        json={
+            "storage-credentials": [
+                {
+                    "prefix": "s3://warehouse/database/",
+                    "config": {"s3.access-key-id": "short-prefix-key"},
+                },
+                {
+                    "prefix": "s3://warehouse/database/table",
+                    "config": {
+                        "s3.access-key-id": "long-prefix-key",
+                        "s3.secret-access-key": "long-prefix-secret",
+                    },
+                },
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    credentials = catalog.load_credentials(
+        ("fokko", "table"),
+        "s3://warehouse/database/table/data/file.parquet",
+    )
+
+    assert credentials == {"s3.access-key-id": "long-prefix-key", "s3.secret-access-key": "long-prefix-secret"}
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials"
 
 
 def test_load_table_without_storage_credentials(

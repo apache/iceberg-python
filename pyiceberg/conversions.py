@@ -143,7 +143,7 @@ def _(primitive_type: PrimitiveType, value_str: str) -> int:
     _, _, exponent = Decimal(value_str).as_tuple()
     if exponent != 0:  # Raise if there are digits to the right of the decimal
         raise ValueError(f"Cannot convert partition value, value cannot have fractional digits for {primitive_type} partition")
-    return int(float(value_str))
+    return int(value_str)
 
 
 @partition_to_py.register(FloatType)

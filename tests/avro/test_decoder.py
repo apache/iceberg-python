@@ -161,6 +161,23 @@ def test_read_double(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
 
 
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+@pytest.mark.parametrize(
+    "value",
+    [
+        3.141592653589793,
+        429496729622.314,
+        0.1,
+        1.0000000000000002,  # smallest double above 1.0
+        1e308,  # overflows to inf in single precision
+        5e-324,  # underflows to 0.0 in single precision
+    ],
+)
+def test_read_double_keeps_full_precision(decoder_class: Callable[[bytes], BinaryDecoder], value: float) -> None:
+    decoder = decoder_class(struct.pack("<d", value))
+    assert decoder.read_double() == value
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
 def test_skip_double(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
     decoder = decoder_class(b"\x00\x00\x00\x00\x00\x40\x33\x40")
     assert decoder.tell() == 0

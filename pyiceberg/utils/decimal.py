@@ -58,11 +58,16 @@ def bytes_required(value: int | Decimal) -> int:
         int: the minimum number of bytes needed to serialize the value.
     """
     if isinstance(value, int):
-        return (value.bit_length() + 8) // 8
+        unscaled = value
     elif isinstance(value, Decimal):
-        return (decimal_to_unscaled(value).bit_length() + 8) // 8
+        unscaled = decimal_to_unscaled(value)
+    else:
+        raise ValueError(f"Unsupported value: {value}")
 
-    raise ValueError(f"Unsupported value: {value}")
+    # bit_length() ignores the sign, so -128 appears to need 9 signed bits instead of 8.
+    # Adding 1 before counting avoids the extra byte at negative boundaries.
+    num_bits = unscaled.bit_length() if unscaled >= 0 else (unscaled + 1).bit_length()
+    return (num_bits + 8) // 8
 
 
 def decimal_to_bytes(value: Decimal, byte_length: int | None = None) -> bytes:

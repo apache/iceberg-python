@@ -67,6 +67,7 @@ from pyiceberg.expressions.visitors import _from_byte_buffer
 from pyiceberg.schema import Accessor, Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
+    DateType,
     DecimalType,
     DoubleType,
     FloatType,
@@ -1148,6 +1149,26 @@ def test_above_int_bounds_greater_than_or_equal(
 ) -> None:
     assert GreaterThanOrEqual("a", above_int_max).bind(int_schema) is AlwaysFalse()
     assert GreaterThanOrEqual("a", below_int_min).bind(int_schema) is AlwaysTrue()
+
+
+@pytest.fixture
+def date_schema() -> Schema:
+    return Schema(NestedField(field_id=1, name="a", field_type=DateType(), required=False))
+
+
+def test_above_date_bounds_equal_to(date_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
+    assert EqualTo("a", above_int_max).bind(date_schema) is AlwaysFalse()
+    assert EqualTo("a", below_int_min).bind(date_schema) is AlwaysFalse()
+
+
+def test_above_date_bounds_less_than(date_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
+    assert LessThan("a", above_int_max).bind(date_schema) is AlwaysTrue()
+    assert LessThan("a", below_int_min).bind(date_schema) is AlwaysFalse()
+
+
+def test_above_date_bounds_greater_than(date_schema: Schema, above_int_max: Literal[int], below_int_min: Literal[int]) -> None:
+    assert GreaterThan("a", above_int_max).bind(date_schema) is AlwaysFalse()
+    assert GreaterThan("a", below_int_min).bind(date_schema) is AlwaysTrue()
 
 
 @pytest.fixture

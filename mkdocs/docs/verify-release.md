@@ -35,7 +35,15 @@ Release announcements include links to the following:
 
 After downloading the source tarball, signature, checksum, and KEYS file, here are instructions on how to verify signatures, checksums, and documentation.
 
-## Verifying signatures
+All of the steps below are also available as a single script that should be run from the `iceberg-python` root directory.
+
+```sh
+./dev/release/verify_rc.sh 0.6.1rc3
+```
+
+The following are the script steps for manual verification.
+
+### Verifying signatures
 
 First, import the keys.
 
@@ -69,7 +77,7 @@ do
 done
 ```
 
-## Verifying checksums
+### Verifying checksums
 
 ```sh
 cd ${PYICEBERG_VERIFICATION_DIR}
@@ -79,7 +87,7 @@ do
 done
 ```
 
-## Verifying License Documentation
+### Verifying License Documentation
 
 ```sh
 export PYICEBERG_RELEASE_VERSION=${PYICEBERG_VERSION/rc?/}  # remove rcX qualifier
@@ -93,7 +101,7 @@ Run RAT checks to validate license header:
 ./dev/check-license
 ```
 
-## Testing
+### Testing
 
 This section explains how to run the tests of the source distribution.
 

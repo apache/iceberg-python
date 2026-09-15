@@ -79,6 +79,9 @@ class Config:
                     with open(path, encoding=UTF8) as f:
                         yml_str = f.read()
                     file_config = strictyaml.load(yml_str).data
+                    if not isinstance(file_config, dict):
+                        # An empty or comment-only document parses as a string
+                        return None
                     file_config_lowercase = _lowercase_dictionary_keys(file_config)
                     return file_config_lowercase
             return None

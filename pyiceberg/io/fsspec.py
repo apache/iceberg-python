@@ -35,6 +35,7 @@ import requests
 from fsspec import AbstractFileSystem
 from fsspec.implementations.local import LocalFileSystem
 from requests import HTTPError
+from typing_extensions import override
 
 from pyiceberg.catalog import TOKEN, URI
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
@@ -78,16 +79,19 @@ from pyiceberg.io import (
     S3_REGION,
     S3_REQUEST_TIMEOUT,
     S3_SECRET_ACCESS_KEY,
+    S3_SERVER_SIDE_ENCRYPTION,
     S3_SESSION_TOKEN,
     S3_SIGNER,
     S3_SIGNER_ENDPOINT,
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
+    S3_SSE_KMS_KEY_ID,
     FileIO,
     InputFile,
     InputStream,
     OutputFile,
     OutputStream,
+    _is_local_path,
 )
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
@@ -176,6 +180,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "region_name": get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
+    s3_additional_kwargs = {}
     register_events: dict[str, Callable[[AWSRequest], None]] = {}
 
     if signer := properties.get(S3_SIGNER):
@@ -200,13 +205,19 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
 
-    if _force_virtual_addressing := properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+    if property_as_bool(properties, S3_FORCE_VIRTUAL_ADDRESSING, False):
         config_kwargs["s3"] = {"addressing_style": "virtual"}
 
     if s3_anonymous := properties.get(S3_ANONYMOUS):
         anon = strtobool(s3_anonymous)
     else:
         anon = False
+
+    if server_side_encryption := properties.get(S3_SERVER_SIDE_ENCRYPTION):
+        s3_additional_kwargs["ServerSideEncryption"] = server_side_encryption
+
+    if sse_kms_key_id := properties.get(S3_SSE_KMS_KEY_ID):
+        s3_additional_kwargs["SSEKMSKeyId"] = sse_kms_key_id
 
     s3_fs_kwargs = {
         "anon": anon,
@@ -216,6 +227,9 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 
     if profile_name := get_first_property_value(properties, S3_PROFILE_NAME, AWS_PROFILE_NAME):
         s3_fs_kwargs["profile"] = profile_name
+
+    if s3_additional_kwargs:
+        s3_fs_kwargs["s3_additional_kwargs"] = s3_additional_kwargs
 
     fs = S3FileSystem(**s3_fs_kwargs)
 
@@ -332,19 +346,22 @@ class FsspecInputFile(InputFile):
         self._fs = fs
         super().__init__(location=location)
 
+    @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
         object_info = self._fs.info(self.location)
-        if size := object_info.get("Size"):
-            return size
-        elif size := object_info.get("size"):
-            return size
+        if "Size" in object_info:
+            return object_info["Size"]
+        elif "size" in object_info:
+            return object_info["size"]
         raise RuntimeError(f"Cannot retrieve object info: {self.location}")
 
+    @override
     def exists(self) -> bool:
         """Check whether the location exists."""
         return self._fs.lexists(self.location)
 
+    @override
     def open(self, seekable: bool = True) -> InputStream:
         """Create an input stream for reading the contents of the file.
 
@@ -376,19 +393,22 @@ class FsspecOutputFile(OutputFile):
         self._fs = fs
         super().__init__(location=location)
 
+    @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
         object_info = self._fs.info(self.location)
-        if size := object_info.get("Size"):
-            return size
-        elif size := object_info.get("size"):
-            return size
+        if "Size" in object_info:
+            return object_info["Size"]
+        elif "size" in object_info:
+            return object_info["size"]
         raise RuntimeError(f"Cannot retrieve object info: {self.location}")
 
+    @override
     def exists(self) -> bool:
         """Check whether the location exists."""
         return self._fs.lexists(self.location)
 
+    @override
     def create(self, overwrite: bool = False) -> OutputStream:
         """Create an output stream for reading the contents of the file.
 
@@ -411,6 +431,7 @@ class FsspecOutputFile(OutputFile):
             raise FileExistsError(f"Cannot create file, file already exists: {self.location}")
         return self._fs.open(self.location, "wb")
 
+    @override
     def to_input_file(self) -> FsspecInputFile:
         """Return a new FsspecInputFile for the location at `self.location`."""
         return FsspecInputFile(location=self.location, fs=self._fs)
@@ -424,6 +445,7 @@ class FsspecFileIO(FileIO):
         self._thread_locals = threading.local()
         super().__init__(properties=properties)
 
+    @override
     def new_input(self, location: str) -> FsspecInputFile:
         """Get an FsspecInputFile instance to read bytes from the file at the given location.
 
@@ -434,9 +456,10 @@ class FsspecFileIO(FileIO):
             FsspecInputFile: An FsspecInputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self._get_fs_from_uri(uri)
+        fs = self._get_fs_from_uri(uri, location)
         return FsspecInputFile(location=location, fs=fs)
 
+    @override
     def new_output(self, location: str) -> FsspecOutputFile:
         """Get an FsspecOutputFile instance to write bytes to the file at the given location.
 
@@ -447,9 +470,10 @@ class FsspecFileIO(FileIO):
             FsspecOutputFile: An FsspecOutputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self._get_fs_from_uri(uri)
+        fs = self._get_fs_from_uri(uri, location)
         return FsspecOutputFile(location=location, fs=fs)
 
+    @override
     def delete(self, location: str | InputFile | OutputFile) -> None:
         """Delete the file at the given location.
 
@@ -464,11 +488,13 @@ class FsspecFileIO(FileIO):
             str_location = location
 
         uri = urlparse(str_location)
-        fs = self._get_fs_from_uri(uri)
+        fs = self._get_fs_from_uri(uri, str_location)
         fs.rm(str_location)
 
-    def _get_fs_from_uri(self, uri: "ParseResult") -> AbstractFileSystem:
+    def _get_fs_from_uri(self, uri: "ParseResult", location: str = "") -> AbstractFileSystem:
         """Get a filesystem from a parsed URI, using hostname for ADLS account resolution."""
+        if _is_local_path(location):
+            return self.get_fs("file")
         if uri.scheme in _ADLS_SCHEMES:
             return self.get_fs(uri.scheme, uri.hostname)
         return self.get_fs(uri.scheme)
