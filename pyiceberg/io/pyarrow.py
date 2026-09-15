@@ -195,8 +195,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-ONE_MEGABYTE = 1024 * 1024
 BUFFER_SIZE = "buffer-size"
+_DEFAULT_BUFFER_SIZE = 8 * 1024 * 1024  # 8 MiB
 ICEBERG_SCHEMA = b"iceberg.schema"
 # The PARQUET: in front means that it is Parquet specific, in this case the field_id
 PYARROW_PARQUET_FIELD_ID_KEY = b"PARQUET:field_id"
@@ -260,6 +260,9 @@ class PyArrowFile(InputFile, OutputFile):
 
     Args:
         location (str): A URI or a path to a local file.
+        path (str): The filesystem path.
+        fs (FileSystem): The filesystem used to access the file.
+        buffer_size (int): Buffer size in bytes. Defaults to 8 MiB.
 
     Attributes:
         location(str): The URI or path to a local file for a PyArrowFile instance.
@@ -281,7 +284,7 @@ class PyArrowFile(InputFile, OutputFile):
     _path: str
     _buffer_size: int
 
-    def __init__(self, location: str, path: str, fs: FileSystem, buffer_size: int = ONE_MEGABYTE):
+    def __init__(self, location: str, path: str, fs: FileSystem, buffer_size: int = _DEFAULT_BUFFER_SIZE):
         self._filesystem = fs
         self._path = path
         self._buffer_size = buffer_size
@@ -642,7 +645,7 @@ class PyArrowFileIO(FileIO):
             fs=self.fs_by_scheme(scheme, netloc),
             location=location,
             path=path,
-            buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
+            buffer_size=int(self.properties.get(BUFFER_SIZE, _DEFAULT_BUFFER_SIZE)),
         )
 
     @override
@@ -660,7 +663,7 @@ class PyArrowFileIO(FileIO):
             fs=self.fs_by_scheme(scheme, netloc),
             location=location,
             path=path,
-            buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
+            buffer_size=int(self.properties.get(BUFFER_SIZE, _DEFAULT_BUFFER_SIZE)),
         )
 
     @override
@@ -1131,7 +1134,7 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
     if data_file.file_format == FileFormat.PARQUET:
         with io.new_input(data_file.file_path).open() as fi:
             delete_fragment = _get_file_format(
-                data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
+                data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=_DEFAULT_BUFFER_SIZE
             ).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
         table = table.unify_dictionaries()
@@ -1641,7 +1644,7 @@ def _task_to_record_batches(
     downcast_ns_timestamp_to_us: bool | None = None,
     dictionary_columns: tuple[str, ...] = (),
 ) -> Iterator[pa.RecordBatch]:
-    format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
+    format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": _DEFAULT_BUFFER_SIZE}
     if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
         format_kwargs["dictionary_columns"] = dictionary_columns
     arrow_format = _get_file_format(task.file.file_format, **format_kwargs)
