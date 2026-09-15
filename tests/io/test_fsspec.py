@@ -17,9 +17,11 @@
 
 import os
 import pickle
+import sys
 import tempfile
 import threading
 import uuid
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -55,6 +57,29 @@ def test_fsspec_local_fs_can_create_path_without_parent_dir(fsspec_fileio: Fsspe
                 f.write(b"foo")
         except Exception:
             pytest.fail("Failed to write to file without parent directory")
+
+
+def test_fsspec_list_prefix(fsspec_fileio: FsspecFileIO, tmp_path: Path) -> None:
+    """Test recursively listing a directory using FsspecFileIO.list_prefix(...)"""
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "a.txt").write_bytes(b"foo")
+    (tmp_path / "nested" / "b.txt").write_bytes(b"barr")
+
+    entries = sorted(fsspec_fileio.list_prefix(str(tmp_path)), key=lambda entry: entry.location)
+
+    assert [Path(entry.location) for entry in entries] == [tmp_path / "a.txt", tmp_path / "nested" / "b.txt"]
+    assert [entry.size for entry in entries] == [3, 4]
+    assert all(entry.last_modified is not None for entry in entries)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="A file:// URI cannot carry a Windows drive letter")
+def test_fsspec_list_prefix_retains_scheme(fsspec_fileio: FsspecFileIO, tmp_path: Path) -> None:
+    """Test that a location with a scheme is listed as URIs with that same scheme"""
+    (tmp_path / "a.txt").write_bytes(b"foo")
+
+    entries = list(fsspec_fileio.list_prefix(f"file://{tmp_path}"))
+
+    assert [entry.location for entry in entries] == [f"file://{tmp_path}/a.txt"]
 
 
 def test_fsspec_get_fs_instance_per_thread_caching(fsspec_fileio: FsspecFileIO) -> None:
@@ -631,6 +656,20 @@ def test_writing_avro_file_adls(generated_manifest_entry_file: str, adls_fsspec_
             assert b1 == b2  # Check that bytes of read from local avro file match bytes written to adls
 
     adls_fsspec_fileio.delete(f"abfss://tests/{filename}")
+
+
+@pytest.mark.adls
+def test_fsspec_list_prefix_retains_account_adls(adls_fsspec_fileio: FsspecFileIO, request: pytest.FixtureRequest) -> None:
+    """Test that listing an account-qualified ADLS location keeps the account in every listed URI"""
+    account_name = request.config.getoption("--adls.account-name")
+    prefix = f"abfss://tests@{account_name}.dfs.core.windows.net/{uuid.uuid4()}"
+    with adls_fsspec_fileio.new_output(f"{prefix}/nested/a.txt").create() as f:
+        f.write(b"foo")
+
+    entries = list(adls_fsspec_fileio.list_prefix(prefix))
+
+    assert [entry.location for entry in entries] == [f"{prefix}/nested/a.txt"]
+    adls_fsspec_fileio.delete(f"{prefix}/nested/a.txt")
 
 
 @pytest.mark.adls
