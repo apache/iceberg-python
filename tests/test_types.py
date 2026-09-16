@@ -514,6 +514,21 @@ def test_deserialization_decimal() -> None:
     assert decimal.scale == 25
 
 
+@pytest.mark.parametrize(
+    "decimal_str",
+    [
+        "decimal(9,2)",
+        "decimal(9, 2)",
+        "decimal( 9, 2 )",
+        "decimal( 9 , 2 )",
+        "decimal(9 ,2)",
+    ],
+)
+def test_deserialization_decimal_optional_whitespace(decimal_str: str) -> None:
+    # Readers accept optional whitespace around parameters and the separator.
+    assert DecimalType.model_validate_json(f'"{decimal_str}"') == DecimalType(9, 2)
+
+
 def test_deserialization_decimal_failure() -> None:
     with pytest.raises(ValidationError) as exc_info:
         _ = DecimalType.model_validate_json('"decimal(abc, def)"')
