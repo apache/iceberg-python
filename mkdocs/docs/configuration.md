@@ -778,6 +778,7 @@ catalog:
 | hive.hive2-compatible        | true    | Set to `true` when using a Hive 2.x metastore |
 | hive.kerberos-authentication | true    | Using authentication via Kerberos    |
 | hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
+| hive.kerberos-service-host   | hive-host | Kerberos service host (default URI host) |
 | ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
 
 Hive 3 and newer need no extra configuration. When using a Hive 2.x metastore, set the compatibility flag:
