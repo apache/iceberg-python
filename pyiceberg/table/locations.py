@@ -178,6 +178,10 @@ def _import_location_provider(
         module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
+        if not isinstance(class_, type) or not issubclass(class_, LocationProvider):
+            raise ValueError(
+                f"write.py-location-provider.impl should be a subclass of LocationProvider, got: {location_provider_impl}"
+            )
         return class_(table_location, table_properties)
     except ModuleNotFoundError:
         logger.warning(

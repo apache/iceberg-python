@@ -232,6 +232,8 @@ def _import_retry_strategy(impl: str) -> S3RetryStrategy | None:
         module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
+        if not isinstance(class_, type) or not issubclass(class_, S3RetryStrategy):
+            raise ValueError(f"retry-strategy-impl should be a subclass of S3RetryStrategy, got: {impl}")
         return class_()
     except (ModuleNotFoundError, AttributeError):
         warnings.warn(f"Could not initialize S3 retry strategy: {impl}", stacklevel=2)
