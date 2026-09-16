@@ -766,7 +766,6 @@ class TruncateTransform(Transform[S, S]):
     """
 
     root: str = Field()
-    _source_type: IcebergType = PrivateAttr()
     _width: PositiveInt = PrivateAttr()
 
     def __init__(self, width: int, **data: Any):
@@ -782,10 +781,6 @@ class TruncateTransform(Transform[S, S]):
     @property
     def preserves_order(self) -> bool:
         return True
-
-    @property
-    def source_type(self) -> IcebergType:
-        return self._source_type
 
     def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         field_type = pred.term.ref().field.field_type
@@ -883,11 +878,7 @@ class TruncateTransform(Transform[S, S]):
     def satisfies_order_of(self, other: Transform[S, T]) -> bool:
         if self == other:
             return True
-        elif (
-            isinstance(self.source_type, StringType)
-            and isinstance(other, TruncateTransform)
-            and isinstance(other.source_type, StringType)
-        ):
+        elif isinstance(other, TruncateTransform):
             return self.width >= other.width
 
         return False
