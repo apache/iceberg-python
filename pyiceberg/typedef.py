@@ -112,6 +112,19 @@ class StructProtocol(Protocol):  # pragma: no cover
         """Assign a value to a StructProtocol."""
 
 
+@runtime_checkable
+class ArrowStreamExportable(Protocol):  # pragma: no cover
+    """Any object implementing the Arrow PyCapsule stream interface.
+
+    Covers pa.Table, pa.RecordBatchReader, and third-party producers
+    (polars, arro3, nanoarrow, ...) without depending on any of them.
+    """
+
+    @abstractmethod
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        """Export the object as an Arrow C stream PyCapsule."""
+
+
 class IcebergBaseModel(BaseModel):
     """
     This class extends the Pydantic BaseModel to set default values by overriding them.
