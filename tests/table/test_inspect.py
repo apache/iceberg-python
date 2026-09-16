@@ -76,6 +76,18 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
     assert files_metrics["upper_bound"] is None
 
 
+def test_inspect_snapshots_preserves_null_operation(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "s", StringType()))
+    tbl = catalog.create_table("default.snapshot_without_summary", schema)
+    tbl.append(pa.table({"s": ["value"]}, schema=pa.schema([pa.field("s", pa.large_string())])))
+
+    snapshots = list(tbl.metadata.snapshots)
+    snapshots[0] = snapshots[0].model_copy(update={"summary": None})
+    tbl.metadata = tbl.metadata.model_copy(update={"snapshots": snapshots})
+
+    assert tbl.inspect.snapshots().to_pydict()["operation"] == [None]
+
+
 @pytest.mark.parametrize("newest_first", [False, True])
 def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest_first: bool) -> None:
     # Manifest entries are visited in manifest order, which is not chronological, so the
