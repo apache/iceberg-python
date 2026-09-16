@@ -732,7 +732,7 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
         ],
         schema=nanoseconds_schema,
     )
-    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE": "True"})
+    mocker.patch.dict(os.environ, values={"PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US": "True"})
 
     identifier = f"default.timestamptz_ns_added{format_version}"
     tbl = _create_table(session_catalog, identifier, format_version, schema=nanoseconds_schema_iceberg)
@@ -754,8 +754,8 @@ def test_add_files_with_timestamp_tz_ns_fails(session_catalog: Catalog, format_v
     exception_cause = exc_info.value.__cause__
     assert isinstance(exception_cause, TypeError)
     assert (
-        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us-on-write' "
-        "configuration property to automatically downcast 'ns' to 'us' on write." in exception_cause.args[0]
+        "Iceberg does not yet support 'ns' timestamp precision. Use 'downcast-ns-timestamp-to-us' "
+        "configuration property to automatically downcast 'ns' to 'us'." in exception_cause.args[0]
     )
 
 
