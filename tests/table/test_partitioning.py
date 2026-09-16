@@ -31,6 +31,7 @@ from pyiceberg.transforms import (
     IdentityTransform,
     MonthTransform,
     TruncateTransform,
+    VoidTransform,
     YearTransform,
 )
 from pyiceberg.typedef import Record
@@ -192,6 +193,89 @@ def test_partition_spec_to_path_dropped_source_id() -> None:
     # Both partition field names and values should be URL encoded, with spaces mapping to plus signs, to match the Java
     # behaviour: https://github.com/apache/iceberg/blob/ca3db931b0f024f0412084751ac85dd4ef2da7e7/api/src/main/java/org/apache/iceberg/PartitionSpec.java#L198-L204
     assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
+
+
+def test_partition_from_path_identity() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="baz", field_type=IntegerType(), required=True),
+    )
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="foo"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="baz"),
+        spec_id=0,
+    )
+
+    assert spec.partition_from_path("s3://bucket/table/data/foo=hello/baz=123/00000-0.parquet", schema) == Record("hello", 123)
+
+
+def test_partition_from_path_unpartitioned() -> None:
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=False))
+    assert UNPARTITIONED_PARTITION_SPEC.partition_from_path("s3://bucket/table/data/00000-0.parquet", schema) is None
+
+
+def test_partition_from_path_not_hive_style() -> None:
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="foo"), spec_id=0)
+
+    assert spec.partition_from_path("s3://bucket/table/data/00000-0.parquet", schema) is None
+
+
+def test_partition_from_path_field_name_mismatch() -> None:
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="foo"), spec_id=0)
+
+    assert spec.partition_from_path("s3://bucket/table/data/wrong=hello/00000-0.parquet", schema) is None
+
+
+def test_partition_from_path_bucket_transform() -> None:
+    schema = Schema(NestedField(field_id=1, name="int", field_type=IntegerType(), required=True))
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=BucketTransform(num_buckets=3), name="int_bucket"), spec_id=0
+    )
+
+    assert spec.partition_from_path("s3://bucket/table/data/int_bucket=1/00000-0.parquet", schema) == Record(1)
+
+
+def test_partition_from_path_truncate_transform() -> None:
+    schema = Schema(NestedField(field_id=1, name="str", field_type=StringType(), required=False))
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="str_trunc"), spec_id=0
+    )
+
+    assert spec.partition_from_path("s3://bucket/table/data/str_trunc=abc/00000-0.parquet", schema) == Record("abc")
+
+
+def test_partition_from_path_truncate_binary_transform_unsupported() -> None:
+    schema = Schema(NestedField(field_id=1, name="bin", field_type=BinaryType(), required=False))
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=TruncateTransform(width=3), name="bin_trunc"), spec_id=0
+    )
+
+    # base64-encoded path value, not decodable back to bytes
+    assert spec.partition_from_path("s3://bucket/table/data/bin_trunc=YWJj/00000-0.parquet", schema) is None
+
+
+def test_partition_from_path_time_transform_unsupported() -> None:
+    schema = Schema(NestedField(field_id=1, name="date", field_type=DateType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=MonthTransform(), name="date_month"), spec_id=0)
+
+    # calendar string in path, not the raw int
+    assert spec.partition_from_path("s3://bucket/table/data/date_month=2024-03/00000-0.parquet", schema) is None
+
+
+def test_partition_from_path_void_transform_unsupported() -> None:
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=VoidTransform(), name="foo_null"), spec_id=0)
+
+    assert spec.partition_from_path("s3://bucket/table/data/foo_null=null/00000-0.parquet", schema) is None
+
+
+def test_partition_from_path_url_encoded_value() -> None:
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="foo"), spec_id=0)
+
+    assert spec.partition_from_path("s3://bucket/table/data/foo=a%2Bb/00000-0.parquet", schema) == Record("a+b")
 
 
 def test_partition_type(table_schema_simple: Schema) -> None:

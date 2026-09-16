@@ -1010,6 +1010,119 @@ def test_add_files_hour_transform(session_catalog: Catalog) -> None:
 
 
 @pytest.mark.integration
+def test_add_files_infers_partition_from_hive_style_path(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = f"default.partitioned_table_hive_style_path_v{format_version}"
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=4, field_id=1000, transform=IdentityTransform(), name="baz"),
+        spec_id=0,
+    )
+
+    tbl = _create_table(session_catalog, identifier, format_version, partition_spec)
+
+    # File's own "baz" values (900, 901) disagree with the path (baz=123): path must win.
+    file_paths = [
+        f"s3://warehouse/default/partitioned_table_hive_style_path/v{format_version}/baz=123/test-{i}.parquet" for i in range(2)
+    ]
+    for i, file_path in enumerate(file_paths):
+        fo = tbl.io.new_output(file_path)
+        with fo.create(overwrite=True) as fos:
+            with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+                writer.write_table(
+                    pa.Table.from_pylist(
+                        [
+                            {
+                                "foo": True,
+                                "bar": "bar_string",
+                                "baz": 900 + i,
+                                "qux": date(2024, 3, 7),
+                            }
+                        ],
+                        schema=ARROW_SCHEMA,
+                    )
+                )
+
+    tbl.add_files(file_paths=file_paths)
+
+    partition_rows = spark.sql(f"SELECT partition, record_count, file_count FROM {identifier}.partitions").collect()
+    assert [row.record_count for row in partition_rows] == [2]
+    assert [row.file_count for row in partition_rows] == [2]
+    assert [row.partition.baz for row in partition_rows] == [123]
+
+    assert len(tbl.scan().to_arrow()) == 2, "Expected 2 rows"
+
+
+@pytest.mark.integration
+def test_add_files_infers_bucket_partition_from_hive_style_path(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = f"default.partitioned_table_bucket_hive_style_path_v{format_version}"
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=4, field_id=1000, transform=BucketTransform(num_buckets=3), name="baz_bucket_3"),
+        spec_id=0,
+    )
+
+    tbl = _create_table(session_catalog, identifier, format_version, partition_spec)
+
+    # Without a Hive-style path this spec fails, see test_add_files_to_bucket_partitioned_table_fails.
+    file_path = f"s3://warehouse/default/partitioned_table_bucket_hive_style_path/v{format_version}/baz_bucket_3=1/test.parquet"
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+            writer.write_table(
+                pa.Table.from_pylist(
+                    [
+                        {"foo": True, "bar": "bar_string", "baz": 0, "qux": date(2024, 3, 7)},
+                        {"foo": True, "bar": "bar_string", "baz": 1, "qux": date(2024, 3, 7)},
+                    ],
+                    schema=ARROW_SCHEMA,
+                )
+            )
+
+    tbl.add_files(file_paths=[file_path])
+
+    partition_rows = spark.sql(f"SELECT partition, record_count, file_count FROM {identifier}.partitions").collect()
+    assert [row.record_count for row in partition_rows] == [2]
+    assert [row.partition.baz_bucket_3 for row in partition_rows] == [1]
+
+    assert len(tbl.scan().to_arrow()) == 2, "Expected 2 rows"
+
+
+@pytest.mark.integration
+def test_add_files_falls_back_to_stats_when_path_is_not_hive_style(
+    spark: SparkSession, session_catalog: Catalog, format_version: int
+) -> None:
+    identifier = f"default.partitioned_table_non_hive_style_path_v{format_version}"
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=4, field_id=1000, transform=IdentityTransform(), name="baz"),
+        spec_id=0,
+    )
+
+    tbl = _create_table(session_catalog, identifier, format_version, partition_spec)
+
+    # No "baz=" dir, so falls back to stats-based inference.
+    file_path = f"s3://warehouse/default/partitioned_table_non_hive_style_path/v{format_version}/test.parquet"
+    fo = tbl.io.new_output(file_path)
+    with fo.create(overwrite=True) as fos:
+        with pq.ParquetWriter(fos, schema=ARROW_SCHEMA) as writer:
+            writer.write_table(
+                pa.Table.from_pylist(
+                    [{"foo": True, "bar": "bar_string", "baz": 123, "qux": date(2024, 3, 7)}],
+                    schema=ARROW_SCHEMA,
+                )
+            )
+
+    tbl.add_files(file_paths=[file_path])
+
+    partition_rows = spark.sql(f"SELECT partition, record_count FROM {identifier}.partitions").collect()
+    assert [row.partition.baz for row in partition_rows] == [123]
+
+
+@pytest.mark.integration
 def test_add_files_to_branch(spark: SparkSession, session_catalog: Catalog, format_version: int) -> None:
     identifier = f"default.test_add_files_branch_v{format_version}"
     branch = "branch1"
