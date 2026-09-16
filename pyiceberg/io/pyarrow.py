@@ -556,10 +556,6 @@ class PyArrowFileIO(FileIO):
 
         account_name = self.properties.get(ADLS_ACCOUNT_NAME)
         if account_name is None and netloc and "@" in netloc:
-            # An account qualified location carries the account in its host part,
-            # abfss://<container>@<account>.<host>/<path>. Only that form has a userinfo
-            # part, without it the netloc is just the container and there is no account
-            # to read. An explicit adls.account-name always wins, same as FsspecFileIO.
             account_name = netloc.rpartition("@")[2].split(".")[0] or None
 
         if account_name:
