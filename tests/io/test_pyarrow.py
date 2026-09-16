@@ -5462,3 +5462,39 @@ def test_dictionary_columns_produces_dict_encoded_output(tmpdir: str) -> None:
 
     # Values must be identical
     assert result_plain.column("label").to_pylist() == result_dict.column("label").to_pylist()
+
+
+def test_arrow_scan_mixed_dict_encoded_and_plain_strings(tmpdir: str) -> None:
+    schema_plain = pa.schema([pa.field("col", pa.string(), metadata={b"PARQUET:field_id": b"1"})])
+    table_plain = pa.Table.from_pylist([{"col": "plain_a"}, {"col": "plain_b"}], schema=schema_plain)
+    file_plain = _write_table_to_data_file(f"{tmpdir}/plain.parquet", schema_plain, table_plain)
+    file_plain.spec_id = 0
+
+    schema_dict = pa.schema([pa.field("col", pa.dictionary(pa.int32(), pa.string()), metadata={b"PARQUET:field_id": b"1"})])
+    table_dict = pa.Table.from_pylist([{"col": "dict_a"}, {"col": "dict_b"}], schema=schema_dict)
+    file_dict = _write_table_to_data_file(f"{tmpdir}/dict.parquet", schema_dict, table_dict)
+    file_dict.spec_id = 0
+
+    iceberg_schema = Schema(
+        NestedField(1, "col", StringType(), required=False),
+    )
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmpdir}",
+        last_column_id=1,
+        format_version=2,
+        schemas=[iceberg_schema],
+        partition_specs=[PartitionSpec()],
+    )
+    io = PyArrowFileIO()
+    tasks = [FileScanTask(file_plain), FileScanTask(file_dict)]
+
+    scan = ArrowScan(
+        table_metadata=table_metadata,
+        io=io,
+        projected_schema=iceberg_schema,
+        row_filter=AlwaysTrue(),
+    )
+
+    result = scan.to_table(tasks)
+    assert result.schema.field("col").type == schema_to_pyarrow(StringType())
+    assert result.column("col").to_pylist() == ["plain_a", "plain_b", "dict_a", "dict_b"]
