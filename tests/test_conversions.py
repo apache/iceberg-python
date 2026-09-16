@@ -499,11 +499,19 @@ def test_raise_on_unregistered_type() -> None:
 
     with pytest.raises(TypeError) as exc_info:
         conversions.to_bytes(FooUnknownType(), "foo")  # type: ignore
-    assert "scale does not match FooUnknownType()" in str(exc_info.value)
+    assert "Cannot serialize to bytes, type FooUnknownType() not supported: 'foo'" in str(exc_info.value)
 
     with pytest.raises(TypeError) as exc_info:
         conversions.from_bytes(FooUnknownType(), b"foo")  # type: ignore
     assert "Cannot deserialize bytes, type FooUnknownType() not supported: b'foo'" in str(exc_info.value)
+
+    with pytest.raises(TypeError) as exc_info:
+        conversions.to_json(FooUnknownType(), "foo")  # type: ignore
+    assert "Cannot serialize to JSON, type FooUnknownType() not supported: foo" in str(exc_info.value)
+
+    with pytest.raises(TypeError) as exc_info:
+        conversions.from_json(FooUnknownType(), "foo")  # type: ignore
+    assert "Cannot deserialize JSON, type FooUnknownType() not supported: foo" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
