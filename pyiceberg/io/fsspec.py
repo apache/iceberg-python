@@ -265,9 +265,6 @@ def _adls(properties: Properties, hostname: str | None = None) -> AbstractFileSy
     from azure.core.credentials import AccessToken
     from azure.core.credentials_async import AsyncTokenCredential
 
-    # These are resolved into locals rather than written back into `properties`. The same
-    # properties dict is shared by every location this FileIO serves, so storing an account
-    # name derived from one location would apply it to all the later ones as well.
     account_name = properties.get(ADLS_ACCOUNT_NAME)
     sas_token = properties.get(ADLS_SAS_TOKEN)
 
