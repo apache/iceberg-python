@@ -74,6 +74,7 @@ from pyiceberg.io.pyarrow import (
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
     _determine_partitions,
+    _get_parquet_writer_kwargs,
     _primitive_to_physical,
     _read_deletes,
     _task_to_record_batches,
@@ -125,6 +126,11 @@ skip_if_pyarrow_too_old = pytest.mark.skipif(
     version.parse(pyarrow.__version__) < version.parse("20.0.0"),
     reason="Requires pyarrow version >= 20.0.0",
 )
+
+
+def test_parquet_page_index_writer_property() -> None:
+    assert _get_parquet_writer_kwargs({})["write_page_index"] is False
+    assert _get_parquet_writer_kwargs({"write.parquet.page-index-enabled": "true"})["write_page_index"] is True
 
 
 def test_pyarrow_infer_local_fs_from_path() -> None:
