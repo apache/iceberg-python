@@ -149,13 +149,14 @@ def test_pyarrow_local_fs_can_create_path_without_parent_dir() -> None:
 
 def test_pyarrow_list_prefix(tmp_path: Path) -> None:
     """Test recursively listing a directory using PyArrowFileIO.list_prefix(...)"""
-    assert isinstance(PyArrowFileIO(), SupportsPrefixOperations)
+    file_io = PyArrowFileIO()
+    assert isinstance(file_io, SupportsPrefixOperations)
 
     (tmp_path / "nested").mkdir()
     (tmp_path / "a.txt").write_bytes(b"foo")
     (tmp_path / "nested" / "b.txt").write_bytes(b"barr")
 
-    entries = sorted(PyArrowFileIO().list_prefix(str(tmp_path)), key=lambda entry: entry.location)
+    entries = sorted(file_io.list_prefix(str(tmp_path)), key=lambda entry: entry.location)
 
     assert [Path(entry.location) for entry in entries] == [tmp_path / "a.txt", tmp_path / "nested" / "b.txt"]
     assert [entry.size for entry in entries] == [3, 4]

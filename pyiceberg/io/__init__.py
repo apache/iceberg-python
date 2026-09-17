@@ -326,10 +326,9 @@ class SupportsPrefixOperations(ABC):
     def list_prefix(self, location: str) -> Iterator[FileEntry]:
         """Recursively list every file under the given location.
 
-        Listing is a paged and relatively expensive operation on object stores, so this is
-        intended for low-volume maintenance work. Prefer a storage specific inventory for
-        large tables. Hierarchical filesystems may require the prefix to be a directory,
-        while object stores allow for arbitrary prefixes.
+        Listing is paged and expensive on object stores, so prefer a storage specific inventory
+        for anything beyond low-volume maintenance. Hierarchical filesystems may require the
+        prefix to be a directory, while object stores allow for arbitrary prefixes.
 
         Args:
             location (str): A URI or path to recursively list.

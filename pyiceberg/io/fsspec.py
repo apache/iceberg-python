@@ -506,33 +506,22 @@ class FsspecFileIO(FileIO, SupportsPrefixOperations):
         """
         uri = urlparse(location)
         fs = self._get_fs_from_uri(uri, location)
-        # fsspec lists paths without a scheme, and adlfs also drops the account from the authority, so
-        # each path is turned back into a URI that matches the locations recorded in table metadata.
-        # On Windows a drive letter parses as a URI scheme, so local paths are reported as-is.
+        # fsspec strips the scheme from the listed paths, so it is put back to match table metadata
         scheme = "" if _is_local_path(location) else uri.scheme
 
         for path, info in fs.find(location, detail=True).items():
             mtime = info.get("mtime") or info.get("LastModified") or info.get("last_modified")
-            last_modified: datetime | None
-            if isinstance(mtime, datetime):
-                last_modified = mtime
-            elif isinstance(mtime, (int, float)):
-                last_modified = datetime.fromtimestamp(mtime, tz=timezone.utc)
-            else:
-                last_modified = None
+            last_modified = datetime.fromtimestamp(mtime, tz=timezone.utc) if isinstance(mtime, (int, float)) else mtime
 
             if not scheme:
                 file_location = path
             elif scheme in _ADLS_SCHEMES:
+                # adlfs also drops the account from the authority
                 file_location = f"{scheme}://{uri.netloc}/{path.partition('/')[2]}"
             else:
                 file_location = f"{scheme}://{path}"
 
-            yield FileEntry(
-                location=file_location,
-                size=int(info.get("size") or 0),
-                last_modified=last_modified,
-            )
+            yield FileEntry(location=file_location, size=info["size"], last_modified=last_modified)
 
     def _get_fs_from_uri(self, uri: "ParseResult", location: str = "") -> AbstractFileSystem:
         """Get a filesystem from a parsed URI, using hostname for ADLS account resolution."""

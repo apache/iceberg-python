@@ -711,8 +711,7 @@ class PyArrowFileIO(FileIO, SupportsPrefixOperations):
         fs = self.fs_by_scheme(scheme, netloc)
         selector = FileSelector(path, recursive=True, allow_not_found=True)
 
-        # PyArrow reports paths without a scheme, and for object stores the bucket is part of
-        # the path, so the prefix that reconstructs the original URI differs per scheme.
+        # PyArrow strips the scheme from the listed paths, so it is put back to match table metadata
         original_scheme = "" if _is_local_path(location) else urlparse(location).scheme
         if original_scheme in ("hdfs", "viewfs"):
             uri_prefix = f"{original_scheme}://{netloc}"
@@ -723,11 +722,7 @@ class PyArrowFileIO(FileIO, SupportsPrefixOperations):
 
         for info in fs.get_file_info(selector):
             if info.type == FileType.File:
-                yield FileEntry(
-                    location=f"{uri_prefix}{info.path}",
-                    size=info.size or 0,
-                    last_modified=info.mtime,
-                )
+                yield FileEntry(location=f"{uri_prefix}{info.path}", size=info.size, last_modified=info.mtime)
 
     def __getstate__(self) -> dict[str, Any]:
         """Create a dictionary of the PyArrowFileIO fields used when pickling."""
