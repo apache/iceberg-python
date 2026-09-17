@@ -184,6 +184,17 @@ def test_describe_namespace_does_not_exists(catalog: InMemoryCatalog) -> None:
     assert result.output == "Namespace doesnotexist does not exists\n"
 
 
+def test_describe_namespace_property_with_rich_markup_is_rendered_literally(catalog: InMemoryCatalog) -> None:
+    malicious_value = "[bold red]injected[/]"
+    catalog.create_namespace(TEST_TABLE_NAMESPACE, {"malicious": malicious_value})
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["describe", "--entity", "namespace", "default"])
+
+    assert result.exit_code == 0
+    assert malicious_value in result.output
+
+
 @pytest.fixture()
 def test_describe_table(catalog: InMemoryCatalog, mock_datetime_now: None) -> None:
     catalog.create_table(
@@ -225,6 +236,25 @@ def test_describe_table_does_not_exists(catalog: InMemoryCatalog) -> None:
     result = runner.invoke(run, ["describe", "default.doesnotexist"])
     assert result.exit_code == 1
     assert result.output == "Table, view, or namespace does not exist: default.doesnotexist\n"
+
+
+def test_describe_table_property_with_rich_markup_is_rendered_literally(
+    catalog: InMemoryCatalog, mock_datetime_now: None
+) -> None:
+    malicious_value = "[bold red]injected[/]"
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=TEST_TABLE_SCHEMA,
+        partition_spec=TEST_TABLE_PARTITION_SPEC,
+        properties={"malicious": malicious_value},
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["describe", "default.my_table"])
+
+    assert result.exit_code == 0
+    assert malicious_value in result.output
 
 
 @pytest.mark.parametrize("entity_args", [[], ["--entity", "table"]], ids=["any", "table"])
@@ -275,6 +305,38 @@ y  long  comment
 z  long
 """
     )
+
+
+def test_schema_field_with_rich_markup_is_rendered_literally(catalog: InMemoryCatalog) -> None:
+    markup = "[bold red]injected[/]"
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=Schema(NestedField(1, markup, LongType(), required=False, doc=markup)),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["schema", "default.my_table"])
+
+    assert result.exit_code == 0
+    assert result.output.count(markup) == 2
+
+
+def test_describe_table_schema_field_with_rich_markup_is_rendered_literally(
+    catalog: InMemoryCatalog, mock_datetime_now: None
+) -> None:
+    markup = "[bold red]injected[/]"
+    catalog.create_namespace(TEST_TABLE_NAMESPACE)
+    catalog.create_table(
+        identifier=TEST_TABLE_IDENTIFIER,
+        schema=Schema(NestedField(1, markup, LongType(), required=False)),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["describe", "default.my_table"])
+
+    assert result.exit_code == 0
+    assert markup in result.output
 
 
 def test_schema_does_not_exists(catalog: InMemoryCatalog) -> None:
@@ -1240,6 +1302,19 @@ def test_describe_view(catalog_with_view: tuple[InMemoryCatalog, View]) -> None:
     assert result.exit_code == 0
     assert "b30125c8-7284-442c-9aea-15fee620737c" in result.output
     assert "spark: SELECT * FROM my_table" in result.output
+
+
+def test_describe_view_property_with_rich_markup_is_rendered_literally(catalog: InMemoryCatalog) -> None:
+    malicious_value = "[bold red]injected[/]"
+    view_metadata = {**TEST_VIEW_METADATA, "properties": {"malicious": malicious_value}}
+    view = View(TEST_VIEW_IDENTIFIER, ViewMetadata.model_validate(view_metadata))
+    catalog.load_view = MagicMock(return_value=view)  # type: ignore
+
+    runner = CliRunner()
+    result = runner.invoke(run, ["describe", "--entity=view", "default.my_view"])
+
+    assert result.exit_code == 0
+    assert malicious_value in result.output
 
 
 def test_describe_view_does_not_exist(catalog: InMemoryCatalog) -> None:
