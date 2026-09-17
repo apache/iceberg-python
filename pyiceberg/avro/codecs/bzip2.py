@@ -16,7 +16,7 @@
 # under the License.
 from __future__ import annotations
 
-from pyiceberg.avro.codecs.codec import Codec
+from pyiceberg.avro.codecs.codec import MAX_DECOMPRESSED_BLOCK_SIZE, Codec
 
 try:
     import bz2
@@ -29,7 +29,11 @@ try:
 
         @staticmethod
         def decompress(data: bytes) -> bytes:
-            return bz2.decompress(data)
+            decompressor = bz2.BZ2Decompressor()
+            uncompressed = decompressor.decompress(data, max_length=MAX_DECOMPRESSED_BLOCK_SIZE)
+            if not decompressor.eof:
+                raise ValueError(f"Decompressed block exceeds the maximum of {MAX_DECOMPRESSED_BLOCK_SIZE} bytes")
+            return uncompressed
 
 except ImportError:
 
