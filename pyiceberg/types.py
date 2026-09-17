@@ -334,6 +334,15 @@ class DecimalType(PrimitiveType):
             raise ValidationError(f"Decimal precision must be between 1 and 38 (inclusive), got: {precision}")
         return self
 
+    @model_validator(mode="after")
+    def check_scale(self) -> DecimalType:
+        precision = getattr(self, "precision", None) or self.root[0]
+        scale = getattr(self, "scale", None) or self.root[1]
+
+        if not (0 <= scale <= precision):
+            raise ValidationError(f"Decimal scale must be between 0 and the precision {precision} (inclusive), got: {scale}")
+        return self
+
     @model_serializer
     def ser_model(self) -> str:
         """Serialize the model to a string."""

@@ -317,9 +317,9 @@ def test_avro_list_missing_element_id() -> None:
 
 
 def test_convert_decimal_type() -> None:
-    avro_decimal_type = {"type": "bytes", "logicalType": "decimal", "precision": 19, "scale": 25}
+    avro_decimal_type = {"type": "bytes", "logicalType": "decimal", "precision": 25, "scale": 19}
     actual = AvroSchemaConversion()._convert_logical_type(avro_decimal_type)
-    expected = DecimalType(precision=19, scale=25)
+    expected = DecimalType(precision=25, scale=19)
     assert actual == expected
 
 

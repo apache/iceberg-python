@@ -1105,7 +1105,7 @@ def test_add_nested_lists(primitive_fields: NestedField, table_v2: Table) -> Non
                                     element_id=7,
                                     element_type=ListType(
                                         element_id=8,
-                                        element_type=ListType(element_id=9, element_type=DecimalType(precision=11, scale=20)),
+                                        element_type=ListType(element_id=9, element_type=DecimalType(precision=20, scale=11)),
                                         element_required=False,
                                     ),
                                     element_required=False,
