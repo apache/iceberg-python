@@ -190,8 +190,8 @@ def _validate_deleted_data_files(
         parent_snapshot: Ending snapshot on the branch being validated
 
     """
-    conflicting_entries = _deleted_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
-    if any(conflicting_entries):
+    conflicting_entries = list(_deleted_data_files(table, starting_snapshot, data_filter, None, parent_snapshot))
+    if conflicting_entries:
         conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries}
         raise ValidationException(f"Deleted data files were found matching the filter for snapshots {conflicting_snapshots}!")
 
@@ -325,8 +325,8 @@ def _validate_added_data_files(
         parent_snapshot: Ending snapshot on the branch being validated
 
     """
-    conflicting_entries = _added_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
-    if any(conflicting_entries):
+    conflicting_entries = list(_added_data_files(table, starting_snapshot, data_filter, None, parent_snapshot))
+    if conflicting_entries:
         conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries if entry.snapshot_id is not None}
         raise ValidationException(f"Added data files were found matching the filter for snapshots {conflicting_snapshots}!")
 
