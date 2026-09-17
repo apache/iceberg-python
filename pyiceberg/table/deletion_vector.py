@@ -57,6 +57,12 @@ class DeletionVector:
         offset = _ROARING_BITMAP_COUNT_SIZE_BYTES
         number_of_bitmaps = int.from_bytes(payload_view[:offset], byteorder="little")
 
+        # Every bitmap contributes at least a 4-byte key, so a count that cannot fit
+        # in the remaining payload is invalid and must not be used as a loop bound.
+        remaining = len(payload_view) - offset
+        if number_of_bitmaps * _ROARING_BITMAP_KEY_SIZE_BYTES > remaining:
+            raise ValueError(f"Payload declares {number_of_bitmaps} bitmaps, but only holds {remaining} bytes")
+
         bitmaps = []
         last_key = -1
 
