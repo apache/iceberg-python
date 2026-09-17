@@ -93,6 +93,7 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
+    SupportsPrefixOperations,
     _is_local_path,
 )
 from pyiceberg.typedef import Properties
@@ -439,7 +440,7 @@ class FsspecOutputFile(OutputFile):
         return FsspecInputFile(location=self.location, fs=self._fs)
 
 
-class FsspecFileIO(FileIO):
+class FsspecFileIO(FileIO, SupportsPrefixOperations):
     """A FileIO implementation that uses fsspec."""
 
     def __init__(self, properties: Properties):

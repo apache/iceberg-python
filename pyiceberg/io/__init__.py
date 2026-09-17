@@ -318,19 +318,25 @@ class FileIO(ABC):
             FileNotFoundError: When the file at the provided location does not exist.
         """
 
+
+class SupportsPrefixOperations(ABC):
+    """An extension for FileIO implementations that support prefix based operations."""
+
+    @abstractmethod
     def list_prefix(self, location: str) -> Iterator[FileEntry]:
         """Recursively list every file under the given location.
+
+        Listing is a paged and relatively expensive operation on object stores, so this is
+        intended for low-volume maintenance work. Prefer a storage specific inventory for
+        large tables. Hierarchical filesystems may require the prefix to be a directory,
+        while object stores allow for arbitrary prefixes.
 
         Args:
             location (str): A URI or path to recursively list.
 
         Returns:
             Iterator[FileEntry]: The metadata of every file under the location.
-
-        Raises:
-            NotImplementedError: If the FileIO implementation does not support listing.
         """
-        raise NotImplementedError(f"{type(self).__name__} does not support list_prefix")
 
 
 LOCATION = "location"

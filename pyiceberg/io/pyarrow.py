@@ -123,6 +123,7 @@ from pyiceberg.io import (
     InputStream,
     OutputFile,
     OutputStream,
+    SupportsPrefixOperations,
     _is_local_path,
 )
 from pyiceberg.io.fileformat import DataFileStatistics as DataFileStatistics
@@ -395,7 +396,7 @@ class PyArrowFile(InputFile, OutputFile):
         return self
 
 
-class PyArrowFileIO(FileIO):
+class PyArrowFileIO(FileIO, SupportsPrefixOperations):
     fs_by_scheme: Callable[[str, str | None], FileSystem]
 
     def __init__(self, properties: Properties = EMPTY_DICT):

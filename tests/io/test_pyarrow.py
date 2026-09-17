@@ -63,7 +63,7 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
+from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, SupportsPrefixOperations, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PYARROW_PARQUET_FIELD_ID_KEY,
@@ -149,6 +149,8 @@ def test_pyarrow_local_fs_can_create_path_without_parent_dir() -> None:
 
 def test_pyarrow_list_prefix(tmp_path: Path) -> None:
     """Test recursively listing a directory using PyArrowFileIO.list_prefix(...)"""
+    assert isinstance(PyArrowFileIO(), SupportsPrefixOperations)
+
     (tmp_path / "nested").mkdir()
     (tmp_path / "a.txt").write_bytes(b"foo")
     (tmp_path / "nested" / "b.txt").write_bytes(b"barr")

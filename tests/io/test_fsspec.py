@@ -32,7 +32,7 @@ from requests_mock import Mocker
 
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
-from pyiceberg.io import fsspec
+from pyiceberg.io import SupportsPrefixOperations, fsspec
 from pyiceberg.io.fsspec import FsspecFileIO, S3V4RestSigner
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.typedef import Properties
@@ -61,6 +61,8 @@ def test_fsspec_local_fs_can_create_path_without_parent_dir(fsspec_fileio: Fsspe
 
 def test_fsspec_list_prefix(fsspec_fileio: FsspecFileIO, tmp_path: Path) -> None:
     """Test recursively listing a directory using FsspecFileIO.list_prefix(...)"""
+    assert isinstance(fsspec_fileio, SupportsPrefixOperations)
+
     (tmp_path / "nested").mkdir()
     (tmp_path / "a.txt").write_bytes(b"foo")
     (tmp_path / "nested" / "b.txt").write_bytes(b"barr")
