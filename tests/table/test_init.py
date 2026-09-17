@@ -595,6 +595,12 @@ def test_static_table_io_does_not_exist(metadata_location: str) -> None:
         StaticTable.from_metadata(metadata_location, {PY_IO_IMPL: "pyiceberg.does.not.exist.FileIO"})
 
 
+def test_static_table_properties_outrank_metadata_properties(metadata_location: str) -> None:
+    static_table = StaticTable.from_metadata(metadata_location, {"read.split.target.size": "1"})
+    assert static_table.metadata.properties["read.split.target.size"] == "134217728"
+    assert static_table.io.properties["read.split.target.size"] == "1"
+
+
 def test_serialize_set_properties_updates() -> None:
     assert (
         SetPropertiesUpdate(updates={"abc": "🤪"}).model_dump_json() == """{"action":"set-properties","updates":{"abc":"🤪"}}"""
