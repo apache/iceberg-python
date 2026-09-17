@@ -73,12 +73,14 @@ GEOMETRY_REGEX = re.compile(r"geometry(?:\(\s*['\"]([^'\"]+)['\"]\s*\))?$")
 GEOGRAPHY_REGEX = re.compile(r"geography(?:\(\s*['\"]([^'\"]+)['\"](?:\s*,\s*['\"]([^'\"]+)['\"])?\s*\))?$")
 
 
-def transform_dict_value_to_str(dict: dict[str, Any]) -> dict[str, str]:
+def transform_dict_value_to_str(d: dict[str, Any]) -> dict[str, str]:
     """Transform all values in the dictionary to string. Raise an error if any value is None."""
-    for key, value in dict.items():
+    result = {}
+    for key, value in d.items():
         if value is None:
             raise ValueError(f"None type is not a supported value in properties: {key}")
-    return {k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in dict.items()}
+        result[key] = str(value).lower() if isinstance(value, bool) else str(value)
+    return result
 
 
 def _parse_decimal_type(decimal: Any) -> tuple[int, int]:
