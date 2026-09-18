@@ -39,6 +39,7 @@ from pyiceberg.io.pyarrow import (
     _expression_to_complementary_pyarrow,
     _HasIds,
     _NullNaNUnmentionedTermsCollector,
+    _primitive_to_physical,
     _pyarrow_schema_ensure_large_types,
     _pyarrow_schema_ensure_small_types,
     pyarrow_to_schema,
@@ -61,12 +62,14 @@ from pyiceberg.types import (
     LongType,
     MapType,
     NestedField,
+    PrimitiveType,
     StringType,
     StructType,
     TimestampNanoType,
     TimestampType,
     TimestamptzType,
     TimeType,
+    UUIDType,
 )
 
 
@@ -257,6 +260,34 @@ def test_pyarrow_variable_binary_to_iceberg(pyarrow_type: pa.DataType) -> None:
     converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg())
     assert converted_iceberg_type == BinaryType()
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
+
+
+@pytest.mark.parametrize(
+    ("iceberg_type", "pyarrow_type", "parquet_physical_type"),
+    [
+        (BooleanType(), pa.bool_(), "BOOLEAN"),
+        (IntegerType(), pa.int32(), "INT32"),
+        (LongType(), pa.int64(), "INT64"),
+        (FloatType(), pa.float32(), "FLOAT"),
+        (DoubleType(), pa.float64(), "DOUBLE"),
+        (DateType(), pa.date32(), "INT32"),
+        (TimeType(), pa.time64("us"), "INT64"),
+        (TimestampType(), pa.timestamp("us"), "INT64"),
+        (TimestamptzType(), pa.timestamp("us", tz="UTC"), "INT64"),
+        (StringType(), pa.large_string(), "BYTE_ARRAY"),
+        (UUIDType(), pa.uuid(), "FIXED_LEN_BYTE_ARRAY"),
+        (BinaryType(), pa.large_binary(), "BYTE_ARRAY"),
+        (FixedType(16), pa.binary(16), "FIXED_LEN_BYTE_ARRAY"),
+        (DecimalType(9, 2), pa.decimal128(9, 2), "INT32"),
+        (DecimalType(10, 2), pa.decimal128(10, 2), "INT64"),
+        (DecimalType(19, 2), pa.decimal128(19, 2), "FIXED_LEN_BYTE_ARRAY"),
+    ],
+)
+def test_iceberg_primitive_types_map_to_pyarrow_and_parquet_physical_types(
+    iceberg_type: PrimitiveType, pyarrow_type: pa.DataType, parquet_physical_type: str
+) -> None:
+    assert schema_to_pyarrow(iceberg_type) == pyarrow_type
+    assert _primitive_to_physical(iceberg_type) == parquet_physical_type
 
 
 def test_pyarrow_struct_to_iceberg() -> None:
