@@ -24,6 +24,7 @@ from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
+    TypeAlias,
 )
 from urllib.parse import quote, unquote
 
@@ -94,7 +95,7 @@ from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
 )
-from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
+from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, PaginationList, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import (
@@ -111,6 +112,8 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
 logger = logging.getLogger(__name__)
+
+_PageFetchResult: TypeAlias = tuple[list[Identifier], str | None]
 
 
 class HttpMethod(str, Enum):
@@ -1401,26 +1404,24 @@ class RestCatalog(Catalog):
                 raise ValueError(f"{PAGE_SIZE} must be a positive integer")
             params["pageSize"] = str(page_size)
 
-        tables: list[Identifier] = []
-        page_token: str | None = None
-
-        while True:
-            if page_token:
-                params["pageToken"] = page_token
+        def _fetch_page(page_token: str) -> _PageFetchResult:
+            params["pageToken"] = page_token
             response = self._session.get(url, params=params)
             try:
                 response.raise_for_status()
             except HTTPError as exc:
                 _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-
             parsed = ListTablesResponse.model_validate_json(response.text)
-            tables.extend([(*table.namespace, table.name) for table in parsed.identifiers])
+            return [(*t.namespace, t.name) for t in parsed.identifiers], parsed.next_page_token
 
-            if not parsed.next_page_token:
-                break
-            page_token = parsed.next_page_token
-
-        return tables
+        response = self._session.get(url, params=params)
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+        parsed = ListTablesResponse.model_validate_json(response.text)
+        first_page: list[Identifier] = [(*t.namespace, t.name) for t in parsed.identifiers]
+        return PaginationList(first_page, parsed.next_page_token, _fetch_page)
 
     @retry(**_RETRY_ARGS)
     @override
@@ -1541,27 +1542,24 @@ class RestCatalog(Catalog):
                 raise ValueError(f"{PAGE_SIZE} must be a positive integer")
             params["pageSize"] = str(page_size)
 
-        views: list[Identifier] = []
-        page_token: str | None = None
-
-        while True:
-            if page_token:
-                params["pageToken"] = page_token
-
+        def _fetch_page(page_token: str) -> _PageFetchResult:
+            params["pageToken"] = page_token
             response = self._session.get(url, params=params)
             try:
                 response.raise_for_status()
             except HTTPError as exc:
                 _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-
             parsed = ListViewsResponse.model_validate_json(response.text)
-            views.extend([(*view.namespace, view.name) for view in parsed.identifiers])
+            return [(*v.namespace, v.name) for v in parsed.identifiers], parsed.next_page_token
 
-            if not parsed.next_page_token:
-                break
-            page_token = parsed.next_page_token
-
-        return views
+        response = self._session.get(url, params=params)
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+        parsed = ListViewsResponse.model_validate_json(response.text)
+        first_page: list[Identifier] = [(*v.namespace, v.name) for v in parsed.identifiers]
+        return PaginationList(first_page, parsed.next_page_token, _fetch_page)
 
     @retry(**_RETRY_ARGS)
     @override
@@ -1655,6 +1653,7 @@ class RestCatalog(Catalog):
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         self._check_endpoint(Capability.V1_LIST_NAMESPACES)
         namespace_tuple = self.identifier_to_tuple(namespace)
+        namespaces_url = self.url(Endpoints.list_namespaces)
 
         params: dict[str, str] = {}
         page_size = property_as_int(self.properties, PAGE_SIZE, None)
@@ -1662,30 +1661,26 @@ class RestCatalog(Catalog):
             if page_size <= 0:
                 raise ValueError(f"{PAGE_SIZE} must be a positive integer")
             params["pageSize"] = str(page_size)
+        if namespace_tuple:
+            params["parent"] = self._encode_namespace_path(namespace_tuple)
 
-        namespaces: list[Identifier] = []
-        page_token: str | None = None
-
-        while True:
-            if namespace_tuple:
-                params["parent"] = self._encode_namespace_path(namespace_tuple)
-            if page_token:
-                params["pageToken"] = page_token
-            response = self._session.get(self.url(Endpoints.list_namespaces), params=params)
-
+        def _fetch_page(page_token: str) -> _PageFetchResult:
+            params["pageToken"] = page_token
+            response = self._session.get(namespaces_url, params=params)
             try:
                 response.raise_for_status()
             except HTTPError as exc:
                 _handle_non_200_response(exc, {404: NoSuchNamespaceError})
-
             parsed = ListNamespaceResponse.model_validate_json(response.text)
-            namespaces.extend(parsed.namespaces)
+            return list(parsed.namespaces), parsed.next_page_token
 
-            if not parsed.next_page_token:
-                break
-            page_token = parsed.next_page_token
-
-        return namespaces
+        response = self._session.get(namespaces_url, params=params)
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchNamespaceError})
+        parsed = ListNamespaceResponse.model_validate_json(response.text)
+        return PaginationList(list(parsed.namespaces), parsed.next_page_token, _fetch_page)
 
     @retry(**_RETRY_ARGS)
     @override
