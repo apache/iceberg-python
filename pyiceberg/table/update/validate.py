@@ -87,7 +87,7 @@ def _validation_history(
         manifests_files.extend(
             [
                 manifest
-                for manifest in snapshot.manifests(table.io)
+                for manifest in snapshot.manifests(table.io, table_uuid=table.metadata.table_uuid)
                 if manifest.added_snapshot_id == snapshot.snapshot_id and manifest.content == manifest_content_filter
             ]
         )

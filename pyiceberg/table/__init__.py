@@ -995,13 +995,16 @@ class Transaction:
 
     def _find_referenced_data_files(self, file_paths: list[str]) -> list[str]:
         """Return file_paths already referenced by data files in the current snapshot."""
-        snapshot = self.table_metadata.current_snapshot()
+        table_metadata = self.table_metadata
+        snapshot = table_metadata.current_snapshot()
         if snapshot is None:
             return []
 
         candidates = set(file_paths)
         io = self._table.io
-        data_manifests = [m for m in snapshot.manifests(io) if m.content == ManifestContent.DATA]
+        data_manifests = [
+            m for m in snapshot.manifests(io, table_uuid=table_metadata.table_uuid) if m.content == ManifestContent.DATA
+        ]
 
         def path_filter(data_file: DataFile) -> bool:
             return data_file.file_path in candidates
@@ -2425,7 +2428,9 @@ class DataScan(TableScan):
         if not snapshot:
             return iter([])
 
-        return self._manifest_planner.plan_manifest_entries(snapshot.manifests(self.io))
+        return self._manifest_planner.plan_manifest_entries(
+            snapshot.manifests(self.io, table_uuid=self.table_metadata.table_uuid)
+        )
 
     def _should_use_server_side_planning(self) -> bool:
         """Check if server-side scan planning should be used for this scan."""
@@ -2462,7 +2467,7 @@ class DataScan(TableScan):
         snapshot = self.snapshot()
         if not snapshot:
             return []
-        return self._manifest_planner.plan_files(snapshot.manifests(self.io))
+        return self._manifest_planner.plan_files(snapshot.manifests(self.io, table_uuid=self.table_metadata.table_uuid))
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files by filtering on the PartitionSpecs.
@@ -2654,7 +2659,7 @@ class IncrementalAppendScan(BaseScan):
             {
                 manifest_file
                 for snapshot in append_snapshots
-                for manifest_file in snapshot.manifests(self.io)
+                for manifest_file in snapshot.manifests(self.io, table_uuid=self.table_metadata.table_uuid)
                 if manifest_file.content == ManifestContent.DATA and manifest_file.added_snapshot_id in append_snapshot_ids
             }
         )
@@ -2667,8 +2672,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:
