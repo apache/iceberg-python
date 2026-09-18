@@ -510,6 +510,13 @@ def test_raise_on_unregistered_type() -> None:
     "primitive_type, value, expected_error_message",
     [
         (DecimalType(7, 3), Decimal("123.4567"), "Cannot serialize value, scale of value does not match type decimal(7, 3): 4"),
+        # A Decimal with a negative scale must not pass as its positive counterpart
+        (DecimalType(10, 2), Decimal("1E+2"), "Cannot serialize value, scale of value does not match type decimal(10, 2): -2"),
+        (
+            DecimalType(10, 2),
+            Decimal("100").normalize(),
+            "Cannot serialize value, scale of value does not match type decimal(10, 2): -2",
+        ),
         (
             DecimalType(18, 8),
             Decimal("123456789.123456789"),
