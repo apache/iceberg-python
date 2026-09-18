@@ -66,6 +66,42 @@ def test_read_int_longer(decoder_class: Callable[[bytes], BinaryDecoder]) -> Non
     assert decoder.read_int() == 1111111
 
 
+def test_cython_decoder_rejects_truncated_varint() -> None:
+    decoder = CythonBinaryDecoder(b"\x80")
+
+    with pytest.raises(EOFError, match="EOF: read 1 bytes"):
+        decoder.read_int()
+
+    assert decoder.tell() == 0
+
+
+def test_cython_decoder_rejects_overlong_varint() -> None:
+    decoder = CythonBinaryDecoder(b"\x80" * 10 + b"\x00")
+
+    with pytest.raises(EOFError, match="EOF: read 1 bytes"):
+        decoder.read_int()
+
+    assert decoder.tell() == 0
+
+
+def test_cython_decoder_rejects_truncated_skipped_varint() -> None:
+    decoder = CythonBinaryDecoder(b"\x80")
+
+    with pytest.raises(EOFError, match="EOF: read 1 bytes"):
+        decoder.skip_int()
+
+    assert decoder.tell() == 0
+
+
+def test_cython_decoder_rejects_truncated_ints() -> None:
+    decoder = CythonBinaryDecoder(b"\x00")
+
+    with pytest.raises(EOFError, match="EOF: read 1 bytes"):
+        decoder.read_ints(2)
+
+    assert decoder.tell() == 0
+
+
 def zigzag_encode(datum: int) -> bytes:
     result = []
     datum = (datum << 1) ^ (datum >> 63)
@@ -190,6 +226,49 @@ def test_read_bytes(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
     decoder = decoder_class(b"\x08\x01\x02\x03\x04")
     actual = decoder.read_bytes()
     assert actual == b"\x01\x02\x03\x04"
+
+
+def test_cython_decoder_rejects_truncated_bytes() -> None:
+    decoder = CythonBinaryDecoder(b"\x04\x01")
+
+    with pytest.raises(EOFError, match="EOF: read 2 bytes"):
+        decoder.read_bytes()
+
+    assert decoder.tell() == 1
+
+
+def test_cython_decoder_rejects_truncated_skipped_bytes() -> None:
+    decoder = CythonBinaryDecoder(b"\x04\x01")
+
+    with pytest.raises(EOFError, match="EOF: read 2 bytes"):
+        decoder.skip_bytes()
+
+    assert decoder.tell() == 1
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+def test_read_negative_length_bytes(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
+    decoder = decoder_class(b"\x01")
+    assert decoder.read_bytes() == b""
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+def test_read_int_bytes_dict_negative_length(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
+    decoder = decoder_class(b"\x00\x01")
+    dest: dict[int, bytes] = {}
+
+    decoder.read_int_bytes_dict(1, dest)
+
+    assert dest == {0: b""}
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+def test_read_int_bytes_dict_rejects_truncated_bytes(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
+    decoder = decoder_class(b"\x00\x04\x01")
+    dest: dict[int, bytes] = {}
+
+    with pytest.raises(EOFError):
+        decoder.read_int_bytes_dict(1, dest)
 
 
 @pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
