@@ -1603,7 +1603,10 @@ class RestCatalog(Catalog):
         table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
         table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
 
-        headers = self._session.headers
+        # A table-scoped token applies to this request only, so it is layered onto a
+        # copy: assigning into self._session.headers would leave it on the session and
+        # send it with every later request, including ones for other tables.
+        headers = dict(self._session.headers)
         if table_token := table.config.get(TOKEN):
             headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {table_token}"
 

@@ -3467,3 +3467,39 @@ def test_load_table_without_storage_credentials(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_commit_table_does_not_leak_table_token_onto_session(
+    rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]
+) -> None:
+    """A table-scoped token must not outlive the commit that used it.
+
+    The catalog session is shared by every table, so a token left on it would be
+    sent with later requests for other tables.
+    """
+    table_token = "table_scoped_token"
+    metadata_location = "s3://warehouse/database/table/metadata.json"
+
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_v2,
+            "config": {"token": table_token},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("namespace", "table_name"))
+
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={"metadata-location": metadata_location, "metadata": example_table_metadata_v2},
+        status_code=200,
+    )
+
+    table.update_schema().add_column("new_col", StringType()).commit()
+
+    assert "Authorization" not in catalog._session.headers
