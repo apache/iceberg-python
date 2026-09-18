@@ -95,7 +95,7 @@ jobs:
           path: ./wheelhouse/*
 
   pypi-merge-artifacts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     needs:
       - pypi-build-artifacts
     steps:
