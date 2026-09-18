@@ -290,6 +290,31 @@ def test_table_scan_ref(table_v2: Table) -> None:
     assert scan.use_ref("test").snapshot_id == 3051729675574597004
 
 
+@pytest.mark.parametrize(
+    "snapshot_id, expected_snapshot_id",
+    [(None, 3055729675574597004), (0, 0), (3051729675574597004, 3051729675574597004)],
+)
+def test_table_scan_snapshot(table_v2: Table, snapshot_id: int | None, expected_snapshot_id: int) -> None:
+    table_v2.metadata.snapshots.append(
+        Snapshot(snapshot_id=0, timestamp_ms=1515100955769, manifest_list="s3://a/b/zero.avro", schema_id=0)
+    )
+
+    snapshot = table_v2.scan(snapshot_id=snapshot_id).snapshot()
+
+    assert snapshot is not None
+    assert snapshot.snapshot_id == expected_snapshot_id
+
+
+def test_table_scan_missing_snapshot_zero(table_v2: Table) -> None:
+    assert table_v2.scan(snapshot_id=0).snapshot() is None
+
+
+@pytest.mark.parametrize("snapshot_id", [0, 3051729675574597004])
+def test_table_scan_ref_cannot_override_snapshot(table_v2: Table, snapshot_id: int) -> None:
+    with pytest.raises(ValueError, match=f"Cannot override ref, already set snapshot id={snapshot_id}"):
+        table_v2.scan(snapshot_id=snapshot_id).use_ref("test")
+
+
 def test_table_scan_ref_does_not_exists(table_v2: Table) -> None:
     scan = table_v2.scan()
 

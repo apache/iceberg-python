@@ -2191,7 +2191,7 @@ class TableScan(BaseScan):
         self.table_config = table_config
 
     def snapshot(self) -> Snapshot | None:
-        if self.snapshot_id:
+        if self.snapshot_id is not None:
             return self.table_metadata.snapshot_by_id(self.snapshot_id)
         return self.table_metadata.current_snapshot()
 
@@ -2216,7 +2216,7 @@ class TableScan(BaseScan):
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     def use_ref(self: S, name: str) -> S:
-        if self.snapshot_id:
+        if self.snapshot_id is not None:
             raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
         if snapshot := self.table_metadata.snapshot_by_name(name):
             return self.update(snapshot_id=snapshot.snapshot_id)
