@@ -914,10 +914,10 @@ class Transaction:
         if not when_matched_update_all and not when_not_matched_insert_all:
             raise ValueError("no upsert options selected...exiting")
 
-        if upsert_util.has_duplicate_rows(df, join_cols):
-            raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, schema_to_pyarrow
 
-        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
+        table_arrow_schema = schema_to_pyarrow(self.table_metadata.schema(), include_field_ids=False)
+        upsert_util.validate_join_cols(df, join_cols, table_arrow_schema)
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
@@ -926,6 +926,10 @@ class Transaction:
             downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             format_version=self.table_metadata.format_version,
         )
+
+        # Validate uniqueness after type checks to avoid comparing/hashing unsupported types.
+        if upsert_util.has_duplicate_rows(df, join_cols):
+            raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
 
         # get list of rows that exist so we don't have to load the entire target table
         matched_predicate = upsert_util.create_match_filter(df, join_cols)
