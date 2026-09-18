@@ -1134,20 +1134,10 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
                 data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
             ).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
-        table = table.unify_dictionaries()
-        return {
-            file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
-            for file in table.column("file_path").chunks[0].dictionary
-        }
     elif data_file.file_format == FileFormat.ORC:
         with io.new_input(data_file.file_path).open() as fi:
             delete_fragment = _get_file_format(data_file.file_format).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
-            # For ORC, file_path columns are not dictionary-encoded, so we use unique() directly
-            return {
-                path.as_py(): table.filter(pc.field("file_path") == path).column("pos")
-                for path in table.column("file_path").unique()
-            }
     elif data_file.file_format == FileFormat.PUFFIN:
         with io.new_input(data_file.file_path).open() as fi:
             payload = fi.read()
@@ -1155,6 +1145,14 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
         return {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors_from_puffin_file(PuffinFile(payload))}
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
+
+    # Grouping is a single pass, where filtering once per distinct file_path is quadratic.
+    # Dictionaries have to be unified first, since grouping cannot combine differing ones.
+    grouped = table.unify_dictionaries().group_by("file_path", use_threads=False).aggregate([("pos", "list")])
+    return {
+        file_path.as_py(): pa.chunked_array([pos_list.values])
+        for file_path, pos_list in zip(grouped.column("file_path"), grouped.column("pos_list"), strict=True)
+    }
 
 
 def _combine_positional_deletes(positional_deletes: list[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:
