@@ -353,7 +353,7 @@ class HiveCatalog(MetastoreCatalog):
             identifier=(table.dbName, table.tableName),
             metadata=metadata,
             metadata_location=metadata_location,
-            io=self._load_file_io(metadata.properties, metadata_location),
+            io=self._load_file_io(location=metadata_location, table_properties=metadata.properties),
             catalog=self,
         )
 
