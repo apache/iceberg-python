@@ -26,12 +26,11 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
-from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.io.pyarrow import schema_to_pyarrow, upsert_create_match_filter
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
-from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.transforms import DayTransform
 from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
 from tests.catalog.test_base import InMemoryCatalog
@@ -439,7 +438,7 @@ def test_create_match_filter_single_condition() -> None:
     ]
     schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32()), pa.field("extra", pa.string())])
     table = pa.Table.from_pylist(data, schema=schema)
-    expr = create_match_filter(table, ["order_id", "order_line_id"])
+    expr = upsert_create_match_filter(table, ["order_id", "order_line_id"])
     assert expr == And(
         EqualTo(term=Reference(name="order_id"), literal=LongLiteral(101)),
         EqualTo(term=Reference(name="order_line_id"), literal=LongLiteral(1)),
