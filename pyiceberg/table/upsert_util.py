@@ -23,6 +23,7 @@ from pyarrow import compute as pc
 
 from pyiceberg.expressions import (
     AlwaysFalse,
+    And,
     BooleanExpression,
     EqualTo,
     In,
@@ -33,19 +34,40 @@ from pyiceberg.expressions import (
 def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
     unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
 
-    if len(join_cols) == 1:
-        return In(join_cols[0], unique_keys[0].to_pylist())
-    else:
-        filters = [
-            functools.reduce(operator.and_, [EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()
-        ]
+    if unique_keys.num_rows == 0:
+        return AlwaysFalse()
 
-        if len(filters) == 0:
-            return AlwaysFalse()
-        elif len(filters) == 1:
-            return filters[0]
-        else:
-            return Or(*filters)
+    if len(join_cols) == 1:
+        return In(join_cols[0], unique_keys.column(join_cols[0]).to_pylist())
+
+    # Fold the column that leaves the fewest distinct "prefix" combinations into
+    # an In(); this minimises the disjunct count regardless of column order.
+    in_col = min(
+        join_cols,
+        key=lambda cand: unique_keys.select([c for c in join_cols if c != cand])
+        .group_by([c for c in join_cols if c != cand])
+        .aggregate([])
+        .num_rows,
+    )
+    prefix_cols = [c for c in join_cols if c != in_col]
+
+    # The group keys come first (in prefix_cols order) followed by the list aggregate.
+    # Rename the aggregate to a sentinel so it cannot collide with a join column that
+    # happens to be named f"{in_col}_list".
+    in_values_col = "__in_values"
+    while in_values_col in prefix_cols:
+        in_values_col += "_"
+    grouped = unique_keys.group_by(prefix_cols).aggregate([(in_col, "list")]).rename_columns([*prefix_cols, in_values_col])
+
+    disjuncts: list[BooleanExpression] = []
+    for row in grouped.to_pylist():
+        eqs = [EqualTo(c, row[c]) for c in prefix_cols]
+        prefix_pred = functools.reduce(operator.and_, eqs) if len(eqs) > 1 else eqs[0]
+        disjuncts.append(And(prefix_pred, In(in_col, row[in_values_col])))
+
+    if len(disjuncts) == 1:
+        return disjuncts[0]
+    return Or(*disjuncts)
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
