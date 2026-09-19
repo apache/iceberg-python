@@ -66,6 +66,15 @@ def test_map_spread_vals() -> None:
     assert expected == actual
 
 
+def test_map_declared_count_exceeds_payload() -> None:
+    # A truncated payload that claims a large number of bitmaps must be rejected,
+    # rather than driving the deserialization loop on data that is not there.
+    puffin = (2**32).to_bytes(8, byteorder="little") + b"\x00\x00\x00\x00"
+
+    with pytest.raises(ValueError, match="Payload declares 4294967296 bitmaps, but only holds 4 bytes"):
+        _ = DeletionVector._deserialize_bitmap(puffin)
+
+
 def test_map_high_vals() -> None:
     puffin = _open_file("64maphighvals.bin")
 
