@@ -52,7 +52,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import TableProperties
 from pyiceberg.table.refs import MAIN_BRANCH
-from pyiceberg.table.sorting import SortDirection, SortField, SortOrder
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, HourTransform, IdentityTransform, Transform
 from pyiceberg.types import (
     DateType,
@@ -1067,6 +1067,27 @@ def test_create_table_with_non_default_values(catalog: Catalog, table_schema_wit
     assert tbl.specs() == tbl_ref.specs()
     assert tbl.sort_order() == tbl_ref.sort_order()
     assert tbl.sort_orders() == tbl_ref.sort_orders()
+
+
+@pytest.mark.integration
+def test_write_identity_sort_order(session_catalog: Catalog) -> None:
+    identifier = "default.write_identity_sort_order"
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "value", StringType(), required=False),
+    )
+    table = session_catalog.create_table(
+        identifier,
+        schema,
+        sort_order=SortOrder(
+            SortField(1, IdentityTransform(), SortDirection.ASC, NullOrder.NULLS_LAST),
+        ),
+    )
+
+    table.append(pa.table({"id": [2, None, 1], "value": ["b", "null", "a"]}))
+
+    assert table.scan().to_arrow()["id"].to_pylist() == [1, 2, None]
+    assert table.inspect.data_files()["sort_order_id"].to_pylist() == [table.sort_order().order_id]
 
 
 @pytest.mark.integration
