@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from pyiceberg.avro.codecs.codec import Codec
+from pyiceberg.avro.codecs.codec import MAX_DECOMPRESSED_BLOCK_SIZE, Codec
 
 try:
     from zstandard import ZstdCompressor, ZstdDecompressor
@@ -39,6 +39,8 @@ try:
                     if not chunk:
                         break
                     uncompressed.extend(chunk)
+                    if len(uncompressed) > MAX_DECOMPRESSED_BLOCK_SIZE:
+                        raise ValueError(f"Decompressed block exceeds the maximum of {MAX_DECOMPRESSED_BLOCK_SIZE} bytes")
             return bytes(uncompressed)
 
 except ImportError:
