@@ -1603,14 +1603,25 @@ class RestCatalog(Catalog):
         table_identifier = TableIdentifier(namespace=identifier[:-1], name=identifier[-1])
         table_request = CommitTableRequest(identifier=table_identifier, requirements=requirements, updates=updates)
 
-        headers = self._session.headers
+        post_kwargs: dict[str, Any] = {
+            "data": table_request.model_dump_json().encode(UTF8),
+        }
         if table_token := table.config.get(TOKEN):
-            headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {table_token}"
+            table_auth = f"{BEARER_PREFIX} {table_token}"
+            post_kwargs["headers"] = {AUTHORIZATION_HEADER: table_auth}
+
+            # Session.auth would otherwise overwrite Authorization with the
+            # catalog token. Apply the table-scoped token on this request only
+            # and leave the session headers untouched.
+            def _apply_table_token(request: PreparedRequest) -> PreparedRequest:
+                request.headers[AUTHORIZATION_HEADER] = table_auth
+                return request
+
+            post_kwargs["auth"] = _apply_table_token
 
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
-            data=table_request.model_dump_json().encode(UTF8),
-            headers=headers,
+            **post_kwargs,
         )
         try:
             response.raise_for_status()
