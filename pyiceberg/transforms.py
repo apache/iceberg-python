@@ -62,6 +62,7 @@ from pyiceberg.expressions.literals import (
     Literal,
     LongLiteral,
     TimestampLiteral,
+    TimestampNanoLiteral,
     literal,
 )
 from pyiceberg.typedef import IcebergRootModel, L
@@ -1036,7 +1037,7 @@ def _truncate_number(
 ) -> UnboundPredicate | None:
     boundary = pred.literal
 
-    if not isinstance(boundary, (LongLiteral, DecimalLiteral, DateLiteral, TimestampLiteral)):
+    if not isinstance(boundary, (LongLiteral, DecimalLiteral, DateLiteral, TimestampLiteral, TimestampNanoLiteral)):
         raise ValueError(f"Expected a numeric literal, got: {type(boundary)}")
 
     if isinstance(pred, BoundLessThan):
@@ -1058,7 +1059,7 @@ def _truncate_number_strict(
 ) -> UnboundPredicate | None:
     boundary = pred.literal
 
-    if not isinstance(boundary, (LongLiteral, DecimalLiteral, DateLiteral, TimestampLiteral)):
+    if not isinstance(boundary, (LongLiteral, DecimalLiteral, DateLiteral, TimestampLiteral, TimestampNanoLiteral)):
         raise ValueError(f"Expected a numeric literal, got: {type(boundary)}")
 
     if isinstance(pred, BoundLessThan):
