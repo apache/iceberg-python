@@ -104,7 +104,7 @@ lint: ## Run code linters via prek (pre-commit hooks)
 ##@ Testing
 
 test: ## Run all unit tests (excluding integration)
-	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" $(PYTEST_ARGS)
+	$(TEST_RUNNER) pytest tests/ -m unit --ignore=tests/integration $(PYTEST_ARGS)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
@@ -129,7 +129,7 @@ test-integration-rebuild: ## Rebuild integration Docker services from scratch
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
 test-s3: ## Run tests marked with @pytest.mark.s3
-	sh ./dev/run-minio.sh
+	sh ./dev/run-s3.sh
 	$(TEST_RUNNER) pytest tests/ -m s3 $(PYTEST_ARGS)
 
 test-adls: ## Run tests marked with @pytest.mark.adls

@@ -1697,7 +1697,7 @@ def _(file_type: BinaryType, read_type: IcebergType) -> IcebergType:
 @promote.register(DecimalType)
 def _(file_type: DecimalType, read_type: IcebergType) -> IcebergType:
     if isinstance(read_type, DecimalType):
-        if file_type.precision <= read_type.precision and file_type.scale == file_type.scale:
+        if file_type.precision <= read_type.precision and file_type.scale == read_type.scale:
             return read_type
         else:
             raise ResolveError(f"Cannot reduce precision from {file_type} to {read_type}")

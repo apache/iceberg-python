@@ -56,11 +56,22 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 
 - Large/integration libraries must be **optional extras** in `pyproject.toml`, not core `dependencies`.
 
+### Documentation
+
+- Any external URL mentioned in the docs should have `<!-- markdown-link-check-disable-next-line -->` on the previous line.
+
 ## Testing
 
 - Bias towards adding tests to existing files, rather than creating new files.
 - Use existing test fixtures when possible.
 - We have a strong bias towards integration testing over mocks. Mocks should be avoided whenever possible and should only be used if similar, existing tests are using mocks.
+
+### Required CI and Merge Queue
+
+- Keep the `required_status_checks.contexts` list in `.asf.yaml` synchronized whenever a required job/check is added, renamed, or removed. Each entry is a job/check context name, not a workflow filename.
+- Verify that every required context reports for both `pull_request` and `merge_group`. Its producer workflow must run on both events.
+- When a workflow uses an aggregate required job, such as `python-ci-required`, keep `if: always()` and its `needs` list in sync with every job whose result should block merging.
+- Do not use `pull_request` path filters in workflows that produce required contexts. A skipped workflow does not report its required context, which blocks pull requests and causes Merge Queue entries to time out.
 
 ## Commands
 
@@ -82,6 +93,12 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - Commit messages explain the *what* and *why*, not line-by-line implementation. Be as succinct as possible.
 - The Apache License header is required on every new source file (enforced by `./dev/check-license`).
 - Run `make lint` and `make test` before pushing; CI runs both plus the lockfile check.
+
+## GitHub Write Approval
+
+- **Never** modify GitHub state without explicit user approval for that specific action in the current session; treat GitHub as read-only by default.
+- **Ask first** before any GitHub write: show the exact target and action, including the full proposed content when applicable, then wait for explicit approval. This includes creating, editing, or deleting issues, pull requests, comments, reviews, labels, and branches, as well as merges, releases, and workflow runs.
+- **Never** treat a request to investigate, implement, fix, draft, or prepare as approval to write to GitHub, or infer, reuse, or bypass approval.
 
 ## Boundaries
 

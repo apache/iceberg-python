@@ -205,7 +205,7 @@ def test_resolve_float_to_double() -> None:
 
 def test_resolve_decimal_to_decimal() -> None:
     # DecimalType(P, S) to DecimalType(P2, S) where P2 > P
-    assert resolve_reader(DecimalType(19, 25), DecimalType(22, 25)) == DecimalReader(19, 25)
+    assert resolve_reader(DecimalType(19, 10), DecimalType(22, 10)) == DecimalReader(19, 10)
 
 
 def test_struct_not_aligned() -> None:
@@ -251,9 +251,18 @@ def test_decimal_not_aligned() -> None:
 def test_resolve_decimal_to_decimal_reduce_precision() -> None:
     # DecimalType(P, S) to DecimalType(P2, S) where P2 > P
     with pytest.raises(ResolveError) as exc_info:
-        _ = resolve_reader(DecimalType(19, 25), DecimalType(10, 25)) == DecimalReader(22, 25)
+        _ = resolve_reader(DecimalType(19, 10), DecimalType(10, 10)) == DecimalReader(22, 10)
 
-    assert "Cannot reduce precision from decimal(19, 25) to decimal(10, 25)" in str(exc_info.value)
+    assert "Cannot reduce precision from decimal(19, 10) to decimal(10, 10)" in str(exc_info.value)
+
+
+def test_resolve_decimal_to_decimal_change_scale() -> None:
+    # Changing the scale is not a valid promotion, even when the precision widens.
+    # Allowing it would reinterpret the file's unscaled integers at the wrong scale.
+    with pytest.raises(ResolveError) as exc_info:
+        _ = resolve_reader(DecimalType(9, 2), DecimalType(18, 4))
+
+    assert "Cannot reduce precision from decimal(9, 2) to decimal(18, 4)" in str(exc_info.value)
 
 
 def test_column_assignment() -> None:

@@ -23,9 +23,11 @@ import pytest
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.manifest import DataFile, DataFileContent
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable, _readable_bound
 from pyiceberg.table.snapshots import Snapshot
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
 from pyiceberg.types import NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog
@@ -93,3 +95,14 @@ def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest
     (partition_row,) = partitions_map.values()
     assert partition_row["last_updated_at"] == newer.timestamp_ms
     assert partition_row["last_updated_snapshot_id"] == newer.snapshot_id
+
+
+def test_inspect_manifests_preserves_empty_string_bounds(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "s", StringType()))
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "s"))
+    tbl = catalog.create_table("default.empty_string_partition", schema, partition_spec=spec)
+    tbl.append(pa.table({"s": [""]}, schema=pa.schema([pa.field("s", pa.large_string())])))
+
+    partition_summary = tbl.inspect.manifests().to_pydict()["partition_summaries"][0][0]
+    assert partition_summary["lower_bound"] == ""
+    assert partition_summary["upper_bound"] == ""

@@ -17,6 +17,7 @@
 import pytest
 
 from pyiceberg.typedef import FrozenDict, KeyDefaultDict, Record
+from pyiceberg.types import IntegerType, NestedField, StructType
 
 
 def test_setitem_frozendict() -> None:
@@ -47,3 +48,20 @@ def test_record_named_args() -> None:
     assert r[2] is True
 
     assert repr(r) == "Record[1, a, True]"
+
+
+def test_record_bind_rejects_unknown_arguments() -> None:
+    struct = StructType(NestedField(1, "known", IntegerType()))
+
+    with pytest.raises(TypeError, match="Unexpected Record fields: unknown"):
+        Record._bind(struct, known=1, unknown=2)
+
+
+def test_record_bind_rejects_non_schema_property() -> None:
+    class RecordWithProperty(Record):
+        @property
+        def computed(self) -> int:
+            return 1
+
+    with pytest.raises(TypeError, match="Unexpected RecordWithProperty fields: computed"):
+        RecordWithProperty._bind(StructType(), computed=1)

@@ -20,23 +20,8 @@
 name: "Python CI"
 
 on:
-  push:
-    branches:
-    - 'main'
   pull_request:
-    paths:
-    - '**'                              # Include all files and directories in the repository by default.
-    - '!.github/workflows/**'           # Exclude all workflow files
-    - '.github/workflows/python-ci.yml' # except the current file.
-    - '!.github/ISSUE_TEMPLATE/**'      # Exclude files and directories that don't impact tests or code like templates, metadata, and documentation.
-    - '!.gitignore'
-    - '!.asf.yml'
-    - '!mkdocs/**'
-    - '!.gitattributes'
-    - '!README.md'
-    - '!CONTRIBUTING.md'
-    - '!LICENSE'
-    - '!NOTICE'
+  merge_group:
 
 permissions:
   contents: read
@@ -69,10 +54,12 @@ jobs:
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Check uv.lock is up to date
+      if: matrix.python == '3.10'
       run: uv lock --check
     - name: Install
       run: make install
     - name: Run linters
+      if: matrix.python == '3.10'
       run: make lint
     - name: Run unit tests with coverage
       run: COVERAGE=1 make test
@@ -101,7 +88,7 @@ jobs:
     - name: Install
       run: uv sync --all-extras --no-extra hive-kerberos
     - name: Run unit tests
-      run: uv run python -m pytest tests/ -m "(unmarked or parametrize) and not integration" --ignore=tests/integration -v -x
+      run: uv run python -m pytest tests/ -m unit --ignore=tests/integration -v -x
 
   cibw-dev-env-smoke-test:
     runs-on: ubuntu-latest
@@ -127,3 +114,17 @@ jobs:
       run: uv sync --directory . --only-group dev --no-install-project
     - name: Mirror wheel CIBW_TEST_COMMAND
       run: uv run --directory . pytest tests/avro/test_decoder.py
+
+  python-ci-required:
+    if: ${{ always() }}
+    needs: [lint-and-unit-test, windows-unit-test, cibw-dev-env-smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Verify Python CI jobs succeeded
+      env:
+        RESULTS: ${{ join(needs.*.result, ' ') }}
+      run: |
+        read -ra results <<< "$RESULTS"
+        for result in "${results[@]}"; do
+          test "$result" = "success"
+        done

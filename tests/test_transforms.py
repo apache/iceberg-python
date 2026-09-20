@@ -17,7 +17,7 @@
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
@@ -1624,6 +1624,30 @@ def test_strict_binary(bound_reference_binary: BoundReference) -> None:
         BoundNotIn(term=bound_reference_binary, literals={value, other_value}), transform, EqualTo, "YWJjZGU="
     )
     _assert_projection_strict(BoundIn(term=bound_reference_binary, literals={value, other_value}), transform, NotIn)
+
+
+@pytest.mark.parametrize(
+    "source_type, value, expected",
+    [
+        pytest.param(TimestampType(), None, None, id="timestamp_none"),
+        pytest.param(TimestampType(), 1577836800000000, 1577836800000000, id="timestamp_int_passthrough"),
+        pytest.param(TimestampType(), datetime(2020, 1, 1), 1577836800000000, id="timestamp_datetime"),
+        pytest.param(TimestamptzType(), datetime(2020, 1, 1), 1577836800000000, id="timestamptz_datetime"),
+        pytest.param(TimestampNanoType(), None, None, id="timestamp_nano_none"),
+        pytest.param(TimestampNanoType(), 1577836800000000000, 1577836800000000000, id="timestamp_nano_int_passthrough"),
+        pytest.param(TimestampNanoType(), datetime(2020, 1, 1), 1577836800000000000, id="timestamp_nano_datetime"),
+        pytest.param(TimestamptzNanoType(), datetime(2020, 1, 1), 1577836800000000000, id="timestamptz_nano_datetime"),
+    ],
+)
+def test_to_partition_representation_timestamps(source_type: PrimitiveType, value: Any, expected: Any) -> None:
+    assert _to_partition_representation(source_type, value) == expected
+
+
+def test_to_partition_representation_unrecognized_type_raises() -> None:
+    with pytest.raises(ValueError, match="Type not recognized"):
+        _to_partition_representation(TimestampType(), "not-a-datetime-or-int")
+    with pytest.raises(ValueError, match="Type not recognized"):
+        _to_partition_representation(TimestampNanoType(), "not-a-datetime-or-int")
 
 
 @pytest.mark.parametrize(

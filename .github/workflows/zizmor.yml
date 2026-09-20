@@ -20,10 +20,9 @@
 name: GitHub Actions Security Analysis with zizmor 🌈
 
 on:
-  push:
-    branches: ["main"]
   pull_request:
     branches: ["**"]
+  merge_group:
 
 permissions: {}
 

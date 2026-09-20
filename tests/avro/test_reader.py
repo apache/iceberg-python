@@ -282,7 +282,7 @@ def test_fixed_reader() -> None:
 
 
 def test_decimal_reader() -> None:
-    assert construct_reader(DecimalType(19, 25)) == DecimalReader(19, 25)
+    assert construct_reader(DecimalType(25, 19)) == DecimalReader(25, 19)
 
 
 def test_boolean_reader() -> None:

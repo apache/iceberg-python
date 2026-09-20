@@ -25,9 +25,13 @@ import pytest
 
 import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
+from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
+    DATA_FILE_TYPE,
+    MANIFEST_ENTRY_SCHEMAS,
+    MANIFEST_LIST_FILE_SCHEMAS,
     DataFile,
     DataFileContent,
     FileFormat,
@@ -47,7 +51,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.typedef import Record, TableVersion
-from pyiceberg.types import IntegerType, NestedField
+from pyiceberg.types import IntegerType, ListType, LongType, NestedField, StructType
 
 
 @pytest.fixture(autouse=True)
@@ -92,6 +96,10 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
     assert repr(data_file.partition) == "Record[1, 1925]"
     assert data_file.record_count == 19513
     assert data_file.file_size_in_bytes == 388872
+    assert data_file.first_row_id is None
+    assert data_file.referenced_data_file is None
+    assert data_file.content_offset is None
+    assert data_file.content_size_in_bytes is None
     assert data_file.column_sizes == {
         1: 53,
         2: 98153,
@@ -192,6 +200,152 @@ def test_read_manifest_entry(generated_manifest_entry_file: str) -> None:
     assert data_file.sort_order_id == 0
 
 
+def test_fetch_manifest_entry_with_filter(generated_manifest_entry_file: str) -> None:
+    manifest = ManifestFile.from_args(
+        manifest_path=generated_manifest_entry_file,
+        manifest_length=0,
+        partition_spec_id=0,
+        added_snapshot_id=0,
+        sequence_number=0,
+        partitions=[],
+    )
+
+    all_entries = manifest.fetch_manifest_entry(PyArrowFileIO())
+    assert len(all_entries) == 2
+
+    # Entry 1 has tpep_pickup_day=1925 & entry 2 has tpep_pickup_day=None
+    matched = manifest.fetch_manifest_entry(
+        PyArrowFileIO(),
+        entry_filter=lambda e: e.data_file.partition[1] == 1925,
+    )
+    assert len(matched) == 1
+    assert matched[0].data_file.record_count == 19513
+
+    no_match = manifest.fetch_manifest_entry(
+        PyArrowFileIO(),
+        entry_filter=lambda e: e.data_file.partition[1] == 9999,
+    )
+    assert len(no_match) == 0
+
+
+def test_read_manifest_entry_v3_fields(tmp_path: Path) -> None:
+    io = PyArrowFileIO()
+
+    def write_and_read(file_name: str, data_file: DataFile) -> DataFile:
+        manifest_path = str(tmp_path / file_name)
+        entry = ManifestEntry.from_args(
+            _table_format_version=3,
+            status=ManifestEntryStatus.ADDED,
+            snapshot_id=25,
+            sequence_number=1,
+            file_sequence_number=1,
+            data_file=data_file,
+        )
+        with AvroOutputFile[ManifestEntry](
+            output_file=io.new_output(manifest_path),
+            file_schema=MANIFEST_ENTRY_SCHEMAS[3],
+            record_schema=MANIFEST_ENTRY_SCHEMAS[3],
+            schema_name="manifest_entry",
+            metadata={"format-version": "3"},
+        ) as writer:
+            writer.write_block([entry])
+
+        manifest = ManifestFile.from_args(
+            manifest_path=manifest_path,
+            manifest_length=0,
+            partition_spec_id=0,
+            added_snapshot_id=25,
+            sequence_number=1,
+            min_sequence_number=1,
+        )
+        return manifest.fetch_manifest_entry(io)[0].data_file
+
+    data_file = write_and_read(
+        "data-manifest.avro",
+        DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.DATA,
+            file_path="s3://bucket/data.parquet",
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=10,
+            file_size_in_bytes=1024,
+            first_row_id=34,
+        ),
+    )
+    assert data_file.first_row_id == 34
+
+    delete_file = write_and_read(
+        "delete-manifest.avro",
+        DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.POSITION_DELETES,
+            file_path="s3://bucket/deletes.puffin",
+            file_format=FileFormat.PUFFIN,
+            partition=Record(),
+            record_count=3,
+            file_size_in_bytes=47,
+            referenced_data_file="s3://bucket/data.parquet",
+            content_offset=1,
+            content_size_in_bytes=46,
+        ),
+    )
+    assert delete_file.referenced_data_file == "s3://bucket/data.parquet"
+    assert delete_file.content_offset == 1
+    assert delete_file.content_size_in_bytes == 46
+
+
+def test_read_legacy_long_equality_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Manifests written by older PyIceberg versions with equality_ids as list<long> can still be read.
+
+    PyIceberg previously wrote the wrong schema, list<long>, for equality_ids; the Iceberg spec requires list<int>.
+    The default schema now uses list<int>, so reading existing manifests relies on the fallback in the Avro resolver.
+    See: https://github.com/apache/iceberg-python/issues/3840
+    See: https://iceberg.apache.org/spec/#manifests
+    """
+    io = PyArrowFileIO()
+    manifest_path = str(tmp_path / "manifest.avro")
+
+    entry = ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=1,
+        sequence_number=1,
+        file_sequence_number=1,
+        data_file=DataFile.from_args(
+            content=DataFileContent.EQUALITY_DELETES,
+            file_path="s3://bucket/deletes.parquet",
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=10,
+            file_size_in_bytes=1024,
+            equality_ids=[1, 2],
+        ),
+    )
+
+    # Write the manifest as older PyIceberg versions did, with equality_ids as list<long>
+    legacy_data_file_type = StructType(
+        *[
+            NestedField(135, "equality_ids", ListType(136, LongType()), required=False) if field.field_id == 135 else field
+            for field in DATA_FILE_TYPE[2].fields
+        ]
+    )
+    with monkeypatch.context() as legacy:
+        legacy.setitem(DATA_FILE_TYPE, 2, legacy_data_file_type)
+        with write_manifest(
+            format_version=2,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=Schema(NestedField(1, "foo", IntegerType(), False)),
+            output_file=io.new_output(manifest_path),
+            snapshot_id=1,
+            avro_compression="null",
+        ) as writer:
+            writer.add_entry(entry)
+    with AvroFile[ManifestEntry](io.new_input(manifest_path)) as avro_file:
+        assert avro_file.schema.find_field("data_file.equality_ids").field_type == ListType(136, LongType())
+
+    assert writer.to_manifest_file().fetch_manifest_entry(io)[0].data_file.equality_ids == [1, 2]
+
+
 def test_read_manifest_list(generated_manifest_file_file_v1: str) -> None:
     input_file = PyArrowFileIO().new_input(generated_manifest_file_file_v1)
     manifest_list = list(read_manifest_list(input_file))[0]
@@ -216,6 +370,40 @@ def test_read_manifest_list(generated_manifest_file_file_v1: str) -> None:
     assert manifest_list.added_rows_count == 237993
     assert manifest_list.existing_rows_count == 0
     assert manifest_list.deleted_rows_count == 0
+    assert manifest_list.first_row_id is None
+
+
+def test_read_manifest_list_v3_fields(tmp_path: Path) -> None:
+    io = PyArrowFileIO()
+    path = str(tmp_path / "manifest-list.avro")
+    manifest = ManifestFile.from_args(
+        _table_format_version=3,
+        manifest_path="s3://bucket/manifest.avro",
+        manifest_length=1024,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=1,
+        min_sequence_number=1,
+        added_snapshot_id=25,
+        added_files_count=1,
+        existing_files_count=0,
+        deleted_files_count=0,
+        added_rows_count=10,
+        existing_rows_count=0,
+        deleted_rows_count=0,
+        first_row_id=34,
+    )
+    with AvroOutputFile[ManifestFile](
+        output_file=io.new_output(path),
+        file_schema=MANIFEST_LIST_FILE_SCHEMAS[3],
+        record_schema=MANIFEST_LIST_FILE_SCHEMAS[3],
+        schema_name="manifest_file",
+        metadata={"format-version": "3"},
+    ) as writer:
+        writer.write_block([manifest])
+
+    read_manifest = list(read_manifest_list(io.new_input(path)))[0]
+    assert read_manifest.first_row_id == 34
 
 
 def test_read_manifest_v1(generated_manifest_file_file_v1: str) -> None:

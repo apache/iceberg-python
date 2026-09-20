@@ -238,6 +238,38 @@ def data_file_4() -> DataFile:
     )
 
 
+@pytest.fixture
+def data_file_5() -> DataFile:
+    return DataFile.from_args(
+        file_path="file_5.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=50,
+        file_size_in_bytes=3,
+        value_counts={3: 50},
+        null_value_counts={3: 0},
+        nan_value_counts=None,
+        lower_bounds={3: to_bytes(StringType(), "abc")},
+        upper_bounds={3: to_bytes(StringType(), "abcdefghi")},
+    )
+
+
+@pytest.fixture
+def data_file_6() -> DataFile:
+    return DataFile.from_args(
+        file_path="file_6.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=50,
+        file_size_in_bytes=3,
+        value_counts={3: 50},
+        null_value_counts=None,
+        nan_value_counts=None,
+        lower_bounds={3: to_bytes(StringType(), "abc")},
+        upper_bounds={3: to_bytes(StringType(), "abcdefghi")},
+    )
+
+
 def test_all_null(schema_data_file: Schema, data_file: DataFile) -> None:
     should_read = _InclusiveMetricsEvaluator(schema_data_file, NotNull("all_nulls")).eval(data_file)
     assert not should_read, "Should skip: no non-null value in all null column"
@@ -1005,7 +1037,13 @@ def test_strict_metrics_evaluator_uses_empty_byte_bounds() -> None:
 
 
 def test_string_not_starts_with(
-    schema_data_file: Schema, data_file: DataFile, data_file_2: DataFile, data_file_3: DataFile, data_file_4: DataFile
+    schema_data_file: Schema,
+    data_file: DataFile,
+    data_file_2: DataFile,
+    data_file_3: DataFile,
+    data_file_4: DataFile,
+    data_file_5: DataFile,
+    data_file_6: DataFile,
 ) -> None:
     should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", "a")).eval(data_file)
     assert should_read, "Should read: no stats"
@@ -1044,6 +1082,15 @@ def test_string_not_starts_with(
 
     # should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", above_max)).eval(data_file_4)
     # assert should_read, "Should not read: range doesn't match"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", "abc")).eval(data_file_5)
+    assert not should_read, "Should not read: no nulls and all strings start with the prefix"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", "abcd")).eval(data_file_5)
+    assert should_read, "Should read: lower bound is shorter than the prefix"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", "abc")).eval(data_file_6)
+    assert should_read, "Should read: null count is unknown, so the file may contain nulls that match"
 
 
 @pytest.fixture

@@ -20,16 +20,8 @@
 name: Check Markdown links
 
 on:
-  push:
-    paths:
-      - '.github/workflows/check-md-link.yml'
-      - 'mkdocs/**'
-    branches:
-    - 'main'
   pull_request:
-    paths:
-      - '.github/workflows/check-md-link.yml'
-      - 'mkdocs/**'
+  merge_group:
   workflow_dispatch:
 
 permissions:

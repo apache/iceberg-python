@@ -198,6 +198,10 @@ class TableProperties:
     FORMAT_VERSION = "format-version"
     DEFAULT_FORMAT_VERSION: TableVersion = 2
 
+    ENCRYPTION_KEY_ID = "encryption.key-id"
+    ENCRYPTION_DATA_KEY_LENGTH = "encryption.data-key-length"
+    ENCRYPTION_DATA_KEY_LENGTH_DEFAULT = 16
+
     MANIFEST_TARGET_SIZE_BYTES = "commit.manifest.target-size-bytes"
     MANIFEST_TARGET_SIZE_BYTES_DEFAULT = 8 * 1024 * 1024  # 8 MB
 
@@ -2187,7 +2191,7 @@ class TableScan(BaseScan):
         self.table_config = table_config
 
     def snapshot(self) -> Snapshot | None:
-        if self.snapshot_id:
+        if self.snapshot_id is not None:
             return self.table_metadata.snapshot_by_id(self.snapshot_id)
         return self.table_metadata.current_snapshot()
 
@@ -2212,7 +2216,7 @@ class TableScan(BaseScan):
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     def use_ref(self: S, name: str) -> S:
-        if self.snapshot_id:
+        if self.snapshot_id is not None:
             raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
         if snapshot := self.table_metadata.snapshot_by_name(name):
             return self.update(snapshot_id=snapshot.snapshot_id)
@@ -2325,11 +2329,9 @@ def _open_manifest(
     Returns:
         A list of ManifestEntry that matches the provided filters.
     """
-    return [
-        manifest_entry
-        for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=True)
-        if partition_filter(manifest_entry.data_file) and metrics_evaluator(manifest_entry.data_file)
-    ]
+    return manifest.fetch_manifest_entry(
+        io, discard_deleted=True, entry_filter=lambda e: partition_filter(e.data_file) and metrics_evaluator(e.data_file)
+    )
 
 
 def _min_sequence_number(manifests: list[ManifestFile]) -> int:

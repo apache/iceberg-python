@@ -34,6 +34,8 @@ This guide outlines the process for releasing PyIceberg in accordance with the [
 * SVN Access
     * Permission to upload artifacts to the [Apache development distribution](https://dist.apache.org/repos/dist/dev/iceberg/) (requires Apache Committer access).
     * Permission to upload artifacts to the [Apache release distribution](https://dist.apache.org/repos/dist/release/iceberg/) (requires Apache PMC access).
+* GitHub Access
+    * Write access to the [apache/iceberg-python](https://github.com/apache/iceberg-python) repository for triggering Dependabot (requires Apache Committer access).
 * PyPI Access
     * The `twine` package must be installed for uploading releases to PyPi.
     * A PyPI account with publishing permissions for the [pyiceberg project](https://pypi.org/project/pyiceberg/).
@@ -64,6 +66,18 @@ deprecation_message(
     help_message="The old_property is deprecated. Please use the something_else property instead.",
 )
 ```
+
+### Update Dependencies
+
+<!-- markdown-link-check-disable-next-line -->
+Dependabot runs monthly to keep the noise down, so the pinned dependencies in `uv.lock` may be stale by the time of a release. Before cutting the release candidate, go to the [Dependabot page](https://github.com/apache/iceberg-python/network/updates) in the repository's Insights tab and trigger a manual check for both the `uv` and `github-actions` ecosystems. Review and merge the resulting PRs so the release ships with up-to-date dependencies.
+
+<!-- prettier-ignore-start -->
+
+!!! note
+    Only a committer with write access to the repository can trigger Dependabot manually. Please work with a committer if you do not have write access.
+
+<!-- prettier-ignore-end -->
 
 ### Update Library Version
 

@@ -73,12 +73,14 @@ GEOMETRY_REGEX = re.compile(r"geometry(?:\(\s*['\"]([^'\"]+)['\"]\s*\))?$")
 GEOGRAPHY_REGEX = re.compile(r"geography(?:\(\s*['\"]([^'\"]+)['\"](?:\s*,\s*['\"]([^'\"]+)['\"])?\s*\))?$")
 
 
-def transform_dict_value_to_str(dict: dict[str, Any]) -> dict[str, str]:
+def transform_dict_value_to_str(d: dict[str, Any]) -> dict[str, str]:
     """Transform all values in the dictionary to string. Raise an error if any value is None."""
-    for key, value in dict.items():
+    result = {}
+    for key, value in d.items():
         if value is None:
             raise ValueError(f"None type is not a supported value in properties: {key}")
-    return {k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in dict.items()}
+        result[key] = str(value).lower() if isinstance(value, bool) else str(value)
+    return result
 
 
 def _parse_decimal_type(decimal: Any) -> tuple[int, int]:
@@ -332,6 +334,15 @@ class DecimalType(PrimitiveType):
 
         if not (1 <= precision <= 38):
             raise ValidationError(f"Decimal precision must be between 1 and 38 (inclusive), got: {precision}")
+        return self
+
+    @model_validator(mode="after")
+    def check_scale(self) -> DecimalType:
+        precision = getattr(self, "precision", None) or self.root[0]
+        scale = getattr(self, "scale", None) or self.root[1]
+
+        if not (0 <= scale <= precision):
+            raise ValidationError(f"Decimal scale must be between 0 and the precision {precision} (inclusive), got: {scale}")
         return self
 
     @model_serializer

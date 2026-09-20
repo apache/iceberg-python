@@ -600,6 +600,9 @@ class BoundNotNull(BoundUnaryPredicate):
 class IsNull(UnaryPredicate):
     type: TypingLiteral["is-null"] = Field(default="is-null")
 
+    def __init__(self, term: str | UnboundTerm, **_: Any) -> None:
+        super().__init__(term)
+
     def __invert__(self) -> NotNull:
         """Transform the Expression into its negated version."""
         return NotNull(self.term)
@@ -611,6 +614,9 @@ class IsNull(UnaryPredicate):
 
 class NotNull(UnaryPredicate):
     type: TypingLiteral["not-null"] = Field(default="not-null")
+
+    def __init__(self, term: str | UnboundTerm, **_: Any) -> None:
+        super().__init__(term)
 
     def __invert__(self) -> IsNull:
         """Transform the Expression into its negated version."""
@@ -656,6 +662,9 @@ class BoundNotNaN(BoundUnaryPredicate):
 class IsNaN(UnaryPredicate):
     type: TypingLiteral["is-nan"] = Field(default="is-nan")
 
+    def __init__(self, term: str | UnboundTerm, **_: Any) -> None:
+        super().__init__(term)
+
     def __invert__(self) -> NotNaN:
         """Transform the Expression into its negated version."""
         return NotNaN(self.term)
@@ -667,6 +676,9 @@ class IsNaN(UnaryPredicate):
 
 class NotNaN(UnaryPredicate):
     type: TypingLiteral["not-nan"] = Field(default="not-nan")
+
+    def __init__(self, term: str | UnboundTerm, **_: Any) -> None:
+        super().__init__(term)
 
     def __invert__(self) -> IsNaN:
         """Transform the Expression into its negated version."""
@@ -811,6 +823,11 @@ class BoundNotIn(BoundSetPredicate):
 class In(SetPredicate):
     type: TypingLiteral["in"] = Field(default="in", alias="type")
 
+    def __init__(
+        self, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
+    ) -> None:
+        super().__init__(term, literals, **kwargs)
+
     def __new__(  # pylint: disable=W0221
         cls, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
     ) -> In:
@@ -840,6 +857,11 @@ class In(SetPredicate):
 
 class NotIn(SetPredicate, ABC):
     type: TypingLiteral["not-in"] = Field(default="not-in", alias="type")
+
+    def __init__(
+        self, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
+    ) -> None:
+        super().__init__(term, literals, **kwargs)
 
     def __new__(  # pylint: disable=W0221
         cls, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
@@ -1028,6 +1050,9 @@ class BoundNotStartsWith(BoundLiteralPredicate):
 class EqualTo(LiteralPredicate):
     type: TypingLiteral["eq"] = Field(default="eq", alias="type")
 
+    def __init__(self, term: str | UnboundTerm, literal: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(term, literal, **kwargs)
+
     def __invert__(self) -> NotEqualTo:
         """Transform the Expression into its negated version."""
         return NotEqualTo(self.term, self.literal)
@@ -1039,6 +1064,9 @@ class EqualTo(LiteralPredicate):
 
 class NotEqualTo(LiteralPredicate):
     type: TypingLiteral["not-eq"] = Field(default="not-eq", alias="type")
+
+    def __init__(self, term: str | UnboundTerm, literal: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(term, literal, **kwargs)
 
     def __invert__(self) -> EqualTo:
         """Transform the Expression into its negated version."""
@@ -1052,6 +1080,9 @@ class NotEqualTo(LiteralPredicate):
 class LessThan(LiteralPredicate):
     type: TypingLiteral["lt"] = Field(default="lt", alias="type")
 
+    def __init__(self, term: str | UnboundTerm, literal: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(term, literal, **kwargs)
+
     def __invert__(self) -> GreaterThanOrEqual:
         """Transform the Expression into its negated version."""
         return GreaterThanOrEqual(self.term, self.literal)
@@ -1063,6 +1094,9 @@ class LessThan(LiteralPredicate):
 
 class GreaterThanOrEqual(LiteralPredicate):
     type: TypingLiteral["gt-eq"] = Field(default="gt-eq", alias="type")
+
+    def __init__(self, term: str | UnboundTerm, literal: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(term, literal, **kwargs)
 
     def __invert__(self) -> LessThan:
         """Transform the Expression into its negated version."""
@@ -1076,6 +1110,9 @@ class GreaterThanOrEqual(LiteralPredicate):
 class GreaterThan(LiteralPredicate):
     type: TypingLiteral["gt"] = Field(default="gt", alias="type")
 
+    def __init__(self, term: str | UnboundTerm, literal: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(term, literal, **kwargs)
+
     def __invert__(self) -> LessThanOrEqual:
         """Transform the Expression into its negated version."""
         return LessThanOrEqual(self.term, self.literal)
@@ -1087,6 +1124,9 @@ class GreaterThan(LiteralPredicate):
 
 class LessThanOrEqual(LiteralPredicate):
     type: TypingLiteral["lt-eq"] = Field(default="lt-eq", alias="type")
+
+    def __init__(self, term: str | UnboundTerm, literal: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(term, literal, **kwargs)
 
     def __invert__(self) -> GreaterThan:
         """Transform the Expression into its negated version."""
@@ -1100,6 +1140,9 @@ class LessThanOrEqual(LiteralPredicate):
 class StartsWith(LiteralPredicate):
     type: TypingLiteral["starts-with"] = Field(default="starts-with", alias="type")
 
+    def __init__(self, term: str | UnboundTerm, literal: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(term, literal, **kwargs)
+
     def __invert__(self) -> NotStartsWith:
         """Transform the Expression into its negated version."""
         return NotStartsWith(self.term, self.literal)
@@ -1111,6 +1154,9 @@ class StartsWith(LiteralPredicate):
 
 class NotStartsWith(LiteralPredicate):
     type: TypingLiteral["not-starts-with"] = Field(default="not-starts-with", alias="type")
+
+    def __init__(self, term: str | UnboundTerm, literal: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(term, literal, **kwargs)
 
     def __invert__(self) -> StartsWith:
         """Transform the Expression into its negated version."""

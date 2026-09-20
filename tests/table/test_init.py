@@ -290,6 +290,31 @@ def test_table_scan_ref(table_v2: Table) -> None:
     assert scan.use_ref("test").snapshot_id == 3051729675574597004
 
 
+@pytest.mark.parametrize(
+    "snapshot_id, expected_snapshot_id",
+    [(None, 3055729675574597004), (0, 0), (3051729675574597004, 3051729675574597004)],
+)
+def test_table_scan_snapshot(table_v2: Table, snapshot_id: int | None, expected_snapshot_id: int) -> None:
+    table_v2.metadata.snapshots.append(
+        Snapshot(snapshot_id=0, timestamp_ms=1515100955769, manifest_list="s3://a/b/zero.avro", schema_id=0)
+    )
+
+    snapshot = table_v2.scan(snapshot_id=snapshot_id).snapshot()
+
+    assert snapshot is not None
+    assert snapshot.snapshot_id == expected_snapshot_id
+
+
+def test_table_scan_missing_snapshot_zero(table_v2: Table) -> None:
+    assert table_v2.scan(snapshot_id=0).snapshot() is None
+
+
+@pytest.mark.parametrize("snapshot_id", [0, 3051729675574597004])
+def test_table_scan_ref_cannot_override_snapshot(table_v2: Table, snapshot_id: int) -> None:
+    with pytest.raises(ValueError, match=f"Cannot override ref, already set snapshot id={snapshot_id}"):
+        table_v2.scan(snapshot_id=snapshot_id).use_ref("test")
+
+
 def test_table_scan_ref_does_not_exists(table_v2: Table) -> None:
     scan = table_v2.scan()
 
@@ -1452,8 +1477,8 @@ def test_assert_default_sort_order_id(table_v2: Table) -> None:
 
 
 def test_correct_schema() -> None:
-    table_metadata = TableMetadataV2(
-        **{
+    table_metadata = TableMetadataV2.model_validate(
+        {
             "format-version": 2,
             "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
             "location": "s3://bucket/test/location",
@@ -1551,7 +1576,7 @@ def test_table_properties(example_table_metadata_v2: dict[str, Any]) -> None:
 
     # property can be set to int, but still serialized as string
     property_with_int = {"property_name": 42}
-    new_example_table_metadata_v2 = {**example_table_metadata_v2, "properties": property_with_int}
+    new_example_table_metadata_v2: dict[str, Any] = {**example_table_metadata_v2, "properties": property_with_int}
     assert isinstance(new_example_table_metadata_v2["properties"]["property_name"], int)
     new_metadata = TableMetadataV2(**new_example_table_metadata_v2)
     assert isinstance(new_metadata.properties["property_name"], str)
@@ -1965,7 +1990,7 @@ def model_roundtrips(model: BaseModel) -> bool:
 
 def test_check_uuid_raises_when_mismatch(table_v2: Table, example_table_metadata_v2: dict[str, Any]) -> None:
     different_uuid = "550e8400-e29b-41d4-a716-446655440000"
-    metadata_with_different_uuid = {**example_table_metadata_v2, "table-uuid": different_uuid}
+    metadata_with_different_uuid: dict[str, Any] = {**example_table_metadata_v2, "table-uuid": different_uuid}
     new_metadata = TableMetadataV2(**metadata_with_different_uuid)
 
     with pytest.raises(ValueError) as exc_info:
