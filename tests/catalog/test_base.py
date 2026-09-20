@@ -47,6 +47,11 @@ def test_load_catalog_impl_not_full_path() -> None:
     assert "py-catalog-impl should be full path (module.CustomCatalog), got: CustomCatalog" in str(exc_info.value)
 
 
+def test_load_catalog_impl_wrong_type() -> None:
+    with pytest.raises(ValueError, match="py-catalog-impl should be a subclass of Catalog"):
+        load_catalog("catalog", **{"py-catalog-impl": "pyiceberg.io.FileIO"})
+
+
 def test_load_catalog_impl_does_not_exist() -> None:
     with pytest.raises(ValueError) as exc_info:
         load_catalog("catalog", **{"py-catalog-impl": "pyiceberg.does.not.exist.Catalog"})

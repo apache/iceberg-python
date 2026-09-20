@@ -2501,6 +2501,24 @@ def test_rest_catalog_with_custom_auth_type() -> None:
     assert "Could not load AuthManager class for 'dummy.nonexistent.package'" in str(e.value)
 
 
+def test_rest_catalog_with_custom_auth_type_wrong_type() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": {
+            "type": "custom",
+            "impl": "pyiceberg.io.FileIO",
+            "custom": {
+                "property1": "one",
+                "property2": "two",
+            },
+        },
+    }
+    with pytest.raises(ValueError) as e:
+        RestCatalog("rest", **catalog_properties)  # type: ignore
+    assert "auth.impl should be a subclass of AuthManager, got: pyiceberg.io.FileIO" in str(e.value)
+
+
 def test_rest_catalog_with_custom_basic_auth_type(rest_mock: Mocker) -> None:
     # Given
     catalog_properties = {
