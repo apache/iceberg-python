@@ -698,6 +698,11 @@ class SetPredicate(UnboundPredicate, ABC):
     def __init__(
         self, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
     ) -> None:
+        # `In.__new__` and `NotIn.__new__` have to build the literal set to pick the predicate
+        # class, so they initialize the instance with it. Without this guard the set is built twice.
+        if hasattr(self, "literals"):
+            return
+
         if literals is None and "values" in kwargs:
             literals = kwargs["values"]
 
@@ -709,8 +714,8 @@ class SetPredicate(UnboundPredicate, ABC):
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
-        literal_set = self.literals
-        return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore
+        field_type = bound_term.ref().field.field_type
+        return self.as_bound(bound_term, {lit.to(field_type) for lit in self.literals})  # type: ignore
 
     def __str__(self) -> str:
         """Return the string representation of the SetPredicate class."""
@@ -844,7 +849,9 @@ class In(SetPredicate):
         elif count == 1:
             return EqualTo(term, next(iter(literals_set)))
         else:
-            return super().__new__(cls)
+            predicate = super().__new__(cls)
+            SetPredicate.__init__(predicate, term, literals_set)
+            return predicate
 
     def __invert__(self) -> NotIn:
         """Transform the Expression into its negated version."""
@@ -879,7 +886,9 @@ class NotIn(SetPredicate, ABC):
         elif count == 1:
             return NotEqualTo(term, next(iter(literals_set)))
         else:
-            return super().__new__(cls)
+            predicate = super().__new__(cls)
+            SetPredicate.__init__(predicate, term, literals_set)
+            return predicate
 
     def __invert__(self) -> In:
         """Transform the Expression into its negated version."""
