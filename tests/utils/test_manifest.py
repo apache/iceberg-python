@@ -26,6 +26,7 @@ import pytest
 import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
+from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
@@ -1376,3 +1377,104 @@ def test_negative_manifest_cache_size_raises_value_error(monkeypatch: pytest.Mon
     finally:
         monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
         importlib.reload(manifest_module)
+
+
+@pytest.mark.parametrize("content", [ManifestContent.DATA, ManifestContent.DELETES])
+def test_write_manifest_content(
+    generated_manifest_file_file_v2: str,
+    test_schema: Schema,
+    test_partition_spec: PartitionSpec,
+    content: ManifestContent,
+) -> None:
+    """A v2 manifest must record the content it was asked to write.
+
+    Without this the writer always claims `data`, so a delete manifest written by
+    PyIceberg would be read back as a data manifest and its entries applied as
+    live data files.
+    """
+    io = load_file_io()
+    snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        timestamp_ms=1602638573590,
+        manifest_list=generated_manifest_file_file_v2,
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+    manifest_entries = snapshot.manifests(io)[0].fetch_manifest_entry(io)
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/test_write_manifest_content.avro"
+        with write_manifest(
+            format_version=2,
+            spec=test_partition_spec,
+            schema=test_schema,
+            output_file=io.new_output(tmp_avro_file),
+            snapshot_id=8744736658442914487,
+            avro_compression="deflate",
+            content=content,
+        ) as writer:
+            for entry in manifest_entries:
+                writer.add_entry(entry)
+            new_manifest = writer.to_manifest_file()
+
+        assert new_manifest.content == content
+        _verify_metadata_with_fastavro(
+            tmp_avro_file,
+            {"content": "data" if content == ManifestContent.DATA else "deletes"},
+        )
+
+
+def test_write_manifest_defaults_to_data_content(
+    generated_manifest_file_file_v2: str,
+    test_schema: Schema,
+    test_partition_spec: PartitionSpec,
+) -> None:
+    """Callers that do not ask for a content type still get a data manifest."""
+    io = load_file_io()
+    snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        timestamp_ms=1602638573590,
+        manifest_list=generated_manifest_file_file_v2,
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+    manifest_entries = snapshot.manifests(io)[0].fetch_manifest_entry(io)
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/test_write_manifest_default_content.avro"
+        with write_manifest(
+            format_version=2,
+            spec=test_partition_spec,
+            schema=test_schema,
+            output_file=io.new_output(tmp_avro_file),
+            snapshot_id=8744736658442914487,
+            avro_compression="deflate",
+        ) as writer:
+            for entry in manifest_entries:
+                writer.add_entry(entry)
+            assert writer.to_manifest_file().content == ManifestContent.DATA
+
+
+def test_write_manifest_v1_rejects_delete_content(
+    test_schema: Schema,
+    test_partition_spec: PartitionSpec,
+) -> None:
+    """v1 has no delete files, so asking for a delete manifest must fail loudly.
+
+    `ManifestListWriterV1` already refuses to store one; rejecting it at the
+    writer keeps a v1 table from producing a manifest it could never reference.
+    """
+    io = load_file_io()
+    with TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValidationError, match="Cannot write delete manifests in a v1 table"):
+            write_manifest(
+                format_version=1,
+                spec=test_partition_spec,
+                schema=test_schema,
+                output_file=io.new_output(tmpdir + "/test_write_manifest_v1_deletes.avro"),
+                snapshot_id=8744736658442914487,
+                avro_compression="deflate",
+                content=ManifestContent.DELETES,
+            )
