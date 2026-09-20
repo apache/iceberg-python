@@ -651,6 +651,60 @@ def test_metrics_invalid_upper_bound() -> None:
     assert datafile.upper_bounds[3] == "".join([chr(0x10FFFF), chr(0x10FFFF)]).encode()
 
 
+def construct_test_table_surrogate_boundary_upper_bound() -> tuple[pq.FileMetaData, TableMetadataV1 | TableMetadataV2]:
+    table_metadata = {
+        "format-version": 2,
+        "location": "s3://bucket/test/location",
+        "last-column-id": 1,
+        "current-schema-id": 0,
+        "schemas": [
+            {
+                "type": "struct",
+                "schema-id": 0,
+                "fields": [
+                    {"id": 1, "name": "surrogate_boundary_string", "required": False, "type": "string"},
+                ],
+            },
+        ],
+        "default-spec-id": 0,
+        "partition-specs": [{"spec-id": 0, "fields": []}],
+        "properties": {},
+    }
+
+    table_metadata = TableMetadataUtil.parse_obj(table_metadata)
+    arrow_schema = schema_to_pyarrow(table_metadata.schemas[0])
+
+    # The truncation boundary lands on U+D7FF, whose successor code point is a lone surrogate.
+    strings = ["a" + chr(0xD7FF) + "tail"]
+
+    table = pa.Table.from_pydict({"surrogate_boundary_string": strings}, schema=arrow_schema)
+
+    metadata_collector: list[Any] = []
+
+    with pa.BufferOutputStream() as f:
+        with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector) as writer:
+            writer.write_table(table)
+
+    return metadata_collector[0], table_metadata
+
+
+def test_metrics_surrogate_boundary_upper_bound() -> None:
+    metadata, table_metadata = construct_test_table_surrogate_boundary_upper_bound()
+
+    schema = get_current_schema(table_metadata)
+    table_metadata.properties["write.metadata.metrics.default"] = "truncate(2)"
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
+
+    # The upper bound skips the surrogate range and stays a valid, encodable upper bound.
+    assert datafile.upper_bounds[1] == ("a" + chr(0xE000)).encode()
+    assert datafile.upper_bounds[1].decode() >= "a" + chr(0xD7FF)
+
+
 def test_offsets() -> None:
     metadata, table_metadata = construct_test_table()
 
