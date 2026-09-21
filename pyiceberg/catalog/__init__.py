@@ -42,20 +42,25 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.partitioning import (
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionSpec,
+    assign_fresh_partition_spec_ids_for_replace,
+)
+from pyiceberg.schema import Schema, assign_fresh_schema_ids_for_replace
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
     DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
     CommitTableResponse,
     CreateTableTransaction,
+    ReplaceTableTransaction,
     StagedTable,
     Table,
     TableProperties,
 )
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
@@ -443,6 +448,90 @@ class Catalog(ABC):
             return self.create_table(identifier, schema, location, partition_spec, sort_order, properties)
         except TableAlreadyExistsError:
             return self.load_table(identifier)
+
+    def replace_table_transaction(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> ReplaceTableTransaction:
+        """Create a ReplaceTableTransaction.
+
+        The transaction can be used to stage additional changes (schema evolution,
+        partition evolution, etc.) before committing.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): New table schema.
+            location (str | None): New table location. Defaults to the existing location.
+            partition_spec (PartitionSpec): New partition spec.
+            sort_order (SortOrder): New sort order.
+            properties (Properties): Properties to apply. Merged on top of the existing
+                table properties: keys present here override existing values; existing keys
+                not present here are preserved. To remove a property, follow up with a
+                transaction that removes it explicitly.
+
+        Returns:
+            ReplaceTableTransaction: A transaction for the replace operation.
+
+        Raises:
+            NoSuchTableError: If the table does not exist.
+        """
+        existing_table = self.load_table(identifier)
+        existing_metadata = existing_table.metadata
+
+        raw_format_version = properties.get(TableProperties.FORMAT_VERSION)
+        if raw_format_version is not None:
+            try:
+                requested_format_version = int(raw_format_version)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid format-version property: {raw_format_version!r}") from exc
+            if requested_format_version < existing_metadata.format_version:
+                raise ValueError(
+                    f"Cannot downgrade format-version from {existing_metadata.format_version} to {requested_format_version}"
+                )
+            resolved_format_version = requested_format_version
+        else:
+            resolved_format_version = existing_metadata.format_version
+        iceberg_schema = self._convert_schema_if_needed(schema, cast(TableVersion, resolved_format_version))
+        iceberg_schema.check_format_version_compatibility(cast(TableVersion, resolved_format_version))
+
+        fresh_schema, _ = assign_fresh_schema_ids_for_replace(
+            iceberg_schema, existing_metadata.schema(), existing_metadata.last_column_id
+        )
+        fresh_partition_spec, _ = assign_fresh_partition_spec_ids_for_replace(
+            partition_spec,
+            iceberg_schema,
+            fresh_schema,
+            existing_metadata.partition_specs,
+            existing_metadata.last_partition_id,
+            format_version=existing_metadata.format_version,
+            current_spec=existing_metadata.spec(),
+        )
+        fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
+
+        resolved_location = location.rstrip("/") if location else existing_metadata.location
+        if not resolved_location:
+            raise ValueError("Resolved table location must not be empty")
+
+        staged_table = StagedTable(
+            identifier=existing_table.name(),
+            metadata=existing_metadata,
+            metadata_location=existing_table.metadata_location,
+            io=existing_table.io,
+            catalog=self,
+        )
+        return ReplaceTableTransaction(
+            table=staged_table,
+            new_schema=fresh_schema,
+            new_spec=fresh_partition_spec,
+            new_sort_order=fresh_sort_order,
+            new_location=resolved_location,
+            new_properties=properties,
+        )
 
     @abstractmethod
     def load_table(self, identifier: str | Identifier) -> Table:
