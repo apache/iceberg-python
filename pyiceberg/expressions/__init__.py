@@ -698,18 +698,12 @@ class SetPredicate(UnboundPredicate, ABC):
     def __init__(
         self, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
     ) -> None:
-        # `In.__new__` and `NotIn.__new__` have to build the literal set to pick the predicate
-        # class, so they initialize the instance with it. Without this guard the set is built twice.
-        if hasattr(self, "literals"):
-            return
-
-        if literals is None and "values" in kwargs:
-            literals = kwargs["values"]
-
-        if literals is None:
-            literal_set: set[LiteralValue] = set()
-        else:
-            literal_set = _to_literal_set(literals)
+        # __new__ already built the set, and may have used up a one-shot iterator doing it.
+        literal_set = self.__dict__.pop("_literals_from_new", None)
+        if literal_set is None:
+            if literals is None and "values" in kwargs:
+                literals = kwargs["values"]
+            literal_set = set() if literals is None else _to_literal_set(literals)
         super().__init__(term=_to_unbound_term(term), values=literal_set)
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
@@ -850,7 +844,7 @@ class In(SetPredicate):
             return EqualTo(term, next(iter(literals_set)))
         else:
             predicate = super().__new__(cls)
-            SetPredicate.__init__(predicate, term, literals_set)
+            object.__setattr__(predicate, "_literals_from_new", literals_set)
             return predicate
 
     def __invert__(self) -> NotIn:
@@ -887,7 +881,7 @@ class NotIn(SetPredicate, ABC):
             return NotEqualTo(term, next(iter(literals_set)))
         else:
             predicate = super().__new__(cls)
-            SetPredicate.__init__(predicate, term, literals_set)
+            object.__setattr__(predicate, "_literals_from_new", literals_set)
             return predicate
 
     def __invert__(self) -> In:
