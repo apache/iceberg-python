@@ -16,9 +16,10 @@
 # under the License.
 
 import pytest
+from memory_kms import MemoryKeyManagementClient
 
 from pyiceberg.encryption.ciphers import AesGcmCipher, AesKeySize, SecureKey
-from pyiceberg.encryption.kms import GeneratedKey, KeyManagementClient, MemoryKeyManagementClient
+from pyiceberg.encryption.kms import GeneratedKey, KeyManagementClient
 
 MASTER_KEY_ID = "master-key"
 MASTER_KEY = SecureKey(b"0123456789012345")
@@ -60,7 +61,7 @@ def test_wrap_unwrap_round_trip(kms: MemoryKeyManagementClient) -> None:
 
 @pytest.mark.parametrize("key_size", list(AesKeySize))
 def test_wrap_unwrap_round_trip_for_each_master_key_size(key_size: AesKeySize) -> None:
-    kms = MemoryKeyManagementClient(key_size)
+    kms = MemoryKeyManagementClient(master_key_size=key_size)
     master_key = kms.add_master_key(MASTER_KEY_ID)
 
     assert master_key.key_size == key_size
