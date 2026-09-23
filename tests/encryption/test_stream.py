@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from pathlib import Path
+
 import pytest
 
 from pyiceberg.encryption.ciphers import AesGcmCipher, SecureKey
@@ -24,6 +26,7 @@ from pyiceberg.encryption.stream import (
     GCM_STREAM_HEADER_LENGTH,
     GCM_STREAM_MAGIC,
     MAX_BLOCKS,
+    MIN_STREAM_LENGTH,
     PLAIN_BLOCK_SIZE,
     Ags1Layout,
     calculate_plaintext_length,
@@ -38,6 +41,11 @@ AAD_PREFIX = b"0123456789abcdef"
 # The header a Java `AesGcmOutputStream` writes: "AGS1" then 1 MiB as a little-endian int32.
 JAVA_HEADER = b"AGS1\x00\x00\x10\x00"
 
+# Streams written by Java's `AesGcmOutputStream`, with the parameters documented in ags1/README.md.
+AGS1_FIXTURES = Path(__file__).parent / "ags1"
+FIXTURE_KEY = SecureKey(bytes(range(16)))
+FIXTURE_AAD_PREFIX = b"pyiceberg-ags1"
+
 
 def build_stream(plaintext: bytes, aad_prefix: bytes | None = AAD_PREFIX) -> bytes:
     """Encrypt `plaintext` into an AGS1 stream, as an output stream implementation would."""
@@ -48,6 +56,23 @@ def build_stream(plaintext: bytes, aad_prefix: bytes | None = AAD_PREFIX) -> byt
     return encode_stream_header() + b"".join(blocks)
 
 
+def decrypt_stream(stream: bytes, key: SecureKey, aad_prefix: bytes | None) -> bytes:
+    """Decrypt an AGS1 stream block by block, as an input stream implementation would."""
+    layout = Ags1Layout.from_encrypted_length(len(stream))
+    return b"".join(
+        AesGcmCipher(key).decrypt(
+            stream[layout.encrypted_block_offset(index) : layout.encrypted_block_offset(index) + layout.cipher_block_size(index)],
+            stream_block_aad(aad_prefix, index),
+        )
+        for index in range(layout.num_blocks)
+    )
+
+
+def fixture_plaintext(length: int) -> bytes:
+    """Return the plaintext the AGS1 fixtures encrypt: byte `i` is `i % 251`."""
+    return (bytes(range(251)) * (length // 251 + 1))[:length]
+
+
 def test_format_constants() -> None:
     assert GCM_STREAM_MAGIC == b"AGS1"
     assert PLAIN_BLOCK_SIZE == 1024 * 1024
@@ -55,6 +80,7 @@ def test_format_constants() -> None:
     assert BLOCK_OVERHEAD == 28
     assert CIPHER_BLOCK_SIZE == PLAIN_BLOCK_SIZE + BLOCK_OVERHEAD
     assert MAX_BLOCKS == 2**32 - 1
+    assert MIN_STREAM_LENGTH == 36
 
 
 def test_encode_stream_header_matches_java() -> None:
@@ -99,7 +125,6 @@ def test_stream_block_aad_encodes_the_index_little_endian(block_index: int, expe
 @pytest.mark.parametrize(
     "encrypted_length, expected",
     [
-        (GCM_STREAM_HEADER_LENGTH, 0),
         (GCM_STREAM_HEADER_LENGTH + BLOCK_OVERHEAD, 0),
         (GCM_STREAM_HEADER_LENGTH + BLOCK_OVERHEAD + 100, 100),
         (GCM_STREAM_HEADER_LENGTH + CIPHER_BLOCK_SIZE, PLAIN_BLOCK_SIZE),
@@ -111,9 +136,10 @@ def test_calculate_plaintext_length(encrypted_length: int, expected: int) -> Non
     assert calculate_plaintext_length(encrypted_length) == expected
 
 
-@pytest.mark.parametrize("encrypted_length", [0, 1, 7])
-def test_calculate_plaintext_length_rejects_a_stream_shorter_than_the_header(encrypted_length: int) -> None:
-    with pytest.raises(ValueError, match=f"expected at least 8 bytes, got {encrypted_length}"):
+@pytest.mark.parametrize("encrypted_length", [0, 1, 7, GCM_STREAM_HEADER_LENGTH, MIN_STREAM_LENGTH - 1])
+def test_calculate_plaintext_length_rejects_a_stream_shorter_than_one_block(encrypted_length: int) -> None:
+    """A header alone is not a stream, matching Java's `MIN_STREAM_LENGTH` and iceberg-rust."""
+    with pytest.raises(ValueError, match=f"expected at least {MIN_STREAM_LENGTH} bytes, got {encrypted_length}"):
         calculate_plaintext_length(encrypted_length)
 
 
@@ -126,7 +152,6 @@ def test_calculate_plaintext_length_rejects_a_truncated_last_block(last_block_si
 @pytest.mark.parametrize(
     "encrypted_length, plaintext_length, num_blocks, last_cipher_block_size",
     [
-        (GCM_STREAM_HEADER_LENGTH, 0, 0, 0),
         (GCM_STREAM_HEADER_LENGTH + BLOCK_OVERHEAD, 0, 1, BLOCK_OVERHEAD),
         (GCM_STREAM_HEADER_LENGTH + BLOCK_OVERHEAD + 100, 100, 1, BLOCK_OVERHEAD + 100),
         (GCM_STREAM_HEADER_LENGTH + CIPHER_BLOCK_SIZE, PLAIN_BLOCK_SIZE, 1, CIPHER_BLOCK_SIZE),
@@ -142,6 +167,12 @@ def test_layout_from_encrypted_length(
     assert layout == Ags1Layout(
         plaintext_length=plaintext_length, num_blocks=num_blocks, last_cipher_block_size=last_cipher_block_size
     )
+
+
+def test_layout_rejects_a_header_only_stream() -> None:
+    """Every stream holds at least one block, so a bare header has no layout."""
+    with pytest.raises(ValueError, match=f"expected at least {MIN_STREAM_LENGTH} bytes, got {GCM_STREAM_HEADER_LENGTH}"):
+        Ags1Layout.from_encrypted_length(GCM_STREAM_HEADER_LENGTH)
 
 
 def test_layout_rejects_more_blocks_than_the_index_can_address() -> None:
@@ -230,3 +261,51 @@ def test_blocks_cannot_be_moved_between_files() -> None:
 
     with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
         AesGcmCipher(KEY).decrypt(block, stream_block_aad(b"another file's prefix", 0))
+
+
+@pytest.mark.parametrize(
+    "name, plaintext_length, num_blocks, aad_prefix",
+    [
+        ("empty.ags1", 0, 1, FIXTURE_AAD_PREFIX),
+        ("partial-block.ags1", 100, 1, FIXTURE_AAD_PREFIX),
+        ("partial-block-no-aad.ags1", 100, 1, None),
+        ("aligned-multi-block.ags1", 2 * PLAIN_BLOCK_SIZE, 2, FIXTURE_AAD_PREFIX),
+    ],
+)
+def test_decrypts_a_java_written_stream(name: str, plaintext_length: int, num_blocks: int, aad_prefix: bytes | None) -> None:
+    """A stream written by Java must decrypt with the layout derived from its length alone."""
+    stream = (AGS1_FIXTURES / name).read_bytes()
+
+    layout = Ags1Layout.from_encrypted_length(len(stream))
+
+    assert stream[:GCM_STREAM_HEADER_LENGTH] == encode_stream_header()
+    assert decode_stream_header(stream) == PLAIN_BLOCK_SIZE
+    assert layout.plaintext_length == plaintext_length
+    assert layout.num_blocks == num_blocks
+    assert decrypt_stream(stream, FIXTURE_KEY, aad_prefix) == fixture_plaintext(plaintext_length)
+
+
+def test_java_encodes_an_empty_file_as_one_empty_block() -> None:
+    """Java writes a header plus one empty block for an empty file, which is the shortest stream accepted."""
+    stream = (AGS1_FIXTURES / "empty.ags1").read_bytes()
+
+    assert len(stream) == MIN_STREAM_LENGTH
+    assert Ags1Layout.from_encrypted_length(len(stream)) == Ags1Layout(
+        plaintext_length=0, num_blocks=1, last_cipher_block_size=BLOCK_OVERHEAD
+    )
+
+
+def test_java_appends_no_trailing_block_to_a_block_aligned_stream() -> None:
+    """A block-aligned write ends on its last full block, so the length holds no extra empty block."""
+    stream = (AGS1_FIXTURES / "aligned-multi-block.ags1").read_bytes()
+
+    assert len(stream) == GCM_STREAM_HEADER_LENGTH + 2 * CIPHER_BLOCK_SIZE
+
+
+def test_a_truncated_java_stream_still_authenticates() -> None:
+    """Dropping a trailing block leaves every remaining block valid, so the length must come from key metadata."""
+    stream = (AGS1_FIXTURES / "aligned-multi-block.ags1").read_bytes()
+
+    truncated = stream[: GCM_STREAM_HEADER_LENGTH + CIPHER_BLOCK_SIZE]
+
+    assert decrypt_stream(truncated, FIXTURE_KEY, FIXTURE_AAD_PREFIX) == fixture_plaintext(PLAIN_BLOCK_SIZE)

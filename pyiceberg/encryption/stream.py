@@ -23,8 +23,8 @@ An AGS1 stream is an 8 byte header followed by a sequence of AES-GCM blocks::
     nonce || ciphertext || tag        (block 1..n, the last of which may be shorter)
 
 Each block authenticates `aad_prefix || block_index` as additional data, so blocks cannot
-be reordered or moved between files. Byte-compatible with Java's `AesGcmInputStream` and
-`AesGcmOutputStream`, and with iceberg-rust.
+be reordered or moved between files. A stream holds at least one block, so an empty file is
+a header followed by a single empty block rather than a bare header.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ BLOCK_OVERHEAD = AesGcmCipher.NONCE_LENGTH + AesGcmCipher.TAG_LENGTH
 CIPHER_BLOCK_SIZE = PLAIN_BLOCK_SIZE + BLOCK_OVERHEAD
 BLOCK_INDEX_LENGTH = 4
 MAX_BLOCKS = 2 ** (8 * BLOCK_INDEX_LENGTH) - 1
+MIN_STREAM_LENGTH = GCM_STREAM_HEADER_LENGTH + BLOCK_OVERHEAD
 
 
 def stream_block_aad(aad_prefix: bytes | None, block_index: int) -> bytes:
@@ -84,13 +85,10 @@ def calculate_plaintext_length(encrypted_length: int) -> int:
             `StandardKeyMetadata`, never a file system stat. The spec requires the trusted length because a
             stat lets an attacker drop trailing blocks while every remaining block still authenticates.
     """
-    if encrypted_length < GCM_STREAM_HEADER_LENGTH:
-        raise ValueError(f"Invalid AGS1 stream: expected at least {GCM_STREAM_HEADER_LENGTH} bytes, got {encrypted_length}")
+    if encrypted_length < MIN_STREAM_LENGTH:
+        raise ValueError(f"Invalid AGS1 stream: expected at least {MIN_STREAM_LENGTH} bytes, got {encrypted_length}")
 
     stream_length = encrypted_length - GCM_STREAM_HEADER_LENGTH
-    if stream_length == 0:
-        return 0
-
     full_blocks, cipher_bytes_in_last_block = divmod(stream_length, CIPHER_BLOCK_SIZE)
     if cipher_bytes_in_last_block == 0:
         return full_blocks * PLAIN_BLOCK_SIZE
@@ -125,9 +123,6 @@ class Ags1Layout:
         """
         plaintext_length = calculate_plaintext_length(encrypted_length)
         stream_length = encrypted_length - GCM_STREAM_HEADER_LENGTH
-        if stream_length == 0:
-            return cls(plaintext_length=0, num_blocks=0, last_cipher_block_size=0)
-
         full_blocks, cipher_bytes_in_last_block = divmod(stream_length, CIPHER_BLOCK_SIZE)
         if cipher_bytes_in_last_block == 0:
             num_blocks, last_cipher_block_size = full_blocks, CIPHER_BLOCK_SIZE
