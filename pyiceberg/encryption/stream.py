@@ -77,7 +77,13 @@ def decode_stream_header(header: bytes) -> int:
 
 
 def calculate_plaintext_length(encrypted_length: int) -> int:
-    """Return the plaintext length of an AGS1 stream that occupies `encrypted_length` bytes."""
+    """Return the plaintext length of an AGS1 stream that occupies `encrypted_length` bytes.
+
+    Args:
+        encrypted_length (int): The stream's length, which must be the trusted `file_length` from the file's
+            `StandardKeyMetadata`, never a file system stat. The spec requires the trusted length because a
+            stat lets an attacker drop trailing blocks while every remaining block still authenticates.
+    """
     if encrypted_length < GCM_STREAM_HEADER_LENGTH:
         raise ValueError(f"Invalid AGS1 stream: expected at least {GCM_STREAM_HEADER_LENGTH} bytes, got {encrypted_length}")
 
@@ -99,7 +105,7 @@ def calculate_plaintext_length(encrypted_length: int) -> int:
 
 @dataclass(frozen=True)
 class Ags1Layout:
-    """Where each block of an AGS1 stream sits, derived from the encrypted file length.
+    """Where each block of an AGS1 stream sits, derived from the trusted encrypted file length.
 
     Only the final block may hold less than `PLAIN_BLOCK_SIZE` of plaintext, so the layout
     follows from the encrypted length alone, without reading the stream.
@@ -111,7 +117,12 @@ class Ags1Layout:
 
     @classmethod
     def from_encrypted_length(cls, encrypted_length: int) -> Ags1Layout:
-        """Derive the layout of an AGS1 stream that occupies `encrypted_length` bytes."""
+        """Derive the layout of an AGS1 stream that occupies `encrypted_length` bytes.
+
+        Args:
+            encrypted_length (int): The stream's length, which must be the trusted `file_length` from the file's
+                `StandardKeyMetadata`, never a file system stat. See `calculate_plaintext_length`.
+        """
         plaintext_length = calculate_plaintext_length(encrypted_length)
         stream_length = encrypted_length - GCM_STREAM_HEADER_LENGTH
         if stream_length == 0:
