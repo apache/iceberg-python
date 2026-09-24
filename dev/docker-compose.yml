@@ -17,7 +17,7 @@
 
 services:
   object-store:
-    image: rustfs/rustfs:1.0.0-rc.5
+    image: rustfs/rustfs:1.0.0
     container_name: pyiceberg-object-store
     ports:
       - 9001:9001
