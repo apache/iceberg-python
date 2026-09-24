@@ -1995,7 +1995,7 @@ class StaticTable(Table):
             identifier=("static-table", metadata_location),
             metadata_location=metadata_location,
             metadata=metadata,
-            io=load_file_io({**properties, **metadata.properties}, location=metadata_location),
+            io=load_file_io({**metadata.properties, **properties}, location=metadata_location),
             catalog=NoopCatalog("static-table"),
         )
 
