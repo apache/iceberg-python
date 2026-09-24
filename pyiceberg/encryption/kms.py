@@ -37,8 +37,8 @@ class KeyManagementClient(ABC):
 
     Wraps and unwraps table encryption keys using master keys that the service holds.
 
-    Implementations are loaded by name from the catalog properties, so a subclass must keep
-    this constructor signature, as `FileIO` does.
+    Subclasses must accept `properties` as their only required constructor argument, so that
+    they can be loaded by name like `FileIO`.
     """
 
     properties: Properties

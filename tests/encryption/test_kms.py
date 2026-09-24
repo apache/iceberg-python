@@ -38,6 +38,11 @@ def test_key_management_client_cannot_be_instantiated() -> None:
         KeyManagementClient()  # type: ignore[abstract]
 
 
+def test_client_keeps_its_properties() -> None:
+    assert MemoryKeyManagementClient().properties == {}
+    assert MemoryKeyManagementClient({"kms.key": "value"}).properties == {"kms.key": "value"}
+
+
 def test_generated_key_repr_redacts_key() -> None:
     generated = GeneratedKey(key=DEK, wrapped_key=b"wrapped")
 
