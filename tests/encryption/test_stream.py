@@ -47,10 +47,13 @@ FIXTURE_AAD_PREFIX = b"pyiceberg-ags1"
 
 
 def build_stream(plaintext: bytes, aad_prefix: bytes | None = AAD_PREFIX) -> bytes:
-    """Encrypt `plaintext` into an AGS1 stream, as an output stream implementation would."""
+    """Encrypt `plaintext` into an AGS1 stream, as an output stream implementation would.
+
+    An empty plaintext still gets one empty block, which is the form Java writes and the reader accepts.
+    """
     blocks = [
         AesGcmCipher(KEY).encrypt(plaintext[start : start + _PLAIN_BLOCK_SIZE], _stream_block_aad(aad_prefix, index))
-        for index, start in enumerate(range(0, len(plaintext), _PLAIN_BLOCK_SIZE))
+        for index, start in enumerate(range(0, len(plaintext), _PLAIN_BLOCK_SIZE) or [0])
     ]
     return _encode_stream_header() + b"".join(blocks)
 
@@ -203,17 +206,17 @@ def test_layout_rejects_an_out_of_range_plaintext_offset(plaintext_offset: int) 
         layout.block_index_for(plaintext_offset)
 
 
-@pytest.mark.parametrize("plaintext_length", [1, 100, _PLAIN_BLOCK_SIZE, _PLAIN_BLOCK_SIZE + 7, 2 * _PLAIN_BLOCK_SIZE])
+@pytest.mark.parametrize("plaintext_length", [0, 1, 100, _PLAIN_BLOCK_SIZE, _PLAIN_BLOCK_SIZE + 7, 2 * _PLAIN_BLOCK_SIZE])
 def test_layout_describes_a_real_stream(plaintext_length: int) -> None:
     """The layout derived from a stream's length must match the stream that was written."""
-    plaintext = bytes(range(256)) * (plaintext_length // 256) + bytes(plaintext_length % 256)
+    plaintext = fixture_plaintext(plaintext_length)
     stream = build_stream(plaintext)
 
     layout = _Ags1Layout.from_encrypted_length(len(stream))
 
     assert _decode_stream_header(stream) == _PLAIN_BLOCK_SIZE
     assert layout.plaintext_length == plaintext_length
-    assert layout.num_blocks == -(-plaintext_length // _PLAIN_BLOCK_SIZE)
+    assert layout.num_blocks == max(1, -(-plaintext_length // _PLAIN_BLOCK_SIZE))
 
     decrypted = b""
     for index in range(layout.num_blocks):

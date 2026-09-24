@@ -23,8 +23,12 @@ An AGS1 stream is an 8 byte header followed by a sequence of AES-GCM blocks::
     nonce || ciphertext || tag        (block 1..n, the last of which may be shorter)
 
 Each block authenticates `aad_prefix || block_index` as additional data, so blocks cannot
-be reordered or moved between files. A stream holds at least one block, so an empty file is
-a header followed by a single empty block rather than a bare header.
+be reordered or moved between files.
+
+The spec gives the last block a non-zero length, which makes a bare header its encoding of an
+empty file. Java, iceberg-rust and PyIceberg all require at least one block instead, so an
+empty file is a header followed by a single empty block. apache/iceberg#18219 tracks which of
+the two forms writers should produce.
 """
 
 from __future__ import annotations

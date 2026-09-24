@@ -34,10 +34,12 @@ decrypt with iceberg-rust 0.10.1, through its `EncryptedInputFile`.
 | `aligned-multi-block.ags1` | 2097216 B | 2 MiB | Two full blocks: the little-endian block index in each block's AAD, and that a block-aligned write appends **no** trailing empty block |
 
 `empty.ags1` is worth calling out. The spec says the last block has a non-zero
-length, which makes a bare 8 byte header the natural encoding of an empty file, but
-Java writes 36 bytes and its `AesGcmInputFile` rejects anything shorter, as does
-iceberg-rust. PyIceberg matches them: `_MIN_STREAM_LENGTH` is 36, so a bare header is
-rejected rather than read as an empty stream.
+length, which makes a bare 8 byte header its encoding of an empty file. Java instead
+writes 36 bytes and its `AesGcmInputFile` rejects anything shorter, as does iceberg-rust
+since apache/iceberg-rust#3236. PyIceberg follows the implementations rather than the
+spec here: `_MIN_STREAM_LENGTH` is 36, so a bare header is rejected rather than read as
+an empty stream. apache/iceberg#18219 tracks which of the two forms writers should
+produce.
 
 Block-aligned and partial *single* block variants are deliberately not checked in.
 The 1 MiB block size is hard-coded, so each would add another 1 MiB of
