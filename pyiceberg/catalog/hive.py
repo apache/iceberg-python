@@ -32,6 +32,8 @@ from hive_metastore.ttypes import (
     CheckLockRequest,
     EnvironmentContext,
     FieldSchema,
+    GetTableRequest,
+    GetTablesRequest,
     InvalidOperationException,
     LockComponent,
     LockLevel,
@@ -297,6 +299,7 @@ class HiveCatalog(MetastoreCatalog):
     def __init__(self, name: str, **properties: str):
         super().__init__(name, **properties)
         self._client = self._create_hive_client(properties)
+        self._hive2_compatible = property_as_bool(properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT)
 
         self._lock_check_min_wait_time = property_as_float(properties, LOCK_CHECK_MIN_WAIT_TIME, DEFAULT_LOCK_CHECK_MIN_WAIT_TIME)
         self._lock_check_max_wait_time = property_as_float(properties, LOCK_CHECK_MAX_WAIT_TIME, DEFAULT_LOCK_CHECK_MAX_WAIT_TIME)
@@ -367,7 +370,7 @@ class HiveCatalog(MetastoreCatalog):
             sd=_construct_hive_storage_descriptor(
                 table.schema(),
                 table.location(),
-                property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
+                self._hive2_compatible,
             ),
             tableType=EXTERNAL_TABLE,
             parameters=_construct_parameters(metadata_location=table.metadata_location, metadata_properties=table.properties),
@@ -379,9 +382,21 @@ class HiveCatalog(MetastoreCatalog):
         except AlreadyExistsException as e:
             raise TableAlreadyExistsError(f"Table {hive_table.dbName}.{hive_table.tableName} already exists") from e
 
+    def _fetch_hive_table(self, open_client: Client, database_name: str, table_name: str) -> HiveTable:
+        # Hive 4.0.1 removed get_table, and Hive 2 does not have get_table_req
+        if self._hive2_compatible:
+            return open_client.get_table(dbname=database_name, tbl_name=table_name)
+        return open_client.get_table_req(GetTableRequest(dbName=database_name, tblName=table_name)).table
+
+    def _fetch_hive_tables(self, open_client: Client, database_name: str) -> list[HiveTable]:
+        table_names = open_client.get_all_tables(db_name=database_name)
+        if self._hive2_compatible:
+            return open_client.get_table_objects_by_name(dbname=database_name, tbl_names=table_names)
+        return open_client.get_table_objects_by_name_req(GetTablesRequest(dbName=database_name, tblNames=table_names)).tables
+
     def _get_hive_table(self, open_client: Client, database_name: str, table_name: str) -> HiveTable:
         try:
-            return open_client.get_table(dbname=database_name, tbl_name=table_name)
+            return self._fetch_hive_table(open_client, database_name, table_name)
         except NoSuchObjectException as e:
             raise NoSuchTableError(f"Table does not exists: {table_name}") from e
 
@@ -428,7 +443,7 @@ class HiveCatalog(MetastoreCatalog):
 
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
-            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+            hive_table = self._fetch_hive_table(open_client, database_name, table_name)
 
         return self._convert_hive_into_iceberg(hive_table)
 
@@ -474,7 +489,7 @@ class HiveCatalog(MetastoreCatalog):
         tbl = self._convert_iceberg_into_hive(staged_table)
         with self._client as open_client:
             self._create_hive_table(open_client, tbl)
-            hive_table = open_client.get_table(dbname=database_name, tbl_name=table_name)
+            hive_table = self._fetch_hive_table(open_client, database_name, table_name)
 
         return self._convert_hive_into_iceberg(hive_table)
 
@@ -603,7 +618,7 @@ class HiveCatalog(MetastoreCatalog):
                     hive_table.sd = _construct_hive_storage_descriptor(
                         updated_staged_table.schema(),
                         updated_staged_table.location(),
-                        property_as_bool(self.properties, HIVE2_COMPATIBLE, HIVE2_COMPATIBLE_DEFAULT),
+                        self._hive2_compatible,
                     )
                     open_client.alter_table_with_environment_context(
                         dbname=database_name,
@@ -703,7 +718,7 @@ class HiveCatalog(MetastoreCatalog):
 
         try:
             with self._client as open_client:
-                tbl = open_client.get_table(dbname=from_database_name, tbl_name=from_table_name)
+                tbl = self._fetch_hive_table(open_client, from_database_name, from_table_name)
                 tbl.dbName = to_database_name
                 tbl.tableName = to_table_name
                 open_client.alter_table_with_environment_context(
@@ -778,9 +793,7 @@ class HiveCatalog(MetastoreCatalog):
         with self._client as open_client:
             return [
                 (database_name, table.tableName)
-                for table in open_client.get_table_objects_by_name(
-                    dbname=database_name, tbl_names=open_client.get_all_tables(db_name=database_name)
-                )
+                for table in self._fetch_hive_tables(open_client, database_name)
                 if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
             ]
 
