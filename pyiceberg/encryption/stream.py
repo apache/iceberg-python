@@ -77,30 +77,6 @@ def _decode_stream_header(header: bytes) -> int:
     return plain_block_size
 
 
-def _calculate_plaintext_length(encrypted_length: int) -> int:
-    """Return the plaintext length of an AGS1 stream that occupies `encrypted_length` bytes.
-
-    Args:
-        encrypted_length (int): The stream's length, which must be the trusted `file_length` from the file's
-            `StandardKeyMetadata`, never a file system stat. The spec requires the trusted length because a
-            stat lets an attacker drop trailing blocks while every remaining block still authenticates.
-    """
-    if encrypted_length < _MIN_STREAM_LENGTH:
-        raise ValueError(f"Invalid AGS1 stream: expected at least {_MIN_STREAM_LENGTH} bytes, got {encrypted_length}")
-
-    stream_length = encrypted_length - _GCM_STREAM_HEADER_LENGTH
-    full_blocks, cipher_bytes_in_last_block = divmod(stream_length, _CIPHER_BLOCK_SIZE)
-    if cipher_bytes_in_last_block == 0:
-        return full_blocks * _PLAIN_BLOCK_SIZE
-
-    if cipher_bytes_in_last_block < _BLOCK_OVERHEAD:
-        raise ValueError(
-            f"Truncated AGS1 stream: last block is {cipher_bytes_in_last_block} bytes, expected at least {_BLOCK_OVERHEAD}"
-        )
-
-    return full_blocks * _PLAIN_BLOCK_SIZE + cipher_bytes_in_last_block - _BLOCK_OVERHEAD
-
-
 @dataclass(frozen=True)
 class _Ags1Layout:
     """Where each block of an AGS1 stream sits, derived from the trusted encrypted file length.
@@ -119,20 +95,30 @@ class _Ags1Layout:
 
         Args:
             encrypted_length (int): The stream's length, which must be the trusted `file_length` from the file's
-                `StandardKeyMetadata`, never a file system stat. See `_calculate_plaintext_length`.
+                `StandardKeyMetadata`, never a file system stat. The spec requires the trusted length because a
+                stat lets an attacker drop trailing blocks while every remaining block still authenticates.
         """
-        plaintext_length = _calculate_plaintext_length(encrypted_length)
-        stream_length = encrypted_length - _GCM_STREAM_HEADER_LENGTH
-        full_blocks, cipher_bytes_in_last_block = divmod(stream_length, _CIPHER_BLOCK_SIZE)
+        if encrypted_length < _MIN_STREAM_LENGTH:
+            raise ValueError(f"Invalid AGS1 stream: expected at least {_MIN_STREAM_LENGTH} bytes, got {encrypted_length}")
+
+        full_blocks, cipher_bytes_in_last_block = divmod(encrypted_length - _GCM_STREAM_HEADER_LENGTH, _CIPHER_BLOCK_SIZE)
         if cipher_bytes_in_last_block == 0:
             num_blocks, last_cipher_block_size = full_blocks, _CIPHER_BLOCK_SIZE
+        elif cipher_bytes_in_last_block < _BLOCK_OVERHEAD:
+            raise ValueError(
+                f"Truncated AGS1 stream: last block is {cipher_bytes_in_last_block} bytes, expected at least {_BLOCK_OVERHEAD}"
+            )
         else:
             num_blocks, last_cipher_block_size = full_blocks + 1, cipher_bytes_in_last_block
 
         if num_blocks > _MAX_BLOCKS:
             raise ValueError(f"AGS1 streams hold at most {_MAX_BLOCKS} blocks, but {encrypted_length} bytes needs {num_blocks}")
 
-        return cls(plaintext_length=plaintext_length, num_blocks=num_blocks, last_cipher_block_size=last_cipher_block_size)
+        return cls(
+            plaintext_length=(num_blocks - 1) * _PLAIN_BLOCK_SIZE + last_cipher_block_size - _BLOCK_OVERHEAD,
+            num_blocks=num_blocks,
+            last_cipher_block_size=last_cipher_block_size,
+        )
 
     def _check_block_index(self, block_index: int) -> None:
         if not 0 <= block_index < self.num_blocks:

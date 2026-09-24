@@ -29,7 +29,6 @@ from pyiceberg.encryption.stream import (
     _MIN_STREAM_LENGTH,
     _PLAIN_BLOCK_SIZE,
     _Ags1Layout,
-    _calculate_plaintext_length,
     _decode_stream_header,
     _encode_stream_header,
     _stream_block_aad,
@@ -123,33 +122,6 @@ def test_stream_block_aad_encodes_the_index_little_endian(block_index: int, expe
 
 
 @pytest.mark.parametrize(
-    "encrypted_length, expected",
-    [
-        (_GCM_STREAM_HEADER_LENGTH + _BLOCK_OVERHEAD, 0),
-        (_GCM_STREAM_HEADER_LENGTH + _BLOCK_OVERHEAD + 100, 100),
-        (_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE, _PLAIN_BLOCK_SIZE),
-        (_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE + _BLOCK_OVERHEAD + 5, _PLAIN_BLOCK_SIZE + 5),
-        (_GCM_STREAM_HEADER_LENGTH + 2 * _CIPHER_BLOCK_SIZE, 2 * _PLAIN_BLOCK_SIZE),
-    ],
-)
-def test_calculate_plaintext_length(encrypted_length: int, expected: int) -> None:
-    assert _calculate_plaintext_length(encrypted_length) == expected
-
-
-@pytest.mark.parametrize("encrypted_length", [0, 1, 7, _GCM_STREAM_HEADER_LENGTH, _MIN_STREAM_LENGTH - 1])
-def test_calculate_plaintext_length_rejects_a_stream_shorter_than_one_block(encrypted_length: int) -> None:
-    """A header alone is not a stream, matching Java's `_MIN_STREAM_LENGTH` and iceberg-rust."""
-    with pytest.raises(ValueError, match=f"expected at least {_MIN_STREAM_LENGTH} bytes, got {encrypted_length}"):
-        _calculate_plaintext_length(encrypted_length)
-
-
-@pytest.mark.parametrize("last_block_size", [1, 27])
-def test_calculate_plaintext_length_rejects_a_truncated_last_block(last_block_size: int) -> None:
-    with pytest.raises(ValueError, match=f"last block is {last_block_size} bytes, expected at least 28"):
-        _calculate_plaintext_length(_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE + last_block_size)
-
-
-@pytest.mark.parametrize(
     "encrypted_length, plaintext_length, num_blocks, last_cipher_block_size",
     [
         (_GCM_STREAM_HEADER_LENGTH + _BLOCK_OVERHEAD, 0, 1, _BLOCK_OVERHEAD),
@@ -169,10 +141,17 @@ def test_layout_from_encrypted_length(
     )
 
 
-def test_layout_rejects_a_header_only_stream() -> None:
-    """Every stream holds at least one block, so a bare header has no layout."""
-    with pytest.raises(ValueError, match=f"expected at least {_MIN_STREAM_LENGTH} bytes, got {_GCM_STREAM_HEADER_LENGTH}"):
-        _Ags1Layout.from_encrypted_length(_GCM_STREAM_HEADER_LENGTH)
+@pytest.mark.parametrize("encrypted_length", [0, 1, 7, _GCM_STREAM_HEADER_LENGTH, _MIN_STREAM_LENGTH - 1])
+def test_layout_rejects_a_stream_shorter_than_one_block(encrypted_length: int) -> None:
+    """A header alone is not a stream, matching Java's `MIN_STREAM_LENGTH` and iceberg-rust."""
+    with pytest.raises(ValueError, match=f"expected at least {_MIN_STREAM_LENGTH} bytes, got {encrypted_length}"):
+        _Ags1Layout.from_encrypted_length(encrypted_length)
+
+
+@pytest.mark.parametrize("last_block_size", [1, 27])
+def test_layout_rejects_a_truncated_last_block(last_block_size: int) -> None:
+    with pytest.raises(ValueError, match=f"last block is {last_block_size} bytes, expected at least 28"):
+        _Ags1Layout.from_encrypted_length(_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE + last_block_size)
 
 
 def test_layout_rejects_more_blocks_than_the_index_can_address() -> None:
@@ -309,3 +288,16 @@ def test_a_truncated_java_stream_still_authenticates() -> None:
     truncated = stream[: _GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE]
 
     assert decrypt_stream(truncated, FIXTURE_KEY, FIXTURE_AAD_PREFIX) == fixture_plaintext(_PLAIN_BLOCK_SIZE)
+
+
+def test_the_trusted_length_exposes_a_truncated_stream() -> None:
+    """The layout from the trusted length outruns a truncated file, which is how a reader detects the drop."""
+    stream = (AGS1_FIXTURES / "aligned-multi-block.ags1").read_bytes()
+    truncated = stream[: _GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE]
+
+    layout = _Ags1Layout.from_encrypted_length(len(stream))
+    last_block = layout.num_blocks - 1
+
+    assert layout.plaintext_length == 2 * _PLAIN_BLOCK_SIZE
+    assert layout.encrypted_block_offset(last_block) + layout.cipher_block_size(last_block) > len(truncated)
+    assert _Ags1Layout.from_encrypted_length(len(truncated)).plaintext_length == _PLAIN_BLOCK_SIZE
