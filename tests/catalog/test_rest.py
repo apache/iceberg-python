@@ -31,7 +31,7 @@ from requests.exceptions import HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
-from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
+from pyiceberg.catalog import TOKEN, PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
@@ -2745,6 +2745,34 @@ def test_table_identifier_in_commit_table_request(
         rest_mock.last_request.text
         == """{"identifier":{"namespace":["namespace"],"name":"table_name"},"requirements":[],"updates":[]}"""
     )
+
+
+def test_commit_table_does_not_mutate_session_headers(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
+    metadata_location = "s3://some_bucket/metadata.json"
+    table_token = "table-scoped-token"
+    rest_mock.post(
+        url=f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+        json={
+            "metadata": example_table_metadata_v2,
+            "metadata-location": metadata_location,
+        },
+        status_code=200,
+    )
+    catalog = RestCatalog("catalog_name", uri=TEST_URI, token=TEST_TOKEN)
+    session_auth = catalog._session.headers.get("Authorization")
+    table = Table(
+        identifier=("namespace", "table_name"),
+        metadata=None,  # type: ignore
+        metadata_location=metadata_location,
+        io=None,  # type: ignore
+        catalog=catalog,
+        config={TOKEN: table_token},
+    )
+
+    catalog.commit_table(table, (), ())
+
+    assert catalog._session.headers.get("Authorization") == session_auth
+    assert rest_mock.last_request.headers["Authorization"] == f"Bearer {table_token}"
 
 
 def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
