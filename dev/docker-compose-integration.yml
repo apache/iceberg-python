@@ -62,7 +62,7 @@ services:
       - CATALOG_S3_ENDPOINT=http://object-store:9000
       - CATALOG_JDBC_STRICT__MODE=true
   object-store:
-    image: rustfs/rustfs:1.0.0-rc.5
+    image: rustfs/rustfs:1.0.0
     container_name: pyiceberg-object-store
     networks:
       iceberg_net:
@@ -79,8 +79,8 @@ services:
       - RUSTFS_CONSOLE_ENABLE=true
       - RUSTFS_CONSOLE_ADDRESS=:9001
       # Resolves virtual-hosted-style `warehouse.object-store` to the warehouse
-      # bucket. The port is required until rustfs/rustfs#7051 ships.
-      - RUSTFS_SERVER_DOMAINS=object-store:9000
+      # bucket.
+      - RUSTFS_SERVER_DOMAINS=object-store
     healthcheck:
       test: ["CMD-SHELL", "curl --fail http://127.0.0.1:9000/health"]
       interval: 5s
