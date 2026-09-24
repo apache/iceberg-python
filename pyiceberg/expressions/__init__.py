@@ -221,6 +221,7 @@ class BoundReference(BoundTerm):
 
         Args:
             struct (StructProtocol): A row object that abides by the StructProtocol and returns values given a position.
+
         Returns:
             Any: The value at the referenced field's position in `struct`.
         """
