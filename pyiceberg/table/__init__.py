@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import Field
 
-import pyiceberg.expressions.parser as parser
 from pyiceberg.exceptions import CommitFailedException, ValidationException
 from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
@@ -2042,6 +2041,8 @@ def _parse_row_filter(expr: str | BooleanExpression) -> BooleanExpression:
 
     Returns: An unbound BooleanExpression.
     """
+    from pyiceberg.expressions import parser
+
     return parser.parse(expr) if isinstance(expr, str) else expr
 
 
