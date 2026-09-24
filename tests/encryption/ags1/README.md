@@ -62,7 +62,7 @@ is safe as long as the parameters above are unchanged.
 
 From this directory, with a JDK 17 or later:
 
-<!-- markdown-link-check-disable-next-line -->
+<!-- markdown-link-check-disable -->
 ```bash
 V=1.11.0
 for a in iceberg-core iceberg-api iceberg-bundled-guava; do
@@ -72,3 +72,4 @@ java -cp "iceberg-api-$V.jar:iceberg-bundled-guava-$V.jar:iceberg-core-$V.jar" \
   GenerateAgs1Fixtures.java .
 rm iceberg-*-$V.jar
 ```
+<!-- markdown-link-check-enable -->
