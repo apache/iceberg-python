@@ -301,7 +301,7 @@ def _starting_sequence_number(table: Table, starting_snapshot: Snapshot) -> int:
         table: Table to find snapshot from
         starting_snapshot: Snapshot from where to start looking
 
-    Returns
+    Returns:
         Sequence number as int
     """
     if starting_snapshot is not None:
