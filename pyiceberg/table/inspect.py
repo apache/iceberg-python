@@ -26,7 +26,7 @@ from pyiceberg.expressions import AlwaysTrue, BooleanExpression
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
-from pyiceberg.types import PrimitiveType
+from pyiceberg.types import DoubleType, FloatType, IntegerType, LongType, PrimitiveType
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
@@ -39,7 +39,13 @@ ALWAYS_TRUE = AlwaysTrue()
 
 
 def _readable_bound(field_type: PrimitiveType, bound: bytes | None) -> Any | None:
-    return from_bytes(field_type, bound) if bound is not None else None
+    if bound is None:
+        return None
+    if isinstance(field_type, LongType) and len(bound) == 4:
+        return from_bytes(IntegerType(), bound)
+    if isinstance(field_type, DoubleType) and len(bound) == 4:
+        return from_bytes(FloatType(), bound)
+    return from_bytes(field_type, bound)
 
 
 class InspectTable:
@@ -246,7 +252,6 @@ class InspectTable:
                         "value_count": value_counts.get(field.field_id),
                         "null_value_count": null_value_counts.get(field.field_id),
                         "nan_value_count": nan_value_counts.get(field.field_id),
-                        # Makes them readable
                         "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),
                         "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),
                     }
@@ -562,7 +567,7 @@ class InspectTable:
                 lower_bound = (
                     (
                         field.transform.to_human_string(
-                            partition_field_type, from_bytes(partition_field_type, field_summary.lower_bound)
+                            partition_field_type, _readable_bound(partition_field_type, field_summary.lower_bound)
                         )
                     )
                     if field_summary.lower_bound is not None
@@ -571,7 +576,7 @@ class InspectTable:
                 upper_bound = (
                     (
                         field.transform.to_human_string(
-                            partition_field_type, from_bytes(partition_field_type, field_summary.upper_bound)
+                            partition_field_type, _readable_bound(partition_field_type, field_summary.upper_bound)
                         )
                     )
                     if field_summary.upper_bound is not None
