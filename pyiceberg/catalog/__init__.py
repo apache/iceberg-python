@@ -331,6 +331,8 @@ def _import_catalog(name: str, catalog_impl: str, properties: Properties) -> Cat
         module_name, class_name = ".".join(path_parts[:-1]), path_parts[-1]
         module = importlib.import_module(module_name)
         class_ = getattr(module, class_name)
+        if not isinstance(class_, type) or not issubclass(class_, Catalog):
+            raise ValueError(f"py-catalog-impl should be a subclass of Catalog, got: {catalog_impl}")
         return class_(name, **properties)
     except ModuleNotFoundError:
         logger.warning(f"Could not initialize Catalog: {catalog_impl}", exc_info=logger.isEnabledFor(logging.DEBUG))
