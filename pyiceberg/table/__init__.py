@@ -1124,8 +1124,7 @@ class Transaction:
 
             try:
                 try:
-                    # Snapshot ids sent to the catalog so far. A commit applies all of an attempt's
-                    # snapshots atomically, so finding any of them means that attempt landed.
+                    # Each attempt is atomic, so finding any snapshot it sent proves it landed.
                     sent_snapshot_ids: set[int] = set()
                     for attempt in range(num_retries + 1):
                         sent_snapshot_ids.update(
@@ -1136,7 +1135,6 @@ class Transaction:
                                 updates=self._updates,
                                 requirements=self._requirements,
                             )
-                            self._cleanup_uncommitted_manifests()
                             break
                         except CommitFailedException as e:
                             elapsed_ms = (time.monotonic() - start_time) * 1000
@@ -1155,21 +1153,16 @@ class Transaction:
                                 )
                                 time.sleep((wait + jitter) / 1000.0)
 
-                            if sent_snapshot_ids:
-                                if self._attempt_landed(sent_snapshot_ids, e):
-                                    # A previous attempt actually landed even though it was reported as
-                                    # failed (for example a lost response that the transport layer retried).
-                                    # Stop here instead of committing the same data again, and never clean
-                                    # up the files the landed snapshot references.
-                                    self._cleanup_uncommitted_manifests()
-                                    break
-                            elif not last_attempt:
-                                # No snapshot was sent, so nothing can have landed, but the rebuild still
-                                # needs fresh metadata to validate against concurrent commits.
-                                self._table.refresh()
+                            if sent_snapshot_ids and self._attempt_landed(sent_snapshot_ids, e):
+                                # A lost response can report failure after the commit landed.
+                                break
                             if last_attempt:
                                 raise
+                            if not sent_snapshot_ids:
+                                # Retries without snapshot updates still need fresh metadata for validation.
+                                self._table.refresh()
                             self._rebuild_snapshot_updates()
+                    self._cleanup_uncommitted_manifests()
                 except (CommitFailedException, ValidationException):
                     # These exceptions guarantee the commit did not land, so it is safe to delete the
                     # files written for it. Any other exception (unknown outcome, or a commit that already
@@ -1215,10 +1208,9 @@ class Transaction:
         return self._table
 
     def _attempt_landed(self, snapshot_ids: set[int], commit_error: CommitFailedException) -> bool:
-        """Refresh the table and return whether any of the given snapshots is in its metadata.
+        """Refresh the table and check for a landed snapshot.
 
-        Raises CommitStateUnknownException if the refresh fails. That skips the cleanup of this
-        transaction's files, since a snapshot that may have landed could reference them.
+        Raise CommitStateUnknownException if refresh fails, preserving potentially committed files.
         """
         try:
             self._table.refresh()
@@ -1235,7 +1227,6 @@ class Transaction:
 
     def _rebuild_snapshot_updates(self) -> None:
         """Rebuild snapshot updates for retry by re-executing registered producers."""
-        from pyiceberg.table.update import AddSnapshotUpdate, AssertRefSnapshotId, SetSnapshotRefUpdate
         from pyiceberg.table.update.snapshot import CommitWindow
 
         self._updates = tuple(u for u in self._updates if not isinstance(u, (AddSnapshotUpdate, SetSnapshotRefUpdate)))

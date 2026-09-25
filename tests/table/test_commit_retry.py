@@ -1293,16 +1293,12 @@ def test_negative_wait_properties_do_not_mask_commit_failure(catalog: Catalog) -
 
 
 def _commit_outcomes(catalog: Catalog, *outcomes: str) -> Any:
-    """Patch commit_table to fail its first calls with CommitFailedException, then commit normally.
-
-    A "conflict" outcome fails without committing. A "lost" outcome commits, then fails as if the
-    response was lost.
-    """
+    """Inject CommitFailedException before ("conflict") or after ("lost") a commit."""
     real_commit = catalog.commit_table
-    remaining = list(outcomes)
+    remaining = iter(outcomes)
 
     def commit(*args: Any, **kwargs: Any) -> Any:
-        outcome = remaining.pop(0) if remaining else "ok"
+        outcome = next(remaining, "ok")
         if outcome == "conflict":
             raise CommitFailedException("concurrent update")
         result = real_commit(*args, **kwargs)
@@ -1332,15 +1328,11 @@ def _assert_one_readable_snapshot(catalog: Catalog, identifier: str, expected: l
 def test_lost_response_on_the_last_attempt_keeps_the_landed_snapshot(
     catalog: Catalog, num_retries: str, outcomes: list[str]
 ) -> None:
-    """A lost response on the last attempt must be checked for a landed snapshot before cleaning up.
-
-    With no attempt left, the landed check of the retry loop is never reached. Cleaning up
-    unconditionally deletes the manifest list of the snapshot the catalog just committed.
-    """
+    """Check for a landed snapshot before cleanup, even when retries are exhausted."""
     import pyarrow as pa
 
     catalog.create_namespace("default")
-    catalog.create_table(
+    table = catalog.create_table(
         "default.last_attempt_lost",
         schema=_test_schema(),
         properties={
@@ -1349,7 +1341,6 @@ def test_lost_response_on_the_last_attempt_keeps_the_landed_snapshot(
             TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
         },
     )
-    table = catalog.load_table("default.last_attempt_lost")
 
     with _commit_outcomes(catalog, *outcomes):
         table.append(pa.table({"x": [1]}))
@@ -1359,17 +1350,15 @@ def test_lost_response_on_the_last_attempt_keeps_the_landed_snapshot(
 
 @pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
 def test_lost_response_for_an_overwrite_of_an_empty_table_keeps_the_landed_snapshot(catalog: Catalog) -> None:
-    """The landed check must use the snapshots that were committed, not every producer.
+    """Recognize a landed overwrite even when its delete producer adds no snapshot.
 
-    An overwrite of an empty table registers a delete producer that adds no snapshot. Requiring a
-    snapshot from every producer never finds the landed append, so the retry rebuilds the updates.
-    The rebuilt delete then sees its own landed append as a conflicting commit, and the resulting
-    ValidationException cleans up the landed snapshot's files.
+    Requiring a snapshot from every producer misses the landed append, so the rebuilt delete sees
+    that append as a conflict, and the ValidationException cleanup deletes the landed snapshot's files.
     """
     import pyarrow as pa
 
     catalog.create_namespace("default")
-    catalog.create_table(
+    table = catalog.create_table(
         "default.empty_overwrite_lost",
         schema=_test_schema(),
         properties={
@@ -1377,7 +1366,6 @@ def test_lost_response_for_an_overwrite_of_an_empty_table_keeps_the_landed_snaps
             TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
         },
     )
-    table = catalog.load_table("default.empty_overwrite_lost")
 
     with _commit_outcomes(catalog, "lost"):
         table.overwrite(pa.table({"x": [1]}))
@@ -1386,16 +1374,15 @@ def test_lost_response_for_an_overwrite_of_an_empty_table_keeps_the_landed_snaps
 
 
 def test_retry_without_staged_snapshots_validates_against_refreshed_metadata(catalog: Catalog) -> None:
-    """A retry must refresh the table even when no attempt sent a snapshot.
+    """Refresh before retrying a property update combined with a delete that matched nothing.
 
-    A property update with a delete that matched nothing has producers but adds no snapshot. Skipping
-    the refresh rebuilds the delete against stale metadata, which misses a concurrent append matching
-    the delete predicate.
+    No snapshot is sent, so without a refresh the delete is rebuilt against stale metadata and misses
+    a concurrent append matching its predicate.
     """
     import pyarrow as pa
 
     catalog.create_namespace("default")
-    catalog.create_table(
+    table = catalog.create_table(
         "default.no_snapshot_retry",
         schema=_test_schema(),
         properties={
@@ -1404,7 +1391,7 @@ def test_retry_without_staged_snapshots_validates_against_refreshed_metadata(cat
         },
     )
 
-    tx = catalog.load_table("default.no_snapshot_retry").transaction()
+    tx = table.transaction()
     tx.set_properties({"key": "value"})
     with pytest.warns(UserWarning):  # the delete matches nothing at staging time
         tx.delete("x > 45")
@@ -1421,23 +1408,22 @@ def test_retry_without_staged_snapshots_validates_against_refreshed_metadata(cat
 
 
 def test_lost_response_with_a_failed_refresh_keeps_the_files(catalog: Catalog) -> None:
-    """If the landed check cannot refresh the table, the outcome is unknown and nothing is deleted."""
+    """Preserve committed files when the outcome cannot be verified."""
     import pyarrow as pa
 
     catalog.create_namespace("default")
-    catalog.create_table(
+    table = catalog.create_table(
         "default.lost_refresh_failed",
         schema=_test_schema(),
         properties={TableProperties.COMMIT_NUM_RETRIES: "0"},
     )
-    table = catalog.load_table("default.lost_refresh_failed")
 
     with (
         _commit_outcomes(catalog, "lost"),
         patch.object(table, "refresh", side_effect=ConnectionError("catalog unreachable")),
+        pytest.raises(CommitStateUnknownException) as exc_info,
     ):
-        with pytest.raises(CommitStateUnknownException) as exc_info:
-            table.append(pa.table({"x": [1]}))
+        table.append(pa.table({"x": [1]}))
     assert isinstance(exc_info.value.__cause__, CommitFailedException)
 
     _assert_one_readable_snapshot(catalog, "default.lost_refresh_failed", [{"x": 1}])
