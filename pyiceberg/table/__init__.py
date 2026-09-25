@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import Field
 
-from pyiceberg.exceptions import CommitFailedException, ValidationException
+from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
 from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
@@ -66,6 +66,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
     AddSchemaUpdate,
+    AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
     AssertRefSnapshotId,
@@ -1123,7 +1124,13 @@ class Transaction:
 
             try:
                 try:
+                    # Snapshot ids sent to the catalog so far. A commit applies all of an attempt's
+                    # snapshots atomically, so finding any of them means that attempt landed.
+                    sent_snapshot_ids: set[int] = set()
                     for attempt in range(num_retries + 1):
+                        sent_snapshot_ids.update(
+                            update.snapshot.snapshot_id for update in self._updates if isinstance(update, AddSnapshotUpdate)
+                        )
                         try:
                             self._table._do_commit(  # pylint: disable=W0212
                                 updates=self._updates,
@@ -1131,33 +1138,32 @@ class Transaction:
                             )
                             self._cleanup_uncommitted_manifests()
                             break
-                        except CommitFailedException:
+                        except CommitFailedException as e:
                             elapsed_ms = (time.monotonic() - start_time) * 1000
-                            if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
-                                raise
-
-                            wait = min(min_wait_ms * (2**attempt), max_wait_ms)
-                            jitter = random.uniform(0, 0.1 * wait)
-                            logger.warning(
-                                "Commit failed due to a concurrent update, retrying (%s/%s) in %s ms",
-                                attempt + 1,
-                                num_retries,
-                                round(wait + jitter),
+                            last_attempt = (
+                                attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms
                             )
-                            time.sleep((wait + jitter) / 1000.0)
 
-                            self._table.refresh()
-                            if all(
-                                self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None
-                                for producer in self._snapshot_producers
-                            ):
+                            if not last_attempt:
+                                wait = min(min_wait_ms * (2**attempt), max_wait_ms)
+                                jitter = random.uniform(0, 0.1 * wait)
+                                logger.warning(
+                                    "Commit failed due to a concurrent update, retrying (%s/%s) in %s ms",
+                                    attempt + 1,
+                                    num_retries,
+                                    round(wait + jitter),
+                                )
+                                time.sleep((wait + jitter) / 1000.0)
+
+                            if sent_snapshot_ids and self._attempt_landed(sent_snapshot_ids, e):
                                 # A previous attempt actually landed even though it was reported as
                                 # failed (for example a lost response that the transport layer retried).
-                                # The snapshot id is stable across attempts, so finding it in the
-                                # refreshed metadata means the commit is already applied. Stop here
-                                # instead of committing the same data again.
+                                # Stop here instead of committing the same data again, and never clean
+                                # up the files the landed snapshot references.
                                 self._cleanup_uncommitted_manifests()
                                 break
+                            if last_attempt:
+                                raise
                             self._rebuild_snapshot_updates()
                 except (CommitFailedException, ValidationException):
                     # These exceptions guarantee the commit did not land, so it is safe to delete the
@@ -1202,6 +1208,20 @@ class Transaction:
         self._requirements = ()
 
         return self._table
+
+    def _attempt_landed(self, snapshot_ids: set[int], commit_error: CommitFailedException) -> bool:
+        """Refresh the table and return whether any of the given snapshots is in its metadata.
+
+        Raises CommitStateUnknownException if the refresh fails. That skips the cleanup of this
+        transaction's files, since a snapshot that may have landed could reference them.
+        """
+        try:
+            self._table.refresh()
+        except Exception as refresh_error:
+            raise CommitStateUnknownException(
+                f"Commit failed ({commit_error}); could not refresh the table to check whether it landed: {refresh_error}"
+            ) from commit_error
+        return any(self._table.metadata.snapshot_by_id(snapshot_id) is not None for snapshot_id in snapshot_ids)
 
     def _cleanup_uncommitted_manifests(self) -> None:
         """Clean up manifests from failed retry attempts after a successful commit."""
