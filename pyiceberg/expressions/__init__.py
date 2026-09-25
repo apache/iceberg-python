@@ -698,19 +698,18 @@ class SetPredicate(UnboundPredicate, ABC):
     def __init__(
         self, term: str | UnboundTerm, literals: Iterable[Any] | Iterable[LiteralValue] | None = None, **kwargs: Any
     ) -> None:
-        if literals is None and "values" in kwargs:
-            literals = kwargs["values"]
-
-        if literals is None:
-            literal_set: set[LiteralValue] = set()
-        else:
-            literal_set = _to_literal_set(literals)
+        # __new__ already built the set, and may have used up a one-shot iterator doing it.
+        literal_set = self.__dict__.pop("_literals_from_new", None)
+        if literal_set is None:
+            if literals is None and "values" in kwargs:
+                literals = kwargs["values"]
+            literal_set = set() if literals is None else _to_literal_set(literals)
         super().__init__(term=_to_unbound_term(term), values=literal_set)
 
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
-        literal_set = self.literals
-        return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore
+        field_type = bound_term.ref().field.field_type
+        return self.as_bound(bound_term, {lit.to(field_type) for lit in self.literals})  # type: ignore
 
     def __str__(self) -> str:
         """Return the string representation of the SetPredicate class."""
@@ -844,7 +843,9 @@ class In(SetPredicate):
         elif count == 1:
             return EqualTo(term, next(iter(literals_set)))
         else:
-            return super().__new__(cls)
+            predicate = super().__new__(cls)
+            object.__setattr__(predicate, "_literals_from_new", literals_set)
+            return predicate
 
     def __invert__(self) -> NotIn:
         """Transform the Expression into its negated version."""
@@ -879,7 +880,9 @@ class NotIn(SetPredicate, ABC):
         elif count == 1:
             return NotEqualTo(term, next(iter(literals_set)))
         else:
-            return super().__new__(cls)
+            predicate = super().__new__(cls)
+            object.__setattr__(predicate, "_literals_from_new", literals_set)
+            return predicate
 
     def __invert__(self) -> In:
         """Transform the Expression into its negated version."""

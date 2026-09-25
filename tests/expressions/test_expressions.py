@@ -327,6 +327,14 @@ def test_in_list() -> None:
     assert In(Reference("foo"), ["a", "bc", "def"]).literals == {literal("a"), literal("bc"), literal("def")}
 
 
+def test_in_generator() -> None:
+    assert In(Reference("foo"), (v for v in ["a", "bc", "def"])).literals == {literal("a"), literal("bc"), literal("def")}
+
+
+def test_not_in_generator() -> None:
+    assert NotIn(Reference("foo"), (v for v in ["a", "bc", "def"])).literals == {literal("a"), literal("bc"), literal("def")}
+
+
 def test_not_in_empty() -> None:
     assert NotIn(Reference("foo"), ()) == AlwaysTrue()
 
