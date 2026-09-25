@@ -456,13 +456,11 @@ class PyArrowFileIO(FileIO):
 
     def _set_tls_ca_file_path(self, client_kwargs: dict[str, Any]) -> None:
         if tls_ca_file_path := self.properties.get(S3_SSL_CA_CERT):
-            from packaging import version
-
-            min_pyarrow_version_supporting_tls_ca_file_path = "21.0.0"
-            if version.parse(pyarrow.__version__) < version.parse(min_pyarrow_version_supporting_tls_ca_file_path):
+            min_pyarrow_version_supporting_tls_ca_file_path = (21, 0)
+            if tuple(map(int, pa.__version__.split(".")[:2])) < min_pyarrow_version_supporting_tls_ca_file_path:
                 raise ImportError(
-                    f"pyarrow version >= {min_pyarrow_version_supporting_tls_ca_file_path} required for "
-                    f"S3FileSystem tls_ca_file_path support, but found version {pyarrow.__version__}."
+                    "pyarrow version >= 21.0.0 required for S3FileSystem tls_ca_file_path support, "
+                    f"but found version {pa.__version__}."
                 )
             client_kwargs["tls_ca_file_path"] = tls_ca_file_path
 

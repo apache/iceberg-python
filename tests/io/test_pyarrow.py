@@ -410,7 +410,7 @@ def test_pyarrow_s3_ssl_ca_cert_requires_supported_pyarrow_version() -> None:
     }
 
     with (
-        patch("pyiceberg.io.pyarrow.pyarrow.__version__", "20.0.0"),
+        patch("pyiceberg.io.pyarrow.pa.__version__", "20.0.0"),
         patch("pyarrow.fs.S3FileSystem"),
         patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver,
     ):
