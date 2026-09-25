@@ -294,3 +294,14 @@ def test_boolean_as_operand(expression: str, expected: BooleanExpression) -> Non
 def test_boolean_as_literal_is_unchanged() -> None:
     assert parser.parse("foo = true") == EqualTo(Reference("foo"), literal(True))
     assert parser.parse("foo in (true, false)") == In(Reference("foo"), {literal(True), literal(False)})
+
+
+def test_literal_with_tab_is_preserved() -> None:
+    assert EqualTo("foo", "a\tb") == parser.parse("foo = 'a\tb'")
+
+
+def test_literal_with_tab_does_not_depend_on_its_position() -> None:
+    one_char_column = parser.parse("a = 'x\ty'")
+    two_char_column = parser.parse("ab = 'x\ty'")
+
+    assert one_char_column.literal.value == two_char_column.literal.value
