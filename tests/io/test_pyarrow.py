@@ -63,7 +63,7 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
+from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, S3_SSL_CA_CERT, InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PYARROW_PARQUET_FIELD_ID_KEY,
@@ -382,6 +382,7 @@ def test_pyarrow_s3_session_properties() -> None:
         "s3.secret-access-key": "password",
         "s3.region": "us-east-1",
         "s3.session-token": "s3.session-token",
+        S3_SSL_CA_CERT: "/path/to/ca.pem",
         **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
@@ -399,7 +400,24 @@ def test_pyarrow_s3_session_properties() -> None:
             secret_key="password",
             region="us-east-1",
             session_token="s3.session-token",
+            tls_ca_file_path="/path/to/ca.pem",
         )
+
+
+def test_pyarrow_s3_ssl_ca_cert_requires_supported_pyarrow_version() -> None:
+    session_properties: Properties = {
+        S3_SSL_CA_CERT: "/path/to/ca.pem",
+    }
+
+    with (
+        patch("pyiceberg.io.pyarrow.pa.__version__", "20.0.0"),
+        patch("pyarrow.fs.S3FileSystem"),
+        patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver,
+    ):
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
+
+        with pytest.raises(ImportError, match="pyarrow version >= 21.0.0 required"):
+            PyArrowFileIO(properties=session_properties).new_input(location=f"s3://warehouse/{uuid.uuid4()}")
 
 
 def test_pyarrow_s3_session_properties_with_anonymous() -> None:

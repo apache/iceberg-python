@@ -116,6 +116,7 @@ from pyiceberg.io import (
     S3_ROLE_SESSION_NAME,
     S3_SECRET_ACCESS_KEY,
     S3_SESSION_TOKEN,
+    S3_SSL_CA_CERT,
     FileIO,
     InputFile,
     InputStream,
@@ -453,6 +454,16 @@ class PyArrowFileIO(FileIO):
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
+    def _set_tls_ca_file_path(self, client_kwargs: dict[str, Any]) -> None:
+        if tls_ca_file_path := self.properties.get(S3_SSL_CA_CERT):
+            min_pyarrow_version_supporting_tls_ca_file_path = (21, 0)
+            if tuple(map(int, pa.__version__.split(".")[:2])) < min_pyarrow_version_supporting_tls_ca_file_path:
+                raise ImportError(
+                    "pyarrow version >= 21.0.0 required for S3FileSystem tls_ca_file_path support, "
+                    f"but found version {pa.__version__}."
+                )
+            client_kwargs["tls_ca_file_path"] = tls_ca_file_path
+
     def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
@@ -482,6 +493,8 @@ class PyArrowFileIO(FileIO):
 
         if s3_anonymous := self.properties.get(S3_ANONYMOUS):
             client_kwargs["anonymous"] = strtobool(s3_anonymous)
+
+        self._set_tls_ca_file_path(client_kwargs)
 
         return S3FileSystem(**client_kwargs)
 
@@ -536,6 +549,8 @@ class PyArrowFileIO(FileIO):
 
         if s3_anonymous := self.properties.get(S3_ANONYMOUS):
             client_kwargs["anonymous"] = strtobool(s3_anonymous)
+
+        self._set_tls_ca_file_path(client_kwargs)
 
         return S3FileSystem(**client_kwargs)
 
