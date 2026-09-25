@@ -1155,13 +1155,18 @@ class Transaction:
                                 )
                                 time.sleep((wait + jitter) / 1000.0)
 
-                            if sent_snapshot_ids and self._attempt_landed(sent_snapshot_ids, e):
-                                # A previous attempt actually landed even though it was reported as
-                                # failed (for example a lost response that the transport layer retried).
-                                # Stop here instead of committing the same data again, and never clean
-                                # up the files the landed snapshot references.
-                                self._cleanup_uncommitted_manifests()
-                                break
+                            if sent_snapshot_ids:
+                                if self._attempt_landed(sent_snapshot_ids, e):
+                                    # A previous attempt actually landed even though it was reported as
+                                    # failed (for example a lost response that the transport layer retried).
+                                    # Stop here instead of committing the same data again, and never clean
+                                    # up the files the landed snapshot references.
+                                    self._cleanup_uncommitted_manifests()
+                                    break
+                            elif not last_attempt:
+                                # No snapshot was sent, so nothing can have landed, but the rebuild still
+                                # needs fresh metadata to validate against concurrent commits.
+                                self._table.refresh()
                             if last_attempt:
                                 raise
                             self._rebuild_snapshot_updates()

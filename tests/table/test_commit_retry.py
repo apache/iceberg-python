@@ -1385,6 +1385,41 @@ def test_lost_response_for_an_overwrite_of_an_empty_table_keeps_the_landed_snaps
     _assert_one_readable_snapshot(catalog, "default.empty_overwrite_lost", [{"x": 1}])
 
 
+def test_retry_without_staged_snapshots_validates_against_refreshed_metadata(catalog: Catalog) -> None:
+    """A retry must refresh the table even when no attempt sent a snapshot.
+
+    A property update with a delete that matched nothing has producers but adds no snapshot. Skipping
+    the refresh rebuilds the delete against stale metadata, which misses a concurrent append matching
+    the delete predicate.
+    """
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    catalog.create_table(
+        "default.no_snapshot_retry",
+        schema=_test_schema(),
+        properties={
+            TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+            TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
+        },
+    )
+
+    tx = catalog.load_table("default.no_snapshot_retry").transaction()
+    tx.set_properties({"key": "value"})
+    with pytest.warns(UserWarning):  # the delete matches nothing at staging time
+        tx.delete("x > 45")
+
+    # A row matching the delete predicate lands concurrently.
+    catalog.load_table("default.no_snapshot_retry").append(pa.table({"x": [50]}))
+
+    with _commit_outcomes(catalog, "conflict"), pytest.raises(ValidationException):
+        tx.commit_transaction()
+
+    table = catalog.load_table("default.no_snapshot_retry")
+    assert "key" not in table.properties
+    assert table.scan().to_arrow()["x"].to_pylist() == [50]
+
+
 def test_lost_response_with_a_failed_refresh_keeps_the_files(catalog: Catalog) -> None:
     """If the landed check cannot refresh the table, the outcome is unknown and nothing is deleted."""
     import pyarrow as pa
