@@ -74,15 +74,12 @@ services:
     environment:
       - RUSTFS_ACCESS_KEY=admin
       - RUSTFS_SECRET_KEY=password
-      - RUSTFS_VOLUMES=/data
-      - RUSTFS_ADDRESS=:9000
-      - RUSTFS_CONSOLE_ENABLE=true
-      - RUSTFS_CONSOLE_ADDRESS=:9001
+      - RUSTFS_OBS_LOG_STDOUT_ENABLED=true
       # Resolves virtual-hosted-style `warehouse.object-store` to the warehouse
       # bucket.
       - RUSTFS_SERVER_DOMAINS=object-store
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail http://127.0.0.1:9000/health"]
+      test: ["CMD-SHELL", "curl --fail http://127.0.0.1:9000/health/ready"]
       interval: 5s
       timeout: 5s
       retries: 10
