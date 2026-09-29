@@ -895,12 +895,9 @@ class TruncateTransform(Transform[S, S]):
         return lambda v: truncate_func(v) if v is not None else None
 
     def satisfies_order_of(self, other: Transform[S, T]) -> bool:
-        if self == other:
-            return True
-        elif isinstance(other, TruncateTransform):
-            return self.width >= other.width
-
-        return False
+        # Unequal widths have different ordering semantics for numeric and prefix types.
+        # Without a source type, only equal transforms are guaranteed to satisfy the order.
+        return self == other
 
     def to_human_string(self, _: IcebergType, value: S | None) -> str:
         if value is None:

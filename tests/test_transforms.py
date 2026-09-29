@@ -512,10 +512,77 @@ def test_truncate_method(type_var: PrimitiveType, value: Any, expected_human_str
     assert truncate_transform.satisfies_order_of(truncate_transform)
 
 
-def test_truncate_satisfies_order_of_different_widths() -> None:
-    assert TruncateTransform(5).satisfies_order_of(TruncateTransform(3))
-    assert not TruncateTransform(3).satisfies_order_of(TruncateTransform(5))
+@pytest.mark.parametrize("width,other_width", [(5, 3), (3, 5), (4, 2), (2, 4), (1, 5), (5, 1)])
+def test_truncate_satisfies_order_of_different_widths(width: int, other_width: int) -> None:
+    assert not TruncateTransform(width).satisfies_order_of(TruncateTransform(other_width))
+
+
+def test_truncate_satisfies_order_of_equal_widths() -> None:
+    assert TruncateTransform(5).satisfies_order_of(TruncateTransform(5))
     assert not TruncateTransform(5).satisfies_order_of(BucketTransform(3))
+    assert not TruncateTransform(5).satisfies_order_of(IdentityTransform())
+
+
+@pytest.mark.parametrize(
+    "source,values,expected_width_five,expected_width_three",
+    [
+        (IntegerType(), [3, 2], [0, 0], [3, 0]),
+        (IntegerType(), [-3, -4], [-5, -5], [-3, -6]),
+        (LongType(), [3, 2], [0, 0], [3, 0]),
+        (LongType(), [-3, -4], [-5, -5], [-3, -6]),
+        (
+            DecimalType(3, 2),
+            [Decimal("0.03"), Decimal("0.02")],
+            [Decimal("0.00"), Decimal("0.00")],
+            [Decimal("0.03"), Decimal("0.00")],
+        ),
+        (
+            DecimalType(3, 2),
+            [Decimal("-0.03"), Decimal("-0.04")],
+            [Decimal("-0.05"), Decimal("-0.05")],
+            [Decimal("-0.03"), Decimal("-0.06")],
+        ),
+    ],
+)
+def test_truncate_satisfies_order_of_numeric_ties(
+    source: PrimitiveType,
+    values: list[Any],
+    expected_width_five: list[Any],
+    expected_width_three: list[Any],
+) -> None:
+    width_five = TruncateTransform(5)
+    width_three = TruncateTransform(3)
+    keys_five = list(map(width_five.transform(source), values))
+    keys_three = list(map(width_three.transform(source), values))
+    assert keys_five == expected_width_five
+    assert keys_three == expected_width_three
+    assert keys_five[0] == keys_five[1]
+    assert keys_three[0] > keys_three[1]
+    assert not width_five.satisfies_order_of(width_three)
+
+
+@pytest.mark.parametrize(
+    "source,values",
+    [(StringType(), ["abc2", "abc1"]), (BinaryType(), [b"abc2", b"abc1"])],
+)
+def test_truncate_satisfies_order_of_prefix_ties(source: PrimitiveType, values: list[Any]) -> None:
+    width_three = TruncateTransform(3)
+    width_five = TruncateTransform(5)
+    keys_three = list(map(width_three.transform(source), values))
+    keys_five = list(map(width_five.transform(source), values))
+    assert keys_three[0] == keys_three[1]
+    assert keys_five[0] > keys_five[1]
+    assert not width_three.satisfies_order_of(width_five)
+
+
+def test_truncate_satisfies_order_of_is_independent_of_source_calls() -> None:
+    transform = TruncateTransform(5)
+    other = TruncateTransform(3)
+    for source in (StringType(), IntegerType(), DecimalType(3, 2)):
+        transform.transform(source)
+        other.transform(source)
+        assert not transform.satisfies_order_of(other)
+        assert transform.satisfies_order_of(TruncateTransform(5))
 
 
 def test_unknown_transform() -> None:
