@@ -1000,3 +1000,20 @@ def test_upsert_composite_key_large_batch(catalog: Catalog) -> None:
     assert sorted(tbl.scan().to_arrow().to_pylist(), key=lambda r: r["k1"]) == [
         {"k1": i, "k2": f"k{i}", "v": i if i < 2500 else i + 10} for i in range(7500)
     ]
+
+
+def test_upsert_composite_key_all_source_keys_matched_across_files(catalog: Catalog) -> None:
+    # The first file removes every source key from the insert set, the second file still matches the superset filter
+    tbl, arrow_schema = _composite_key_table(catalog, "default.test_upsert_composite_key_all_source_keys_matched_across_files")
+    tbl.append(pa.Table.from_pylist([{"k1": 1, "k2": "b", "v": 1}], schema=arrow_schema))
+    tbl.append(pa.Table.from_pylist([{"k1": 1, "k2": "a", "v": 2}, {"k1": 2, "k2": "b", "v": 3}], schema=arrow_schema))
+    source = pa.Table.from_pylist([{"k1": 1, "k2": "a", "v": 20}, {"k1": 2, "k2": "b", "v": 3}], schema=arrow_schema)
+
+    res = tbl.upsert(source)
+
+    assert (res.rows_updated, res.rows_inserted) == (1, 0)
+    assert sorted(tbl.scan().to_arrow().to_pylist(), key=lambda r: (r["k1"], r["k2"])) == [
+        {"k1": 1, "k2": "a", "v": 20},
+        {"k1": 1, "k2": "b", "v": 1},
+        {"k1": 2, "k2": "b", "v": 3},
+    ]

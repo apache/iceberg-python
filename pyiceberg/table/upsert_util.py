@@ -45,7 +45,7 @@ def exclude_keys(table: pa.Table, keys: pa.Table, join_cols: list[str]) -> pa.Ta
     INDEX_COLUMN_NAME = "__index"
 
     table_keys = table.select(join_cols)
-    index = table_keys.append_column(INDEX_COLUMN_NAME, pa.array(range(len(table))))
+    index = table_keys.append_column(INDEX_COLUMN_NAME, pa.array(range(len(table)), pa.int64()))
     remaining = index.join(keys.select(join_cols).cast(table_keys.schema), keys=join_cols, join_type="left anti")
 
     return table.take(remaining.sort_by(INDEX_COLUMN_NAME)[INDEX_COLUMN_NAME])
