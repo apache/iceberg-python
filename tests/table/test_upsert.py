@@ -31,7 +31,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
-from pyiceberg.table.upsert_util import create_match_filter
+from pyiceberg.table.upsert_util import create_match_filter, exclude_keys
 from pyiceberg.transforms import DayTransform
 from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
 from tests.catalog.test_base import InMemoryCatalog
@@ -930,10 +930,7 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
 
 
 def test_create_match_filter_composite_key_is_flat() -> None:
-    """
-    Test create_match_filter with a composite key and several unique keys.
-    Expected: One In per key column, not one Or disjunct per key.
-    """
+    # One In per key column, not one Or disjunct per key
     schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32())])
     table = pa.Table.from_pylist([{"order_id": 101, "order_line_id": 1}, {"order_id": 102, "order_line_id": 2}], schema=schema)
     expr = create_match_filter(table, ["order_id", "order_line_id"])
@@ -1017,3 +1014,9 @@ def test_upsert_composite_key_all_source_keys_matched_across_files(catalog: Cata
         {"k1": 1, "k2": "b", "v": 1},
         {"k1": 2, "k2": "b", "v": 3},
     ]
+
+
+def test_exclude_keys_rejects_reserved_column_name() -> None:
+    table = pa.table({"__index": [1], "k": ["a"]})
+    with pytest.raises(ValueError, match="__index is reserved"):
+        exclude_keys(table, table, ["__index", "k"])
