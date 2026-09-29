@@ -44,6 +44,9 @@ def exclude_keys(table: pa.Table, keys: pa.Table, join_cols: list[str]) -> pa.Ta
     """Return the rows of the table whose key is not present in the given keys, in the original order."""
     INDEX_COLUMN_NAME = "__index"
 
+    if INDEX_COLUMN_NAME in join_cols:
+        raise ValueError(f"{INDEX_COLUMN_NAME} is reserved for joining DataFrames, and cannot be used as a column name")
+
     table_keys = table.select(join_cols)
     index = table_keys.append_column(INDEX_COLUMN_NAME, pa.array(range(len(table)), pa.int64()))
     remaining = index.join(keys.select(join_cols).cast(table_keys.schema), keys=join_cols, join_type="left anti")
