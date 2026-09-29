@@ -25,9 +25,39 @@ from pyiceberg.expressions import (
     AlwaysFalse,
     BooleanExpression,
     EqualTo,
+    GreaterThanOrEqual,
     In,
+    IsNull,
+    LessThanOrEqual,
     Or,
 )
+
+
+def create_file_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
+    """Build a conservative predicate for upsert file pruning.
+
+    The returned predicate may match extra files, but must not exclude files that
+    could contain a matching row. Exact row matching still happens downstream.
+    """
+    if len(df) == 0:
+        return AlwaysFalse()
+
+    per_col: list[BooleanExpression] = []
+    for col in join_cols:
+        col_arr = df.column(col)
+        bounds = pc.min_max(col_arr).as_py()
+        col_min, col_max = bounds["min"], bounds["max"]
+
+        if col_min is None:
+            per_col.append(IsNull(col))
+            continue
+
+        pred: BooleanExpression = GreaterThanOrEqual(col, col_min) & LessThanOrEqual(col, col_max)
+        if pc.any(pc.is_null(col_arr)).as_py():
+            pred = pred | IsNull(col)
+        per_col.append(pred)
+
+    return functools.reduce(operator.and_, per_col)
 
 
 def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
