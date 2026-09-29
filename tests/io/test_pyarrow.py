@@ -1822,6 +1822,28 @@ def test_read_deletes(deletes_file: str, request: pytest.FixtureRequest) -> None
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
 
 
+@pytest.mark.parametrize("file_format", [FileFormat.PARQUET, FileFormat.ORC])
+def test_read_deletes_many_distinct_file_paths(tmp_path: str, file_format: FileFormat) -> None:
+    """Guard against quadratic behavior in _read_deletes: https://github.com/apache/iceberg-python/issues/3983."""
+    positions_per_file = {f"s3://bucket/data/file-{i}.parquet": [i, i + 1, i + 2] for i in range(200)}
+    file_path_column = [path for path, positions in positions_per_file.items() for _ in positions]
+    pos_column = [pos for positions in positions_per_file.values() for pos in positions]
+    table = pa.table({"file_path": file_path_column, "pos": pos_column})
+
+    if file_format == FileFormat.PARQUET:
+        deletes_file_path = f"{tmp_path}/deletes.parquet"
+        pq.write_table(table, deletes_file_path)
+    else:
+        deletes_file_path = f"{tmp_path}/deletes.orc"
+        orc.write_table(table, deletes_file_path)
+
+    deletes = _read_deletes(PyArrowFileIO(), DataFile.from_args(file_path=deletes_file_path, file_format=file_format))
+
+    assert set(deletes.keys()) == set(positions_per_file.keys())
+    for path, expected_positions in positions_per_file.items():
+        assert deletes[path] == pa.chunked_array([expected_positions])
+
+
 def test_delete(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:
     # Determine file format from the file extension
     file_format = FileFormat.PARQUET if deletes_file.endswith(".parquet") else FileFormat.ORC
