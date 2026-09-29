@@ -54,7 +54,7 @@ jobs:
             3.14
 
       - name: Install UV
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
