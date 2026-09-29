@@ -24,7 +24,7 @@ from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
+from pyiceberg.expressions import AlwaysTrue, And, EqualTo, In, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -927,3 +927,76 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+def test_create_match_filter_composite_key_is_flat() -> None:
+    """
+    Test create_match_filter with a composite key and several unique keys.
+    Expected: One In per key column, not one Or disjunct per key.
+    """
+    schema = pa.schema([pa.field("order_id", pa.int32()), pa.field("order_line_id", pa.int32())])
+    table = pa.Table.from_pylist([{"order_id": 101, "order_line_id": 1}, {"order_id": 102, "order_line_id": 2}], schema=schema)
+    expr = create_match_filter(table, ["order_id", "order_line_id"])
+    assert expr == And(In("order_id", [101, 102]), In("order_line_id", [1, 2]))
+
+
+def _composite_key_table(catalog: Catalog, identifier: str) -> tuple[Table, pa.Schema]:
+    _drop_table(catalog, identifier)
+    schema = Schema(
+        NestedField(1, "k1", IntegerType(), required=True),
+        NestedField(2, "k2", StringType(), required=True),
+        NestedField(3, "v", IntegerType(), required=True),
+        identifier_field_ids=[1, 2],
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("k1", pa.int32(), nullable=False),
+            pa.field("k2", pa.string(), nullable=False),
+            pa.field("v", pa.int32(), nullable=False),
+        ]
+    )
+    return catalog.create_table(identifier, schema=schema), arrow_schema
+
+
+def test_upsert_composite_key_keeps_rows_outside_source_keys(catalog: Catalog) -> None:
+    # Every k1 and every k2 of the source exists in the target, but only two of the key tuples do
+    tbl, arrow_schema = _composite_key_table(catalog, "default.test_upsert_composite_key_keeps_rows_outside_source_keys")
+    tbl.append(
+        pa.Table.from_pylist(
+            [
+                {"k1": 1, "k2": "a", "v": 1},
+                {"k1": 1, "k2": "b", "v": 2},
+                {"k1": 2, "k2": "a", "v": 3},
+                {"k1": 2, "k2": "b", "v": 4},
+            ],
+            schema=arrow_schema,
+        )
+    )
+    source = pa.Table.from_pylist(
+        [{"k1": 1, "k2": "b", "v": 20}, {"k1": 2, "k2": "a", "v": 30}, {"k1": 2, "k2": "c", "v": 5}], schema=arrow_schema
+    )
+
+    res = tbl.upsert(source)
+
+    assert (res.rows_updated, res.rows_inserted) == (2, 1)
+    assert sorted(tbl.scan().to_arrow().to_pylist(), key=lambda r: (r["k1"], r["k2"])) == [
+        {"k1": 1, "k2": "a", "v": 1},
+        {"k1": 1, "k2": "b", "v": 20},
+        {"k1": 2, "k2": "a", "v": 30},
+        {"k1": 2, "k2": "b", "v": 4},
+        {"k1": 2, "k2": "c", "v": 5},
+    ]
+
+
+def test_upsert_composite_key_large_batch(catalog: Catalog) -> None:
+    # One Or disjunct per key tuple overflows the Arrow expression stack from about 1,000 tuples (#3508)
+    tbl, arrow_schema = _composite_key_table(catalog, "default.test_upsert_composite_key_large_batch")
+    tbl.append(pa.Table.from_pylist([{"k1": i, "k2": f"k{i}", "v": i} for i in range(5000)], schema=arrow_schema))
+    source = pa.Table.from_pylist([{"k1": i, "k2": f"k{i}", "v": i + 10} for i in range(2500, 7500)], schema=arrow_schema)
+
+    res = tbl.upsert(source)
+
+    assert (res.rows_updated, res.rows_inserted) == (2500, 2500)
+    assert sorted(tbl.scan().to_arrow().to_pylist(), key=lambda r: r["k1"]) == [
+        {"k1": i, "k2": f"k{i}", "v": i if i < 2500 else i + 10} for i in range(7500)
+    ]
