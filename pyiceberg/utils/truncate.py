@@ -16,20 +16,31 @@
 #  under the License.
 
 
+_SURROGATE_START = 0xD800
+_SURROGATE_END = 0xDFFF
+_MAX_CODE_POINT = 0x10FFFF
+
+
+def _next_code_point(char: str) -> str | None:
+    """Return the next Unicode scalar value after char, or None if there is none."""
+    code_point = ord(char) + 1
+    # Surrogates are not scalar values and cannot be encoded as UTF-8, so skip the range.
+    if _SURROGATE_START <= code_point <= _SURROGATE_END:
+        code_point = _SURROGATE_END + 1
+    if code_point > _MAX_CODE_POINT:
+        return None
+    return chr(code_point)
+
+
 def truncate_upper_bound_text_string(value: str, trunc_length: int | None) -> str | None:
     result = value[:trunc_length]
     if result != value:
         chars = [*result]
 
         for i in range(-1, -len(result) - 1, -1):
-            try:
-                to_inc = ord(chars[i])
-                # will raise exception if the highest unicode code is reached
-                _next = chr(to_inc + 1)
-                chars[i] = _next
+            if (next_char := _next_code_point(chars[i])) is not None:
+                chars[i] = next_char
                 return "".join(chars)
-            except ValueError:
-                pass
         return None  # didn't find a valid upper bound
     return result
 
