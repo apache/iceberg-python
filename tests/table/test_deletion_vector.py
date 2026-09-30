@@ -17,16 +17,19 @@
 import struct
 import zlib
 from os import path
+from pathlib import Path
 
 import pytest
 from pyroaring import BitMap
 
+from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.table.deletion_vector import (
     _DV_BLOB_MAGIC_NUMBER,
     DeletionVector,
     _deserialize_dv_blob,
     has_deletion_vector_content_reference,
+    read_deletion_vectors,
 )
 
 
@@ -99,6 +102,28 @@ def test_has_deletion_vector_content_reference() -> None:
     assert has_deletion_vector_content_reference(_data_file(content_offset=0))
     assert has_deletion_vector_content_reference(_data_file(content_size_in_bytes=1))
     assert has_deletion_vector_content_reference(_data_file(referenced_data_file="data.parquet"))
+
+
+def test_read_external_deletion_vector_content_range() -> None:
+    """Read an externally generated Iceberg DV blob from a .bin content range."""
+    fixture_path = Path(__file__).parent / "deletion_vector" / "v1" / "deletion-vector.bin"
+    # The V3 manifest points past the one-byte file prefix to the complete DV blob.
+    dv = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=str(fixture_path),
+        file_format=FileFormat.PUFFIN,
+        record_count=3,
+        content_offset=1,
+        content_size_in_bytes=46,
+        referenced_data_file="data.parquet",
+    )
+
+    deletion_vectors = read_deletion_vectors(PyArrowFileIO(), dv)
+
+    assert len(deletion_vectors) == 1
+    assert deletion_vectors[0].referenced_data_file == "data.parquet"
+    assert deletion_vectors[0].to_vector().to_pylist() == [1, 4, 5]
 
 
 def test_map_empty() -> None:

@@ -1980,6 +1980,48 @@ def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tm
     assert sorted(delete.to_pylist() for delete in deletes[referenced_data_file]) == [[1, 3], [5]]
 
 
+def test_read_all_delete_files_from_external_packed_deletion_vectors() -> None:
+    """Read all DV ranges from an externally generated .bin file without losing entries to deduplication."""
+    fixture_path = Path(__file__).parents[1] / "table" / "deletion_vector" / "v1" / "packed-deletion-vectors.bin"
+    # (content_offset, content_size_in_bytes, expected deleted row positions)
+    # Ranges copied from the fixture's V3 manifest; each DV references a different ten-row data file.
+    content_ranges = [
+        (1, 46, [1, 4, 7]),
+        (47, 48, [0, 3, 6, 9]),
+        (95, 42, [0]),
+        (137, 50, [1, 3, 5, 7, 9]),
+        (187, 52, [0, 2, 4, 6, 8, 9]),
+        (239, 44, [0, 2]),
+    ]
+    tasks = []
+    expected_deletes = {}
+    for index, (content_offset, content_size_in_bytes, expected_positions) in enumerate(content_ranges):
+        referenced_data_file = f"data-{index}.parquet"
+        dv = DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.POSITION_DELETES,
+            file_path=str(fixture_path),
+            file_format=FileFormat.PUFFIN,
+            record_count=len(expected_positions),
+            content_offset=content_offset,
+            content_size_in_bytes=content_size_in_bytes,
+            referenced_data_file=referenced_data_file,
+        )
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=referenced_data_file,
+            file_format=FileFormat.PARQUET,
+            record_count=10,
+            file_size_in_bytes=100,
+        )
+        tasks.append(FileScanTask(data_file=data_file, delete_files=[dv]))
+        expected_deletes[referenced_data_file] = [pa.chunked_array([expected_positions])]
+
+    deletes = _read_all_delete_files(PyArrowFileIO(), tasks)
+
+    assert deletes == expected_deletes
+
+
 def test_delete(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:
     # Determine file format from the file extension
     file_format = FileFormat.PARQUET if deletes_file.endswith(".parquet") else FileFormat.ORC
