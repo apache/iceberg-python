@@ -919,6 +919,21 @@ def test_decimal_to_long_below_min() -> None:
     assert isinstance(DecimalLiteral(Decimal(LongType.min - 1)).to(LongType()), LongBelowMin)
 
 
+@pytest.mark.parametrize("value", ["2.5", "2.6", "-2.5", "0.1"])
+@pytest.mark.parametrize("target_type", [IntegerType(), LongType()])
+def test_fractional_decimal_to_integral_type_raises(value: str, target_type: PrimitiveType) -> None:
+    # Rounding would change the predicate, e.g. x > 2.6 would become x > 3 and drop x = 3
+    with pytest.raises(ValueError, match=f"Could not convert {value} into a {target_type}"):
+        _ = DecimalLiteral(Decimal(value)).to(target_type)
+
+
+@pytest.mark.parametrize("value", ["2", "2.0", "2.00", "-2.0"])
+@pytest.mark.parametrize("target_type", [IntegerType(), LongType()])
+def test_integral_decimal_to_integral_type(value: str, target_type: PrimitiveType) -> None:
+    # A decimal literal without a fractional part, such as 2.0, still converts exactly
+    assert DecimalLiteral(Decimal(value)).to(target_type) == LongLiteral(int(Decimal(value)))
+
+
 def test_string_to_integer_type_invalid_value() -> None:
     with pytest.raises(ValueError) as e:
         _ = literal("abc").to(IntegerType())
