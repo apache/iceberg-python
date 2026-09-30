@@ -575,7 +575,7 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
             return ROWS_CANNOT_MATCH
 
         if len(literals) > IN_PREDICATE_LIMIT:
-            return ROWS_MIGHT_MATCH
+            literals = {min(literals), max(literals)}
 
         lower = _from_byte_buffer(term.ref().field.field_type, field.lower_bound)
 
@@ -1388,12 +1388,11 @@ class _InclusiveMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
         if self._contains_nulls_only(field_id) or self._contains_nans_only(field_id):
             return ROWS_CANNOT_MATCH
 
-        if len(literals) > IN_PREDICATE_LIMIT:
-            # skip evaluating the predicate if the number of values is too big
-            return ROWS_MIGHT_MATCH
-
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
+
+        # only compare the smallest and largest values if the number of values is too big
+        above_limit = len(literals) > IN_PREDICATE_LIMIT
 
         lower_bound_bytes = self.lower_bounds.get(field_id)
         if lower_bound_bytes is not None:
@@ -1402,9 +1401,13 @@ class _InclusiveMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
                 # NaN indicates unreliable bounds. See the InclusiveMetricsEvaluator docs for more.
                 return ROWS_MIGHT_MATCH
 
-            literals = {lit for lit in literals if lower_bound <= lit}  # type: ignore[operator]
-            if len(literals) == 0:
-                return ROWS_CANNOT_MATCH
+            if above_limit:
+                if max(literals) < lower_bound:  # type: ignore[operator]
+                    return ROWS_CANNOT_MATCH
+            else:
+                literals = {lit for lit in literals if lower_bound <= lit}  # type: ignore[operator]
+                if len(literals) == 0:
+                    return ROWS_CANNOT_MATCH
 
         upper_bound_bytes = self.upper_bounds.get(field_id)
         if upper_bound_bytes is not None:
@@ -1413,9 +1416,13 @@ class _InclusiveMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
             if self._is_nan(upper_bound):
                 return ROWS_MIGHT_MATCH
 
-            literals = {lit for lit in literals if upper_bound >= lit}  # type: ignore[operator]
-            if len(literals) == 0:
-                return ROWS_CANNOT_MATCH
+            if above_limit:
+                if min(literals) > upper_bound:  # type: ignore[operator]
+                    return ROWS_CANNOT_MATCH
+            else:
+                literals = {lit for lit in literals if upper_bound >= lit}  # type: ignore[operator]
+                if len(literals) == 0:
+                    return ROWS_CANNOT_MATCH
 
         return ROWS_MIGHT_MATCH
 
