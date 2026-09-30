@@ -75,6 +75,13 @@ def _parse_numeric_string(value: str) -> Decimal:
     return number
 
 
+def _to_integral(value: Decimal, type_var: IcebergType) -> int:
+    """Convert a Decimal to an int, rejecting values with a fractional part instead of rounding them."""
+    if value != value.to_integral_value():
+        raise ValueError(f"Could not convert {value} into a {type_var}, value has a fractional part")
+    return int(value)
+
+
 class Literal(IcebergRootModel[L], Generic[L], ABC):  # type: ignore
     """Literal which has a value and can be converted between types."""
 
@@ -527,24 +534,24 @@ class DecimalLiteral(Literal[Decimal]):
         raise ValueError(f"Could not convert {self.value} into a {type_var}")
 
     @to.register(IntegerType)
-    def _(self, _: IntegerType) -> Literal[int]:
+    def _(self, type_var: IntegerType) -> Literal[int]:
         value_int = int(self.value.to_integral_value())
         if value_int > IntegerType.max:
             return IntAboveMax()
         elif value_int < IntegerType.min:
             return IntBelowMin()
         else:
-            return LongLiteral(value_int)
+            return LongLiteral(_to_integral(self.value, type_var))
 
     @to.register(LongType)
-    def _(self, _: LongType) -> Literal[int]:
+    def _(self, type_var: LongType) -> Literal[int]:
         value_int = int(self.value.to_integral_value())
         if value_int > LongType.max:
             return LongAboveMax()
         elif value_int < LongType.min:
             return LongBelowMin()
         else:
-            return LongLiteral(value_int)
+            return LongLiteral(_to_integral(self.value, type_var))
 
     @to.register(FloatType)
     def _(self, _: FloatType) -> Literal[float]:

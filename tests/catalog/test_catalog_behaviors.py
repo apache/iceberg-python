@@ -1322,6 +1322,18 @@ def test_append_invalid_input_type_raises(catalog: Catalog) -> None:
         tbl.append("not an arrow object")
 
 
+def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.scan_integer_decimal_literal_{catalog.name}"
+    tbl = catalog.create_table(identifier=identifier, schema=pa.schema([pa.field("x", pa.int32())]))
+    tbl.append(pa.table({"x": pa.array([1, 2, 3, 4], pa.int32())}))
+
+    assert sorted(tbl.scan(row_filter="x > 2.0").to_arrow()["x"].to_pylist()) == [3, 4]
+    # Rounding 2.6 to 3 would turn x > 2.6 into x > 3 and silently drop x = 3
+    with pytest.raises(ValueError, match="Could not convert 2.6 into a int"):
+        tbl.scan(row_filter="x > 2.6").to_arrow()
+
+
 def test_record_batch_reader_consumed_exactly_once(catalog: Catalog) -> None:
     """The streaming path must consume the underlying generator exactly once.
     A regression that drained the reader twice (e.g. an extra .schema access
