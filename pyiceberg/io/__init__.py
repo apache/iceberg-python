@@ -30,6 +30,9 @@ import logging
 import os
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import datetime
 from io import SEEK_SET
 from types import TracebackType
 from typing import (
@@ -269,6 +272,15 @@ class OutputFile(ABC):
         """
 
 
+@dataclass(frozen=True)
+class FileEntry:
+    """Metadata of a single file."""
+
+    location: str
+    size: int
+    last_modified: datetime | None = None
+
+
 class FileIO(ABC):
     """A base class for FileIO implementations."""
 
@@ -304,6 +316,25 @@ class FileIO(ABC):
         Raises:
             PermissionError: If the file at location cannot be accessed due to a permission error.
             FileNotFoundError: When the file at the provided location does not exist.
+        """
+
+
+class SupportsPrefixOperations(ABC):
+    """An extension for FileIO implementations that support prefix based operations."""
+
+    @abstractmethod
+    def list_prefix(self, location: str) -> Iterator[FileEntry]:
+        """Recursively list every file under the given location.
+
+        Listing is paged and expensive on object stores, so prefer a storage specific inventory
+        for anything beyond low-volume maintenance. Hierarchical filesystems may require the
+        prefix to be a directory, while object stores allow for arbitrary prefixes.
+
+        Args:
+            location (str): A URI or path to recursively list.
+
+        Returns:
+            Iterator[FileEntry]: The metadata of every file under the location.
         """
 
 

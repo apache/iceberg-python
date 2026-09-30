@@ -63,7 +63,7 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
+from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, SupportsPrefixOperations, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PYARROW_PARQUET_FIELD_ID_KEY,
@@ -145,6 +145,32 @@ def test_pyarrow_local_fs_can_create_path_without_parent_dir() -> None:
                 f.write(b"foo")
         except Exception:
             pytest.fail("Failed to write to file without parent directory")
+
+
+def test_pyarrow_list_prefix(tmp_path: Path) -> None:
+    """Test recursively listing a directory using PyArrowFileIO.list_prefix(...)"""
+    file_io = PyArrowFileIO()
+    assert isinstance(file_io, SupportsPrefixOperations)
+
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "a.txt").write_bytes(b"foo")
+    (tmp_path / "nested" / "b.txt").write_bytes(b"barr")
+
+    entries = sorted(file_io.list_prefix(str(tmp_path)), key=lambda entry: entry.location)
+
+    assert [Path(entry.location) for entry in entries] == [tmp_path / "a.txt", tmp_path / "nested" / "b.txt"]
+    assert [entry.size for entry in entries] == [3, 4]
+    assert all(entry.last_modified is not None for entry in entries)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="A file:// URI cannot carry a Windows drive letter")
+def test_pyarrow_list_prefix_retains_scheme(tmp_path: Path) -> None:
+    """Test that a location with a scheme is listed as URIs with that same scheme"""
+    (tmp_path / "a.txt").write_bytes(b"foo")
+
+    entries = list(PyArrowFileIO().list_prefix(f"file://{tmp_path}"))
+
+    assert [entry.location for entry in entries] == [f"file://{tmp_path}/a.txt"]
 
 
 def test_pyarrow_input_file() -> None:
