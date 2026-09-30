@@ -16,6 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 import importlib
+import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -509,11 +510,12 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
 def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
     """Test that ManifestFile objects are cached and reused across multiple reads.
 
-    The cache now stores individual ManifestFile objects by their manifest_path,
+    The cache stores individual ManifestFile objects by (table_uuid, manifest_path),
     rather than caching entire manifest list tuples. This is more memory-efficient
     when multiple manifest lists share overlapping ManifestFile objects.
     """
     io = load_file_io()
+    table_uuid = uuid.uuid4()
 
     snapshot = Snapshot(
         snapshot_id=25,
@@ -525,8 +527,8 @@ def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
     )
 
     # Access the manifests property multiple times
-    manifests_first_call = snapshot.manifests(io)
-    manifests_second_call = snapshot.manifests(io)
+    manifests_first_call = snapshot.manifests(io, table_uuid=table_uuid)
+    manifests_second_call = snapshot.manifests(io, table_uuid=table_uuid)
 
     # Ensure that the same manifest list content is returned
     assert manifests_first_call == manifests_second_call
@@ -845,10 +847,11 @@ def test_manifest_cache_deduplicates_manifest_files() -> None:
     - ManifestList3: (ManifestFile1, ManifestFile2, ManifestFile3)
 
     With the old approach, ManifestFile1 was stored 3 times in the cache.
-    With the new approach, ManifestFile objects are cached individually by their
-    manifest_path, so ManifestFile1 is stored only once and reused.
+    With the new approach, ManifestFile objects are cached individually by
+    (table_uuid, manifest_path), so ManifestFile1 is stored only once and reused.
     """
     io = PyArrowFileIO()
+    table_uuid = uuid.uuid4()
 
     with TemporaryDirectory() as tmp_dir:
         # Create three manifest files to simulate manifests created during appends
@@ -974,9 +977,9 @@ def test_manifest_cache_deduplicates_manifest_files() -> None:
             list_writer.add_manifests([manifest_file1, manifest_file2, manifest_file3])
 
         # Read all three manifest lists
-        manifests1 = _manifests(io, manifest_list1_path)
-        manifests2 = _manifests(io, manifest_list2_path)
-        manifests3 = _manifests(io, manifest_list3_path)
+        manifests1 = _manifests(io, manifest_list1_path, table_uuid)
+        manifests2 = _manifests(io, manifest_list2_path, table_uuid)
+        manifests3 = _manifests(io, manifest_list3_path, table_uuid)
 
         # Verify the manifest files have the expected paths
         assert len(manifests1) == 1
@@ -1008,6 +1011,7 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
     manifest lists that increasingly overlap.
     """
     io = PyArrowFileIO()
+    table_uuid = uuid.uuid4()
 
     with TemporaryDirectory() as tmp_dir:
         schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=True))
@@ -1063,7 +1067,7 @@ def test_manifest_cache_efficiency_with_many_overlapping_lists() -> None:
         # Read all manifest lists
         all_results = []
         for path in manifest_list_paths:
-            result = _manifests(io, path)
+            result = _manifests(io, path, table_uuid)
             all_results.append(result)
 
         # With the old cache approach, we would have:
@@ -1260,7 +1264,7 @@ def test_clear_manifest_cache() -> None:
         list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="clear", snapshot_id=1)
 
         # Populate the cache
-        _manifests(io, list_path)
+        _manifests(io, list_path, uuid.uuid4())
 
         # Verify cache has entries
         assert len(manifest_module._manifest_cache) > 0, "Cache should have entries after reading manifests"
@@ -1282,12 +1286,13 @@ def test_manifest_cache_can_be_disabled_with_size_zero(monkeypatch: pytest.Monke
         assert len(manifest_module._manifest_cache) == 0
 
         io = PyArrowFileIO()
+        table_uuid = uuid.uuid4()
 
         with TemporaryDirectory() as tmp_dir:
             list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="disabled", snapshot_id=1)
 
-            manifests_first_call = manifest_module._manifests(io, list_path)
-            manifests_second_call = manifest_module._manifests(io, list_path)
+            manifests_first_call = manifest_module._manifests(io, list_path, table_uuid)
+            manifests_second_call = manifest_module._manifests(io, list_path, table_uuid)
 
             assert len(manifest_module._manifest_cache) == 0
             assert manifests_first_call[0] is not manifests_second_call[0]
@@ -1305,23 +1310,107 @@ def test_manifest_cache_respects_positive_env_size(monkeypatch: pytest.MonkeyPat
         assert manifest_module._manifest_cache.maxsize == 1
 
         io = PyArrowFileIO()
+        table_uuid = uuid.uuid4()
 
         with TemporaryDirectory() as tmp_dir:
             first_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="first", snapshot_id=1)
             second_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="second", snapshot_id=2)
 
-            manifests_first_call = manifest_module._manifests(io, first_list_path)
-            manifests_second_call = manifest_module._manifests(io, first_list_path)
+            manifests_first_call = manifest_module._manifests(io, first_list_path, table_uuid)
+            manifests_second_call = manifest_module._manifests(io, first_list_path, table_uuid)
 
             assert manifests_first_call[0] is manifests_second_call[0]
             assert len(manifest_module._manifest_cache) == 1
 
-            manifest_module._manifests(io, second_list_path)
+            manifest_module._manifests(io, second_list_path, table_uuid)
 
             assert len(manifest_module._manifest_cache) == 1
     finally:
         monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
         importlib.reload(manifest_module)
+
+
+def test_manifest_cache_scopes_entries_by_table_uuid() -> None:
+    """Test that get_or_cache never serves one table's cached content for another table's manifest_path."""
+    manifest_path = "s3://bucket/metadata/manifest.avro"
+    table_a = uuid.uuid4()
+    table_b = uuid.uuid4()
+
+    manifest_a = ManifestFile.from_args(
+        manifest_path=manifest_path,
+        manifest_length=1000,
+        partition_spec_id=0,
+        added_snapshot_id=1,
+        sequence_number=1,
+        existing_files_count=0,
+    )
+    manifest_b = ManifestFile.from_args(
+        manifest_path=manifest_path,
+        manifest_length=1000,
+        partition_spec_id=0,
+        added_snapshot_id=2,
+        sequence_number=1,
+        existing_files_count=5,
+    )
+
+    cached_a = manifest_module._manifest_cache.get_or_cache(manifest_a, table_a)
+    assert cached_a is manifest_a
+
+    cached_b = manifest_module._manifest_cache.get_or_cache(manifest_b, table_b)
+    assert cached_b is manifest_b
+    assert cached_b.added_snapshot_id == 2
+    assert cached_b.existing_files_count == 5
+
+    reread_a = ManifestFile.from_args(
+        manifest_path=manifest_path,
+        manifest_length=1000,
+        partition_spec_id=0,
+        added_snapshot_id=1,
+        sequence_number=1,
+        existing_files_count=0,
+    )
+    assert manifest_module._manifest_cache.get_or_cache(reread_a, table_a) is manifest_a
+
+
+def test_manifest_cache_scoping_through_snapshot_manifests() -> None:
+    """Test that scoping holds end-to-end through Snapshot.manifests, not just get_or_cache."""
+    io = PyArrowFileIO()
+    table_a = uuid.uuid4()
+    table_b = uuid.uuid4()
+
+    with TemporaryDirectory() as tmp_dir:
+        list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="shared", snapshot_id=1)
+        snapshot = Snapshot(
+            snapshot_id=1,
+            timestamp_ms=1602638573590,
+            manifest_list=list_path,
+            summary=Summary(Operation.APPEND),
+        )
+
+        first = snapshot.manifests(io, table_uuid=table_a)
+        assert first[0].added_snapshot_id == 1
+
+        _create_test_manifest_list(manifest_module, io, tmp_dir, name="shared", snapshot_id=2)
+
+        assert snapshot.manifests(io, table_uuid=table_b)[0].added_snapshot_id == 2
+
+        assert snapshot.manifests(io, table_uuid=table_a)[0] is first[0]
+
+
+def test_manifest_cache_is_bypassed_without_table_uuid() -> None:
+    """Test that manifests read without a table_uuid are never cached or shared."""
+    io = PyArrowFileIO()
+
+    with TemporaryDirectory() as tmp_dir:
+        list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="unattributed", snapshot_id=1)
+        entries_before = len(manifest_module._manifest_cache)
+
+        first = manifest_module._manifests(io, list_path)
+        second = manifest_module._manifests(io, list_path)
+
+        assert len(manifest_module._manifest_cache) == entries_before, "An unattributed read must not populate the cache"
+        assert first[0] is not second[0], "An unattributed read must not reuse another read's instance"
+        assert first[0] == second[0]
 
 
 def test_manifest_cache_reads_size_from_configuration_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -1338,15 +1427,16 @@ def test_manifest_cache_reads_size_from_configuration_file(monkeypatch: pytest.M
         assert manifest_module._manifest_cache.maxsize == 2
 
         io = PyArrowFileIO()
+        table_uuid = uuid.uuid4()
 
         with TemporaryDirectory() as tmp_dir:
             first_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="first", snapshot_id=1)
             second_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="second", snapshot_id=2)
             third_list_path = _create_test_manifest_list(manifest_module, io, tmp_dir, name="third", snapshot_id=3)
 
-            manifest_module._manifests(io, first_list_path)
-            manifest_module._manifests(io, second_list_path)
-            manifest_module._manifests(io, third_list_path)
+            manifest_module._manifests(io, first_list_path, table_uuid)
+            manifest_module._manifests(io, second_list_path, table_uuid)
+            manifest_module._manifests(io, third_list_path, table_uuid)
 
             assert len(manifest_module._manifest_cache) == 2
     finally:

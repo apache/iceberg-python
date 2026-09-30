@@ -232,7 +232,7 @@ class InspectTable:
 
         entries = []
         snapshot = self._get_snapshot(snapshot_id)
-        for manifest in snapshot.manifests(self.tbl.io):
+        for manifest in snapshot.manifests(self.tbl.io, table_uuid=self.tbl.metadata.table_uuid):
             for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=False):
                 column_sizes = entry.data_file.column_sizes or {}
                 value_counts = entry.data_file.value_counts or {}
@@ -383,7 +383,9 @@ class InspectTable:
         )
 
         snapshot = self._get_snapshot(snapshot_id)
-        spec_ids = {manifest.partition_spec_id for manifest in snapshot.manifests(self.tbl.io)}
+        spec_ids = {
+            manifest.partition_spec_id for manifest in snapshot.manifests(self.tbl.io, table_uuid=self.tbl.metadata.table_uuid)
+        }
         partition_record = self.tbl.metadata.specs_struct(spec_ids=spec_ids)
         has_partitions = len(partition_record.fields) > 0
 
@@ -590,7 +592,7 @@ class InspectTable:
         specs = self.tbl.metadata.specs()
         manifests = []
         if snapshot:
-            for manifest in snapshot.manifests(self.tbl.io):
+            for manifest in snapshot.manifests(self.tbl.io, table_uuid=self.tbl.metadata.table_uuid):
                 is_data_file = manifest.content == ManifestContent.DATA
                 is_delete_file = manifest.content == ManifestContent.DELETES
                 manifest_row = {
@@ -882,7 +884,8 @@ class InspectTable:
         executor = ExecutorFactory.get_or_create()
         results = list(
             executor.map(
-                lambda manifest_list: self._get_files_from_manifest(manifest_list, data_file_filter), snapshot.manifests(io)
+                lambda manifest_list: self._get_files_from_manifest(manifest_list, data_file_filter),
+                snapshot.manifests(io, table_uuid=self.tbl.metadata.table_uuid),
             )
         )
         return pa.concat_tables(results)
@@ -970,7 +973,9 @@ class InspectTable:
             return pa.Table.from_pylist([], schema=self._get_files_schema())
 
         executor = ExecutorFactory.get_or_create()
-        manifest_lists = executor.map(lambda snapshot: snapshot.manifests(self.tbl.io), snapshots)
+        manifest_lists = executor.map(
+            lambda snapshot: snapshot.manifests(self.tbl.io, table_uuid=self.tbl.metadata.table_uuid), snapshots
+        )
 
         unique_manifests = {(manifest.manifest_path, manifest) for manifest_list in manifest_lists for manifest in manifest_list}
 
