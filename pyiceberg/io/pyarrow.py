@@ -31,6 +31,7 @@ import functools
 import importlib
 import itertools
 import logging
+import math
 import operator
 import os
 import re
@@ -3097,11 +3098,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
             functools.reduce(
                 operator.and_,
                 [
-                    (
-                        pc.field(partition_field_name) == unique_partition[partition_field_name]
-                        if unique_partition[partition_field_name] is not None
-                        else pc.field(partition_field_name).is_null()
-                    )
+                    _partition_value_filter(partition_field_name, unique_partition[partition_field_name])
                     for field, partition_field_name in zip(spec.fields, partition_fields, strict=True)
                 ],
             )
@@ -3114,6 +3111,15 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
             partition_key=partition_key,
             arrow_table_partition=filtered_table.combine_chunks(),
         )
+
+
+def _partition_value_filter(partition_field_name: str, value: Any) -> pc.Expression:
+    """Build a filter that selects the rows of one partition value, where null and NaN never compare equal."""
+    if value is None:
+        return pc.field(partition_field_name).is_null()
+    elif isinstance(value, float) and math.isnan(value):
+        return pc.is_nan(pc.field(partition_field_name))
+    return pc.field(partition_field_name) == value
 
 
 def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:
