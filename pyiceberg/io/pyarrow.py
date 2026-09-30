@@ -2660,6 +2660,7 @@ class ParquetFormatWriter(FileFormatWriter):
         self._pending: list[pa.Table] = []
         self._pending_rows = 0
         self._pending_bytes = 0
+        self._compression_ratio = 1.0
         self._closed = False
         self._length = 0
         self._parquet_writer_kwargs = _get_parquet_writer_kwargs(properties)
@@ -2692,18 +2693,26 @@ class ParquetFormatWriter(FileFormatWriter):
         self._pending_rows += table.num_rows
         self._pending_bytes += table.nbytes
         if self._pending_bytes >= self._row_group_bytes:
-            self._writer.write_table(pa.concat_tables(self._pending), row_group_size=self._row_group_size)
+            self._flush(pa.concat_tables(self._pending))
             self._pending = []
             self._pending_rows = 0
             self._pending_bytes = 0
         elif self._pending_rows >= self._row_group_size:
             pending = pa.concat_tables(self._pending)
             full_rows = pending.num_rows - pending.num_rows % self._row_group_size
-            self._writer.write_table(pending.slice(0, full_rows), row_group_size=self._row_group_size)
+            self._flush(pending.slice(0, full_rows))
             tail = pending.slice(full_rows)
             self._pending = [tail] if tail.num_rows else []
             self._pending_rows = tail.num_rows
             self._pending_bytes = tail.nbytes
+
+    def _flush(self, table: pa.Table) -> None:
+        if self._writer is None or self._fos is None:
+            raise ValueError("Cannot flush a writer that was never written to")
+        before = self._fos.tell()
+        self._writer.write_table(table, row_group_size=self._row_group_size)
+        if table.nbytes > 0:
+            self._compression_ratio = min(1.0, (self._fos.tell() - before) / table.nbytes)
 
     def close(self) -> DataFileStatistics:
         if self._result is not None:
@@ -2728,15 +2737,16 @@ class ParquetFormatWriter(FileFormatWriter):
         return self._result
 
     def length(self) -> int:
-        """Return the bytes written so far plus the uncompressed size of the rows not yet flushed.
+        """Return the bytes written so far plus the estimated on-disk size of the rows not yet flushed.
 
-        Like Java ``ParquetWriter.length()``, buffered rows count at their in-memory size,
-        so a file that rolls on this value can land up to ``write.parquet.row-group-size-bytes``
-        uncompressed bytes under the target size.
+        Buffered rows count at their in-memory size scaled by the compression ratio observed on
+        the last flush. The ratio is 1.0 until the first flush in each file, so a target smaller
+        than one row group gets no correction. A file that rolls on this value can land above the
+        target when later rows compress worse than the last flushed row group.
         """
         if self._closed or self._fos is None:
             return self._length
-        return self._fos.tell() + self._pending_bytes
+        return self._fos.tell() + int(self._pending_bytes * self._compression_ratio)
 
 
 class ParquetFormatModel(FileFormatModel):

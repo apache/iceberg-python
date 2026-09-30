@@ -3196,6 +3196,29 @@ def test_dataframe_to_data_files_reader_rolls_at_on_disk_target(tmp_path: Path) 
     assert len({data_file.file_path for data_file in data_files}) == len(data_files)
 
 
+def test_dataframe_to_data_files_reader_rolls_near_target_for_compressible_data(tmp_path: Path) -> None:
+    rows_per_batch = 1000
+    num_batches = 600
+
+    def compressible_batches() -> Iterator[pa.RecordBatch]:
+        for i in range(num_batches):
+            yield pa.RecordBatch.from_pydict(
+                {
+                    "id": pa.array(range(i * rows_per_batch, (i + 1) * rows_per_batch), type=pa.int64()),
+                    "payload": ["payload-" * 8] * rows_per_batch,
+                }
+            )
+
+    target = 256 * 1024
+    table_metadata = _stream_table_metadata(tmp_path, target, row_group_limit=2 * rows_per_batch)
+    data_files = list(_dataframe_to_data_files(table_metadata, _stream_reader(compressible_batches()), PyArrowFileIO()))
+
+    assert len(data_files) > 3
+    for data_file in data_files[:-1]:
+        assert 0.9 * target <= data_file.file_size_in_bytes <= 1.25 * target
+    assert sum(data_file.record_count for data_file in data_files) == num_batches * rows_per_batch
+
+
 def test_dataframe_to_data_files_reader_large_target_writes_one_file(tmp_path: Path) -> None:
     data_files = list(
         _dataframe_to_data_files(

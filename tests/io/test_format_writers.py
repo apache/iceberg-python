@@ -27,7 +27,7 @@ from pyiceberg.io.fileformat import FileFormatFactory, FileFormatModel
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import FileFormat
 from pyiceberg.schema import Schema
-from pyiceberg.types import LongType, NestedField
+from pyiceberg.types import LongType, NestedField, StringType
 
 
 @pytest.fixture(params=FileFormatFactory.available_formats(), ids=lambda f: f.name.lower())
@@ -110,6 +110,32 @@ def test_length_tracks_bytes_written(
     assert writer.length() > first
     writer.close()
     assert writer.length() == len(output_file)
+
+
+def test_parquet_length_counts_pending_bytes_before_first_flush(tmp_path: Path) -> None:
+    """Before the first flush, length() counts buffered rows at their Arrow size."""
+    schema = Schema(NestedField(1, "payload", StringType(), required=False))
+    writer = FileFormatFactory.get(FileFormat.PARQUET).create_writer(
+        PyArrowFileIO().new_output(str(tmp_path / "test.parquet")), schema, {}
+    )
+    table = pa.table({"payload": ["constant-payload"] * 100})
+    writer.write(table)
+    assert writer.length() == writer._fos.tell() + table.nbytes  # type: ignore[attr-defined]
+    writer.close()
+
+
+def test_parquet_length_scales_pending_bytes_by_last_flush_ratio(tmp_path: Path) -> None:
+    """After a flush, length() scales buffered rows by the compression ratio of that flush."""
+    schema = Schema(NestedField(1, "payload", StringType(), required=False))
+    writer = FileFormatFactory.get(FileFormat.PARQUET).create_writer(
+        PyArrowFileIO().new_output(str(tmp_path / "test.parquet")), schema, {"write.parquet.row-group-limit": "1000"}
+    )
+    writer.write(pa.table({"payload": ["constant-payload"] * 1000}))
+    table = pa.table({"payload": ["constant-payload"] * 500})
+    writer.write(table)
+    tell = writer._fos.tell()  # type: ignore[attr-defined]
+    assert tell <= writer.length() < tell + table.nbytes
+    writer.close()
 
 
 def test_close_without_write_raises(format_model: FileFormatModel, table_schema_simple: Schema, tmp_path: Path) -> None:
