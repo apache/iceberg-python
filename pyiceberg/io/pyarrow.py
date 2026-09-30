@@ -148,7 +148,7 @@ from pyiceberg.schema import (
 )
 from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
 from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file
-from pyiceberg.table.locations import load_location_provider
+from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.table.puffin import PuffinFile
@@ -2791,25 +2791,24 @@ def _build_data_file(
     )
 
 
-def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
-
+def _resolve_write_setup(table_metadata: TableMetadata) -> tuple[FileFormat, FileFormatModel, LocationProvider, Schema]:
     file_format = FileFormat(
-        table_metadata.properties.get(
-            TableProperties.WRITE_FILE_FORMAT,
-            TableProperties.WRITE_FILE_FORMAT_DEFAULT,
-        )
+        table_metadata.properties.get(TableProperties.WRITE_FILE_FORMAT, TableProperties.WRITE_FILE_FORMAT_DEFAULT)
     )
     format_model = FileFormatFactory.get(file_format)
     location_provider = load_location_provider(table_location=table_metadata.location, table_properties=table_metadata.properties)
+    table_schema = table_metadata.schema()
+    if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
+        file_schema = sanitized_schema
+    else:
+        file_schema = table_schema
+    return file_format, format_model, location_provider, file_schema
+
+
+def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
+    file_format, format_model, location_provider, file_schema = _resolve_write_setup(table_metadata)
 
     def write_data_file(task: WriteTask) -> DataFile:
-        table_schema = table_metadata.schema()
-        if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
-            file_schema = sanitized_schema
-        else:
-            file_schema = table_schema
-
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         batches = [
             _to_requested_schema(
@@ -3070,18 +3069,7 @@ def _dataframe_to_data_files(
                 "Materialise the reader as a pa.Table first, or follow "
                 "https://github.com/apache/iceberg-python/issues/2152 for partitioned streaming support."
             )
-        file_format = FileFormat(
-            table_metadata.properties.get(TableProperties.WRITE_FILE_FORMAT, TableProperties.WRITE_FILE_FORMAT_DEFAULT)
-        )
-        format_model = FileFormatFactory.get(file_format)
-        location_provider = load_location_provider(
-            table_location=table_metadata.location, table_properties=table_metadata.properties
-        )
-        table_schema = table_metadata.schema()
-        if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
-            file_schema = sanitized_schema
-        else:
-            file_schema = table_schema
+        file_format, format_model, location_provider, file_schema = _resolve_write_setup(table_metadata)
 
         batches = iter(df)
         for batch in batches:
