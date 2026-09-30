@@ -1215,8 +1215,8 @@ def test_drop_namespace_raises_error_when_namespace_not_empty(
 
 # RecordBatchReader streaming append/overwrite tests
 #
-# Streaming writes accept a pa.RecordBatchReader and microbatch it into target-sized
-# Parquet files instead of materialising the full Arrow Table in memory. Tracks
+# Streaming writes accept a pa.RecordBatchReader and write it into Parquet files that
+# roll at the target size instead of materialising the full Arrow Table in memory. Tracks
 # https://github.com/apache/iceberg-python/issues/2152.
 
 
@@ -1248,7 +1248,7 @@ def test_append_record_batch_reader(catalog: Catalog) -> None:
 
 def test_append_record_batch_reader_microbatched(catalog: Catalog) -> None:
     """A reader bigger than the per-file target produces multiple Parquet files
-    in a single snapshot — verifying the byte-budget microbatching path."""
+    in a single snapshot, which verifies that the streaming writer rolls files."""
     catalog.create_namespace("default")
     identifier = f"default.append_record_batch_reader_microbatch_{catalog.name}"
     reader, total_rows = _simple_record_batch_reader(num_batches=8)

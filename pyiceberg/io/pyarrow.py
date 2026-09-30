@@ -2657,11 +2657,21 @@ class ParquetFormatWriter(FileFormatWriter):
         self._properties = properties
         self._writer: pq.ParquetWriter | None = None
         self._fos: OutputStream | None = None
+        self._pending: list[pa.Table] = []
+        self._pending_rows = 0
+        self._pending_bytes = 0
+        self._closed = False
+        self._length = 0
         self._parquet_writer_kwargs = _get_parquet_writer_kwargs(properties)
-        self._row_group_size = property_as_int(
+        self._row_group_size: int = property_as_int(  # type: ignore  # The property is set with non-None value.
             properties=properties,
             property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
             default=TableProperties.PARQUET_ROW_GROUP_LIMIT_DEFAULT,
+        )
+        self._row_group_bytes: int = property_as_int(  # type: ignore  # The property is set with non-None value.
+            properties=properties,
+            property_name=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
+            default=TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT,
         )
 
     def write(self, table: pa.Table) -> None:
@@ -2678,21 +2688,55 @@ class ParquetFormatWriter(FileFormatWriter):
                 fos.close()
                 raise
             self._fos = fos
-        self._writer.write(table, row_group_size=self._row_group_size)
+        self._pending.append(table)
+        self._pending_rows += table.num_rows
+        self._pending_bytes += table.nbytes
+        if self._pending_bytes >= self._row_group_bytes:
+            self._writer.write_table(pa.concat_tables(self._pending), row_group_size=self._row_group_size)
+            self._pending = []
+            self._pending_rows = 0
+            self._pending_bytes = 0
+        elif self._pending_rows >= self._row_group_size:
+            pending = pa.concat_tables(self._pending)
+            full_rows = pending.num_rows - pending.num_rows % self._row_group_size
+            self._writer.write_table(pending.slice(0, full_rows), row_group_size=self._row_group_size)
+            tail = pending.slice(full_rows)
+            self._pending = [tail] if tail.num_rows else []
+            self._pending_rows = tail.num_rows
+            self._pending_bytes = tail.nbytes
 
     def close(self) -> DataFileStatistics:
         if self._result is not None:
             return self._result
         if self._writer is None or self._fos is None:
             raise ValueError("Cannot close a writer that was never written to")
+        self._length = self.length()
+        self._closed = True
         with self._fos:
-            self._writer.close()
+            try:
+                if self._pending:
+                    self._writer.write_table(pa.concat_tables(self._pending), row_group_size=self._row_group_size)
+                    self._pending = []
+            finally:
+                self._writer.close()
+            self._length = self._fos.tell()
             self._result = data_file_statistics_from_parquet_metadata(
                 parquet_metadata=self._writer.writer.metadata,
                 stats_columns=compute_statistics_plan(self._file_schema, self._properties),
                 parquet_column_mapping=parquet_path_to_id_mapping(self._file_schema),
             )
         return self._result
+
+    def length(self) -> int:
+        """Return the bytes written so far plus the uncompressed size of the rows not yet flushed.
+
+        Like Java ``ParquetWriter.length()``, buffered rows count at their in-memory size,
+        so a file that rolls on this value can land up to ``write.parquet.row-group-size-bytes``
+        uncompressed bytes under the target size.
+        """
+        if self._closed or self._fos is None:
+            return self._length
+        return self._fos.tell() + self._pending_bytes
 
 
 class ParquetFormatModel(FileFormatModel):
@@ -2719,6 +2763,32 @@ class ParquetFormatModel(FileFormatModel):
 
 
 FileFormatFactory.register(ParquetFormatModel())
+
+
+def _build_data_file(
+    table_metadata: TableMetadata,
+    file_format: FileFormat,
+    file_path: str,
+    output_file: OutputFile,
+    partition: Record,
+    statistics: DataFileStatistics,
+) -> DataFile:
+    return DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=file_format,
+        partition=partition,
+        file_size_in_bytes=len(output_file),
+        # After this has been fixed:
+        # https://github.com/apache/iceberg-python/issues/271
+        # sort_order_id=task.sort_order_id,
+        sort_order_id=None,
+        # Just copy these from the table for now
+        spec_id=table_metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
@@ -2761,23 +2831,14 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         writer = format_model.create_writer(fo, file_schema, table_metadata.properties)
         with writer:
             writer.write(arrow_table)
-        statistics = writer.result()
 
-        return DataFile.from_args(
-            content=DataFileContent.DATA,
-            file_path=file_path,
+        return _build_data_file(
+            table_metadata=table_metadata,
             file_format=file_format,
+            file_path=file_path,
+            output_file=fo,
             partition=task.partition_key.partition if task.partition_key else Record(),
-            file_size_in_bytes=len(fo),
-            # After this has been fixed:
-            # https://github.com/apache/iceberg-python/issues/271
-            # sort_order_id=task.sort_order_id,
-            sort_order_id=None,
-            # Just copy these from the table for now
-            spec_id=table_metadata.default_spec_id,
-            equality_ids=None,
-            key_metadata=None,
-            **statistics.to_serialized_dict(),
+            statistics=writer.result(),
         )
 
     executor = ExecutorFactory.get_or_create()
@@ -2795,9 +2856,8 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[
         bytes. The resulting Parquet file after compression (zstd by default,
         plus dictionary/RLE encoding) is typically 3-10× smaller than
         ``target_file_size``. This is a coarse proxy for the spec-defined
-        ``write.target-file-size-bytes`` and will be tightened to true on-disk
-        bytes once the writer is switched to a rolling-``ParquetWriter`` with
-        ``OutputStream.tell()`` (#2998).
+        ``write.target-file-size-bytes``. The ``pa.RecordBatchReader`` write
+        path measures on-disk bytes instead.
     """
     from pyiceberg.utils.bin_packing import PackingIterator
 
@@ -2832,9 +2892,8 @@ def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size:
         bytes (``RecordBatch.nbytes``), not compressed on-disk Parquet bytes.
         The resulting Parquet file after compression is typically 3-10×
         smaller than ``target_file_size``. Matches the existing
-        :func:`bin_pack_arrow_table` semantics; both will be tightened to true
-        on-disk bytes once the writer is switched to a rolling-
-        ``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
+        :func:`bin_pack_arrow_table` semantics. The ``pa.RecordBatchReader``
+        write path no longer uses this function; it measures on-disk bytes.
     """
     buffer: list[pa.RecordBatch] = []
     buffer_bytes = 0
@@ -2929,7 +2988,6 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
     from pyiceberg.table import TableProperties
 
     for key_pattern in [
-        TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES,
         TableProperties.PARQUET_BLOOM_FILTER_MAX_BYTES,
         f"{TableProperties.PARQUET_BLOOM_FILTER_COLUMN_ENABLED_PREFIX}.*",
     ]:
@@ -2978,8 +3036,8 @@ def _dataframe_to_data_files(
     For a ``pa.Table`` the data is materialised in memory and bin-packed into
     target-sized files (with partition splitting if the table is partitioned).
 
-    For a ``pa.RecordBatchReader`` batches are streamed and microbatched into
-    target-sized files using bounded memory (see :func:`bin_pack_record_batches`).
+    For a ``pa.RecordBatchReader`` batches are streamed into one file at a time,
+    which rolls when its on-disk size reaches ``write.target-file-size-bytes``.
     Streaming writes are currently only supported on unpartitioned tables;
     partitioned support is tracked in
     https://github.com/apache/iceberg-python/issues/2152.
@@ -3012,14 +3070,49 @@ def _dataframe_to_data_files(
                 "Materialise the reader as a pa.Table first, or follow "
                 "https://github.com/apache/iceberg-python/issues/2152 for partitioned streaming support."
             )
-        yield from write_file(
-            io=io,
-            table_metadata=table_metadata,
-            tasks=(
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
-                for batches in bin_pack_record_batches(df, target_file_size)
-            ),
+        file_format = FileFormat(
+            table_metadata.properties.get(TableProperties.WRITE_FILE_FORMAT, TableProperties.WRITE_FILE_FORMAT_DEFAULT)
         )
+        format_model = FileFormatFactory.get(file_format)
+        location_provider = load_location_provider(
+            table_location=table_metadata.location, table_properties=table_metadata.properties
+        )
+        table_schema = table_metadata.schema()
+        if (sanitized_schema := sanitize_column_names(table_schema)) != table_schema:
+            file_schema = sanitized_schema
+        else:
+            file_schema = table_schema
+
+        batches = iter(df)
+        for batch in batches:
+            task = WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=[], schema=task_schema)
+            file_path = location_provider.new_data_location(
+                data_file_name=task.generate_data_file_filename(format_model.file_extension()),
+                partition_key=None,
+            )
+            fo = io.new_output(file_path)
+            writer = format_model.create_writer(fo, file_schema, table_metadata.properties)
+            with writer:
+                current: pa.RecordBatch | None = batch
+                while current is not None:
+                    projected = _to_requested_schema(
+                        requested_schema=file_schema,
+                        file_schema=task_schema,
+                        batch=current,
+                        downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+                        include_field_ids=True,
+                        format_model=format_model,
+                    )
+                    writer.write(pa.Table.from_batches([projected]))
+                    current = next(batches, None) if writer.length() < target_file_size else None
+            yield _build_data_file(
+                table_metadata=table_metadata,
+                file_format=file_format,
+                file_path=file_path,
+                output_file=fo,
+                partition=Record(),
+                statistics=writer.result(),
+            )
         return
 
     if table_metadata.spec().is_unpartitioned():
