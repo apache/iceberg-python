@@ -2830,6 +2830,26 @@ def test_partition_for_deep_nested_field() -> None:
     assert partition_values == {"data-1", "data-2"}
 
 
+def test_determine_partitions_identity_nan() -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"))
+    arrow_table = pa.Table.from_pydict(
+        {"id": [1, 2, 3, 4], "value": [1.0, float("nan"), None, float("nan")]},
+        schema=schema.as_arrow(),
+    )
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    # NaN never compares equal to itself, so its rows must be selected with is_nan
+    rows_by_partition = {
+        repr(p.partition_key.partition[0]): sorted(p.arrow_table_partition["id"].to_pylist()) for p in partitions
+    }
+    assert rows_by_partition == {"1.0": [1], "nan": [2, 4], "None": [3]}
+
+
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="foo", field_type=StringType(), required=True),

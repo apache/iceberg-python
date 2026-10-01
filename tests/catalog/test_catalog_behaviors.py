@@ -48,7 +48,7 @@ from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrd
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
-from pyiceberg.types import BooleanType, IntegerType, LongType, NestedField, StringType
+from pyiceberg.types import BooleanType, DoubleType, IntegerType, LongType, NestedField, StringType
 
 
 # Name parsing tests
@@ -1320,6 +1320,29 @@ def test_append_invalid_input_type_raises(catalog: Catalog) -> None:
     tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema)
     with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader"):
         tbl.append("not an arrow object")
+
+
+def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.append_nan_identity_partition_{catalog.name}"
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"),
+    )
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema, partition_spec=partition_spec)
+
+    tbl.append(
+        pa.Table.from_pydict(
+            {"id": [1, 2, 3, 4], "value": [1.0, float("nan"), None, float("nan")]},
+            schema=schema_to_pyarrow(iceberg_schema),
+        )
+    )
+
+    assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 3, 4]
+    assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
 
 
 def test_record_batch_reader_consumed_exactly_once(catalog: Catalog) -> None:
