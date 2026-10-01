@@ -65,7 +65,9 @@ from pyiceberg.types import (
     BooleanType,
     FloatType,
     IntegerType,
+    NestedField,
     StringType,
+    StructType,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
 
@@ -273,13 +275,28 @@ def test_bounds() -> None:
     )
     datafile = DataFile.from_args(**statistics.to_serialized_dict())
 
-    assert len(datafile.lower_bounds) == 2
+    assert set(datafile.lower_bounds) == {1, 2, 6, 7, 8, 9, 10}
+
     assert datafile.lower_bounds[1].decode() == "aaaaaaaaaaaaaaaa"
     assert datafile.lower_bounds[2] == STRUCT_FLOAT.pack(1.69)
 
-    assert len(datafile.upper_bounds) == 2
+    # Nested list/map/struct primitive fields
+    assert datafile.lower_bounds[6] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[7] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[8] == STRUCT_INT64.pack(2)
+    assert datafile.lower_bounds[9] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[10] == STRUCT_FLOAT.pack(-1.34)
+
+    assert set(datafile.upper_bounds) == {1, 2, 6, 7, 8, 9, 10}
+
     assert datafile.upper_bounds[1].decode() == "zzzzzzzzzzzzzzz{"
     assert datafile.upper_bounds[2] == STRUCT_FLOAT.pack(100)
+
+    assert datafile.upper_bounds[6] == STRUCT_INT64.pack(9)
+    assert datafile.upper_bounds[7] == STRUCT_INT64.pack(5)
+    assert datafile.upper_bounds[8] == STRUCT_INT64.pack(6)
+    assert datafile.upper_bounds[9] == STRUCT_INT64.pack(54)
+    assert datafile.upper_bounds[10] == STRUCT_FLOAT.pack(0.2)
 
 
 def test_metrics_mode_parsing() -> None:
@@ -324,6 +341,94 @@ def test_metrics_mode_none() -> None:
     assert len(datafile.upper_bounds) == 0
 
 
+def test_metrics_mode_nested_primitive_fields() -> None:
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="location",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="latitude",
+                    field_type=FloatType(),
+                ),
+                NestedField(
+                    field_id=3,
+                    name="longitude",
+                    field_type=FloatType(),
+                ),
+            ),
+        )
+    )
+
+    statistics_plan = compute_statistics_plan(schema, {})
+
+    assert statistics_plan[2].column_name == "location.latitude"
+    assert statistics_plan[3].column_name == "location.longitude"
+
+    assert statistics_plan[2].mode == MetricsMode(MetricModeTypes.FULL)
+    assert statistics_plan[3].mode == MetricsMode(MetricModeTypes.FULL)
+
+
+def test_metrics_mode_max_inferred_column_defaults() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="a", field_type=IntegerType()),
+        NestedField(field_id=2, name="b", field_type=IntegerType()),
+        NestedField(field_id=3, name="c", field_type=IntegerType()),
+        NestedField(field_id=4, name="d", field_type=IntegerType()),
+    )
+
+    statistics_plan = compute_statistics_plan(
+        schema,
+        {
+            "write.metadata.metrics.max-inferred-column-defaults": "2",
+        },
+    )
+
+    assert statistics_plan[1].mode == MetricsMode(MetricModeTypes.FULL)
+    assert statistics_plan[2].mode == MetricsMode(MetricModeTypes.FULL)
+
+    assert statistics_plan[3].mode == MetricsMode(MetricModeTypes.NONE)
+    assert statistics_plan[4].mode == MetricsMode(MetricModeTypes.NONE)
+
+
+def test_metrics_mode_inferred_limit_prioritizes_top_level_fields() -> None:
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="location",
+            field_type=StructType(
+                NestedField(
+                    field_id=2,
+                    name="latitude",
+                    field_type=FloatType(),
+                ),
+                NestedField(
+                    field_id=3,
+                    name="longitude",
+                    field_type=FloatType(),
+                ),
+            ),
+        ),
+        NestedField(
+            field_id=4,
+            name="id",
+            field_type=IntegerType(),
+        ),
+    )
+
+    statistics_plan = compute_statistics_plan(
+        schema,
+        {
+            "write.metadata.metrics.max-inferred-column-defaults": "1",
+        },
+    )
+
+    assert statistics_plan[4].mode == MetricsMode(MetricModeTypes.FULL)
+    assert statistics_plan[2].mode == MetricsMode(MetricModeTypes.NONE)
+    assert statistics_plan[3].mode == MetricsMode(MetricModeTypes.NONE)
+
+
 def test_metrics_mode_counts() -> None:
     metadata, table_metadata = construct_test_table()
 
@@ -359,13 +464,25 @@ def test_metrics_mode_full() -> None:
     assert len(datafile.null_value_counts) == 7
     assert len(datafile.nan_value_counts) == 0
 
-    assert len(datafile.lower_bounds) == 2
+    assert set(datafile.lower_bounds) == {1, 2, 6, 7, 8, 9, 10}
     assert datafile.lower_bounds[1].decode() == "aaaaaaaaaaaaaaaaaaaa"
     assert datafile.lower_bounds[2] == STRUCT_FLOAT.pack(1.69)
 
-    assert len(datafile.upper_bounds) == 2
+    assert datafile.lower_bounds[6] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[7] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[8] == STRUCT_INT64.pack(2)
+    assert datafile.lower_bounds[9] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[10] == STRUCT_FLOAT.pack(-1.34)
+
+    assert set(datafile.upper_bounds) == {1, 2, 6, 7, 8, 9, 10}
     assert datafile.upper_bounds[1].decode() == "zzzzzzzzzzzzzzzzzzzz"
     assert datafile.upper_bounds[2] == STRUCT_FLOAT.pack(100)
+
+    assert datafile.upper_bounds[6] == STRUCT_INT64.pack(9)
+    assert datafile.upper_bounds[7] == STRUCT_INT64.pack(5)
+    assert datafile.upper_bounds[8] == STRUCT_INT64.pack(6)
+    assert datafile.upper_bounds[9] == STRUCT_INT64.pack(54)
+    assert datafile.upper_bounds[10] == STRUCT_FLOAT.pack(0.2)
 
 
 def test_metrics_mode_non_default_trunc() -> None:
@@ -384,13 +501,27 @@ def test_metrics_mode_non_default_trunc() -> None:
     assert len(datafile.null_value_counts) == 7
     assert len(datafile.nan_value_counts) == 0
 
-    assert len(datafile.lower_bounds) == 2
+    assert set(datafile.lower_bounds) == {1, 2, 6, 7, 8, 9, 10}
+
     assert datafile.lower_bounds[1].decode() == "aa"
     assert datafile.lower_bounds[2] == STRUCT_FLOAT.pack(1.69)
 
-    assert len(datafile.upper_bounds) == 2
+    assert datafile.lower_bounds[6] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[7] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[8] == STRUCT_INT64.pack(2)
+    assert datafile.lower_bounds[9] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[10] == STRUCT_FLOAT.pack(-1.34)
+
+    assert set(datafile.upper_bounds) == {1, 2, 6, 7, 8, 9, 10}
+
     assert datafile.upper_bounds[1].decode() == "z{"
     assert datafile.upper_bounds[2] == STRUCT_FLOAT.pack(100)
+
+    assert datafile.upper_bounds[6] == STRUCT_INT64.pack(9)
+    assert datafile.upper_bounds[7] == STRUCT_INT64.pack(5)
+    assert datafile.upper_bounds[8] == STRUCT_INT64.pack(6)
+    assert datafile.upper_bounds[9] == STRUCT_INT64.pack(54)
+    assert datafile.upper_bounds[10] == STRUCT_FLOAT.pack(0.2)
 
 
 def test_column_metrics_mode() -> None:
@@ -410,13 +541,99 @@ def test_column_metrics_mode() -> None:
     assert len(datafile.null_value_counts) == 6
     assert len(datafile.nan_value_counts) == 0
 
-    assert len(datafile.lower_bounds) == 1
+    assert set(datafile.lower_bounds) == {2, 6, 7, 8, 9, 10}
+
     assert datafile.lower_bounds[2] == STRUCT_FLOAT.pack(1.69)
+    assert datafile.lower_bounds[6] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[7] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[8] == STRUCT_INT64.pack(2)
+    assert datafile.lower_bounds[9] == STRUCT_INT64.pack(1)
+    assert datafile.lower_bounds[10] == STRUCT_FLOAT.pack(-1.34)
     assert 1 not in datafile.lower_bounds
 
-    assert len(datafile.upper_bounds) == 1
+    assert set(datafile.upper_bounds) == {2, 6, 7, 8, 9, 10}
+
     assert datafile.upper_bounds[2] == STRUCT_FLOAT.pack(100)
+    assert datafile.upper_bounds[6] == STRUCT_INT64.pack(9)
+    assert datafile.upper_bounds[7] == STRUCT_INT64.pack(5)
+    assert datafile.upper_bounds[8] == STRUCT_INT64.pack(6)
+    assert datafile.upper_bounds[9] == STRUCT_INT64.pack(54)
+    assert datafile.upper_bounds[10] == STRUCT_FLOAT.pack(0.2)
     assert 1 not in datafile.upper_bounds
+
+
+def test_metrics_mode_column_override_bypasses_inferred_limit() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="a", field_type=IntegerType()),
+        NestedField(field_id=2, name="b", field_type=IntegerType()),
+        NestedField(field_id=3, name="c", field_type=IntegerType()),
+    )
+
+    statistics_plan = compute_statistics_plan(
+        schema,
+        {
+            "write.metadata.metrics.max-inferred-column-defaults": "1",
+            "write.metadata.metrics.column.c": "full",
+        },
+    )
+
+    assert statistics_plan[1].mode == MetricsMode(MetricModeTypes.FULL)
+    assert statistics_plan[2].mode == MetricsMode(MetricModeTypes.NONE)
+    assert statistics_plan[3].mode == MetricsMode(MetricModeTypes.FULL)
+
+
+def test_explicit_default_metrics_mode_ignores_inferred_limit() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="a", field_type=IntegerType()),
+        NestedField(field_id=2, name="b", field_type=IntegerType()),
+        NestedField(field_id=3, name="c", field_type=IntegerType()),
+    )
+
+    statistics_plan = compute_statistics_plan(
+        schema,
+        {
+            "write.metadata.metrics.default": "full",
+            "write.metadata.metrics.max-inferred-column-defaults": "1",
+        },
+    )
+
+    assert statistics_plan[1].mode == MetricsMode(MetricModeTypes.FULL)
+    assert statistics_plan[2].mode == MetricsMode(MetricModeTypes.FULL)
+    assert statistics_plan[3].mode == MetricsMode(MetricModeTypes.FULL)
+
+
+def test_metrics_mode_zero_max_inferred_column_defaults() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="a", field_type=IntegerType()),
+        NestedField(field_id=2, name="b", field_type=IntegerType()),
+    )
+
+    statistics_plan = compute_statistics_plan(
+        schema,
+        {
+            "write.metadata.metrics.max-inferred-column-defaults": "0",
+        },
+    )
+
+    assert statistics_plan[1].mode == MetricsMode(MetricModeTypes.NONE)
+    assert statistics_plan[2].mode == MetricsMode(MetricModeTypes.NONE)
+
+
+def test_metrics_mode_negative_max_inferred_column_defaults_uses_default() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="a", field_type=IntegerType()),
+        NestedField(field_id=2, name="b", field_type=IntegerType()),
+    )
+
+    statistics_plan = compute_statistics_plan(
+        schema,
+        {
+            "write.metadata.metrics.max-inferred-column-defaults": "-1",
+        },
+    )
+
+    assert statistics_plan[1].mode == MetricsMode(MetricModeTypes.FULL)
+    assert statistics_plan[2].mode == MetricsMode(MetricModeTypes.FULL)
 
 
 def construct_test_table_primitive_types() -> tuple[pq.FileMetaData, TableMetadataV1 | TableMetadataV2]:
