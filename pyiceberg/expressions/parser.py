@@ -298,6 +298,10 @@ boolean_expression = infix_notation(
     ],
 ).set_name("expr")
 
+# pyparsing expands tabs in the input by default, which would rewrite a tab inside a string literal
+# into spaces, and the number of spaces would depend on where the literal sits in the expression.
+boolean_expression.parse_with_tabs()
+
 
 def parse(expr: str) -> BooleanExpression:
     """Parse a boolean expression."""
