@@ -14,10 +14,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from datetime import datetime
+import uuid
+from datetime import date, datetime, time, timezone
+from decimal import Decimal
 from pathlib import PosixPath
+from typing import Any
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 from datafusion import SessionContext
 from pyarrow import Table as pa_table
@@ -26,14 +30,29 @@ from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
-from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException, schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter
 from pyiceberg.transforms import DayTransform
-from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
+from pyiceberg.types import (
+    BinaryType,
+    BooleanType,
+    DateType,
+    DecimalType,
+    FixedType,
+    IntegerType,
+    LongType,
+    NestedField,
+    PrimitiveType,
+    StringType,
+    StructType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
+)
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -326,7 +345,7 @@ def test_key_cols_misaligned(catalog: Catalog) -> None:
 
     df_src = ctx.sql("select 1 as item_id, date '2021-05-01' as order_date, 'B' as order_type").to_arrow_table()
 
-    with pytest.raises(Exception, match=r"""Field ".*" does not exist in schema"""):
+    with pytest.raises(ValueError, match="Join column 'order_id' is missing from the input"):
         table.upsert(df=df_src, join_cols=["order_id"])
 
 
@@ -669,7 +688,11 @@ def test_upsert_with_struct_field_as_join_key(catalog: Catalog) -> None:
     )
 
     with pytest.raises(
-        pa.lib.ArrowNotImplementedError, match="Keys of type struct<sub1: large_string not null, sub2: large_string not null>"
+        ValueError,
+        match=(
+            "Join column 'nested_type' has nested type 'struct<sub1: large_string not null, sub2: large_string not null>'; "
+            "only primitive columns can be join keys"
+        ),
     ):
         _ = tbl.upsert(update_data, join_cols=["nested_type"])
 
@@ -927,3 +950,222 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+_UUID_BYTES = uuid.uuid4().bytes
+_STRUCT = pa.struct([("a", pa.int32())])
+_MAP = pa.map_(pa.string(), pa.int32())
+
+
+@pytest.mark.parametrize(
+    "table_type, source_key, expected_error, match",
+    [
+        pytest.param(pa.float32(), pa.array([1.0], pa.float32()), ValueError, "Join column 'k' is floating point", id="float32"),
+        pytest.param(pa.float64(), pa.array([1.0], pa.float64()), ValueError, "Join column 'k' is floating point", id="float64"),
+        pytest.param(
+            _STRUCT, pa.array([{"a": 1}], _STRUCT), ValueError, "Join column 'k' has nested type 'struct<a: int32>'", id="struct"
+        ),
+        pytest.param(
+            pa.list_(pa.int32()),
+            pa.array([[1]], pa.list_(pa.int32())),
+            ValueError,
+            "Join column 'k' has nested type 'large_list",
+            id="list",
+        ),
+        pytest.param(
+            _MAP, pa.array([[("a", 1)]], _MAP), ValueError, "Join column 'k' has nested type 'map<large_string, int32>'", id="map"
+        ),
+        pytest.param(
+            pa.uuid(),
+            pa.array([_UUID_BYTES], pa.uuid()),
+            NotImplementedError,
+            "Join column 'k' has type 'extension<arrow.uuid>'",
+            id="uuid-table",
+        ),
+        pytest.param(
+            pa.uuid(),
+            pa.array([_UUID_BYTES], pa.binary(16)),
+            NotImplementedError,
+            "Join column 'k' has type 'extension<arrow.uuid>'",
+            id="uuid-table-fixed-source",
+        ),
+        pytest.param(
+            pa.string(),
+            pa.array([_UUID_BYTES], pa.uuid()),
+            NotImplementedError,
+            "Input column 'k' has extension type 'extension<arrow.uuid>'",
+            id="uuid-extension-source",
+        ),
+        pytest.param(
+            pa.string(),
+            pa.array(["a"]).dictionary_encode(),
+            NotImplementedError,
+            "Input column 'k' is dictionary-encoded",
+            id="dictionary-string",
+        ),
+        pytest.param(
+            pa.int64(),
+            pa.array([1]).dictionary_encode(),
+            NotImplementedError,
+            "Input column 'k' is dictionary-encoded",
+            id="dictionary-int",
+        ),
+        pytest.param(pa.int32(), pa.array([None], pa.null()), ValueError, "Input column 'k' has the null type", id="null-type"),
+        pytest.param(
+            pa.string(),
+            pa.array(["a"], pa.string_view()),
+            NotImplementedError,
+            "Input column 'k' has type 'string_view'",
+            id="string-view",
+        ),
+        pytest.param(
+            pa.binary(),
+            pa.array([b"a"], pa.binary_view()),
+            NotImplementedError,
+            "Input column 'k' has type 'binary_view'",
+            id="binary-view",
+        ),
+        pytest.param(
+            pa.int32(),
+            pc.run_end_encode(pa.array([1], pa.int32())),
+            UnsupportedPyArrowTypeException,
+            "unsupported type: run_end_encoded",
+            id="run-end-encoded",
+        ),
+        pytest.param(
+            pa.int32(), pa.array([1, None], pa.int32()), ValueError, "Input column 'k' contains null values", id="null-values"
+        ),
+        pytest.param(
+            pa.int32(), pa.array([None], pa.int32()), ValueError, "Input column 'k' contains null values", id="all-null-values"
+        ),
+        pytest.param(pa.int32(), pa.array(["1"]), ValueError, "Mismatch in fields", id="wrong-type-source"),
+    ],
+)
+def test_upsert_rejects_unsupported_join_key(
+    catalog: Catalog, table_type: pa.DataType, source_key: pa.Array, expected_error: type[Exception], match: str
+) -> None:
+    """Unreliable or unsupported join keys fail with a descriptive error before anything is written."""
+    identifier = "default.test_upsert_rejects_unsupported_join_key"
+    _drop_table(catalog, identifier)
+    table = catalog.create_table(identifier, pa.schema([("k", table_type), ("payload", pa.string())]))
+    source = pa.table({"k": source_key, "payload": ["val"] * len(source_key)})
+
+    with pytest.raises(expected_error, match=match):
+        table.upsert(source, join_cols=["k"])
+
+    assert table.current_snapshot() is None
+
+
+@pytest.mark.parametrize(
+    "join_cols, identifier_field_ids, drop_source_columns, match",
+    [
+        pytest.param(["missing"], [], [], "Join column 'missing' does not exist in the table", id="not-in-table"),
+        pytest.param(["K"], [], [], "Join column 'K' does not exist in the table", id="case-mismatch"),
+        pytest.param(["k"], [], ["k"], "Join column 'k' is missing from the input", id="required-not-in-source"),
+        pytest.param(["opt"], [], ["opt"], "Join column 'opt' is missing from the input", id="optional-not-in-source"),
+        pytest.param(["k", "opt"], [], ["opt"], "Join column 'opt' is missing from the input", id="composite-second-missing"),
+        pytest.param(["k", "k"], [], [], "join_cols contains duplicates: k", id="duplicate-join-cols"),
+        pytest.param(["s.x"], [], [], "Join column 's.x' is a field inside struct 's'", id="nested-path"),
+        pytest.param(None, [4], [], "Join column 's.x' is a field inside struct 's'", id="nested-identifier-field"),
+        pytest.param([], [], [], "Join columns could not be found", id="empty-join-cols"),
+        pytest.param(None, [], [], "Join columns could not be found", id="no-identifier-fields"),
+        pytest.param("k", [], [], "join_cols must be a list of column names, got str", id="string-not-list"),
+        pytest.param({"k"}, [], [], "join_cols must be a list of column names, got set", id="set-not-list"),
+    ],
+)
+def test_upsert_rejects_invalid_join_cols(
+    catalog: Catalog, join_cols: Any, identifier_field_ids: list[int], drop_source_columns: list[str], match: str
+) -> None:
+    """Join column resolution fails clearly for missing, duplicate, nested, mistyped, or unresolvable columns."""
+    identifier = "default.test_upsert_rejects_invalid_join_cols"
+    _drop_table(catalog, identifier)
+    schema = Schema(
+        NestedField(1, "k", IntegerType(), required=True),
+        NestedField(2, "opt", IntegerType(), required=False),
+        NestedField(3, "s", StructType(NestedField(4, "x", IntegerType(), required=True)), required=True),
+        NestedField(5, "payload", StringType(), required=False),
+        identifier_field_ids=identifier_field_ids,
+    )
+    table = catalog.create_table(identifier, schema)
+    source = pa.Table.from_pylist(
+        [{"k": 1, "opt": 1, "s": {"x": 1}, "payload": "val"}],
+        schema=pa.schema(
+            [
+                pa.field("k", pa.int32(), nullable=False),
+                pa.field("opt", pa.int32(), nullable=True),
+                pa.field("s", pa.struct([pa.field("x", pa.int32(), nullable=False)]), nullable=False),
+                pa.field("payload", pa.string(), nullable=True),
+            ]
+        ),
+    ).drop_columns(drop_source_columns)
+
+    with pytest.raises(ValueError, match=match):
+        table.upsert(source, join_cols=join_cols)
+
+    assert table.current_snapshot() is None
+
+
+_UTC = timezone.utc
+
+
+@pytest.mark.parametrize(
+    "iceberg_type, arrow_type, existing_key, new_key",
+    [
+        pytest.param(BooleanType(), pa.bool_(), False, True, id="boolean"),
+        pytest.param(IntegerType(), pa.int32(), 1, 2, id="int"),
+        pytest.param(LongType(), pa.int64(), 1, 2, id="long"),
+        pytest.param(LongType(), pa.int32(), 1, 2, id="long-from-int32-source"),
+        pytest.param(DecimalType(10, 2), pa.decimal128(10, 2), Decimal("1.50"), Decimal("2.50"), id="decimal"),
+        pytest.param(DateType(), pa.date32(), date(2024, 1, 1), date(2024, 1, 2), id="date"),
+        pytest.param(TimeType(), pa.time64("us"), time(1, 2, 3), time(4, 5, 6), id="time"),
+        pytest.param(TimestampType(), pa.timestamp("us"), datetime(2024, 1, 1), datetime(2024, 1, 2), id="timestamp"),
+        pytest.param(
+            TimestamptzType(),
+            pa.timestamp("us", "UTC"),
+            datetime(2024, 1, 1, tzinfo=_UTC),
+            datetime(2024, 1, 2, tzinfo=_UTC),
+            id="timestamptz",
+        ),
+        pytest.param(StringType(), pa.string(), "a", "b", id="string"),
+        pytest.param(StringType(), pa.large_string(), "a", "b", id="string-from-large-string-source"),
+        pytest.param(BinaryType(), pa.binary(), b"a", b"b", id="binary"),
+        pytest.param(BinaryType(), pa.large_binary(), b"a", b"b", id="binary-from-large-binary-source"),
+        pytest.param(FixedType(2), pa.binary(2), b"aa", b"bb", id="fixed"),
+    ],
+)
+def test_upsert_accepts_supported_join_key(
+    catalog: Catalog, iceberg_type: PrimitiveType, arrow_type: pa.DataType, existing_key: Any, new_key: Any
+) -> None:
+    """Every supported primitive key updates matched rows and inserts new ones, including from a multi-chunk source."""
+    identifier = "default.test_upsert_accepts_supported_join_key"
+    _drop_table(catalog, identifier)
+    schema = Schema(NestedField(1, "k", iceberg_type, required=True), NestedField(2, "payload", StringType(), required=True))
+    arrow_schema = pa.schema([pa.field("k", arrow_type, nullable=False), pa.field("payload", pa.string(), nullable=False)])
+    table = catalog.create_table(identifier, schema)
+    table.append(pa.Table.from_pylist([{"k": existing_key, "payload": "old"}], schema=arrow_schema))
+
+    source = pa.concat_tables(
+        [
+            pa.Table.from_pylist([{"k": existing_key, "payload": "updated"}], schema=arrow_schema),
+            pa.Table.from_pylist([{"k": new_key, "payload": "inserted"}], schema=arrow_schema),
+        ]
+    )
+    result = table.upsert(source, join_cols=["k"])
+
+    assert (result.rows_updated, result.rows_inserted) == (1, 1)
+    rows = table.scan().to_arrow().to_pylist()
+    assert {(row["k"], row["payload"]) for row in rows} == {(existing_key, "updated"), (new_key, "inserted")}
+
+
+def test_upsert_allows_null_join_key_values_in_target(catalog: Catalog) -> None:
+    """Null key values are only rejected in the source; existing null-key rows in the table are left untouched."""
+    identifier = "default.test_upsert_allows_null_join_key_values_in_target"
+    _drop_table(catalog, identifier)
+    table = catalog.create_table(identifier, pa.schema([("k", pa.int32()), ("payload", pa.string())]))
+    table.append(pa.table({"k": pa.array([None, 1], pa.int32()), "payload": ["orphan", "old"]}))
+
+    result = table.upsert(pa.table({"k": pa.array([1], pa.int32()), "payload": ["new"]}), join_cols=["k"])
+
+    assert (result.rows_updated, result.rows_inserted) == (1, 0)
+    rows = table.scan().to_arrow().to_pylist()
+    assert {(row["k"], row["payload"]) for row in rows} == {(None, "orphan"), (1, "new")}
