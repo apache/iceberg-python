@@ -29,7 +29,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
 )
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import ParseResult, parse_qs, urlparse
 
 import requests
 from fsspec import AbstractFileSystem
@@ -148,6 +148,9 @@ class S3V4RestSigner(S3RequestSigner):
             "uri": request.url,
             "headers": {key: [val] for key, val in request.headers.items()},
         }
+        if request.method == "POST" and "delete" in parse_qs(urlparse(request.url).query, keep_blank_values=True):
+            if body := request.body:
+                signer_body["body"] = body.decode("utf-8")
 
         response = self._session.post(f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body)
         try:
