@@ -21,7 +21,7 @@ import sys
 import tempfile
 import uuid
 import warnings
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -3270,6 +3270,41 @@ def test__to_requested_schema_float_promotion(
 
     assert result.schema[0].type == expected_arrow_type
     assert result.column(0).to_pylist() == [1.5, 2.25, 3.0, None]
+
+
+@pytest.mark.parametrize("list_type", [pa.list_, pa.large_list])
+def test__to_requested_schema_null_list_of_structs(list_type: Callable[[pa.DataType], pa.DataType]) -> None:
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_list_with_struct",
+            ListType(11, StructType(NestedField(111, "test", IntegerType(), required=False)), element_required=False),
+            required=False,
+        ),
+        NestedField(2, "col_list", ListType(21, IntegerType(), element_required=False), required=False),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("col_list_with_struct", list_type(pa.struct([pa.field("test", pa.int32())]))),
+            pa.field("col_list", list_type(pa.int32())),
+        ]
+    )
+    batch = pa.RecordBatch.from_arrays(
+        [
+            pa.array([[{"test": 1}], [], None, [{"test": 2}, None]], type=arrow_schema.field(0).type),
+            pa.array([[1], [], None, [2, None]], type=arrow_schema.field(1).type),
+        ],
+        schema=arrow_schema,
+    )
+
+    result = _to_requested_schema(requested_schema, requested_schema, batch)
+    assert result.column(0).to_pylist() == [[{"test": 1}], [], None, [{"test": 2}, None]]
+    assert result.column(1).to_pylist() == [[1], [], None, [2, None]]
+
+    # A sliced batch has to keep the nulls as well
+    result = _to_requested_schema(requested_schema, requested_schema, batch.slice(1, 3))
+    assert result.column(0).to_pylist() == [[], None, [{"test": 2}, None]]
+    assert result.column(1).to_pylist() == [[], None, [2, None]]
 
 
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
