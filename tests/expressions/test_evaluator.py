@@ -45,6 +45,7 @@ from pyiceberg.expressions import (
     StartsWith,
 )
 from pyiceberg.expressions.visitors import (
+    IN_PREDICATE_LIMIT,
     ROWS_CANNOT_MATCH,
     ROWS_MIGHT_MATCH,
     ROWS_MIGHT_NOT_MATCH,
@@ -674,6 +675,47 @@ def test_integer_in(schema_data_file: Schema, data_file: DataFile) -> None:
     assert should_read, "Should read: large in expression"
 
 
+def test_integer_in_above_limit(schema_data_file: Schema, data_file: DataFile) -> None:
+    below_lower = set(range(INT_MIN_VALUE - IN_PREDICATE_LIMIT - 1, INT_MIN_VALUE))
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, In("id", below_lower)).eval(data_file)
+    assert not should_read, "Should not read: id below lower bound (max 29 < 30)"
+
+    above_upper = set(range(INT_MAX_VALUE + 1, INT_MAX_VALUE + IN_PREDICATE_LIMIT + 2))
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, In("id", above_upper)).eval(data_file)
+    assert not should_read, "Should not read: id above upper bound (min 80 > 79)"
+
+    equal_lower = set(range(INT_MIN_VALUE - IN_PREDICATE_LIMIT, INT_MIN_VALUE + 1))
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, In("id", equal_lower)).eval(data_file)
+    assert should_read, "Should read: id equal to lower bound (max 30 == 30)"
+
+    equal_upper = set(range(INT_MAX_VALUE, INT_MAX_VALUE + IN_PREDICATE_LIMIT + 1))
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, In("id", equal_upper)).eval(data_file)
+    assert should_read, "Should read: id equal to upper bound (min 79 == 79)"
+
+    straddle = set(range(INT_MIN_VALUE - IN_PREDICATE_LIMIT, INT_MAX_VALUE + 2))
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, In("id", straddle)).eval(data_file)
+    assert should_read, "Should read: id range overlaps bounds"
+
+    outside_both = {*range(INT_MIN_VALUE - IN_PREDICATE_LIMIT, INT_MIN_VALUE), INT_MAX_VALUE + 1}
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, In("id", outside_both)).eval(data_file)
+    assert not should_read, "Should not read: no id between lower and upper bounds"
+
+    should_read = _InclusiveMetricsEvaluator(
+        schema_data_file, In("all_nulls", {str(i) for i in range(IN_PREDICATE_LIMIT + 1)})
+    ).eval(data_file)
+    assert not should_read, "Should skip: in on all nulls column"
+
+
+def test_integer_in_at_limit(schema_data_file: Schema, data_file: DataFile) -> None:
+    below_lower = set(range(INT_MIN_VALUE - IN_PREDICATE_LIMIT, INT_MIN_VALUE))
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, In("id", below_lower)).eval(data_file)
+    assert not should_read, "Should not read: id below lower bound (max 29 < 30)"
+
+    outside_both = {*range(INT_MIN_VALUE - IN_PREDICATE_LIMIT + 1, INT_MIN_VALUE), INT_MAX_VALUE + 1}
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, In("id", outside_both)).eval(data_file)
+    assert not should_read, "Should not read: no id between lower and upper bounds"
+
+
 def test_integer_not_in(schema_data_file: Schema, data_file: DataFile) -> None:
     should_read = _InclusiveMetricsEvaluator(schema_data_file, NotIn("id", {INT_MIN_VALUE - 25, INT_MIN_VALUE - 24})).eval(
         data_file
@@ -907,6 +949,34 @@ def test_inclusive_metrics_evaluator_in(schema_data_file_nan: Schema, data_file_
 
     should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, In("some_nan_correct_bounds", (22, 25))).eval(data_file_nan)
     assert should_read, "Should match: overlap with upper bounds"
+
+
+def test_inclusive_metrics_evaluator_in_above_limit(schema_data_file_nan: Schema, data_file_nan: DataFile) -> None:
+    below_seven = {float(i) for i in range(-IN_PREDICATE_LIMIT, 1)}
+    above_twenty_two = {float(i) for i in range(30, 30 + IN_PREDICATE_LIMIT + 1)}
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, In("all_nan", below_seven)).eval(data_file_nan)
+    assert not should_read, "Should not match: all nan column doesn't contain number"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, In("max_nan", below_seven)).eval(data_file_nan)
+    assert not should_read, "Should not match: all values are smaller than lower bound"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, In("max_nan", above_twenty_two)).eval(data_file_nan)
+    assert should_read, "Should match: upper bound is nan"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, In("min_max_nan", below_seven)).eval(data_file_nan)
+    assert should_read, "Should match: no visibility"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, In("all_nan_null_bounds", below_seven)).eval(data_file_nan)
+    assert not should_read, "Should not match: all nan column doesn't contain number"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, In("some_nan_correct_bounds", below_seven)).eval(data_file_nan)
+    assert not should_read, "Should not match: all values are smaller than lower bound"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file_nan, In("some_nan_correct_bounds", above_twenty_two)).eval(
+        data_file_nan
+    )
+    assert not should_read, "Should not match: all values are larger than upper bound"
 
 
 def test_inclusive_metrics_evaluator_not_in(schema_data_file_nan: Schema, data_file_nan: DataFile) -> None:

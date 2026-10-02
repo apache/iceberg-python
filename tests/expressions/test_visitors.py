@@ -66,6 +66,7 @@ from pyiceberg.expressions import (
 )
 from pyiceberg.expressions.literals import Literal, literal
 from pyiceberg.expressions.visitors import (
+    IN_PREDICATE_LIMIT,
     MAX_DNF_TERMS,
     BindVisitor,
     BooleanExpressionVisitor,
@@ -1357,6 +1358,38 @@ def test_integer_in(schema: Schema, manifest: ManifestFile) -> None:
 
     assert _ManifestEvalVisitor(schema, In(Reference("no_nulls"), ("abc", "def")), case_sensitive=True).eval(manifest), (
         "Should read: in on no nulls column"
+    )
+
+
+def test_integer_in_above_limit(schema: Schema, manifest: ManifestFile) -> None:
+    below_lower = range(INT_MIN_VALUE - IN_PREDICATE_LIMIT - 1, INT_MIN_VALUE)
+    assert not _ManifestEvalVisitor(schema, In(Reference("id"), below_lower), case_sensitive=True).eval(manifest), (
+        "Should not read: id below lower bound (max 29 < 30)"
+    )
+
+    above_upper = range(INT_MAX_VALUE + 1, INT_MAX_VALUE + IN_PREDICATE_LIMIT + 2)
+    assert not _ManifestEvalVisitor(schema, In(Reference("id"), above_upper), case_sensitive=True).eval(manifest), (
+        "Should not read: id above upper bound (min 80 > 79)"
+    )
+
+    equal_lower = range(INT_MIN_VALUE - IN_PREDICATE_LIMIT, INT_MIN_VALUE + 1)
+    assert _ManifestEvalVisitor(schema, In(Reference("id"), equal_lower), case_sensitive=True).eval(manifest), (
+        "Should read: id equal to lower bound (max 30 == 30)"
+    )
+
+    equal_upper = range(INT_MAX_VALUE, INT_MAX_VALUE + IN_PREDICATE_LIMIT + 1)
+    assert _ManifestEvalVisitor(schema, In(Reference("id"), equal_upper), case_sensitive=True).eval(manifest), (
+        "Should read: id equal to upper bound (min 79 == 79)"
+    )
+
+    straddle = range(INT_MIN_VALUE - IN_PREDICATE_LIMIT, INT_MAX_VALUE + 2)
+    assert _ManifestEvalVisitor(schema, In(Reference("id"), straddle), case_sensitive=True).eval(manifest), (
+        "Should read: id range overlaps bounds"
+    )
+
+    outside_both = [*range(INT_MIN_VALUE - IN_PREDICATE_LIMIT, INT_MIN_VALUE), INT_MAX_VALUE + 1]
+    assert _ManifestEvalVisitor(schema, In(Reference("id"), outside_both), case_sensitive=True).eval(manifest), (
+        "Should read: id range covers bounds"
     )
 
 

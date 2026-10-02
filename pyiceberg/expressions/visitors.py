@@ -574,9 +574,6 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
         if field.lower_bound is None:
             return ROWS_CANNOT_MATCH
 
-        if len(literals) > IN_PREDICATE_LIMIT:
-            return ROWS_MIGHT_MATCH
-
         lower = _from_byte_buffer(term.ref().field.field_type, field.lower_bound)
 
         if all(lower > val for val in literals):
@@ -1387,10 +1384,6 @@ class _InclusiveMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
 
         if self._contains_nulls_only(field_id) or self._contains_nans_only(field_id):
             return ROWS_CANNOT_MATCH
-
-        if len(literals) > IN_PREDICATE_LIMIT:
-            # skip evaluating the predicate if the number of values is too big
-            return ROWS_MIGHT_MATCH
 
         if not isinstance(field.field_type, PrimitiveType):
             raise ValueError(f"Expected PrimitiveType: {field.field_type}")
