@@ -30,7 +30,7 @@ permissions:
 jobs:
   set-version:
     if: github.repository == 'apache/iceberg-python' || github.event_name == 'workflow_dispatch' # Run on schedule for apache repo, or on manual dispatch from any repo
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     outputs:
       VERSION: ${{ steps.set-version.outputs.VERSION }}
     steps:

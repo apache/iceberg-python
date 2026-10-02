@@ -41,7 +41,7 @@ permissions:
 
 jobs:
   validate-inputs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     outputs:
       VERSION: ${{ steps.validate-inputs.outputs.VERSION }} # e.g. 0.8.0
       RC: ${{ steps.validate-inputs.outputs.RC }} # e.g. 1
@@ -96,7 +96,7 @@ jobs:
           STEPS_VALIDATE_INPUTS_OUTPUTS_RC: ${{ steps.validate-inputs.outputs.RC }}
 
   validate-library-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     needs:
       - validate-inputs
     steps:
