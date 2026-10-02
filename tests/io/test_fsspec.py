@@ -697,6 +697,32 @@ def test_adls_account_name_extracted_from_uri_hostname() -> None:
         )
 
 
+def test_adls_account_name_resolved_per_location() -> None:
+    """Two locations in different accounts must each get a filesystem for their own account."""
+    session_properties: Properties = {"adls.tenant-id": "test-tenant-id"}
+
+    with mock.patch("adlfs.AzureBlobFileSystem") as mock_adlfs:
+        adls_fileio = FsspecFileIO(properties=session_properties)
+
+        adls_fileio.new_input(location="abfss://data@accountone.dfs.core.windows.net/wh/t/a.parquet")
+        adls_fileio.new_input(location="abfss://data@accounttwo.dfs.core.windows.net/wh/t/b.parquet")
+
+    account_names = [call.kwargs["account_name"] for call in mock_adlfs.call_args_list]
+    assert account_names == ["accountone", "accounttwo"]
+
+
+def test_adls_does_not_mutate_properties() -> None:
+    """Resolving an account from a location must not write it back into the shared properties."""
+    session_properties: Properties = {"adls.tenant-id": "test-tenant-id"}
+
+    with mock.patch("adlfs.AzureBlobFileSystem"):
+        adls_fileio = FsspecFileIO(properties=session_properties)
+        adls_fileio.new_input(location="abfss://data@accountone.dfs.core.windows.net/wh/t/a.parquet")
+
+    assert "adls.account-name" not in adls_fileio.properties
+    assert session_properties == {"adls.tenant-id": "test-tenant-id"}
+
+
 def test_adls_account_name_not_overridden_when_in_properties() -> None:
     """Test that explicit adls.account-name in properties is not overridden by URI hostname."""
     session_properties: Properties = {
