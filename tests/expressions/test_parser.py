@@ -204,8 +204,10 @@ def test_invalid_likes() -> None:
     invalid_statements = ["foo LIKE '%data%'", "foo LIKE 'da%ta'", "foo LIKE '%data'"]
 
     for statement in invalid_statements:
-        with pytest.raises(ValueError, match="LIKE expressions only supports wildcard, '%', at the end of a string"):
+        with pytest.raises(ValueError) as exc_info:
             parser.parse(statement)
+
+        assert "LIKE expressions only supports wildcard, '%', at the end of a string" in str(exc_info)
 
 
 def test_not_starts_with() -> None:
@@ -214,10 +216,10 @@ def test_not_starts_with() -> None:
 
 
 def test_with_function() -> None:
-    # pyparsing <3.3.3 stops at the trailing "and" ("Expected end of text, found 'and'"),
-    # while 3.3.3+ reports the unsupported function call ("found 'lower'").
-    with pytest.raises(ParseException, match=r"found '(and|lower)'"):
+    with pytest.raises(ParseException) as exc_info:
         parser.parse("foo = 1 and lower(bar) = '2'")
+
+    assert "found 'lower'" in str(exc_info)
 
 
 def test_nested_fields() -> None:
@@ -229,14 +231,13 @@ def test_nested_fields() -> None:
 
 
 def test_quoted_column_with_dots() -> None:
-    # A dot inside a quoted column must not be treated as a column separator; both forms
-    # are rejected. The exact pyparsing error message differs across versions (3.3.3
-    # expanded the "Expected ..." grammar dump), so only assert the general shape.
-    with pytest.raises(ParseException, match=r"Expected.*found"):
+    with pytest.raises(ParseException) as exc_info:
         parser.parse("\"foo.bar\".baz = 'data'")
 
-    with pytest.raises(ParseException, match=r"Expected.*found"):
+    with pytest.raises(ParseException) as exc_info:
         parser.parse("'foo.bar'.baz = 'data'")
+
+    assert "found \"'\"  (at char 0), (line:1, col:1)" in str(exc_info.value)
 
 
 def test_quoted_column_with_spaces() -> None:
