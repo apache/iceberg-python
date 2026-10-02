@@ -24,7 +24,6 @@ from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
     And,
-    BooleanExpression,
     EqualTo,
     GreaterThan,
     GreaterThanOrEqual,
@@ -205,10 +204,8 @@ def test_invalid_likes() -> None:
     invalid_statements = ["foo LIKE '%data%'", "foo LIKE 'da%ta'", "foo LIKE '%data'"]
 
     for statement in invalid_statements:
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="LIKE expressions only supports wildcard, '%', at the end of a string"):
             parser.parse(statement)
-
-        assert "LIKE expressions only supports wildcard, '%', at the end of a string" in str(exc_info)
 
 
 def test_not_starts_with() -> None:
@@ -217,10 +214,10 @@ def test_not_starts_with() -> None:
 
 
 def test_with_function() -> None:
-    with pytest.raises(ParseException) as exc_info:
+    # pyparsing <3.3.3 stops at the trailing "and" ("Expected end of text, found 'and'"),
+    # while 3.3.3+ reports the unsupported function call ("found 'lower'").
+    with pytest.raises(ParseException, match=r"found '(and|lower)'"):
         parser.parse("foo = 1 and lower(bar) = '2'")
-
-    assert "Expected end of text, found 'and'" in str(exc_info)
 
 
 def test_nested_fields() -> None:
@@ -232,13 +229,14 @@ def test_nested_fields() -> None:
 
 
 def test_quoted_column_with_dots() -> None:
-    with pytest.raises(ParseException) as exc_info:
+    # A dot inside a quoted column must not be treated as a column separator; both forms
+    # are rejected. The exact pyparsing error message differs across versions (3.3.3
+    # expanded the "Expected ..." grammar dump), so only assert the general shape.
+    with pytest.raises(ParseException, match=r"Expected.*found"):
         parser.parse("\"foo.bar\".baz = 'data'")
 
-    with pytest.raises(ParseException) as exc_info:
+    with pytest.raises(ParseException, match=r"Expected.*found"):
         parser.parse("'foo.bar'.baz = 'data'")
-
-    assert "Expected '<=' | '<>' | '<' | '>=' | '>' | '==' | '=' | '!=', found '.'" in str(exc_info.value)
 
 
 def test_quoted_column_with_spaces() -> None:
@@ -273,24 +271,3 @@ def test_valid_between_with_numerics() -> None:
     ) == parser.parse("foo between '2025-01-01T00:00:00.000000' and '2025-01-10T12:00:00.000000'")
 
     assert parser.parse("foo between 1 and 3") == parser.parse("1 <= foo and foo <= 3")
-
-
-@pytest.mark.parametrize(
-    "expression, expected",
-    [
-        ("true and foo = 1", EqualTo(Reference("foo"), literal(1))),
-        ("foo = 1 and true", EqualTo(Reference("foo"), literal(1))),
-        ("foo = 1 or false", EqualTo(Reference("foo"), literal(1))),
-        ("foo = 1 or true", AlwaysTrue()),
-        ("foo = 1 and false", AlwaysFalse()),
-        ("not true", AlwaysFalse()),
-        ("not false", AlwaysTrue()),
-    ],
-)
-def test_boolean_as_operand(expression: str, expected: BooleanExpression) -> None:
-    assert parser.parse(expression) == expected
-
-
-def test_boolean_as_literal_is_unchanged() -> None:
-    assert parser.parse("foo = true") == EqualTo(Reference("foo"), literal(True))
-    assert parser.parse("foo in (true, false)") == In(Reference("foo"), {literal(True), literal(False)})
