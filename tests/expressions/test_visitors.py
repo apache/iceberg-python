@@ -17,7 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event
+from threading import Event, get_ident
 from typing import Any
 
 import pytest
@@ -1982,3 +1982,62 @@ def test_translate_column_names_missing_column_projected_field_ignores_initial_d
 
     # Should evaluate to AlwaysFalse since projected field value doesn't match the expression literal
     assert translated_expr == AlwaysFalse()
+
+
+def test_manifest_evaluator_judges_each_manifest_by_its_own_summaries(schema: Schema, manifest: ManifestFile) -> None:
+    """A shared evaluator must not let one manifest's partition summaries decide another's fate.
+
+    manifest_evaluator returns a single _ManifestEvalVisitor, and callers such as
+    _OverwriteFiles._deleted_entries evaluate the parent snapshot's manifests on a thread pool.
+    While eval stored the summaries on the instance, a thread switch between storing and reading
+    them made one manifest be judged by another manifest's bounds. When the mis-judged manifest
+    held the files being deleted it was skipped, so the files were never found and the overwrite
+    failed with "Missing required files to delete" even though they were live.
+    """
+    # id is within [INT_MIN_VALUE, INT_MAX_VALUE] in `manifest` and far outside it in `other`.
+    other = _to_manifest_file(
+        PartitionFieldSummary.from_args(
+            contains_null=False,
+            contains_nan=None,
+            lower_bound=_to_byte_buffer(IntegerType(), INT_MAX_VALUE + 1000),
+            upper_bound=_to_byte_buffer(IntegerType(), INT_MAX_VALUE + 2000),
+        ),
+    )
+
+    evaluate = _ManifestEvalVisitor(schema, EqualTo(Reference("id"), INT_MIN_VALUE), case_sensitive=True).eval
+
+    at_first_leaf = Event()
+    other_evaluated = Event()
+    threads: dict[str, int] = {}
+    original_visit_equal = _ManifestEvalVisitor.visit_equal
+
+    def visit_equal_pausing_once(self: Any, *args: Any, **kwargs: Any) -> bool:
+        # Hold the thread evaluating `manifest` at its first predicate leaf, after it has stored
+        # the summaries, until the other thread has evaluated `other`.
+        if get_ident() == threads.get("under_test") and not at_first_leaf.is_set():
+            at_first_leaf.set()
+            assert other_evaluated.wait(timeout=10), "the interleaving never completed"
+        return original_visit_equal(self, *args, **kwargs)
+
+    def evaluate_manifest() -> bool:
+        threads["under_test"] = get_ident()
+        return evaluate(manifest)
+
+    def evaluate_other() -> bool:
+        assert at_first_leaf.wait(timeout=10), "the manifest under test never reached a leaf"
+        try:
+            return evaluate(other)
+        finally:
+            other_evaluated.set()
+
+    _ManifestEvalVisitor.visit_equal = visit_equal_pausing_once  # type: ignore[method-assign]
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            under_test = executor.submit(evaluate_manifest)
+            concurrent = executor.submit(evaluate_other)
+            result = under_test.result()
+            assert not concurrent.result(), "id == INT_MIN_VALUE cannot be in `other`, so it must be skipped"
+    finally:
+        _ManifestEvalVisitor.visit_equal = original_visit_equal  # type: ignore[method-assign]
+
+    assert result, "`manifest` holds id == INT_MIN_VALUE and must be read, whatever another thread evaluates"
