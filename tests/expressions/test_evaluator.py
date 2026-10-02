@@ -698,7 +698,7 @@ def test_integer_in_above_limit(schema_data_file: Schema, data_file: DataFile) -
 
     outside_both = {*range(INT_MIN_VALUE - IN_PREDICATE_LIMIT, INT_MIN_VALUE), INT_MAX_VALUE + 1}
     should_read = _InclusiveMetricsEvaluator(schema_data_file, In("id", outside_both)).eval(data_file)
-    assert should_read, "Should read: id range covers bounds, values between min and max are not checked"
+    assert not should_read, "Should not read: no id between lower and upper bounds"
 
     should_read = _InclusiveMetricsEvaluator(
         schema_data_file, In("all_nulls", {str(i) for i in range(IN_PREDICATE_LIMIT + 1)})
