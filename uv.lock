@@ -4982,6 +4982,7 @@ ray = [
 ]
 rest-sigv4 = [
     { name = "boto3" },
+    { name = "botocore" },
 ]
 s3fs = [
     { name = "s3fs" },
@@ -5050,6 +5051,7 @@ requires-dist = [
     { name = "boto3", marker = "extra == 'dynamodb'", specifier = ">=1.24.59" },
     { name = "boto3", marker = "extra == 'glue'", specifier = ">=1.24.59" },
     { name = "boto3", marker = "extra == 'rest-sigv4'", specifier = ">=1.24.59" },
+    { name = "botocore", marker = "extra == 'rest-sigv4'", specifier = "<2" },
     { name = "cachetools", specifier = ">=5.5" },
     { name = "click", specifier = ">=7.1.1" },
     { name = "cryptography", marker = "extra == 'encryption'", specifier = ">=42.0.0" },

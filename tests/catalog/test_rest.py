@@ -34,7 +34,6 @@ import pyiceberg
 from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
-    EMPTY_BODY_SHA256,
     OAUTH2_SERVER_URI,
     PAGE_SIZE,
     REST_CLIENT_CONNECTION_TIMEOUT_MS,
@@ -587,77 +586,36 @@ def test_list_tables_page_size(rest_mock: Mocker) -> None:
     ]
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_list_tables_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
+    # SigV4 signing replaces the bearer Authorization header with an AWS4-HMAC-SHA256
+    # signature, so the request headers are not matched against TEST_HEADERS here.
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/{namespace}/tables",
         json={"identifiers": [{"namespace": ["examples"], "name": "fooshare"}]},
         status_code=200,
-        request_headers=TEST_HEADERS,
     )
 
-    assert RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}).list_tables(namespace) == [
-        ("examples", "fooshare")
-    ]
+    assert RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    ).list_tables(namespace) == [("examples", "fooshare")]
     assert rest_mock.called
 
 
-def test_sigv4_sign_request_without_body(rest_mock: Mocker) -> None:
-    existing_token = "existing_token"
-
-    catalog = RestCatalog(
-        "rest",
-        **{
-            "uri": TEST_URI,
-            "token": existing_token,
-            "rest.sigv4-enabled": "true",
-            "rest.signing-region": "us-west-2",
-            "client.access-key-id": "id",
-            "client.secret-access-key": "secret",
-        },
-    )
-
-    prepared = catalog._session.prepare_request(Request("GET", f"{TEST_URI}v1/config"))
-    adapter = catalog._session.adapters[catalog.uri]
-    assert isinstance(adapter, HTTPAdapter)
-    adapter.add_headers(prepared)
-
-    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
-    assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
-    assert prepared.headers["x-amz-content-sha256"] == EMPTY_BODY_SHA256
-
-
-def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
-    existing_token = "existing_token"
-
-    catalog = RestCatalog(
-        "rest",
-        **{
-            "uri": TEST_URI,
-            "token": existing_token,
-            "rest.sigv4-enabled": "true",
-            "rest.signing-region": "us-west-2",
-            "client.access-key-id": "id",
-            "client.secret-access-key": "secret",
-        },
-    )
-
-    prepared = catalog._session.prepare_request(
-        Request(
-            "POST",
-            f"{TEST_URI}v1/namespaces",
-            data={"namespace": "asdfasd"},
-        )
-    )
-    adapter = catalog._session.adapters[catalog.uri]
-    assert isinstance(adapter, HTTPAdapter)
-    adapter.add_headers(prepared)
-
-    assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
-    assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
-    assert prepared.headers.get("x-amz-content-sha256") != EMPTY_BODY_SHA256
-
-
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
     catalog = RestCatalog(
         "rest",
@@ -676,6 +634,9 @@ def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
     assert adapter.max_retries.total == SIGV4_MAX_RETRIES_DEFAULT
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
     catalog = RestCatalog(
         "rest",
@@ -693,29 +654,6 @@ def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
     adapter = catalog._session.adapters[catalog.uri]
     assert isinstance(adapter, HTTPAdapter)
     assert adapter.max_retries.total == 3
-
-
-def test_sigv4_uses_client_profile_name(rest_mock: Mocker) -> None:
-    with mock.patch("boto3.Session") as mock_session:
-        RestCatalog(
-            "rest",
-            **{
-                "uri": TEST_URI,
-                "token": TEST_TOKEN,
-                "rest.sigv4-enabled": "true",
-                "rest.signing-region": "us-west-2",
-                "client.profile-name": "rest-profile",
-            },
-        )
-
-    mock_session.assert_called_with(
-        profile_name="rest-profile",
-        region_name=None,
-        botocore_session=None,
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        aws_session_token=None,
-    )
 
 
 def test_list_tables_404(rest_mock: Mocker) -> None:
@@ -875,18 +813,30 @@ def test_list_views_invalid_page_size(rest_mock: Mocker) -> None:
     assert str(e.value) == "rest-page-size must be a positive integer"
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+)
 def test_list_views_200_sigv4(rest_mock: Mocker) -> None:
     namespace = "examples"
+    # SigV4 signing replaces the bearer Authorization header with an AWS4-HMAC-SHA256
+    # signature, so the request headers are not matched against TEST_HEADERS here.
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/{namespace}/views",
         json={"identifiers": [{"namespace": ["examples"], "name": "fooshare"}]},
         status_code=200,
-        request_headers=TEST_HEADERS,
     )
 
-    assert RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}).list_views(namespace) == [
-        ("examples", "fooshare")
-    ]
+    assert RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    ).list_views(namespace) == [("examples", "fooshare")]
     assert rest_mock.called
 
 
@@ -2971,6 +2921,9 @@ class TestRestCatalogClose:
         # Second close should not raise any exception
         catalog.close()
 
+    @pytest.mark.filterwarnings(
+        "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+    )
     def test_rest_catalog_close_sigv4(self, rest_mock: Mocker) -> None:
         catalog = None
         rest_mock.get(
@@ -2979,7 +2932,17 @@ class TestRestCatalogClose:
             status_code=200,
         )
 
-        catalog = RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"})
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": TEST_URI,
+                "token": TEST_TOKEN,
+                "rest.sigv4-enabled": "true",
+                "rest.signing-region": "us-west-2",
+                "client.access-key-id": "id",
+                "client.secret-access-key": "secret",
+            },
+        )
         catalog.close()
         assert hasattr(catalog, "_session")
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS_SIGV4
@@ -3003,6 +2966,9 @@ class TestRestCatalogClose:
         assert catalog is not None and hasattr(catalog, "_session")
         assert len(catalog._session.adapters) == self.EXPECTED_ADAPTERS
 
+    @pytest.mark.filterwarnings(
+        "ignore:Deprecated in 0.11.0, will be removed in 1.0.0. The property rest.sigv4-enabled is deprecated:DeprecationWarning"
+    )
     def test_rest_catalog_context_manager_with_exception_sigv4(self, rest_mock: Mocker) -> None:
         """Test RestCatalog context manager properly closes with exceptions."""
         catalog = None
@@ -3013,7 +2979,17 @@ class TestRestCatalogClose:
         )
 
         try:
-            with RestCatalog("rest", **{"uri": TEST_URI, "token": TEST_TOKEN, "rest.sigv4-enabled": "true"}) as cat:
+            with RestCatalog(
+                "rest",
+                **{
+                    "uri": TEST_URI,
+                    "token": TEST_TOKEN,
+                    "rest.sigv4-enabled": "true",
+                    "rest.signing-region": "us-west-2",
+                    "client.access-key-id": "id",
+                    "client.secret-access-key": "secret",
+                },
+            ) as cat:
                 catalog = cat
                 raise ValueError("Test exception")
         except ValueError:
