@@ -22,30 +22,36 @@ from pyarrow import Table as pyarrow_table
 from pyarrow import compute as pc
 
 from pyiceberg.expressions import (
-    AlwaysFalse,
     BooleanExpression,
-    EqualTo,
     In,
-    Or,
 )
 
 
 def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
+    """
+    Return a filter that matches every row whose key is present in the given table.
+
+    The filter is one In per join column, so it stays flat for any number of keys. For a composite key
+    it can also match rows whose key is not present, use exclude_keys to get the exact set afterwards.
+    See: https://github.com/apache/iceberg-python/issues/3508
+    """
     unique_keys = df.select(join_cols).group_by(join_cols).aggregate([])
 
-    if len(join_cols) == 1:
-        return In(join_cols[0], unique_keys[0].to_pylist())
-    else:
-        filters = [
-            functools.reduce(operator.and_, [EqualTo(col, row[col]) for col in join_cols]) for row in unique_keys.to_pylist()
-        ]
+    return functools.reduce(operator.and_, [In(col, unique_keys[col].to_pylist()) for col in join_cols])
 
-        if len(filters) == 0:
-            return AlwaysFalse()
-        elif len(filters) == 1:
-            return filters[0]
-        else:
-            return Or(*filters)
+
+def exclude_keys(table: pa.Table, keys: pa.Table, join_cols: list[str]) -> pa.Table:
+    """Return the rows of the table whose key is not present in the given keys, in the original order."""
+    INDEX_COLUMN_NAME = "__index"
+
+    if INDEX_COLUMN_NAME in join_cols:
+        raise ValueError(f"{INDEX_COLUMN_NAME} is reserved for joining DataFrames, and cannot be used as a column name")
+
+    table_keys = table.select(join_cols)
+    index = table_keys.append_column(INDEX_COLUMN_NAME, pa.array(range(len(table)), pa.int64()))
+    remaining = index.join(keys.select(join_cols).cast(table_keys.schema), keys=join_cols, join_type="left anti")
+
+    return table.take(remaining.sort_by(INDEX_COLUMN_NAME)[INDEX_COLUMN_NAME])
 
 
 def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
