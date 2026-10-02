@@ -21,6 +21,7 @@ from bisect import bisect_left
 from pyiceberg.expressions import EqualTo
 from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator
 from pyiceberg.manifest import INITIAL_SEQUENCE_NUMBER, POSITIONAL_DELETE_SCHEMA, DataFile, ManifestEntry
+from pyiceberg.table.delete_file import DeleteFileSet
 from pyiceberg.typedef import Record
 
 PATH_FIELD_ID = 2147483546
@@ -125,11 +126,11 @@ class DeleteFileIndex:
             deletes = self._by_partition.setdefault(key, PositionDeletes())
             deletes.add(delete_file, seq)
 
-    def for_data_file(self, seq_num: int, data_file: DataFile, partition_key: Record | None = None) -> set[DataFile]:
+    def for_data_file(self, seq_num: int, data_file: DataFile, partition_key: Record | None = None) -> DeleteFileSet:
         if self.is_empty():
-            return set()
+            return DeleteFileSet()
 
-        deletes: set[DataFile] = set()
+        deletes = DeleteFileSet()
         spec_id = data_file.spec_id or 0
 
         key = _partition_key(spec_id, partition_key)
