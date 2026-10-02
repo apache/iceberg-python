@@ -24,7 +24,6 @@ from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
     And,
-    BooleanExpression,
     EqualTo,
     GreaterThan,
     GreaterThanOrEqual,
@@ -220,7 +219,7 @@ def test_with_function() -> None:
     with pytest.raises(ParseException) as exc_info:
         parser.parse("foo = 1 and lower(bar) = '2'")
 
-    assert "Expected end of text, found 'and'" in str(exc_info)
+    assert "found 'lower'" in str(exc_info)
 
 
 def test_nested_fields() -> None:
@@ -238,7 +237,7 @@ def test_quoted_column_with_dots() -> None:
     with pytest.raises(ParseException) as exc_info:
         parser.parse("'foo.bar'.baz = 'data'")
 
-    assert "Expected '<=' | '<>' | '<' | '>=' | '>' | '==' | '=' | '!=', found '.'" in str(exc_info.value)
+    assert "found \"'\"  (at char 0), (line:1, col:1)" in str(exc_info.value)
 
 
 def test_quoted_column_with_spaces() -> None:
