@@ -17,6 +17,7 @@
 
 import os
 import pickle
+import sys
 import tempfile
 import threading
 import uuid
@@ -30,8 +31,8 @@ from requests_mock import Mocker
 
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
-from pyiceberg.io import fsspec
-from pyiceberg.io.fsspec import FsspecFileIO, S3V4RestSigner
+from pyiceberg.io import S3_SIGNER, fsspec
+from pyiceberg.io.fsspec import FsspecFileIO, S3V4RestSigner, _s3
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.typedef import Properties
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
@@ -922,6 +923,28 @@ def _test_fsspec_pickle_round_trip(fsspec_fileio: FsspecFileIO, location: str) -
 
 
 TEST_URI = "https://iceberg-test-signer"
+
+
+def test_s3_custom_signer_skips_fsspec_instance_cache() -> None:
+    captured: list[dict[str, object]] = []
+
+    class FakeS3:
+        def __init__(self, **kwargs: object) -> None:
+            captured.append(kwargs)
+            self.s3 = mock.Mock()
+            self.s3.meta.events.unregister = mock.Mock()
+            self.s3.meta.events.register_last = mock.Mock()
+
+    fake_s3fs = mock.MagicMock()
+    fake_s3fs.S3FileSystem = FakeS3
+    with mock.patch.dict(sys.modules, {"s3fs": fake_s3fs}):
+        first = _s3({S3_SIGNER: "S3V4RestSigner", "token": "one", "uri": TEST_URI})
+        second = _s3({S3_SIGNER: "S3V4RestSigner", "token": "two", "uri": TEST_URI})
+
+    assert first is not second
+    assert len(captured) == 2
+    assert captured[0]["skip_instance_cache"] is True
+    assert captured[1]["skip_instance_cache"] is True
 
 
 def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
