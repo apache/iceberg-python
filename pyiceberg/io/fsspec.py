@@ -68,6 +68,7 @@ from pyiceberg.io import (
     GCS_TOKEN,
     GCS_VERSION_AWARE,
     HF_ENDPOINT,
+    HF_REVISION,
     HF_TOKEN,
     S3_ACCESS_KEY_ID,
     S3_ANONYMOUS,
@@ -332,6 +333,25 @@ SCHEME_TO_FS: dict[str, Callable[..., AbstractFileSystem]] = {
 }
 
 _ADLS_SCHEMES = frozenset({"abfs", "abfss", "wasb", "wasbs"})
+_HF_SCHEMES = frozenset({"hf"})
+
+
+def _has_revision_in_path(uri: "ParseResult") -> bool:
+    """Check whether a HuggingFace Hub location pins a revision itself."""
+    # The revision is attached to the repo id, which spans at most the netloc and the two path
+    # segments following it: hf://<repo_type>/<owner>/<repo>@<revision>/<path_in_repo>.
+    return any("@" in segment for segment in (uri.netloc, *uri.path.lstrip("/").split("/")[:2]))
+
+
+def _exists(fs: AbstractFileSystem, location: str, fs_kwargs: Properties) -> bool:
+    """Check whether a location exists, honoring extra filesystem keyword arguments."""
+    if fs_kwargs:
+        # fsspec's AbstractFileSystem.lexists() doesn't forward **kwargs to exists()/info(), so
+        # honoring fs_kwargs (e.g. a pinned HuggingFace Hub revision) requires calling exists()
+        # directly -- it does forward kwargs to info(), with the same broad exception handling
+        # lexists() would otherwise provide.
+        return fs.exists(location, **fs_kwargs)
+    return fs.lexists(location)
 
 
 class FsspecInputFile(InputFile):
@@ -340,16 +360,19 @@ class FsspecInputFile(InputFile):
     Args:
         location (str): A URI to a file location.
         fs (AbstractFileSystem): An fsspec filesystem instance.
+        fs_kwargs (Properties): Extra keyword arguments forwarded to the underlying filesystem calls,
+            e.g. a `revision` for the HuggingFace Hub filesystem.
     """
 
-    def __init__(self, location: str, fs: AbstractFileSystem):
+    def __init__(self, location: str, fs: AbstractFileSystem, fs_kwargs: Properties | None = None):
         self._fs = fs
+        self._fs_kwargs = fs_kwargs or {}
         super().__init__(location=location)
 
     @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
-        object_info = self._fs.info(self.location)
+        object_info = self._fs.info(self.location, **self._fs_kwargs)
         if "Size" in object_info:
             return object_info["Size"]
         elif "size" in object_info:
@@ -359,7 +382,7 @@ class FsspecInputFile(InputFile):
     @override
     def exists(self) -> bool:
         """Check whether the location exists."""
-        return self._fs.lexists(self.location)
+        return _exists(self._fs, self.location, self._fs_kwargs)
 
     @override
     def open(self, seekable: bool = True) -> InputStream:
@@ -375,7 +398,7 @@ class FsspecInputFile(InputFile):
             FileNotFoundError: If the file does not exist.
         """
         try:
-            return self._fs.open(self.location, "rb")
+            return self._fs.open(self.location, "rb", **self._fs_kwargs)
         except FileNotFoundError as e:
             # To have a consistent error handling experience, make sure exception contains missing file location.
             raise e if e.filename else FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.location) from e
@@ -387,16 +410,19 @@ class FsspecOutputFile(OutputFile):
     Args:
         location (str): A URI to a file location.
         fs (AbstractFileSystem): An fsspec filesystem instance.
+        fs_kwargs (Properties): Extra keyword arguments forwarded to the underlying filesystem calls,
+            e.g. a `revision` for the HuggingFace Hub filesystem.
     """
 
-    def __init__(self, location: str, fs: AbstractFileSystem):
+    def __init__(self, location: str, fs: AbstractFileSystem, fs_kwargs: Properties | None = None):
         self._fs = fs
+        self._fs_kwargs = fs_kwargs or {}
         super().__init__(location=location)
 
     @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
-        object_info = self._fs.info(self.location)
+        object_info = self._fs.info(self.location, **self._fs_kwargs)
         if "Size" in object_info:
             return object_info["Size"]
         elif "size" in object_info:
@@ -406,7 +432,7 @@ class FsspecOutputFile(OutputFile):
     @override
     def exists(self) -> bool:
         """Check whether the location exists."""
-        return self._fs.lexists(self.location)
+        return _exists(self._fs, self.location, self._fs_kwargs)
 
     @override
     def create(self, overwrite: bool = False) -> OutputStream:
@@ -429,12 +455,12 @@ class FsspecOutputFile(OutputFile):
         """
         if not overwrite and self.exists():
             raise FileExistsError(f"Cannot create file, file already exists: {self.location}")
-        return self._fs.open(self.location, "wb")
+        return self._fs.open(self.location, "wb", **self._fs_kwargs)
 
     @override
     def to_input_file(self) -> FsspecInputFile:
         """Return a new FsspecInputFile for the location at `self.location`."""
-        return FsspecInputFile(location=self.location, fs=self._fs)
+        return FsspecInputFile(location=self.location, fs=self._fs, fs_kwargs=self._fs_kwargs)
 
 
 class FsspecFileIO(FileIO):
@@ -457,7 +483,7 @@ class FsspecFileIO(FileIO):
         """
         uri = urlparse(location)
         fs = self._get_fs_from_uri(uri, location)
-        return FsspecInputFile(location=location, fs=fs)
+        return FsspecInputFile(location=location, fs=fs, fs_kwargs=self._get_fs_kwargs(uri))
 
     @override
     def new_output(self, location: str) -> FsspecOutputFile:
@@ -471,7 +497,7 @@ class FsspecFileIO(FileIO):
         """
         uri = urlparse(location)
         fs = self._get_fs_from_uri(uri, location)
-        return FsspecOutputFile(location=location, fs=fs)
+        return FsspecOutputFile(location=location, fs=fs, fs_kwargs=self._get_fs_kwargs(uri))
 
     @override
     def delete(self, location: str | InputFile | OutputFile) -> None:
@@ -489,7 +515,7 @@ class FsspecFileIO(FileIO):
 
         uri = urlparse(str_location)
         fs = self._get_fs_from_uri(uri, str_location)
-        fs.rm(str_location)
+        fs.rm(str_location, **self._get_fs_kwargs(uri))
 
     def _get_fs_from_uri(self, uri: "ParseResult", location: str = "") -> AbstractFileSystem:
         """Get a filesystem from a parsed URI, using hostname for ADLS account resolution."""
@@ -498,6 +524,17 @@ class FsspecFileIO(FileIO):
         if uri.scheme in _ADLS_SCHEMES:
             return self.get_fs(uri.scheme, uri.hostname)
         return self.get_fs(uri.scheme)
+
+    def _get_fs_kwargs(self, uri: "ParseResult") -> Properties:
+        """Get extra keyword arguments to forward to the filesystem calls for a given location.
+
+        `hf.revision` is the default revision for locations that don't pin one themselves, matching
+        iceberg-rust. A revision embedded in the location (`hf://datasets/user/repo@revision/path`)
+        takes precedence, since huggingface_hub rejects two conflicting revisions.
+        """
+        if uri.scheme in _HF_SCHEMES and not _has_revision_in_path(uri) and (revision := self.properties.get(HF_REVISION)):
+            return {"revision": revision}
+        return {}
 
     def get_fs(self, scheme: str, hostname: str | None = None) -> AbstractFileSystem:
         """Get a filesystem for a specific scheme, cached per thread."""

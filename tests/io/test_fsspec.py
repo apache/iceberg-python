@@ -1152,3 +1152,145 @@ def test_s3v4_rest_signer_uses_auth_manager(requests_mock: Mocker) -> None:
     assert requests_mock.last_request is not None
     assert requests_mock.last_request.headers["Authorization"] == "Bearer via-manager"
     assert request.url == new_uri
+
+
+def test_fsspec_hf_session_properties() -> None:
+    session_properties: Properties = {
+        "hf.endpoint": "https://huggingface.co",
+        "hf.token": "hf_xxx",
+    }
+
+    with mock.patch("huggingface_hub.HfFileSystem") as mock_hf_fs:
+        hf_fileio = FsspecFileIO(properties=session_properties)
+        filename = str(uuid.uuid4())
+
+        hf_fileio.new_input(location=f"hf://datasets/user/repo/{filename}")
+
+        mock_hf_fs.assert_called_with(
+            endpoint="https://huggingface.co",
+            token="hf_xxx",
+        )
+
+
+def test_fsspec_hf_revision_forwarded_to_read_calls() -> None:
+    session_properties: Properties = {
+        "hf.revision": "a-pinned-revision",
+    }
+    location = "hf://datasets/user/repo/file.parquet"
+
+    with mock.patch("huggingface_hub.HfFileSystem") as mock_hf_fs:
+        mock_fs = mock_hf_fs.return_value
+        mock_fs.info.return_value = {"size": 123}
+        mock_fs.exists.return_value = True
+
+        hf_fileio = FsspecFileIO(properties=session_properties)
+        input_file = hf_fileio.new_input(location=location)
+
+        assert len(input_file) == 123
+        mock_fs.info.assert_called_with(location, revision="a-pinned-revision")
+
+        assert input_file.exists() is True
+        mock_fs.exists.assert_called_with(location, revision="a-pinned-revision")
+
+        input_file.open()
+        mock_fs.open.assert_called_with(location, "rb", revision="a-pinned-revision")
+
+
+def test_fsspec_hf_revision_forwarded_to_write_calls() -> None:
+    session_properties: Properties = {
+        "hf.revision": "a-pinned-revision",
+    }
+    location = "hf://datasets/user/repo/file.parquet"
+
+    with mock.patch("huggingface_hub.HfFileSystem") as mock_hf_fs:
+        mock_fs = mock_hf_fs.return_value
+        mock_fs.exists.return_value = False
+
+        hf_fileio = FsspecFileIO(properties=session_properties)
+        output_file = hf_fileio.new_output(location=location)
+
+        output_file.create()
+        mock_fs.exists.assert_called_with(location, revision="a-pinned-revision")
+        mock_fs.open.assert_called_with(location, "wb", revision="a-pinned-revision")
+
+        hf_fileio.delete(location)
+        mock_fs.rm.assert_called_with(location, revision="a-pinned-revision")
+
+
+def test_fsspec_hf_revision_in_location_takes_precedence() -> None:
+    session_properties: Properties = {
+        "hf.revision": "a-pinned-revision",
+    }
+    location = "hf://datasets/user/repo@another-revision/file.parquet"
+
+    with mock.patch("huggingface_hub.HfFileSystem") as mock_hf_fs:
+        mock_fs = mock_hf_fs.return_value
+        mock_fs.info.return_value = {"size": 123}
+
+        hf_fileio = FsspecFileIO(properties=session_properties)
+        input_file = hf_fileio.new_input(location=location)
+
+        # huggingface_hub raises on a revision kwarg conflicting with the one in the path
+        assert len(input_file) == 123
+        mock_fs.info.assert_called_with(location)
+
+
+def test_fsspec_hf_no_revision_by_default() -> None:
+    location = "hf://datasets/user/repo/file.parquet"
+
+    with mock.patch("huggingface_hub.HfFileSystem") as mock_hf_fs:
+        mock_fs = mock_hf_fs.return_value
+        mock_fs.info.return_value = {"size": 123}
+
+        hf_fileio = FsspecFileIO(properties={})
+        input_file = hf_fileio.new_input(location=location)
+
+        assert len(input_file) == 123
+        mock_fs.info.assert_called_with(location)
+
+
+def test_fsspec_non_hf_scheme_does_not_receive_revision_kwarg() -> None:
+    session_properties: Properties = {
+        "hf.revision": "a-pinned-revision",
+    }
+
+    fileio = FsspecFileIO(properties=session_properties)
+    input_file = fileio.new_input(location="file:///tmp/foo.parquet")
+
+    assert input_file._fs_kwargs == {}
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not os.environ.get("HF_TOKEN"), reason="Requires a real Hugging Face Hub token in HF_TOKEN")
+def test_fsspec_hf_revision_pins_reads_to_a_fixed_commit() -> None:
+    """Without hf.revision, reads always follow the repo's current default branch.
+
+    This means an Iceberg data-file location pointing into an `hf://` repo isn't reproducible on
+    its own: if someone pushes a new commit that changes the same path, every future read of that
+    "immutable" data file silently returns the new content instead of what existed when the
+    Iceberg snapshot referencing it was written. hf.revision fixes this by letting a table pin
+    reads to the exact commit that was current when the file was written.
+    """
+    from huggingface_hub import HfApi
+
+    hf_token = os.environ["HF_TOKEN"]
+    api = HfApi(token=hf_token)
+    repo_id = f"pyiceberg-hf-revision-test-{uuid.uuid4().hex[:8]}"
+    api.create_repo(repo_id=repo_id, repo_type="dataset")  # private by default
+    location = f"hf://datasets/{repo_id}/file.txt"
+
+    try:
+        first_commit = api.upload_file(path_or_fileobj=b"v1", path_in_repo="file.txt", repo_id=repo_id, repo_type="dataset")
+        api.upload_file(path_or_fileobj=b"v2", path_in_repo="file.txt", repo_id=repo_id, repo_type="dataset")
+
+        # Without hf.revision, reads follow the moving default branch -- the file now reads "v2",
+        # even though an Iceberg data file referencing it was "written" back when it was "v1".
+        default_branch_fileio = FsspecFileIO(properties={"hf.token": hf_token})
+        assert default_branch_fileio.new_input(location).open().read() == b"v2"
+
+        # Pinning hf.revision to the first commit makes the read reproducible: it keeps returning
+        # "v1" regardless of what's since been pushed to the default branch.
+        pinned_fileio = FsspecFileIO(properties={"hf.token": hf_token, "hf.revision": first_commit.oid})
+        assert pinned_fileio.new_input(location).open().read() == b"v1"
+    finally:
+        api.delete_repo(repo_id=repo_id, repo_type="dataset")
