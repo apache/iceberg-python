@@ -27,7 +27,7 @@ from pyiceberg.io.fileformat import FileFormatFactory, FileFormatModel
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import FileFormat
 from pyiceberg.schema import Schema
-from pyiceberg.types import LongType, NestedField
+from pyiceberg.types import LongType, NestedField, StringType
 
 
 @pytest.fixture(params=FileFormatFactory.available_formats(), ids=lambda f: f.name.lower())
@@ -96,6 +96,48 @@ def test_close_is_idempotent(
     assert stats1 is stats2
 
 
+def test_length_tracks_bytes_written(
+    format_model: FileFormatModel, table_schema_simple: Schema, arrow_table_simple: pa.Table, tmp_path: Path
+) -> None:
+    """length() is 0 before the first write, grows after a write, and equals the file size after close."""
+    output_file = PyArrowFileIO().new_output(str(tmp_path / f"test.{format_model.file_extension()}"))
+    writer = format_model.create_writer(output_file, table_schema_simple, {})
+    assert writer.length() == 0
+    writer.write(arrow_table_simple)
+    first = writer.length()
+    assert first > 0
+    writer.write(arrow_table_simple)
+    assert writer.length() > first
+    writer.close()
+    assert writer.length() == len(output_file)
+
+
+def test_parquet_length_counts_pending_bytes_before_first_flush(tmp_path: Path) -> None:
+    """Before the first flush, length() counts buffered rows at their Arrow size."""
+    schema = Schema(NestedField(1, "payload", StringType(), required=False))
+    writer = FileFormatFactory.get(FileFormat.PARQUET).create_writer(
+        PyArrowFileIO().new_output(str(tmp_path / "test.parquet")), schema, {}
+    )
+    table = pa.table({"payload": ["constant-payload"] * 100})
+    writer.write(table)
+    assert writer.length() == writer._fos.tell() + table.nbytes  # type: ignore[attr-defined]
+    writer.close()
+
+
+def test_parquet_length_scales_pending_bytes_by_last_flush_ratio(tmp_path: Path) -> None:
+    """After a flush, length() scales buffered rows by the compression ratio of that flush."""
+    schema = Schema(NestedField(1, "payload", StringType(), required=False))
+    writer = FileFormatFactory.get(FileFormat.PARQUET).create_writer(
+        PyArrowFileIO().new_output(str(tmp_path / "test.parquet")), schema, {"write.parquet.row-group-limit": "1000"}
+    )
+    writer.write(pa.table({"payload": ["constant-payload"] * 1000}))
+    table = pa.table({"payload": ["constant-payload"] * 500})
+    writer.write(table)
+    tell = writer._fos.tell()  # type: ignore[attr-defined]
+    assert tell <= writer.length() < tell + table.nbytes
+    writer.close()
+
+
 def test_close_without_write_raises(format_model: FileFormatModel, table_schema_simple: Schema, tmp_path: Path) -> None:
     """Closing a writer that was never written to raises ValueError."""
     file_path = str(tmp_path / f"test.{format_model.file_extension()}")
@@ -123,6 +165,31 @@ def test_parquet_writer_closes_output_stream_on_construction_failure(
 
     assert writer._writer is None
     assert writer._fos is None
+
+
+def test_parquet_writer_failed_flush_keeps_original_error(
+    table_schema_simple: Schema,
+    arrow_table_simple: pa.Table,
+    tmp_path: Path,
+) -> None:
+    """On an error exit, a pending row group that fails to flush closes the stream and does not hide the error."""
+    from pyiceberg.io.pyarrow import ParquetFormatModel
+
+    def fail() -> None:
+        raise ValueError("original error")
+
+    writer = ParquetFormatModel().create_writer(
+        PyArrowFileIO().new_output(str(tmp_path / "test.parquet")), table_schema_simple, {}
+    )
+    with pytest.raises(ValueError, match="original error"):
+        with writer:
+            writer.write(arrow_table_simple)
+            writer.write(pa.table({"other": [1]}))
+            fail()
+
+    assert writer._fos is not None
+    assert writer._fos.closed  # type: ignore[attr-defined]
+    assert writer.length() > 0
 
 
 def test_parquet_format_model_adds_field_id_metadata() -> None:

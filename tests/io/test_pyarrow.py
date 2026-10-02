@@ -16,9 +16,11 @@
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import logging
+import math
 import os
 import sys
 import tempfile
+import time
 import uuid
 import warnings
 from collections.abc import Iterator
@@ -73,7 +75,9 @@ from pyiceberg.io.pyarrow import (
     StatsAggregator,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
+    _dataframe_to_data_files,
     _determine_partitions,
+    _get_parquet_writer_kwargs,
     _primitive_to_physical,
     _read_deletes,
     _task_to_record_batches,
@@ -3177,6 +3181,227 @@ def test_write_file_parquet_round_trip(tmp_path: Path, table_schema_simple: Sche
     result = ds.dataset(data_file.file_path.replace("file://", "")).to_table()
     assert result.num_rows == 3
     assert result.column_names == ["foo", "bar", "baz"]
+
+
+_STREAM_SCHEMA = Schema(
+    NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+    NestedField(field_id=2, name="payload", field_type=StringType(), required=False),
+)
+_STREAM_ROWS_PER_BATCH = 1000
+
+
+def _stream_batches(num_batches: int, consumed: list[int] | None = None) -> Iterator[pa.RecordBatch]:
+    for i in range(num_batches):
+        if consumed is not None:
+            consumed.append(i)
+        yield pa.RecordBatch.from_pydict(
+            {
+                "id": pa.array(range(i * _STREAM_ROWS_PER_BATCH, (i + 1) * _STREAM_ROWS_PER_BATCH), type=pa.int64()),
+                "payload": [uuid4().hex for _ in range(_STREAM_ROWS_PER_BATCH)],
+            }
+        )
+
+
+def _stream_reader(batches: Iterator[pa.RecordBatch]) -> pa.RecordBatchReader:
+    return pa.RecordBatchReader.from_batches(pa.schema([("id", pa.int64()), ("payload", pa.string())]), batches)
+
+
+def _stream_table_metadata(tmp_path: Path, target_file_size: int, row_group_limit: int | None = None) -> TableMetadataV2:
+    properties = {TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(target_file_size)}
+    if row_group_limit is not None:
+        properties[TableProperties.PARQUET_ROW_GROUP_LIMIT] = str(row_group_limit)
+    return TableMetadataV2(
+        location=f"file://{tmp_path}",
+        last_column_id=2,
+        format_version=2,
+        schemas=[_STREAM_SCHEMA],
+        partition_specs=[PartitionSpec()],
+        properties=properties,
+    )
+
+
+def test_dataframe_to_data_files_reader_rolls_at_on_disk_target(tmp_path: Path) -> None:
+    target = 64 * 1024
+    table_metadata = _stream_table_metadata(tmp_path, target, row_group_limit=_STREAM_ROWS_PER_BATCH)
+    data_files = list(_dataframe_to_data_files(table_metadata, _stream_reader(_stream_batches(20)), PyArrowFileIO()))
+
+    assert len(data_files) > 1
+    for data_file in data_files[:-1]:
+        assert data_file.file_size_in_bytes >= target
+    for data_file in data_files:
+        assert data_file.file_size_in_bytes == os.path.getsize(data_file.file_path.removeprefix("file://"))
+    assert sum(data_file.record_count for data_file in data_files) == 20 * _STREAM_ROWS_PER_BATCH
+    assert len({data_file.file_path for data_file in data_files}) == len(data_files)
+
+
+def test_dataframe_to_data_files_reader_rolls_near_target_for_compressible_data(tmp_path: Path) -> None:
+    rows_per_batch = 1000
+    num_batches = 600
+
+    def compressible_batches() -> Iterator[pa.RecordBatch]:
+        for i in range(num_batches):
+            yield pa.RecordBatch.from_pydict(
+                {
+                    "id": pa.array(range(i * rows_per_batch, (i + 1) * rows_per_batch), type=pa.int64()),
+                    "payload": ["payload-" * 8] * rows_per_batch,
+                }
+            )
+
+    target = 256 * 1024
+    table_metadata = _stream_table_metadata(tmp_path, target, row_group_limit=2 * rows_per_batch)
+    data_files = list(_dataframe_to_data_files(table_metadata, _stream_reader(compressible_batches()), PyArrowFileIO()))
+
+    assert len(data_files) > 3
+    for data_file in data_files[:-1]:
+        assert 0.9 * target <= data_file.file_size_in_bytes <= 1.25 * target
+    assert sum(data_file.record_count for data_file in data_files) == num_batches * rows_per_batch
+
+
+def test_dataframe_to_data_files_reader_large_target_writes_one_file(tmp_path: Path) -> None:
+    data_files = list(
+        _dataframe_to_data_files(
+            _stream_table_metadata(tmp_path, 512 * 1024 * 1024), _stream_reader(_stream_batches(20)), PyArrowFileIO()
+        )
+    )
+
+    assert len(data_files) == 1
+    assert data_files[0].record_count == 20 * _STREAM_ROWS_PER_BATCH
+
+
+def test_dataframe_to_data_files_reader_packs_small_batches_into_row_groups(tmp_path: Path) -> None:
+    def small_batches() -> Iterator[pa.RecordBatch]:
+        for i in range(500):
+            yield pa.RecordBatch.from_pydict(
+                {"id": pa.array(range(i * 10, (i + 1) * 10), type=pa.int64()), "payload": ["x"] * 10}
+            )
+
+    table_metadata = _stream_table_metadata(tmp_path, 512 * 1024 * 1024, row_group_limit=1200)
+    data_files = list(_dataframe_to_data_files(table_metadata, _stream_reader(small_batches()), PyArrowFileIO()))
+
+    assert len(data_files) == 1
+    metadata = pq.read_metadata(data_files[0].file_path.removeprefix("file://"))
+    assert metadata.num_rows == 5000
+    assert metadata.num_row_groups == math.ceil(5000 / 1200)
+    assert [metadata.row_group(i).num_rows for i in range(metadata.num_row_groups)] == [1200, 1200, 1200, 1200, 200]
+
+
+def test_dataframe_to_data_files_reader_many_one_row_batches_is_linear(tmp_path: Path) -> None:
+    table_metadata = _stream_table_metadata(tmp_path, 512 * 1024 * 1024)
+    reader = _stream_reader(pa.RecordBatch.from_pydict({"id": [i], "payload": ["x"]}) for i in range(5000))
+
+    start = time.perf_counter()
+    data_files = list(_dataframe_to_data_files(table_metadata, reader, PyArrowFileIO()))
+    elapsed = time.perf_counter() - start
+
+    assert len(data_files) == 1
+    metadata = pq.read_metadata(data_files[0].file_path.removeprefix("file://"))
+    assert metadata.num_rows == 5000
+    assert metadata.num_row_groups == 1
+    assert elapsed < 5
+
+
+def test_dataframe_to_data_files_reader_flushes_row_groups_on_bytes(tmp_path: Path) -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    batches = [
+        pa.RecordBatch.from_pydict(
+            {"id": pa.array(range(i * 1000, (i + 1) * 1000), type=pa.int64()), "value": pa.array([0.5] * 1000)}
+        )
+        for i in range(30)
+    ]
+    row_group_bytes = 40_000
+    batches_per_row_group = math.ceil(row_group_bytes / batches[0].nbytes)
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}",
+        last_column_id=2,
+        format_version=2,
+        schemas=[schema],
+        partition_specs=[PartitionSpec()],
+        properties={
+            TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES: str(row_group_bytes),
+            TableProperties.PARQUET_ROW_GROUP_LIMIT: "1000000",
+        },
+    )
+    reader = pa.RecordBatchReader.from_batches(batches[0].schema, iter(batches))
+
+    data_files = list(_dataframe_to_data_files(table_metadata, reader, PyArrowFileIO()))
+
+    assert len(data_files) == 1
+    metadata = pq.read_metadata(data_files[0].file_path.removeprefix("file://"))
+    assert batches[0].nbytes == 16_000
+    assert metadata.num_row_groups == math.ceil(30 / batches_per_row_group) == 10
+    assert {metadata.row_group(i).num_rows for i in range(metadata.num_row_groups)} == {batches_per_row_group * 1000}
+
+
+@pytest.mark.parametrize("row_group_limit, row_group_bytes", [(4, None), (10, None), (100, None), (4, 64), (10, 64), (100, 64)])
+def test_write_file_row_groups_match_single_parquet_write(
+    tmp_path: Path, table_schema_simple: Schema, row_group_limit: int, row_group_bytes: int | None
+) -> None:
+    properties = {TableProperties.PARQUET_ROW_GROUP_LIMIT: str(row_group_limit)}
+    if row_group_bytes is not None:
+        properties[TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES] = str(row_group_bytes)
+    table_metadata, task = _simple_write_task_and_metadata(tmp_path, table_schema_simple, properties)
+    arrow_data = pa.Table.from_batches(task.record_batches * 7)
+    if row_group_bytes is not None:
+        assert arrow_data.nbytes >= row_group_bytes
+    task = WriteTask(write_uuid=task.write_uuid, task_id=0, record_batches=arrow_data.to_batches(), schema=task.schema)
+
+    data_file = next(iter(write_file(io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task]))))
+    new_path = data_file.file_path.removeprefix("file://")
+    written = pq.read_table(new_path)
+
+    old_path = str(tmp_path / "single_write.parquet")
+    with pq.ParquetWriter(
+        old_path, schema=written.schema, store_decimal_as_integer=True, **_get_parquet_writer_kwargs(table_metadata.properties)
+    ) as writer:
+        writer.write(written, row_group_size=row_group_limit)
+
+    new_metadata, old_metadata = pq.read_metadata(new_path), pq.read_metadata(old_path)
+    assert new_metadata.num_row_groups == old_metadata.num_row_groups == math.ceil(21 / row_group_limit)
+    assert [new_metadata.row_group(i).num_rows for i in range(new_metadata.num_row_groups)] == [
+        old_metadata.row_group(i).num_rows for i in range(old_metadata.num_row_groups)
+    ]
+    with open(new_path, "rb") as new_file, open(old_path, "rb") as old_file:
+        assert new_file.read() == old_file.read()
+
+
+def test_dataframe_to_data_files_reader_yields_file_before_reading_rest(tmp_path: Path) -> None:
+    consumed: list[int] = []
+    data_files = _dataframe_to_data_files(
+        _stream_table_metadata(tmp_path, 64 * 1024), _stream_reader(_stream_batches(20, consumed)), PyArrowFileIO()
+    )
+
+    first = next(iter(data_files))
+
+    assert len(consumed) * _STREAM_ROWS_PER_BATCH == first.record_count
+    assert len(consumed) < 20
+
+
+def test_dataframe_to_data_files_reader_error_closes_stream(tmp_path: Path) -> None:
+    def failing_batches() -> Iterator[pa.RecordBatch]:
+        yield from _stream_batches(3)
+        raise ValueError("reader failed")
+
+    streams: list[Any] = []
+    original_create = PyArrowFile.create
+
+    def tracking_create(self: PyArrowFile, overwrite: bool = False) -> OutputStream:
+        stream = original_create(self, overwrite=overwrite)
+        streams.append(stream)
+        return stream
+
+    with patch.object(PyArrowFile, "create", tracking_create):
+        with pytest.raises(ValueError, match="reader failed"):
+            list(
+                _dataframe_to_data_files(
+                    _stream_table_metadata(tmp_path, 512 * 1024 * 1024), _stream_reader(failing_batches()), PyArrowFileIO()
+                )
+            )
+
+    assert len(streams) == 1
+    assert streams[0].closed
 
 
 def test__to_requested_schema_timestamps(

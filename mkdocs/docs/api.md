@@ -367,7 +367,7 @@ for buf in tbl.scan().to_arrow_batch_reader():
 
 ### Streaming writes from a `RecordBatchReader`
 
-`tbl.append()` and `tbl.overwrite()` also accept a `pyarrow.RecordBatchReader` directly, which lets you write datasets that don't fit in memory without materialising them as a `pa.Table` first. PyIceberg consumes the reader once and microbatches it into Parquet files of approximately `write.target-file-size-bytes` (default 512 MiB), keeping memory usage bounded by the target size. All files are committed in a single snapshot.
+`tbl.append()` and `tbl.overwrite()` also accept a `pyarrow.RecordBatchReader` directly, which lets you write datasets that don't fit in memory without materialising them as a `pa.Table` first. PyIceberg consumes the reader once and writes Parquet files one at a time, rolling to a new file when the file on disk reaches `write.target-file-size-bytes` (default 512 MiB). Memory usage is bounded by one row group (the smaller of `write.parquet.row-group-limit` rows and `write.parquet.row-group-size-bytes`, uncompressed) plus one input batch and the writer's buffers. All files are committed in a single snapshot.
 
 ```python
 reader = pa.RecordBatchReader.from_batches(schema, batch_iter)
