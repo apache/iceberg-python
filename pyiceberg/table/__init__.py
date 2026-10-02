@@ -855,7 +855,6 @@ class Transaction:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
@@ -866,26 +865,25 @@ class Transaction:
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
-            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+        To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
-                Example Use Cases:
-                    Case 1: Both Parameters = True (Full Upsert)
-                    Existing row found → Update it
-                    New row found → Insert it
+            Example Use Cases:
+                Case 1: Both Parameters = True (Full Upsert)
+                Existing row found → Update it
+                New row found → Insert it
 
-                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
-                    Existing row found → Do nothing (no updates)
-                    New row found → Insert it
+                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                Existing row found → Do nothing (no updates)
+                New row found → Insert it
 
-                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
-                    Existing row found → Update it
-                    New row found → Do nothing (no inserts)
+                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                Existing row found → Update it
+                New row found → Do nothing (no inserts)
 
-                    Case 4: Both Parameters = False (No Merge Effect)
-                    Existing row found → Do nothing
-                    New row found → Do nothing
-                    (Function effectively does nothing)
-
+                Case 4: Both Parameters = False (No Merge Effect)
+                Existing row found → Do nothing
+                New row found → Do nothing
+                (Function effectively does nothing)
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
@@ -1660,7 +1658,6 @@ class Table:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
@@ -1671,26 +1668,25 @@ class Table:
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
-            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+        To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
-                Example Use Cases:
-                    Case 1: Both Parameters = True (Full Upsert)
-                    Existing row found → Update it
-                    New row found → Insert it
+            Example Use Cases:
+                Case 1: Both Parameters = True (Full Upsert)
+                Existing row found → Update it
+                New row found → Insert it
 
-                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
-                    Existing row found → Do nothing (no updates)
-                    New row found → Insert it
+                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                Existing row found → Do nothing (no updates)
+                New row found → Insert it
 
-                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
-                    Existing row found → Update it
-                    New row found → Do nothing (no inserts)
+                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                Existing row found → Update it
+                New row found → Do nothing (no inserts)
 
-                    Case 4: Both Parameters = False (No Merge Effect)
-                    Existing row found → Do nothing
-                    New row found → Do nothing
-                    (Function effectively does nothing)
-
+                Case 4: Both Parameters = False (No Merge Effect)
+                Existing row found → Do nothing
+                New row found → Do nothing
+                (Function effectively does nothing)
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)

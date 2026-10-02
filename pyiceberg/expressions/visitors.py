@@ -331,6 +331,7 @@ class BoundBooleanExpressionVisitor(BooleanExpressionVisitor[T], ABC):
 
         Args:
             predicate (UnboundPredicate): An unbound predicate.
+
         Raises:
             TypeError: This always raises since an unbound predicate is not expected in a bound boolean expression.
         """
