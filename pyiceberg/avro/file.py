@@ -54,6 +54,9 @@ VERSION = 1
 MAGIC = bytes(b"Obj" + bytearray([VERSION]))
 MAGIC_SIZE = len(MAGIC)
 SYNC_SIZE = 16
+# Approximate uncompressed bytes buffered per block, matching the default sync interval of the Avro
+# Java writer that Iceberg Java uses (DataFileConstants.DEFAULT_SYNC_INTERVAL).
+DEFAULT_SYNC_INTERVAL = 4000 * SYNC_SIZE
 META_SCHEMA = StructType(
     NestedField(name="magic", field_id=100, field_type=FixedType(length=MAGIC_SIZE), required=True),
     NestedField(
@@ -238,6 +241,7 @@ class AvroOutputFile(Generic[D]):
         schema_name: str,
         record_schema: Schema | None = None,
         metadata: dict[str, str] = EMPTY_DICT,
+        sync_interval: int = DEFAULT_SYNC_INTERVAL,
     ) -> None:
         self.output_file = output_file
         self.file_schema = file_schema
@@ -249,6 +253,12 @@ class AvroOutputFile(Generic[D]):
             else resolve_writer(record_schema=record_schema, file_schema=self.file_schema)
         )
         self.metadata = metadata
+        if sync_interval <= 0:
+            raise ValueError(f"Sync interval must be positive: {sync_interval}")
+        self.sync_interval = sync_interval
+        self._block = io.BytesIO()
+        self._block_encoder = BinaryEncoder(output_stream=self._block)
+        self._block_records = 0
 
     def __enter__(self) -> AvroOutputFile[D]:
         """
@@ -266,6 +276,7 @@ class AvroOutputFile(Generic[D]):
 
     def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
         """Perform cleanup when exiting the scope of a 'with' statement."""
+        self._flush_block()
         self.output_stream.close()
 
     def _write_header(self) -> None:
@@ -300,13 +311,18 @@ class AvroOutputFile(Generic[D]):
         return KNOWN_CODECS[codec_name]  # type: ignore
 
     def write_block(self, objects: list[D]) -> None:
-        in_memory = io.BytesIO()
-        block_content_encoder = BinaryEncoder(output_stream=in_memory)
         for obj in objects:
-            self.writer.write(block_content_encoder, obj)
-        block_content = in_memory.getvalue()
+            self.writer.write(self._block_encoder, obj)
+            self._block_records += 1
+            if self._block.tell() >= self.sync_interval:
+                self._flush_block()
 
-        self.encoder.write_int(len(objects))
+    def _flush_block(self) -> None:
+        if self._block_records == 0:
+            return
+
+        block_content = self._block.getvalue()
+        self.encoder.write_int(self._block_records)
 
         if codec := self.compression_codec():
             content, content_length = codec.compress(block_content)
@@ -318,5 +334,9 @@ class AvroOutputFile(Generic[D]):
 
         self.encoder.write(self.sync_bytes)
 
+        self._block.seek(0)
+        self._block.truncate()
+        self._block_records = 0
+
     def tell(self) -> int:
-        return self.output_stream.tell()
+        return self.output_stream.tell() + self._block.tell()

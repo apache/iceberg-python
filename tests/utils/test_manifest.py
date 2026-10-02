@@ -25,7 +25,7 @@ import pytest
 
 import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
-from pyiceberg.avro.file import AvroFile, AvroOutputFile
+from pyiceberg.avro.file import DEFAULT_SYNC_INTERVAL, AvroFile, AvroOutputFile
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
@@ -1124,6 +1124,107 @@ def test_manifest_writer_tell(format_version: TableVersion) -> None:
             after_entry_bytes = writer.tell()
 
             assert after_entry_bytes > initial_bytes, "Bytes should increase after adding entry"
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("compression", ["null", "deflate"])
+def test_write_manifest_fills_blocks(format_version: TableVersion, compression: AvroCompressionCodec) -> None:
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+    entry_count = 2000
+
+    with TemporaryDirectory() as tmpdir:
+        manifest_path = f"{tmpdir}/test-manifest.avro"
+        with write_manifest(
+            format_version=format_version,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=test_schema,
+            output_file=io.new_output(manifest_path),
+            snapshot_id=1,
+            avro_compression=compression,
+        ) as writer:
+            for i in range(entry_count):
+                writer.add_entry(
+                    ManifestEntry.from_args(
+                        status=ManifestEntryStatus.ADDED,
+                        snapshot_id=1,
+                        data_file=DataFile.from_args(
+                            content=DataFileContent.DATA,
+                            file_path=f"{tmpdir}/data-{i}.parquet",
+                            file_format=FileFormat.PARQUET,
+                            partition=Record(),
+                            record_count=100,
+                            file_size_in_bytes=1000,
+                        ),
+                    )
+                )
+
+        with open(manifest_path, "rb") as f:
+            blocks = [(block.num_records, block.size) for block in fastavro.block_reader(f)]
+
+        manifest = ManifestFile.from_args(
+            manifest_path=manifest_path,
+            manifest_length=0,
+            partition_spec_id=0,
+            added_snapshot_id=1,
+            sequence_number=0,
+            partitions=[],
+        )
+        read_entries = manifest.fetch_manifest_entry(io)
+
+    assert sum(num_records for num_records, _ in blocks) == entry_count
+    assert len(blocks) < entry_count
+    if compression == "null":
+        # Only an uncompressed block reports the buffered size that triggers a flush
+        assert all(size >= DEFAULT_SYNC_INTERVAL for _, size in blocks[:-1])
+    assert [entry.data_file.file_path for entry in read_entries] == [f"{tmpdir}/data-{i}.parquet" for i in range(entry_count)]
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_manifest_list_fills_blocks(format_version: TableVersion) -> None:
+    io = load_file_io()
+    manifest_count = 2000
+
+    with TemporaryDirectory() as tmpdir:
+        manifest_list_path = f"{tmpdir}/manifest-list.avro"
+        manifests = [
+            ManifestFile.from_args(
+                manifest_path=f"{tmpdir}/manifest-{i}.avro",
+                manifest_length=100,
+                partition_spec_id=0,
+                content=ManifestContent.DATA,
+                sequence_number=0,
+                min_sequence_number=0,
+                added_snapshot_id=1,
+                added_files_count=1,
+                existing_files_count=0,
+                deleted_files_count=0,
+                added_rows_count=1,
+                existing_rows_count=0,
+                deleted_rows_count=0,
+                partitions=[],
+            )
+            for i in range(manifest_count)
+        ]
+        with write_manifest_list(
+            format_version=format_version,
+            output_file=io.new_output(manifest_list_path),
+            snapshot_id=1,
+            parent_snapshot_id=None,
+            sequence_number=0,
+            avro_compression="null",
+        ) as writer:
+            writer.add_manifests(manifests)
+
+        with open(manifest_list_path, "rb") as f:
+            blocks = [(block.num_records, block.size) for block in fastavro.block_reader(f)]
+
+        read_manifests = list(read_manifest_list(io.new_input(manifest_list_path)))
+
+    assert sum(num_records for num_records, _ in blocks) == manifest_count
+    assert all(size >= DEFAULT_SYNC_INTERVAL for _, size in blocks[:-1])
+    assert len(blocks) > 1
+    assert [manifest.manifest_path for manifest in read_manifests] == [manifest.manifest_path for manifest in manifests]
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
