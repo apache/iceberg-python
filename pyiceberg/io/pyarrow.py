@@ -148,7 +148,7 @@ from pyiceberg.schema import (
     visit,
     visit_with_partner,
 )
-from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
+from pyiceberg.table import TableProperties, get_downcast_ns_timestamp_to_us
 from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
@@ -185,7 +185,6 @@ from pyiceberg.types import (
     strtobool,
 )
 from pyiceberg.utils.concurrent import ExecutorFactory
-from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.decimal import unscaled_to_decimal
 from pyiceberg.utils.properties import get_first_property_value, property_as_bool, property_as_int
@@ -1502,8 +1501,8 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
                 else:
                     raise TypeError(
                         "Iceberg does not yet support 'ns' timestamp precision. "
-                        "Use 'downcast-ns-timestamp-to-us-on-write' configuration property to automatically "
-                        "downcast 'ns' to 'us' on write.",
+                        "Use 'downcast-ns-timestamp-to-us' configuration property to automatically "
+                        "downcast 'ns' to 'us'.",
                     )
             else:
                 raise TypeError(f"Unsupported precision for timestamp type: {primitive.unit}")
@@ -1799,7 +1798,7 @@ class ArrowScan:
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._limit = limit
-        self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
+        self._downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
         self._dictionary_columns = dictionary_columns
 
     @property
@@ -2738,7 +2737,7 @@ FileFormatFactory.register(ParquetFormatModel())
 
 
 def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteTask]) -> Iterator[DataFile]:
-    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
+    from pyiceberg.table import TableProperties
 
     file_format = FileFormat(
         table_metadata.properties.get(
@@ -2756,7 +2755,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
         else:
             file_schema = table_schema
 
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+        downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
         batches = [
             _to_requested_schema(
                 requested_schema=file_schema,
@@ -3003,7 +3002,7 @@ def _dataframe_to_data_files(
     Returns:
         An iterable that supplies datafiles that represent the input data.
     """
-    from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties, WriteTask
+    from pyiceberg.table import TableProperties, WriteTask
 
     counter = counter or itertools.count(0)
     write_uuid = write_uuid or uuid.uuid4()
@@ -3013,7 +3012,7 @@ def _dataframe_to_data_files(
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
     name_mapping = table_metadata.schema().name_mapping
-    downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
+    downcast_ns_timestamp_to_us = get_downcast_ns_timestamp_to_us()
     task_schema = pyarrow_to_schema(
         df.schema,
         name_mapping=name_mapping,
