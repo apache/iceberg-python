@@ -30,6 +30,8 @@ from pyiceberg.utils.datetime import (
     time_to_nanos,
     timestamp_to_nanos,
     timestamptz_to_nanos,
+    to_human_timestamp_ns,
+    to_human_timestamptz_ns,
 )
 
 timezones = [
@@ -169,3 +171,35 @@ def test_nanos_to_micros(nanos: int, micros: int) -> None:
 )
 def test_nanos_to_hours(nanos: int, hours: int) -> None:
     assert hours == nanos_to_hours(nanos)
+
+
+@pytest.mark.parametrize(
+    "nanos, human_str",
+    [
+        (0, "1970-01-01T00:00:00.000000000"),
+        (1, "1970-01-01T00:00:00.000000001"),
+        (999, "1970-01-01T00:00:00.000000999"),
+        (1000, "1970-01-01T00:00:00.000001000"),
+        (1740342104375612001, "2025-02-23T20:21:44.375612001"),
+        (1510871468000001001, "2017-11-16T22:31:08.000001001"),
+        (1740342104000000001, "2025-02-23T20:21:44.000000001"),
+    ],
+)
+def test_to_human_timestamp_ns(nanos: int, human_str: str) -> None:
+    assert human_str == to_human_timestamp_ns(nanos)
+
+
+@pytest.mark.parametrize(
+    "nanos, human_str",
+    [
+        (0, "1970-01-01T00:00:00.000000000+00:00"),
+        (1, "1970-01-01T00:00:00.000000001+00:00"),
+        (999, "1970-01-01T00:00:00.000000999+00:00"),
+        (1000, "1970-01-01T00:00:00.000001000+00:00"),
+        (1740342104375612001, "2025-02-23T20:21:44.375612001+00:00"),
+        (1510871468000001001, "2017-11-16T22:31:08.000001001+00:00"),
+        (1740342104000000001, "2025-02-23T20:21:44.000000001+00:00"),
+    ],
+)
+def test_to_human_timestamptz_ns(nanos: int, human_str: str) -> None:
+    assert human_str == to_human_timestamptz_ns(nanos)
