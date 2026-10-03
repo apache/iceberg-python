@@ -68,6 +68,7 @@ from pyiceberg.types import (
     UnknownType,
     UUIDType,
 )
+from pyiceberg.utils.decimal import decimal_required_bytes, decimal_to_bytes, unscaled_to_decimal
 
 AVAILABLE_DECODERS = [StreamingBinaryDecoder, CythonBinaryDecoder]
 
@@ -283,6 +284,20 @@ def test_fixed_reader() -> None:
 
 def test_decimal_reader() -> None:
     assert construct_reader(DecimalType(25, 19)) == DecimalReader(25, 19)
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+@pytest.mark.parametrize("precision", range(1, 39))
+@pytest.mark.parametrize("sign", [-1, 0, 1])
+def test_skip_decimal_reader(decoder_class: Callable[[bytes], BinaryDecoder], precision: int, sign: int) -> None:
+    value = unscaled_to_decimal(sign * (10**precision - 1), scale=precision)
+    encoded_value = decimal_to_bytes(value, byte_length=decimal_required_bytes(precision))
+    decoder = decoder_class(encoded_value + b"\x54")
+
+    DecimalReader(precision, precision).skip(decoder)
+
+    assert decoder.tell() == len(encoded_value)
+    assert IntegerReader().read(decoder) == 42
 
 
 def test_boolean_reader() -> None:
