@@ -853,6 +853,20 @@ To show a table's current file manifests:
 table.inspect.manifests()
 ```
 
+To inspect a retained snapshot, pass its snapshot ID:
+
+```python
+table.inspect.manifests(snapshot_id=123456789)
+```
+
+Partition summaries use the snapshot's schema and each manifest's partition spec.
+If a snapshot has no recorded schema ID, the current schema is used. Sources dropped
+from that schema are resolved by field ID from retained schemas.
+An unknown or expired snapshot ID raises `ValueError`. Without a snapshot ID, a table
+with no snapshots returns an empty table with the manifest metadata schema.
+`all_manifests()` continues to include all retained snapshots, including repeated
+manifests, and does not accept a snapshot ID.
+
 ```python
 pyarrow.Table
 content: int8 not null
