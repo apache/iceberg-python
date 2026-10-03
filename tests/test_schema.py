@@ -445,6 +445,31 @@ def test_build_position_accessors_with_struct(table_schema_nested: Schema) -> No
     assert inner_accessor.get(container) == "name"
 
 
+def test_is_field_required_in_path() -> None:
+    schema = Schema(
+        NestedField(1, "req_top", StringType(), required=True),
+        NestedField(2, "opt_top", StringType(), required=False),
+        NestedField(
+            3,
+            "opt_struct",
+            StructType(NestedField(4, "req_child", StringType(), required=True)),
+            required=False,
+        ),
+        NestedField(
+            5,
+            "req_struct",
+            StructType(NestedField(6, "req_grandchild", StringType(), required=True)),
+            required=True,
+        ),
+        schema_id=1,
+    )
+
+    assert schema.is_field_required_in_path(1) is True
+    assert schema.is_field_required_in_path(2) is False
+    assert schema.is_field_required_in_path(4) is False  # required leaf, optional parent
+    assert schema.is_field_required_in_path(6) is True  # required leaf and ancestors
+
+
 def test_serialize_schema(table_schema_with_full_nested_fields: Schema) -> None:
     actual = table_schema_with_full_nested_fields.model_dump_json()
     expected = (

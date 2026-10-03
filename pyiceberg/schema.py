@@ -282,6 +282,26 @@ class Schema(IcebergBaseModel):
 
         return self._lazy_id_to_accessor[field_id]
 
+    def is_field_required_in_path(self, field_id: int) -> bool:
+        """Check whether a field and every struct ancestor on its path to the root are required.
+
+        Args:
+            field_id (int): The ID of the field.
+
+        Returns:
+            bool: True if the field and all of its ancestors are required, False otherwise.
+        """
+        if not self.find_field(field_id).required:
+            return False
+
+        parent_id = self._lazy_id_to_parent.get(field_id)
+        while parent_id is not None:
+            if not self.find_field(parent_id).required:
+                return False
+            parent_id = self._lazy_id_to_parent.get(parent_id)
+
+        return True
+
     def identifier_field_names(self) -> set[str]:
         """Return the names of the identifier fields.
 
