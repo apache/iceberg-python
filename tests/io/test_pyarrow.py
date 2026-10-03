@@ -15,13 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
+import gc
 import logging
 import os
+import pickle
 import sys
 import tempfile
 import uuid
 import warnings
+import weakref
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -3305,6 +3309,42 @@ def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
         filesystem_ap_southeast_2_cached = pyarrow_file_io.fs_by_scheme("s3", "ap-southeast-2-bucket")
         assert filesystem_ap_southeast_2_cached.region == ap_southeast_2_region
         assert pyarrow_file_io.fs_by_scheme.cache_info().hits == 2  # type: ignore
+
+
+@contextmanager
+def _cycle_collector_disabled() -> Iterator[None]:
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if was_enabled:
+            gc.enable()
+
+
+def test_pyarrow_file_io_freed_by_refcounting() -> None:
+    with _cycle_collector_disabled():
+        file_io = PyArrowFileIO()
+        file_io.fs_by_scheme("file", None)
+        file_io_ref = weakref.ref(file_io)
+        del file_io
+
+        assert file_io_ref() is None
+
+
+def test_pyarrow_file_io_pickle_round_trip_keeps_cache_and_refcounting() -> None:
+    file_io = PyArrowFileIO()
+    file_io.fs_by_scheme("file", None)
+
+    restored = pickle.loads(pickle.dumps(file_io))
+    assert isinstance(restored.fs_by_scheme("file", None), LocalFileSystem)
+    assert restored.fs_by_scheme.cache_info().currsize == 1
+
+    with _cycle_collector_disabled():
+        restored_ref = weakref.ref(restored)
+        del restored
+
+        assert restored_ref() is None
 
 
 def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
