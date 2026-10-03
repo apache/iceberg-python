@@ -37,6 +37,7 @@ import os
 import re
 import uuid
 import warnings
+import weakref
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
 from copy import copy
@@ -396,11 +397,30 @@ class PyArrowFile(InputFile, OutputFile):
         return self
 
 
+def _fs_by_scheme_cache(file_io: PyArrowFileIO) -> Callable[[str, str | None], FileSystem]:
+    """Return a cached FileSystem factory that only weakly references ``file_io``.
+
+    Caching the bound method ``file_io._initialize_fs`` directly would make the cache hold
+    ``file_io`` while ``file_io`` holds the cache. That reference cycle keeps the FileIO and
+    its cached filesystems (and their connection pools) alive until the cycle collector runs.
+    """
+    file_io_ref = weakref.ref(file_io)
+
+    @lru_cache
+    def fs_by_scheme(scheme: str, netloc: str | None = None) -> FileSystem:
+        io = file_io_ref()
+        if io is None:
+            raise ReferenceError("PyArrowFileIO has already been garbage collected")
+        return io._initialize_fs(scheme, netloc)
+
+    return fs_by_scheme
+
+
 class PyArrowFileIO(FileIO):
     fs_by_scheme: Callable[[str, str | None], FileSystem]
 
     def __init__(self, properties: Properties = EMPTY_DICT):
-        self.fs_by_scheme: Callable[[str, str | None], FileSystem] = lru_cache(self._initialize_fs)
+        self.fs_by_scheme: Callable[[str, str | None], FileSystem] = _fs_by_scheme_cache(self)
         super().__init__(properties=properties)
 
     @staticmethod
@@ -725,7 +745,7 @@ class PyArrowFileIO(FileIO):
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Deserialize the state into a PyArrowFileIO instance."""
         self.__dict__ = state
-        self.fs_by_scheme = lru_cache(self._initialize_fs)
+        self.fs_by_scheme = _fs_by_scheme_cache(self)
 
 
 def schema_to_pyarrow(
