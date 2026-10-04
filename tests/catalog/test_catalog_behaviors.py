@@ -1318,7 +1318,7 @@ def test_append_invalid_input_type_raises(catalog: Catalog) -> None:
     identifier = f"default.append_invalid_input_{catalog.name}"
     pa_table = _simple_arrow_table()
     tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema)
-    with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader"):
+    with pytest.raises(ValueError, match="Expected pa.Table, pa.RecordBatchReader, or an object implementing"):
         tbl.append("not an arrow object")
 
 
