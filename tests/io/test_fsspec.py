@@ -20,6 +20,7 @@ import pickle
 import tempfile
 import threading
 import uuid
+from io import BytesIO
 from unittest import mock
 
 import pytest
@@ -993,6 +994,49 @@ def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
         "X-Custom-Header": "value",
     }
+
+
+@pytest.mark.parametrize("query", ["delete", "delete=", "delete=&x-id=DeleteObjects"])
+def test_s3v4_rest_signer_sends_delete_objects_body(requests_mock: Mocker, query: str) -> None:
+    body = "<Delete><Object><Key>data/space + percent%2F-snowman-☃</Key></Object></Delete>"
+    uri = f"https://bucket.s3.us-west-2.amazonaws.com/?{query}"
+    request = AWSRequest(method="POST", url=uri, data=body.encode("utf-8"), headers={"x-amz-checksum-crc32": "AAAAAA=="})
+    request.context["client_region"] = "us-west-2"
+    requests_mock.post(f"{TEST_URI}/v1/aws/s3/sign", json={"uri": uri, "headers": {}})
+
+    S3V4RestSigner(properties={"uri": TEST_URI})(request)
+
+    assert requests_mock.last_request is not None
+    signed_request = requests_mock.last_request.json()
+    assert signed_request["body"] == body
+    assert signed_request["headers"]["x-amz-checksum-crc32"] == ["AAAAAA=="]
+    assert request.body == body.encode("utf-8")
+
+
+@pytest.mark.parametrize(
+    "method,query",
+    [
+        ("PUT", "delete"),
+        ("POST", "uploads"),
+        ("POST", "uploadId=upload"),
+        ("GET", "delete"),
+        ("POST", "undelete"),
+        ("POST", "key=delete"),
+    ],
+)
+def test_s3v4_rest_signer_does_not_read_other_bodies(requests_mock: Mocker, method: str, query: str) -> None:
+    body = BytesIO(b"\x00\xffobject data")
+    uri = f"https://bucket.s3.us-west-2.amazonaws.com/key?{query}"
+    request = AWSRequest(method=method, url=uri, data=body)
+    request.context["client_region"] = "us-west-2"
+    requests_mock.post(f"{TEST_URI}/v1/aws/s3/sign", json={"uri": uri, "headers": {}})
+
+    S3V4RestSigner(properties={"uri": TEST_URI})(request)
+
+    assert requests_mock.last_request is not None
+    assert "body" not in requests_mock.last_request.json()
+    assert request.body is body
+    assert body.tell() == 0
 
 
 def test_s3v4_rest_signer_endpoint(requests_mock: Mocker) -> None:
