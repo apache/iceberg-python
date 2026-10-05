@@ -746,7 +746,7 @@ class Catalog(ABC):
 
     @abstractmethod
     def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
-        """Rename a fully classified view name.
+        """Rename a fully qualified view name.
 
         Args:
             from_identifier (str | Identifier): Existing view identifier.
