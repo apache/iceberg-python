@@ -695,6 +695,27 @@ def test_sigv4_adapter_override_retry_config(rest_mock: Mocker) -> None:
     assert adapter.max_retries.total == 3
 
 
+def test_sigv4_adapter_applies_client_timeout(rest_mock: Mocker) -> None:
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+            "rest.client.connection-timeout-ms": "1000",
+            "rest.client.socket-timeout-ms": "2000",
+        },
+    )
+
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, _RetryTimeoutHTTPAdapter)
+    assert adapter._timeout == 3
+    assert adapter.max_retries.total == SIGV4_MAX_RETRIES_DEFAULT
+
+
 def test_sigv4_uses_client_profile_name(rest_mock: Mocker) -> None:
     with mock.patch("boto3.Session") as mock_session:
         RestCatalog(
