@@ -58,7 +58,9 @@ from pyiceberg.expressions import (
     BoundNotStartsWith,
     BoundReference,
     BoundStartsWith,
+    EqualTo,
     GreaterThan,
+    IsNull,
     Not,
     Or,
 )
@@ -1457,6 +1459,61 @@ def test_identity_transform_column_projection_with_falsy_value(
             "partition_col": [partition_value, partition_value],
         },
         schema=expected_schema,
+    )
+
+
+@pytest.mark.parametrize(
+    "row_filter, expected_other_field",
+    [
+        (None, ["foo", "bar"]),
+        (IsNull("partition_col"), ["foo", "bar"]),
+        (EqualTo("partition_col", 7), []),
+    ],
+)
+def test_identity_transform_null_partition_value_takes_precedence_over_initial_default(
+    tmpdir: str, row_filter: BooleanExpression | None, expected_other_field: list[str]
+) -> None:
+    """A null identity partition value must project as null, not as the field's initial-default."""
+    from pyiceberg.expressions.visitors import bind
+
+    table_schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False),
+        NestedField(2, "partition_col", IntegerType(), required=False, initial_default=7),
+    )
+    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_col"))
+
+    arrow_schema = pa.schema([pa.field("other_field", pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    file_path = _write_table_to_file(
+        f"{tmpdir}/null_partition.parquet", arrow_schema, pa.table({"other_field": ["foo", "bar"]}, schema=arrow_schema)
+    )
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(None),
+        record_count=2,
+        file_size_in_bytes=os.path.getsize(file_path),
+        spec_id=partition_spec.spec_id,
+    )
+
+    batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=AlwaysTrue() if row_filter is None else bind(table_schema, row_filter, case_sensitive=True),
+            projected_schema=table_schema,
+            table_schema=table_schema,
+            projected_field_ids={1, 2},
+            positional_deletes=None,
+            case_sensitive=True,
+            partition_spec=partition_spec,
+            format_version=3,
+        )
+    )
+
+    assert [value for batch in batches for value in batch.column("other_field").to_pylist()] == expected_other_field
+    assert [value for batch in batches for value in batch.column("partition_col").to_pylist()] == [None] * len(
+        expected_other_field
     )
 
 
