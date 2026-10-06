@@ -75,6 +75,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _determine_partitions,
     _primitive_to_physical,
+    _read_all_delete_files,
     _read_deletes,
     _task_to_record_batches,
     _to_requested_schema,
@@ -1838,6 +1839,83 @@ def test_read_deletes(deletes_file: str, request: pytest.FixtureRequest) -> None
     expected_file_path = list(deletes.keys())[0]
     assert set(deletes.keys()) == {expected_file_path}
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
+
+
+def _delta_dv_entry(positions: list[int]) -> bytes:
+    """One deletion vector framed as Delta's DeletionVectorStore writes it in a .bin file.
+
+    Layout: <length(4 BE)> <DV_MAGIC + 64-bit RoaringBitmapArray in the portable format shared by
+    Delta and Iceberg> <CRC-32(4 BE)>. The bitmap holds `positions` in a single bitmap keyed at 0.
+    """
+    import zlib
+
+    from pyroaring import BitMap
+
+    from pyiceberg.table.deletion_vector import DV_MAGIC
+
+    bitmap = (1).to_bytes(8, "little") + (0).to_bytes(4, "little") + BitMap(positions).serialize()
+    data = DV_MAGIC + bitmap
+    return len(data).to_bytes(4, "big") + data + (zlib.crc32(data) & 0xFFFFFFFF).to_bytes(4, "big")
+
+
+def test_read_deletes_deletion_vector_in_delta_bin_file(tmp_path: Path) -> None:
+    entry = _delta_dv_entry([1, 3, 5])
+    dv_path = f"{tmp_path}/deletion_vector.bin"
+    with open(dv_path, "wb") as f:
+        f.write(b"\x01" + entry)
+
+    referenced_data_file = "s3://bucket/data.parquet"
+    data_file = DataFile.from_args(
+        file_path=dv_path,
+        file_format=FileFormat.PUFFIN,
+        content=DataFileContent.POSITION_DELETES,
+        referenced_data_file=referenced_data_file,
+        # Iceberg's content_offset points at the length prefix (past Delta's 1-byte version header),
+        # and content_size_in_bytes counts the length prefix and CRC that Delta's sizeInBytes omits.
+        content_offset=1,
+        content_size_in_bytes=len(entry),
+    )
+
+    deletes = _read_deletes(PyArrowFileIO(), data_file)
+
+    assert deletes.keys() == {referenced_data_file}
+    assert deletes[referenced_data_file] == pa.chunked_array([[1, 3, 5]])
+
+
+def test_read_all_delete_files_reads_multiple_deletion_vectors_in_one_file(tmp_path: Path) -> None:
+    # Two deletion vectors packed into one file: same file_path, different content_offset. DataFile
+    # equality keys only on file_path, so deduplication must not collapse them into a single read.
+    entry_a = _delta_dv_entry([1, 3, 5])
+    entry_b = _delta_dv_entry([2, 4])
+    dv_path = f"{tmp_path}/deletion_vectors.bin"
+    with open(dv_path, "wb") as f:
+        f.write(b"\x01" + entry_a + entry_b)
+
+    def _dv(referenced_data_file: str, offset: int, size: int) -> DataFile:
+        return DataFile.from_args(
+            file_path=dv_path,
+            file_format=FileFormat.PUFFIN,
+            content=DataFileContent.POSITION_DELETES,
+            referenced_data_file=referenced_data_file,
+            content_offset=offset,
+            content_size_in_bytes=size,
+        )
+
+    def _task(data_file_path: str, delete_file: DataFile) -> FileScanTask:
+        data_file = DataFile.from_args(file_path=data_file_path, file_format=FileFormat.PARQUET)
+        return FileScanTask(data_file=data_file, delete_files={delete_file})
+
+    deletes = _read_all_delete_files(
+        PyArrowFileIO(),
+        [
+            _task("s3://bucket/a.parquet", _dv("s3://bucket/a.parquet", 1, len(entry_a))),
+            _task("s3://bucket/b.parquet", _dv("s3://bucket/b.parquet", 1 + len(entry_a), len(entry_b))),
+        ],
+    )
+
+    assert deletes.keys() == {"s3://bucket/a.parquet", "s3://bucket/b.parquet"}
+    assert deletes["s3://bucket/a.parquet"][0] == pa.chunked_array([[1, 3, 5]])
+    assert deletes["s3://bucket/b.parquet"][0] == pa.chunked_array([[2, 4]])
 
 
 def test_delete(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:

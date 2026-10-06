@@ -205,6 +205,47 @@ def test_equality_delete_file() -> None:
     assert equality_delete.equality_ids == [1, 2]
 
 
+def test_rest_position_delete_file_to_data_file_propagates_deletion_vector_fields() -> None:
+    from pyiceberg.table import _rest_file_to_data_file
+
+    rest_file = RESTPositionDeleteFile.model_validate(
+        {
+            **_rest_position_delete_file(file_path="s3://bucket/table/deletion_vector.puffin", file_format="puffin"),
+            "referenced-data-file": "s3://bucket/table/data/file.parquet",
+        }
+    )
+
+    data_file = _rest_file_to_data_file(rest_file)
+
+    assert data_file.referenced_data_file == "s3://bucket/table/data/file.parquet"
+    assert data_file.content_offset == 100
+    assert data_file.content_size_in_bytes == 200
+
+
+def test_from_rest_response_fills_missing_referenced_data_file() -> None:
+    from pyiceberg.table import FileScanTask
+
+    # A valid REST position delete file may omit referenced-data-file; the containing task identifies
+    # the target data file, so the conversion must fill it in for the offset-based deletion vector read.
+    rest_task = RESTFileScanTask.model_validate(
+        {
+            "data-file": _rest_data_file(file_path="s3://bucket/table/data/file.parquet"),
+            "delete-file-references": [0],
+        }
+    )
+    delete_file = TypeAdapter(RESTDeleteFile).validate_python(
+        _rest_position_delete_file(file_path="s3://bucket/table/deletion_vector.puffin", file_format="puffin")
+    )
+    assert delete_file.referenced_data_file is None
+
+    task = FileScanTask.from_rest_response(rest_task, [delete_file])
+
+    delete = next(iter(task.delete_files))
+    assert delete.referenced_data_file == "s3://bucket/table/data/file.parquet"
+    assert delete.content_offset == 100
+    assert delete.content_size_in_bytes == 200
+
+
 def test_file_format_case_insensitive() -> None:
     for fmt in ["parquet", "PARQUET", "Parquet"]:
         data_file = _rest_data_file(file_format=fmt)

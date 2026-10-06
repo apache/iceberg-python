@@ -2277,7 +2277,7 @@ class FileScanTask(ScanTask):
                 delete_file = delete_files[idx]
                 if isinstance(delete_file, RESTEqualityDeleteFile):
                     raise NotImplementedError(f"PyIceberg does not yet support equality deletes: {delete_file.file_path}")
-                resolved_deletes.add(_rest_file_to_data_file(delete_file))
+                resolved_deletes.add(_rest_file_to_data_file(delete_file, default_referenced_data_file=data_file.file_path))
 
         return FileScanTask(
             data_file=data_file,
@@ -2286,9 +2286,14 @@ class FileScanTask(ScanTask):
         )
 
 
-def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
-    """Convert a REST content file to a manifest DataFile."""
-    from pyiceberg.catalog.rest.scan_planning import RESTDataFile
+def _rest_file_to_data_file(rest_file: RESTContentFile, default_referenced_data_file: str | None = None) -> DataFile:
+    """Convert a REST content file to a manifest DataFile.
+
+    default_referenced_data_file supplies the referenced data file for a position delete when the
+    REST response omits it; the field is optional in the REST schema, but the offset-based deletion
+    vector read requires it.
+    """
+    from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTPositionDeleteFile
 
     if isinstance(rest_file, RESTDataFile):
         column_sizes = rest_file.column_sizes.to_dict() if rest_file.column_sizes else None
@@ -2300,6 +2305,14 @@ def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
         value_counts = None
         null_value_counts = None
         nan_value_counts = None
+
+    referenced_data_file = None
+    content_offset = None
+    content_size_in_bytes = None
+    if isinstance(rest_file, RESTPositionDeleteFile):
+        referenced_data_file = rest_file.referenced_data_file or default_referenced_data_file
+        content_offset = rest_file.content_offset
+        content_size_in_bytes = rest_file.content_size_in_bytes
 
     data_file = DataFile.from_args(
         content=DataFileContent.from_rest_type(rest_file.content),
@@ -2314,6 +2327,9 @@ def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
         nan_value_counts=nan_value_counts,
         split_offsets=rest_file.split_offsets,
         sort_order_id=rest_file.sort_order_id,
+        referenced_data_file=referenced_data_file,
+        content_offset=content_offset,
+        content_size_in_bytes=content_size_in_bytes,
     )
     data_file.spec_id = rest_file.spec_id
     return data_file

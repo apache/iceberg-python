@@ -149,11 +149,10 @@ from pyiceberg.schema import (
     visit_with_partner,
 )
 from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
-from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file
+from pyiceberg.table.deletion_vector import DeletionVector
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
-from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
@@ -1171,10 +1170,19 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
                 for path in table.column("file_path").unique()
             }
     elif data_file.file_format == FileFormat.PUFFIN:
-        with io.new_input(data_file.file_path).open() as fi:
-            payload = fi.read()
+        # Read the deletion vector blob directly using the offset and length recorded in the
+        # manifest, without parsing the Puffin footer.
+        referenced_data_file = data_file.referenced_data_file
+        offset = data_file.content_offset
+        length = data_file.content_size_in_bytes
+        if referenced_data_file is None or offset is None or length is None:
+            raise ValueError(f"Invalid deletion vector, missing referenced data file, offset, or length: {data_file.file_path}")
 
-        return {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors_from_puffin_file(PuffinFile(payload))}
+        with io.new_input(data_file.file_path).open() as fi:
+            fi.seek(offset)
+            blob = fi.read(length)
+
+        return {referenced_data_file: DeletionVector.from_blob(blob, referenced_data_file).to_vector()}
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
@@ -1743,7 +1751,16 @@ def _task_to_record_batches(
 
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[str, list[ChunkedArray]]:
     deletes_per_file: dict[str, list[ChunkedArray]] = {}
-    unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
+    # Deduplicate on (file_path, content_offset): several deletion vectors can be packed into one
+    # Puffin file, sharing a file_path but differing by content_offset. DataFile equality keys only
+    # on file_path, so a plain set would collapse them and drop all but one vector.
+    unique_deletes = list(
+        {
+            (delete_file.file_path, delete_file.content_offset): delete_file
+            for task in tasks
+            for delete_file in task.delete_files
+        }.values()
+    )
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(

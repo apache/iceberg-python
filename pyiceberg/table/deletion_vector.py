@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import math
+import zlib
 from typing import TYPE_CHECKING
 
 from pyroaring import BitMap, FrozenBitMap
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
 EMPTY_BITMAP = FrozenBitMap()
 MAX_JAVA_SIGNED = int(math.pow(2, 31)) - 1
 PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
+DV_MAGIC = b"\xd1\xd3\x39\x64"
 
 
 class DeletionVector:
@@ -76,10 +78,27 @@ class DeletionVector:
     def to_vector(self) -> "pa.ChunkedArray":
         return self._bitmaps_to_chunked_array(self._bitmaps)
 
+    @staticmethod
+    def from_blob(blob: bytes, referenced_data_file: str) -> "DeletionVector":
+        return DeletionVector(
+            referenced_data_file=referenced_data_file,
+            bitmaps=DeletionVector._deserialize_bitmap(_extract_vector_payload(blob)),
+        )
+
 
 def _extract_vector_payload(blob_payload: bytes) -> bytes:
     """Strip deletion-vector-v1 blob framing: length(4 big-endian) + DV magic(4) ... CRC(4 big-endian)."""
     length_prefix = int.from_bytes(blob_payload[0:4], "big")
+    magic = blob_payload[4:8]
+    if magic != DV_MAGIC:
+        raise ValueError(f"Invalid magic bytes for deletion vector: {magic!r}, expected {DV_MAGIC!r}")
+
+    body = blob_payload[4 : 4 + length_prefix]  # magic + serialized bitmap; the CRC covers this
+    stored_crc = int.from_bytes(blob_payload[4 + length_prefix : 8 + length_prefix], "big")
+    computed_crc = zlib.crc32(body) & 0xFFFFFFFF
+    if computed_crc != stored_crc:
+        raise ValueError(f"Invalid CRC for deletion vector: {computed_crc:#010x}, expected {stored_crc:#010x}")
+
     return blob_payload[8 : 4 + length_prefix]
 
 

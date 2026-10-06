@@ -14,12 +14,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import zlib
 from os import path
 
 import pytest
 from pyroaring import BitMap
 
-from pyiceberg.table.deletion_vector import DeletionVector
+from pyiceberg.table.deletion_vector import DV_MAGIC, DeletionVector
 
 
 def _open_file(file: str) -> bytes:
@@ -71,3 +72,33 @@ def test_map_high_vals() -> None:
 
     with pytest.raises(ValueError, match="Key 4022190063 is too large, max 2147483647 to maintain compatibility with Java impl"):
         _ = DeletionVector._deserialize_bitmap(puffin)
+
+
+def test_from_blob_invalid_magic() -> None:
+    bitmap = _open_file("64map32bitvals.bin")
+    length_prefix = 4 + len(bitmap)
+    blob = length_prefix.to_bytes(4, "big") + b"\x00\x00\x00\x00" + bitmap + (0).to_bytes(4, "big")
+
+    with pytest.raises(ValueError, match="Invalid magic bytes for deletion vector"):
+        _ = DeletionVector.from_blob(blob, "s3://bucket/data.parquet")
+
+
+def test_from_blob_invalid_crc() -> None:
+    bitmap = _open_file("64map32bitvals.bin")
+    data = DV_MAGIC + bitmap
+    # A trailing CRC of zero does not match the CRC-32 of (magic + bitmap).
+    blob = len(data).to_bytes(4, "big") + data + (0).to_bytes(4, "big")
+
+    with pytest.raises(ValueError, match="Invalid CRC for deletion vector"):
+        _ = DeletionVector.from_blob(blob, "s3://bucket/data.parquet")
+
+
+def test_from_blob() -> None:
+    bitmap = _open_file("64map32bitvals.bin")
+    data = DV_MAGIC + bitmap
+    blob = len(data).to_bytes(4, "big") + data + (zlib.crc32(data) & 0xFFFFFFFF).to_bytes(4, "big")
+
+    dv = DeletionVector.from_blob(blob, "s3://bucket/data.parquet")
+
+    assert dv.referenced_data_file == "s3://bucket/data.parquet"
+    assert dv._bitmaps == [BitMap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])]

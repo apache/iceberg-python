@@ -161,6 +161,38 @@ def test_dvs_treated_as_position_deletes() -> None:
     assert all(d.content == DataFileContent.POSITION_DELETES for d in result)
 
 
+def test_deletion_vectors_matched_by_referenced_data_file() -> None:
+    # Two deletion vectors packed into one Puffin file (shared file_path), without path bounds, each
+    # referencing a different data file. They must be routed by referenced_data_file, not collapsed
+    # into one partition bucket and deduplicated away by their shared file_path.
+    index = DeleteFileIndex()
+
+    def _dv(referenced_data_file: str, content_offset: int) -> ManifestEntry:
+        delete_file = DataFile.from_args(
+            content=DataFileContent.POSITION_DELETES,
+            file_path="s3://bucket/deletion_vectors.puffin",
+            file_format=FileFormat.PUFFIN,
+            partition=Record(),
+            record_count=10,
+            file_size_in_bytes=100,
+            referenced_data_file=referenced_data_file,
+            content_offset=content_offset,
+            content_size_in_bytes=40,
+        )
+        return ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=2, data_file=delete_file)
+
+    index.add_delete_file(_dv("s3://bucket/a.parquet", 1))
+    index.add_delete_file(_dv("s3://bucket/b.parquet", 41))
+
+    deletes_a = index.for_data_file(1, _create_data_file(file_path="s3://bucket/a.parquet"))
+    deletes_b = index.for_data_file(1, _create_data_file(file_path="s3://bucket/b.parquet"))
+
+    assert {d.referenced_data_file for d in deletes_a} == {"s3://bucket/a.parquet"}
+    assert {d.content_offset for d in deletes_a} == {1}
+    assert {d.referenced_data_file for d in deletes_b} == {"s3://bucket/b.parquet"}
+    assert {d.content_offset for d in deletes_b} == {41}
+
+
 def test_cannot_add_after_indexing() -> None:
     group = PositionDeletes()
     group.add(_create_positional_delete(sequence_number=1).data_file, 1)

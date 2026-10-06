@@ -115,7 +115,9 @@ class DeleteFileIndex:
     def add_delete_file(self, manifest_entry: ManifestEntry, partition_key: Record | None = None) -> None:
         delete_file = manifest_entry.data_file
         seq = manifest_entry.sequence_number or INITIAL_SEQUENCE_NUMBER
-        target_path = _referenced_data_file_path(delete_file)
+        # referenced_data_file identifies the target directly (always set for deletion vectors) and
+        # is authoritative; fall back to path bounds only when it is absent.
+        target_path = delete_file.referenced_data_file or _referenced_data_file_path(delete_file)
 
         if target_path:
             deletes = self._by_path.setdefault(target_path, PositionDeletes())
