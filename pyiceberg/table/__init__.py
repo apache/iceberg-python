@@ -2381,7 +2381,7 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
         scan.case_sensitive,
         scan.limit,
         dictionary_columns=dictionary_columns,
-    ).to_record_batches(tasks)
+    ).to_record_batches_lazy(tasks)
 
     if dictionary_columns:
         # schema_to_pyarrow returns plain types, but ArrowScan yields dictionary-encoded

@@ -63,7 +63,16 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, S3_SSL_CA_CERT, InputStream, OutputStream, load_file_io
+from pyiceberg.io import (
+    S3_RETRY_STRATEGY_IMPL,
+    S3_SSL_CA_CERT,
+    FileIO,
+    InputFile,
+    InputStream,
+    OutputFile,
+    OutputStream,
+    load_file_io,
+)
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PYARROW_PARQUET_FIELD_ID_KEY,
@@ -5524,3 +5533,151 @@ def test_dictionary_columns_produces_dict_encoded_output(tmpdir: str) -> None:
 
     # Values must be identical
     assert result_plain.column("label").to_pylist() == result_dict.column("label").to_pylist()
+
+
+class _CountingFileIO(FileIO):
+    """FileIO decorator recording how many files are opened for reading."""
+
+    def __init__(self, inner: FileIO) -> None:
+        super().__init__()
+        self._inner = inner
+        self.files_opened_for_read = 0
+
+    def new_input(self, location: str) -> InputFile:
+        self.files_opened_for_read += 1
+        return self._inner.new_input(location)
+
+    def new_output(self, location: str) -> OutputFile:
+        return self._inner.new_output(location)
+
+    def delete(self, location: str | InputFile | OutputFile) -> None:
+        self._inner.delete(location)
+
+
+class _MockScan:
+    """Minimal scan stub for `_to_arrow_batch_reader_via_file_scan_tasks`."""
+
+    def __init__(self, table_metadata: TableMetadataV2, io: FileIO, limit: int | None = None) -> None:
+        self.table_metadata = table_metadata
+        self.io = io
+        self.row_filter = AlwaysTrue()
+        self.case_sensitive = True
+        self.limit = limit
+
+
+def _write_lazy_reader_test_files(
+    tmpdir: str, num_files: int, rows_per_file: int
+) -> tuple[Schema, TableMetadataV2, list[FileScanTask]]:
+    """Write `num_files` parquet files with consecutive, non-overlapping ids."""
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+    )
+    arrow_schema = pa.schema([pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmpdir}",
+        last_column_id=1,
+        format_version=2,
+        schemas=[iceberg_schema],
+        partition_specs=[PartitionSpec()],
+    )
+    tasks = []
+    for file_idx in range(num_files):
+        start_id = file_idx * rows_per_file
+        arrow_table = pa.table(
+            [pa.array(range(start_id, start_id + rows_per_file), type=pa.int32())],
+            schema=arrow_schema,
+        )
+        data_file = _write_table_to_data_file(f"{tmpdir}/lazy_reader_{file_idx}.parquet", arrow_schema, arrow_table)
+        data_file.spec_id = 0
+        tasks.append(FileScanTask(data_file))
+    return iceberg_schema, table_metadata, tasks
+
+
+def test_to_arrow_batch_reader_does_not_read_ahead(tmpdir: str) -> None:
+    """Regression test for https://github.com/apache/iceberg-python/issues/2407.
+
+    `to_arrow_batch_reader()` documents low-memory streaming ("a RecordBatch is
+    read one at a time"), but the reader used to fan every file scan task out to
+    the executor and materialize each file's batches into a list, so taking a
+    single batch from the reader read every file in the scan.
+    """
+    from pyiceberg.table import _to_arrow_batch_reader_via_file_scan_tasks
+
+    num_files = 4
+    iceberg_schema, table_metadata, tasks = _write_lazy_reader_test_files(tmpdir, num_files, rows_per_file=5000)
+    io = _CountingFileIO(PyArrowFileIO())
+
+    reader = _to_arrow_batch_reader_via_file_scan_tasks(
+        _MockScan(table_metadata, io),  # type: ignore[arg-type]
+        iceberg_schema,
+        tasks,
+    )
+
+    first_batch = next(reader)
+    assert first_batch.num_rows > 0
+    assert io.files_opened_for_read == 1, (
+        f"expected exactly 1 file opened after consuming the first batch, got {io.files_opened_for_read}"
+    )
+
+
+def test_to_record_batches_lazy_matches_eager(tmpdir: str) -> None:
+    """The lazy streaming path must return the same rows, in the same order, as the threaded path."""
+    num_files = 3
+    rows_per_file = 2500
+    total_rows = num_files * rows_per_file
+    iceberg_schema, table_metadata, tasks = _write_lazy_reader_test_files(tmpdir, num_files, rows_per_file)
+    expected_ids = list(range(total_rows))
+
+    for limit in (None, 0, 1, 100, total_rows, total_rows + 10):
+        eager_scan = ArrowScan(table_metadata, PyArrowFileIO(), iceberg_schema, AlwaysTrue(), True, limit)
+        lazy_scan = ArrowScan(table_metadata, PyArrowFileIO(), iceberg_schema, AlwaysTrue(), True, limit)
+
+        eager_ids = [row for batch in eager_scan.to_record_batches(tasks) for row in batch.column("id").to_pylist()]
+        lazy_ids = [row for batch in lazy_scan.to_record_batches_lazy(tasks) for row in batch.column("id").to_pylist()]
+
+        assert lazy_ids == eager_ids, f"limit={limit}: lazy path diverged from the threaded path"
+        assert lazy_ids == expected_ids[: len(lazy_ids)], f"limit={limit}: unexpected row contents or ordering"
+        if limit is None or limit >= total_rows:
+            assert len(lazy_ids) == total_rows
+        else:
+            assert len(lazy_ids) == limit
+
+
+def test_to_record_batches_lazy_applies_positional_deletes(tmpdir: str) -> None:
+    """The lazy path must apply per-task positional deletes exactly like the eager path."""
+    from pyiceberg.table import _to_arrow_batch_reader_via_file_scan_tasks
+
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+    )
+    arrow_schema = pa.schema([pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmpdir}",
+        last_column_id=1,
+        format_version=2,
+        schemas=[iceberg_schema],
+        partition_specs=[PartitionSpec()],
+    )
+
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/lazy_reader_deletes.parquet",
+        arrow_schema,
+        pa.table([pa.array([1, 2, 3, 4], type=pa.int32())], schema=arrow_schema),
+    )
+    data_file.spec_id = 0
+
+    # Positional delete of row position 2 (value 3)
+    deletes_path = f"{tmpdir}/lazy_reader_deletes_pos.parquet"
+    pq.write_table(pa.table({"file_path": [data_file.file_path], "pos": [2]}), deletes_path)
+    delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES, file_path=deletes_path, file_format=FileFormat.PARQUET
+    )
+    tasks = [FileScanTask(data_file, delete_files={delete_file})]
+
+    result = _to_arrow_batch_reader_via_file_scan_tasks(
+        _MockScan(table_metadata, PyArrowFileIO()),  # type: ignore[arg-type]
+        iceberg_schema,
+        tasks,
+    ).read_all()
+
+    assert result.column("id").to_pylist() == [1, 2, 4]
