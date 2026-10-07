@@ -1429,7 +1429,13 @@ class ManifestWriterV3(ManifestWriterV2):
         if len(data_file._data) >= len(DATA_FILE_TYPE[3].fields):
             return data_file
         source_version = _layout_version_from_field_count(DATA_FILE_TYPE, len(data_file._data))
-        args = {field.name: value for field, value in zip(DATA_FILE_TYPE[source_version].fields, data_file._data, strict=True)}
+        v3_field_names = {field.name for field in DATA_FILE_TYPE[3].fields}
+        # V1-only fields such as block_size_in_bytes have no V3 counterpart and are dropped
+        args = {
+            field.name: value
+            for field, value in zip(DATA_FILE_TYPE[source_version].fields, data_file._data, strict=True)
+            if field.name in v3_field_names
+        }
         return DataFile.from_args(_table_format_version=3, **args)
 
     def prepare_entry(self, entry: ManifestEntry) -> ManifestEntry:
