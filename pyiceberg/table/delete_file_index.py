@@ -130,7 +130,7 @@ class DeleteFileIndex:
         if self.is_empty():
             return DeleteFileSet()
 
-        deletes = DeleteFileSet()
+        deletes: list[DataFile] = []
         spec_id = data_file.spec_id or 0
 
         key = _partition_key(spec_id, partition_key)
@@ -138,13 +138,13 @@ class DeleteFileIndex:
         if partition_deletes:
             for delete_file in partition_deletes.filter_by_seq(seq_num):
                 if _applies_to_data_file(delete_file, data_file):
-                    deletes.add(delete_file)
+                    deletes.append(delete_file)
 
         path_deletes = self._by_path.get(data_file.file_path)
         if path_deletes:
-            deletes.update(path_deletes.filter_by_seq(seq_num))
+            deletes.extend(path_deletes.filter_by_seq(seq_num))
 
-        return deletes
+        return DeleteFileSet(deletes)
 
     def referenced_delete_files(self) -> list[DataFile]:
         data_files: list[DataFile] = []

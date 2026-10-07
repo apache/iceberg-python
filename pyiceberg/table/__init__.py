@@ -2272,13 +2272,13 @@ class FileScanTask(ScanTask):
 
         data_file = _rest_file_to_data_file(rest_task.data_file)
 
-        resolved_deletes = DeleteFileSet()
+        resolved_deletes: list[DataFile] = []
         if rest_task.delete_file_references:
             for idx in rest_task.delete_file_references:
                 delete_file = delete_files[idx]
                 if isinstance(delete_file, RESTEqualityDeleteFile):
                     raise NotImplementedError(f"PyIceberg does not yet support equality deletes: {delete_file.file_path}")
-                resolved_deletes.add(_rest_file_to_data_file(delete_file))
+                resolved_deletes.append(_rest_file_to_data_file(delete_file))
 
         return FileScanTask(
             data_file=data_file,

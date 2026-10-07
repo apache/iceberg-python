@@ -1927,6 +1927,38 @@ def test_read_deletes_from_whole_puffin_file(tmp_path: Path) -> None:
     assert deletes == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
 
 
+@pytest.mark.parametrize(
+    ("missing_field", "error"),
+    [
+        ("content_offset", "content offset is missing"),
+        ("content_size_in_bytes", "content size is missing"),
+        ("referenced_data_file", "referenced data file is missing"),
+    ],
+)
+def test_read_deletes_rejects_partial_content_reference(tmp_path: Path, missing_field: str, error: str) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+    puffin_payload = _deletion_vector_puffin_payload(referenced_data_file)
+    blob = PuffinFile(puffin_payload).footer.blobs[0]
+
+    with open(delete_file_path, "wb") as f:
+        f.write(puffin_payload)
+
+    dv = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_file_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=3,
+        content_offset=blob.offset if missing_field != "content_offset" else None,
+        content_size_in_bytes=blob.length if missing_field != "content_size_in_bytes" else None,
+        referenced_data_file=referenced_data_file if missing_field != "referenced_data_file" else None,
+    )
+
+    with pytest.raises(ValueError, match=error):
+        _read_deletes(PyArrowFileIO(), dv)
+
+
 def test_read_deletion_vector_blob_from_content_range(tmp_path: Path) -> None:
     referenced_data_file = f"{tmp_path}/data.parquet"
     dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload())

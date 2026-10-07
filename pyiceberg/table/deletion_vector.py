@@ -143,7 +143,11 @@ def _validate_deletion_vector_content(dv: "DataFile") -> None:
 
 
 def has_deletion_vector_content_reference(dv: "DataFile") -> bool:
-    """Return whether a deletion vector is described by manifest content-range metadata."""
+    """Return whether any manifest content-reference field is present.
+
+    Partial references must be validated as range reads. Whole-Puffin reads
+    are only used when all content-reference fields are absent.
+    """
     return dv.content_offset is not None or dv.content_size_in_bytes is not None or dv.referenced_data_file is not None
 
 

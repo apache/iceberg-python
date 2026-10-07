@@ -16,9 +16,8 @@
 # under the License.
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, MutableSet
+from collections.abc import Iterable, Iterator, Set
 from dataclasses import dataclass
-from typing import Any
 
 from pyiceberg.manifest import DataFile
 
@@ -41,15 +40,15 @@ class DeleteFileKey:
         )
 
 
-class DeleteFileSet(MutableSet[DataFile]):
-    """Set-like delete-file collection keyed by location and content range."""
+class DeleteFileSet(Set[DataFile]):
+    """Read-only delete-file collection keyed by location and content range."""
 
     _files: dict[DeleteFileKey, DataFile]
 
     def __init__(self, delete_files: Iterable[DataFile] = ()) -> None:
         self._files = {}
         for delete_file in delete_files:
-            self.add(delete_file)
+            self._files.setdefault(DeleteFileKey.from_file(delete_file), delete_file)
 
     def __contains__(self, delete_file: object) -> bool:
         """Return whether the delete file is present."""
@@ -63,34 +62,25 @@ class DeleteFileSet(MutableSet[DataFile]):
         """Return the number of delete files."""
         return len(self._files)
 
-    def add(self, delete_file: DataFile) -> None:
-        self._files.setdefault(DeleteFileKey.from_file(delete_file), delete_file)
-
-    def discard(self, delete_file: DataFile) -> None:
-        self._files.pop(DeleteFileKey.from_file(delete_file), None)
-
-    def update(self, delete_files: Iterable[DataFile]) -> None:
-        for delete_file in delete_files:
-            self.add(delete_file)
-
     def __repr__(self) -> str:
         """Return a string representation of the delete file set."""
         return f"{type(self).__name__}({list(self)!r})"
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Compare delete file sets by delete file identity."""
         if isinstance(other, DeleteFileSet):
             return self._files.keys() == other._files.keys()
 
-        if not isinstance(other, Iterable):
+        if not isinstance(other, Set):
+            return NotImplemented
+
+        if len(self) != len(other):
             return False
 
         other_keys: set[DeleteFileKey] = set()
-        other_count = 0
         for delete_file in other:
             if not isinstance(delete_file, DataFile):
                 return False
             other_keys.add(DeleteFileKey.from_file(delete_file))
-            other_count += 1
 
-        return len(other_keys) == other_count and set(self._files) == other_keys
+        return self._files.keys() == other_keys
