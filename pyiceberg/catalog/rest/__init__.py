@@ -1187,6 +1187,7 @@ class RestCatalog(Catalog):
             identifier=identifier_tuple,
             metadata=view_response.metadata,
             config=view_response.config,
+            metadata_location=view_response.metadata_location,
         )
 
     def _refresh_token(self) -> None:
