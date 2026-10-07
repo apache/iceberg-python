@@ -30,16 +30,19 @@ class View:
     _identifier: Identifier
     metadata: ViewMetadata
     config: dict[str, str]
+    metadata_location: str | None
 
     def __init__(
         self,
         identifier: Identifier,
         metadata: ViewMetadata,
         config: dict[str, str] = EMPTY_DICT,
+        metadata_location: str | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
         self.config = config
+        self.metadata_location = metadata_location
 
     def name(self) -> Identifier:
         """Return the identifier of this view."""
