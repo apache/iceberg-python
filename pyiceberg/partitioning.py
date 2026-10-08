@@ -463,13 +463,10 @@ class PartitionKey:
     def partition(self) -> Record:  # partition key transformed with iceberg internal representation as input
         iceberg_typed_key_values = []
         for raw_partition_field_value in self.field_values:
-            partition_fields = self.partition_spec.source_id_to_fields_map[raw_partition_field_value.field.source_id]
-            if len(partition_fields) != 1:
-                raise ValueError(f"Cannot have redundant partitions: {partition_fields}")
-            partition_field = partition_fields[0]
+            # Evolved specs can retain void fields alongside active fields with the same source ID.
             iceberg_typed_key_values.append(
                 partition_record_value(
-                    partition_field=partition_field,
+                    partition_field=raw_partition_field_value.field,
                     value=raw_partition_field_value.value,
                     schema=self.schema,
                 )
