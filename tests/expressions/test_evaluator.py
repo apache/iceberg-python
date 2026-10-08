@@ -64,6 +64,7 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StringType,
+    StructType,
 )
 
 INT_MIN_VALUE = 30
@@ -1427,6 +1428,50 @@ def test_strict_missing_stats(strict_data_file_schema: Schema, strict_data_file_
     for expression in expressions:
         should_read = _StrictMetricsEvaluator(no_stats_schema, expression).eval(no_stats_file)
         assert not should_read, f"Should never match when stats are missing for expr: {expression}"
+
+
+def test_strict_nested_column() -> None:
+    schema = Schema(
+        NestedField(
+            1,
+            "struct",
+            StructType(
+                NestedField(2, "nested_col_no_stats", IntegerType(), required=False),
+                NestedField(3, "nested_col_with_stats", IntegerType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+
+    data_file = DataFile.from_args(
+        file_path="file_1.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=50,
+        value_counts={2: 50, 3: 50},
+        null_value_counts={2: 0, 3: 0},
+        nan_value_counts=None,
+        lower_bounds={3: INT_MIN},
+        upper_bounds={3: INT_MAX},
+    )
+
+    for name in ["struct.nested_col_no_stats", "struct.nested_col_with_stats"]:
+        expressions: list[BooleanExpression] = [
+            LessThan(name, INT_MAX_VALUE + 1),
+            LessThanOrEqual(name, INT_MAX_VALUE),
+            GreaterThan(name, INT_MIN_VALUE - 1),
+            GreaterThanOrEqual(name, INT_MIN_VALUE),
+            EqualTo(name, INT_MIN_VALUE),
+            NotEqualTo(name, INT_MAX_VALUE + 1),
+            In(name, {INT_MIN_VALUE, INT_MAX_VALUE}),
+            NotIn(name, {INT_MAX_VALUE + 1, INT_MAX_VALUE + 2}),
+            IsNull(name),
+            NotNull(name),
+        ]
+
+        for expression in expressions:
+            should_read = _StrictMetricsEvaluator(schema, expression).eval(data_file)
+            assert should_read == ROWS_MIGHT_NOT_MATCH, f"Should not match: nested column metrics are not used for {expression}"
 
 
 def test_strict_zero_record_file_stats(strict_data_file_schema: Schema) -> None:
