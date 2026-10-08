@@ -27,7 +27,7 @@ import zlib
 from collections.abc import Iterator
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -41,6 +41,7 @@ from packaging import version
 from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3FileSystem
 from pyroaring import BitMap
 
+from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTDeleteFile, RESTFileScanTask, RESTPositionDeleteFile
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -92,16 +93,17 @@ from pyiceberg.io.pyarrow import (
     schema_to_pyarrow,
     write_file,
 )
-from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties, WriteTask
+from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.deletion_vector import (
     _DV_BLOB_MAGIC_NUMBER,
     PROPERTY_REFERENCED_DATA_FILE,
     deletion_vectors_from_puffin_file,
 )
-from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
 from pyiceberg.transforms import HourTransform, IdentityTransform
@@ -1986,7 +1988,7 @@ def test_read_deletion_vector_blob_from_content_range(tmp_path: Path) -> None:
 
 
 def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tmp_path: Path) -> None:
-    referenced_data_file = f"{tmp_path}/data.parquet"
+    referenced_data_files = [f"{tmp_path}/data-{index}.parquet" for index in range(2)]
     first_dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload([1, 3]))
     second_dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload([5]))
     delete_file_path = f"{tmp_path}/deletes.bin"
@@ -2000,7 +2002,7 @@ def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tm
         file_path=delete_file_path,
         file_format=FileFormat.PUFFIN,
         record_count=2,
-        referenced_data_file=referenced_data_file,
+        referenced_data_file=referenced_data_files[0],
         content_offset=0,
         content_size_in_bytes=len(first_dv_blob),
     )
@@ -2010,28 +2012,41 @@ def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tm
         file_path=delete_file_path,
         file_format=FileFormat.PUFFIN,
         record_count=1,
-        referenced_data_file=referenced_data_file,
+        referenced_data_file=referenced_data_files[1],
         content_offset=len(first_dv_blob),
         content_size_in_bytes=len(second_dv_blob),
     )
-    data_file = DataFile.from_args(
-        content=DataFileContent.DATA,
-        file_path=referenced_data_file,
-        file_format=FileFormat.PARQUET,
-        record_count=10,
-        file_size_in_bytes=100,
-    )
+    data_files = [
+        DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=referenced_data_file,
+            file_format=FileFormat.PARQUET,
+            record_count=10,
+            file_size_in_bytes=100,
+        )
+        for referenced_data_file in referenced_data_files
+    ]
 
     deletes = _read_all_delete_files(
         PyArrowFileIO(),
-        [FileScanTask(data_file=data_file, delete_files=[first_dv, second_dv])],
+        [
+            FileScanTask(data_file=data_file, delete_files={dv})
+            for data_file, dv in zip(data_files, [first_dv, second_dv], strict=True)
+        ],
     )
 
-    assert sorted(delete.to_pylist() for delete in deletes[referenced_data_file]) == [[1, 3], [5]]
+    assert deletes == {
+        referenced_data_files[0]: [pa.chunked_array([[1, 3]])],
+        referenced_data_files[1]: [pa.chunked_array([[5]])],
+    }
 
 
-def test_read_all_delete_files_from_external_packed_deletion_vectors() -> None:
-    """Read all DV ranges from an externally generated .bin file without losing entries to deduplication."""
+@pytest.mark.parametrize("selected_indices", [(0, 1, 2, 3, 4, 5), (0, 3, 5)])
+@pytest.mark.parametrize("planning_mode", ["local", "rest"])
+def test_read_all_delete_files_from_external_packed_deletion_vectors(
+    tmp_path: Path, selected_indices: tuple[int, ...], planning_mode: Literal["local", "rest"]
+) -> None:
+    """Apply selected DV ranges from an externally generated .bin file to their data files."""
     fixture_path = Path(__file__).parents[1] / "table" / "deletion_vector" / "v1" / "packed-deletion-vectors.bin"
     # (content_offset, content_size_in_bytes, expected deleted row positions)
     # Ranges copied from the fixture's V3 manifest; each DV references a different ten-row data file.
@@ -2043,33 +2058,112 @@ def test_read_all_delete_files_from_external_packed_deletion_vectors() -> None:
         (187, 52, [0, 2, 4, 6, 8, 9]),
         (239, 44, [0, 2]),
     ]
-    tasks = []
-    expected_deletes = {}
+    schema = Schema(NestedField(1, "id", LongType(), required=True))
+    data_files: list[DataFile] = []
+    delete_files: list[DataFile] = []
+    expected_deletes: dict[str, list[pa.ChunkedArray]] = {}
+    expected_rows: list[int] = []
     for index, (content_offset, content_size_in_bytes, expected_positions) in enumerate(content_ranges):
-        referenced_data_file = f"data-{index}.parquet"
+        data_path = tmp_path / f"data-{index}.parquet"
+        referenced_data_file = str(data_path)
+        rows = list(range(index * 10, (index + 1) * 10))
+        pq.write_table(pa.table({"id": rows}, schema=schema_to_pyarrow(schema)), data_path)
         dv = DataFile.from_args(
             _table_format_version=3,
             content=DataFileContent.POSITION_DELETES,
             file_path=str(fixture_path),
             file_format=FileFormat.PUFFIN,
+            partition=Record(),
             record_count=len(expected_positions),
+            file_size_in_bytes=fixture_path.stat().st_size,
             content_offset=content_offset,
             content_size_in_bytes=content_size_in_bytes,
             referenced_data_file=referenced_data_file,
         )
+        dv.spec_id = 0
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=referenced_data_file,
             file_format=FileFormat.PARQUET,
+            partition=Record(),
             record_count=10,
-            file_size_in_bytes=100,
+            file_size_in_bytes=data_path.stat().st_size,
+            first_row_id=index * 10,
         )
-        tasks.append(FileScanTask(data_file=data_file, delete_files=[dv]))
-        expected_deletes[referenced_data_file] = [pa.chunked_array([expected_positions])]
+        data_file.spec_id = 0
+        data_files.append(data_file)
+        delete_files.append(dv)
+        if index in selected_indices:
+            expected_deletes[referenced_data_file] = [pa.chunked_array([expected_positions])]
+            expected_rows.extend(row for position, row in enumerate(rows) if position not in expected_positions)
 
-    deletes = _read_all_delete_files(PyArrowFileIO(), tasks)
+    if planning_mode == "local":
+        delete_index = DeleteFileIndex()
+        for dv in delete_files:
+            delete_index.add_delete_file(
+                ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=2, data_file=dv)
+            )
+        tasks = [
+            FileScanTask(data_file=data_files[index], delete_files=delete_index.for_data_file(1, data_files[index]))
+            for index in selected_indices
+        ]
+    else:
+        rest_deletes: list[RESTDeleteFile] = [
+            RESTPositionDeleteFile(
+                spec_id=0,
+                file_path=dv.file_path,
+                file_format=dv.file_format,
+                file_size_in_bytes=dv.file_size_in_bytes,
+                record_count=dv.record_count,
+                content_offset=dv.content_offset,
+                content_size_in_bytes=dv.content_size_in_bytes,
+            )
+            for dv in delete_files
+        ]
+        tasks = [
+            FileScanTask.from_rest_response(
+                RESTFileScanTask(
+                    data_file=RESTDataFile(
+                        spec_id=0,
+                        file_path=data_files[index].file_path,
+                        file_format=FileFormat.PARQUET,
+                        file_size_in_bytes=data_files[index].file_size_in_bytes,
+                        record_count=10,
+                    ),
+                    delete_file_references=[index, index],
+                ),
+                rest_deletes,
+            )
+            for index in selected_indices
+        ]
+
+    for task, index in zip(tasks, selected_indices, strict=True):
+        assert isinstance(task.delete_files, set)
+        assert len(task.delete_files) == 1
+        dv = next(iter(task.delete_files))
+        assert dv.referenced_data_file == task.file.file_path
+        assert (dv.content_offset, dv.content_size_in_bytes) == content_ranges[index][:2]
+
+    # Repeated tasks must not cause a DV to be loaded more than once.
+    deletes = _read_all_delete_files(PyArrowFileIO(), iter(tasks + tasks[::-1]))
 
     assert deletes == expected_deletes
+
+    result = ArrowScan(
+        table_metadata=TableMetadataV3(
+            location=str(tmp_path),
+            last_column_id=1,
+            schemas=[schema],
+            current_schema_id=schema.schema_id,
+            partition_specs=[PartitionSpec()],
+            next_row_id=60,
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+    ).to_table(tasks)
+
+    assert sorted(result.column("id").to_pylist()) == expected_rows
 
 
 def test_delete(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:

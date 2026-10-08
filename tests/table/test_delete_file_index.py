@@ -14,12 +14,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from collections.abc import Callable, Iterable, Set
-
 import pytest
 
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
-from pyiceberg.table.delete_file import DeleteFileSet
 from pyiceberg.table.delete_file_index import PATH_FIELD_ID, DeleteFileIndex, PositionDeletes
 from pyiceberg.typedef import Record
 
@@ -83,8 +80,6 @@ def _create_deletion_vector(
         partition=Record(),
         record_count=10,
         file_size_in_bytes=100,
-        lower_bounds={PATH_FIELD_ID: file_path.encode()},
-        upper_bounds={PATH_FIELD_ID: file_path.encode()},
         referenced_data_file=file_path,
         content_offset=content_offset,
         content_size_in_bytes=content_size_in_bytes,
@@ -173,59 +168,14 @@ def test_dvs_treated_as_position_deletes() -> None:
     assert all(d.content == DataFileContent.POSITION_DELETES for d in result)
 
 
-def test_delete_file_set_uses_content_range_identity() -> None:
-    shared_file_path = "s3://bucket/deletion-vectors.bin"
-    first_dv = _create_deletion_vector(
-        sequence_number=2,
-        delete_file_path=shared_file_path,
-        content_offset=4,
-        content_size_in_bytes=10,
-    ).data_file
-    second_dv = _create_deletion_vector(
-        sequence_number=3,
-        delete_file_path=shared_file_path,
-        content_offset=40,
-        content_size_in_bytes=12,
-    ).data_file
-
-    assert first_dv == second_dv
-    assert len(DeleteFileSet([first_dv, second_dv])) == 2
-
-
-@pytest.mark.parametrize("collection_type", [DeleteFileSet, set, frozenset])
-@pytest.mark.parametrize(("content_offset", "content_size_in_bytes", "equal"), [(4, 10, True), (40, 10, False), (4, 12, False)])
-def test_delete_file_set_equality(
-    collection_type: Callable[[Iterable[DataFile]], Set[DataFile]], content_offset: int, content_size_in_bytes: int, equal: bool
-) -> None:
-    dv = _create_deletion_vector(content_offset=4, content_size_in_bytes=10).data_file
-    other_dv = _create_deletion_vector(content_offset=content_offset, content_size_in_bytes=content_size_in_bytes).data_file
-    deletes = DeleteFileSet([dv])
-    other = collection_type([other_dv])
-
-    assert (deletes == other) is equal
-    assert (other == deletes) is equal
-    assert (deletes != other) is not equal
-
-
-def test_delete_file_set_does_not_compare_with_non_sets() -> None:
-    dv = _create_deletion_vector(content_offset=4, content_size_in_bytes=10).data_file
-    deletes = DeleteFileSet([dv])
-    iterator = iter([dv])
-
-    assert deletes != [dv]
-    assert deletes != (dv,)
-    assert deletes != iterator
-    assert next(iterator) is dv
-    assert DeleteFileSet() != []
-
-
-def test_dvs_with_same_file_path_and_different_content_ranges_are_not_deduped() -> None:
+def test_dvs_with_same_file_path_are_matched_by_referenced_data_file() -> None:
     index = DeleteFileIndex()
     shared_file_path = "s3://bucket/deletion-vectors.bin"
 
     index.add_delete_file(
         _create_deletion_vector(
             sequence_number=2,
+            file_path="s3://bucket/a.parquet",
             delete_file_path=shared_file_path,
             content_offset=4,
             content_size_in_bytes=10,
@@ -234,14 +184,21 @@ def test_dvs_with_same_file_path_and_different_content_ranges_are_not_deduped() 
     index.add_delete_file(
         _create_deletion_vector(
             sequence_number=3,
+            file_path="s3://bucket/b.parquet",
             delete_file_path=shared_file_path,
             content_offset=40,
             content_size_in_bytes=12,
         )
     )
 
-    data_file = _create_data_file()
-    result = index.for_data_file(1, data_file)
+    first_deletes = index.for_data_file(1, _create_data_file("s3://bucket/a.parquet"))
+    second_deletes = index.for_data_file(1, _create_data_file("s3://bucket/b.parquet"))
+    assert len(first_deletes) == len(second_deletes) == 1
+    assert {dv.referenced_data_file for dv in first_deletes} == {"s3://bucket/a.parquet"}
+    assert {dv.referenced_data_file for dv in second_deletes} == {"s3://bucket/b.parquet"}
+    assert not index.for_data_file(1, _create_data_file("s3://bucket/unrelated.parquet"))
+    assert isinstance(first_deletes, set)
+    result = [*first_deletes, *second_deletes]
 
     assert len(result) == 2
     assert {(dv.file_path, dv.content_offset, dv.content_size_in_bytes) for dv in result} == {

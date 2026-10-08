@@ -21,7 +21,6 @@ from bisect import bisect_left
 from pyiceberg.expressions import EqualTo
 from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator
 from pyiceberg.manifest import INITIAL_SEQUENCE_NUMBER, POSITIONAL_DELETE_SCHEMA, DataFile, ManifestEntry
-from pyiceberg.table.delete_file import DeleteFileSet
 from pyiceberg.typedef import Record
 
 PATH_FIELD_ID = 2147483546
@@ -116,7 +115,7 @@ class DeleteFileIndex:
     def add_delete_file(self, manifest_entry: ManifestEntry, partition_key: Record | None = None) -> None:
         delete_file = manifest_entry.data_file
         seq = manifest_entry.sequence_number or INITIAL_SEQUENCE_NUMBER
-        target_path = _referenced_data_file_path(delete_file)
+        target_path = delete_file.referenced_data_file or _referenced_data_file_path(delete_file)
 
         if target_path:
             deletes = self._by_path.setdefault(target_path, PositionDeletes())
@@ -126,11 +125,12 @@ class DeleteFileIndex:
             deletes = self._by_partition.setdefault(key, PositionDeletes())
             deletes.add(delete_file, seq)
 
-    def for_data_file(self, seq_num: int, data_file: DataFile, partition_key: Record | None = None) -> DeleteFileSet:
+    def for_data_file(self, seq_num: int, data_file: DataFile, partition_key: Record | None = None) -> set[DataFile]:
         if self.is_empty():
-            return DeleteFileSet()
+            return set()
 
-        deletes: list[DataFile] = []
+        # DVs are indexed by target path; a valid snapshot has at most one DV per data file.
+        deletes: set[DataFile] = set()
         spec_id = data_file.spec_id or 0
 
         key = _partition_key(spec_id, partition_key)
@@ -138,13 +138,13 @@ class DeleteFileIndex:
         if partition_deletes:
             for delete_file in partition_deletes.filter_by_seq(seq_num):
                 if _applies_to_data_file(delete_file, data_file):
-                    deletes.append(delete_file)
+                    deletes.add(delete_file)
 
         path_deletes = self._by_path.get(data_file.file_path)
         if path_deletes:
-            deletes.extend(path_deletes.filter_by_seq(seq_num))
+            deletes.update(path_deletes.filter_by_seq(seq_num))
 
-        return DeleteFileSet(deletes)
+        return deletes
 
     def referenced_delete_files(self) -> list[DataFile]:
         data_files: list[DataFile] = []
