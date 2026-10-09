@@ -41,6 +41,7 @@ from pyiceberg.catalog.rest import (
     REST_CLIENT_MAX_RETRIES,
     REST_CLIENT_RETRY_BACKOFF_FACTOR,
     REST_CLIENT_SOCKET_TIMEOUT_MS,
+    REST_TABLE_CACHE_MAX_ENTRIES,
     SIGV4_MAX_RETRIES,
     SIGV4_MAX_RETRIES_DEFAULT,
     SNAPSHOT_LOADING_MODE,
@@ -60,6 +61,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     NoSuchViewError,
     OAuthError,
+    RESTError,
     ServerError,
     ServiceUnavailableError,
     TableAlreadyExistsError,
@@ -1447,6 +1449,51 @@ def test_load_table_200_loading_mode(
     # First compare the dicts
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_load_table_reuses_cached_table_on_not_modified(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        [
+            {"json": example_table_metadata_with_snapshot_v1_rest_json, "status_code": 200, "headers": {"ETag": '"v1"'}},
+            {"status_code": 304},
+        ],
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    loaded = catalog.load_table(("fokko", "table"))
+    reloaded = catalog.load_table(("fokko", "table"))
+
+    assert rest_mock.last_request.headers["If-None-Match"] == '"v1"'
+    assert reloaded == loaded
+    assert reloaded is not loaded
+
+
+def test_load_table_not_modified_without_cached_table(rest_mock: Mocker) -> None:
+    rest_mock.get(f"{TEST_URI}v1/namespaces/fokko/tables/table", status_code=304)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    with pytest.raises(RESTError, match="304 Not Modified"):
+        catalog.load_table(("fokko", "table"))
+
+
+def test_load_table_cache_disabled_with_zero_max_entries(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        headers={"ETag": '"v1"'},
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{REST_TABLE_CACHE_MAX_ENTRIES: "0"})
+
+    catalog.load_table(("fokko", "table"))
+    catalog.load_table(("fokko", "table"))
+
+    assert "If-None-Match" not in rest_mock.last_request.headers
 
 
 def test_load_table_honor_access_delegation(
