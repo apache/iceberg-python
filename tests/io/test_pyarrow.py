@@ -1321,11 +1321,10 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     assert repr(result_table.schema) == "id: int32"
 
 
-def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+@pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])
+def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog, with_field_ids: bool) -> None:
     # Test by adding a non-partitioned data file to a partitioned table, verifying partition value
     # projection from manifest metadata.
-    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
-    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
 
     schema = Schema(
         NestedField(1, "other_field", StringType(), required=False), NestedField(2, "partition_id", IntegerType(), required=False)
@@ -1340,12 +1339,23 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         "default.test_projection_partition",
         schema=schema,
         partition_spec=partition_spec,
-        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+        properties={}
+        if with_field_ids
+        else {TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
     file_data = pa.array(["foo", "bar", "baz"], type=pa.string())
-    file_loc = f"{tmp_path}/test.parquet"
-    pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
+    file_table = pa.table([file_data], names=["other_field"])
+    if with_field_ids:
+        source_table = catalog.create_table(
+            "default.unpartitioned_source", schema=Schema(schema.fields[0]), location=f"{tmp_path}/source"
+        )
+        source_table.append(file_table)
+        file_loc = next(iter(source_table.scan().plan_files())).file.file_path
+        assert pq.read_schema(file_loc).field("other_field").metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"1"
+    else:
+        file_loc = f"{tmp_path}/test.parquet"
+        pq.write_table(file_table, file_loc)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=pq.read_metadata(file_loc),
@@ -1390,13 +1400,20 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
     # Test that row filter does not return any rows for a non-existing partition value
     assert len(table.scan(row_filter="partition_id = -1").to_arrow()) == 0
 
+    assert table.scan(row_filter="partition_id = 1", selected_fields=("other_field",)).to_arrow() == pa.table(
+        {"other_field": ["foo", "bar", "baz"]}
+    )
+    assert table.scan(
+        row_filter="partition_id = 1 AND other_field = 'bar'", selected_fields=("other_field",)
+    ).to_arrow() == pa.table({"other_field": ["bar"]})
+
 
 @pytest.mark.parametrize(
-    "partition_field_type, arrow_partition_type, partition_value",
+    "partition_field_type, arrow_partition_type, partition_value, row_filter",
     [
-        (IntegerType(), pa.int32(), 0),
-        (StringType(), pa.large_string(), ""),
-        (IntegerType(), pa.int32(), None),
+        (IntegerType(), pa.int32(), 0, "partition_col = 0"),
+        (StringType(), pa.large_string(), "", "partition_col = ''"),
+        (IntegerType(), pa.int32(), None, "partition_col IS NULL"),
     ],
 )
 def test_identity_transform_column_projection_with_falsy_value(
@@ -1405,6 +1422,7 @@ def test_identity_transform_column_projection_with_falsy_value(
     partition_field_type: PrimitiveType,
     arrow_partition_type: pa.DataType,
     partition_value: Any,
+    row_filter: str,
 ) -> None:
     """Partition value projection must preserve falsy values (0, "") and still render None as null."""
     schema = Schema(
@@ -1458,13 +1476,15 @@ def test_identity_transform_column_projection_with_falsy_value(
         },
         schema=expected_schema,
     )
+    assert table.scan(row_filter=row_filter, selected_fields=("other_field",)).to_arrow() == pa.table(
+        {"other_field": ["foo", "bar"]}
+    )
 
 
-def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+@pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])
+def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog, with_field_ids: bool) -> None:
     # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value
     # projection from manifest metadata.
-    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
-    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
     schema = Schema(
         NestedField(1, "field_1", StringType(), required=False),
         NestedField(2, "field_2", IntegerType(), required=False),
@@ -1481,12 +1501,23 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
         "default.test_projection_partitions",
         schema=schema,
         partition_spec=partition_spec,
-        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+        properties={}
+        if with_field_ids
+        else {TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
     file_data = pa.array(["foo"], type=pa.string())
-    file_loc = f"{tmp_path}/test.parquet"
-    pq.write_table(pa.table([file_data], names=["field_1"]), file_loc)
+    file_table = pa.table([file_data], names=["field_1"])
+    if with_field_ids:
+        source_table = catalog.create_table(
+            "default.unpartitioned_source", schema=Schema(schema.fields[0]), location=f"{tmp_path}/source"
+        )
+        source_table.append(file_table)
+        file_loc = next(iter(source_table.scan().plan_files())).file.file_path
+        assert pq.read_schema(file_loc).field("field_1").metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"1"
+    else:
+        file_loc = f"{tmp_path}/test.parquet"
+        pq.write_table(file_table, file_loc)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=pq.read_metadata(file_loc),
@@ -1522,6 +1553,12 @@ field_3: int32
 field_1: [["foo"]]
 field_2: [[2]]
 field_3: [[3]]"""
+    )
+    assert table.scan(row_filter="field_2 = 2 AND field_3 = 3", selected_fields=("field_1",)).to_arrow() == pa.table(
+        {"field_1": ["foo"]}
+    )
+    assert table.scan(row_filter="field_2 = 2 AND field_3 = 3", selected_fields=("field_1", "field_2")).to_arrow() == pa.table(
+        {"field_1": ["foo"], "field_2": pa.array([2], type=pa.int32())}
     )
 
 

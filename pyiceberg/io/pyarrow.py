@@ -1628,21 +1628,21 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
 
 def _get_column_projection_values(
     file: DataFile,
-    projected_schema: Schema,
+    projected_field_ids: set[int],
     table_schema: Schema,
     partition_spec: PartitionSpec | None,
     file_project_field_ids: set[int],
 ) -> dict[int, Any]:
-    """Apply Column Projection rules to File Schema."""
-    project_schema_diff = projected_schema.field_ids.difference(file_project_field_ids)
-    if len(project_schema_diff) == 0 or partition_spec is None:
+    """Resolve missing identity partition values for output and filter columns."""
+    missing_field_ids = projected_field_ids.difference(file_project_field_ids)
+    if len(missing_field_ids) == 0 or partition_spec is None:
         return EMPTY_DICT
 
     partition_schema = partition_spec.partition_type(table_schema)
     accessors = build_position_accessors(partition_schema)
 
     projected_missing_fields = {}
-    for field_id in project_schema_diff:
+    for field_id in missing_field_ids:
         for partition_field in partition_spec.fields_by_source_id(field_id):
             if isinstance(partition_field.transform, IdentityTransform):
                 partition_value = accessors[partition_field.field_id].get(file.partition)
@@ -1687,7 +1687,7 @@ def _task_to_record_batches(
 
         # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
         projected_missing_fields = _get_column_projection_values(
-            task.file, projected_schema, table_schema, partition_spec, file_schema.field_ids
+            task.file, projected_field_ids, table_schema, partition_spec, file_schema.field_ids
         )
 
         pyarrow_filter = None
