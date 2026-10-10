@@ -895,7 +895,6 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import expression_to_pyarrow
         from pyiceberg.table import upsert_util
 
         if join_cols is None:
@@ -926,25 +925,16 @@ class Transaction:
             format_version=self.table_metadata.format_version,
         )
 
-        # get list of rows that exist so we don't have to load the entire target table
-        matched_predicate = upsert_util.create_match_filter(df, join_cols)
-
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
+        def scan_matching(row_filter: BooleanExpression) -> DataScan:
+            matching_scan = self._scan(row_filter=row_filter, case_sensitive=case_sensitive)
+            return matching_scan.use_ref(branch) if branch in self.table_metadata.refs else matching_scan
 
-        matched_iceberg_record_batches_scan = DataScan(
-            table_metadata=self.table_metadata,
-            io=self._table.io,
-            row_filter=matched_predicate,
-            case_sensitive=case_sensitive,
-        )
-
-        if branch in self.table_metadata.refs:
-            matched_iceberg_record_batches_scan = matched_iceberg_record_batches_scan.use_ref(branch)
-
-        matched_iceberg_record_batches = matched_iceberg_record_batches_scan.to_arrow_batch_reader()
+        # get list of rows that exist so we don't have to load the entire target table
+        # The match filter can select more rows than the keys in df, get_rows_to_update and exclude_keys are exact
+        matched_iceberg_record_batches = scan_matching(upsert_util.create_match_filter(df, join_cols)).to_arrow_batch_reader()
 
         batches_to_overwrite = []
-        overwrite_predicates = []
         rows_to_insert = df
 
         for batch in matched_iceberg_record_batches:
@@ -958,19 +948,10 @@ class Transaction:
                 rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
 
                 if len(rows_to_update) > 0:
-                    # build the match predicate filter
-                    overwrite_mask_predicate = upsert_util.create_match_filter(rows_to_update, join_cols)
-
                     batches_to_overwrite.append(rows_to_update)
-                    overwrite_predicates.append(overwrite_mask_predicate)
 
             if when_not_matched_insert_all:
-                expr_match = upsert_util.create_match_filter(rows, join_cols)
-                expr_match_bound = bind(self.table_metadata.schema(), expr_match, case_sensitive=case_sensitive)
-                expr_match_arrow = expression_to_pyarrow(expr_match_bound)
-
-                # Filter rows per batch.
-                rows_to_insert = rows_to_insert.filter(~expr_match_arrow)
+                rows_to_insert = upsert_util.exclude_keys(rows_to_insert, rows, join_cols)
 
         update_row_cnt = 0
         insert_row_cnt = 0
@@ -978,12 +959,23 @@ class Transaction:
         if batches_to_overwrite:
             rows_to_update = pa.concat_tables(batches_to_overwrite)
             update_row_cnt = len(rows_to_update)
+            overwrite_filter = upsert_util.create_match_filter(rows_to_update, join_cols)
+
+            # For a composite key the overwrite filter can remove rows outside the updated keys, write those back unchanged
+            unchanged_rows = None
+            if len(join_cols) > 1:
+                removed_rows = scan_matching(overwrite_filter).to_arrow()
+                unchanged_rows = upsert_util.exclude_keys(removed_rows, rows_to_update, join_cols)
+
             self.overwrite(
                 rows_to_update,
-                overwrite_filter=Or(*overwrite_predicates) if len(overwrite_predicates) > 1 else overwrite_predicates[0],
+                overwrite_filter=overwrite_filter,
                 branch=branch,
                 snapshot_properties=snapshot_properties,
             )
+
+            if unchanged_rows is not None and len(unchanged_rows) > 0:
+                self.append(unchanged_rows, branch=branch, snapshot_properties=snapshot_properties)
 
         if when_not_matched_insert_all:
             insert_row_cnt = len(rows_to_insert)
