@@ -170,7 +170,7 @@ class ConsoleOutput(Output):
                 f"Snapshot {snapshot.snapshot_id}, schema {snapshot.schema_id}: {snapshot.manifest_list}"
             )
 
-            manifest_list = snapshot.manifests(io)
+            manifest_list = snapshot.manifests(io, table_uuid=table.metadata.table_uuid)
             for manifest in manifest_list:
                 manifest_tree = list_tree.add(f"Manifest: {manifest.manifest_path}")
                 for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=False):

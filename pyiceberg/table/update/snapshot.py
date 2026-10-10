@@ -608,7 +608,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
         if parent_snapshot_id_for_delete_source is not None:
             snapshot = table_metadata.snapshot_by_id(parent_snapshot_id_for_delete_source)
             if snapshot:  # Ensure snapshot is found
-                for manifest_file in snapshot.manifests(io=self._io):
+                for manifest_file in snapshot.manifests(io=self._io, table_uuid=table_metadata.table_uuid):
                     if manifest_file.content == ManifestContent.DATA:
                         if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
                             # If the manifest isn't relevant, we can just keep it in the manifest-list
@@ -699,12 +699,13 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
         existing_manifests = []
 
         if self._parent_snapshot_id is not None:
-            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+            table_metadata = self._transaction.table_metadata
+            previous_snapshot = table_metadata.snapshot_by_id(self._parent_snapshot_id)
 
             if previous_snapshot is None:
                 raise ValueError(f"Snapshot could not be found: {self._parent_snapshot_id}")
 
-            for manifest in previous_snapshot.manifests(io=self._io):
+            for manifest in previous_snapshot.manifests(io=self._io, table_uuid=table_metadata.table_uuid):
                 if manifest.has_added_files() or manifest.has_existing_files() or manifest.added_snapshot_id == self._snapshot_id:
                     existing_manifests.append(manifest)
 
@@ -782,8 +783,9 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         existing_files = []
 
         manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
-            for manifest_file in snapshot.manifests(io=self._io):
+        table_metadata = self._transaction.table_metadata
+        if snapshot := table_metadata.snapshot_by_name(name=self._target_branch):
+            for manifest_file in snapshot.manifests(io=self._io, table_uuid=table_metadata.table_uuid):
                 # Manifest does not contain rows that match the files to delete partitions
                 if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
                     existing_files.append(manifest_file)
@@ -831,7 +833,8 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         which entries are affected.
         """
         if self._parent_snapshot_id is not None:
-            previous_snapshot = self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+            table_metadata = self._transaction.table_metadata
+            previous_snapshot = table_metadata.snapshot_by_id(self._parent_snapshot_id)
             if previous_snapshot is None:
                 # This should never happen since you cannot overwrite an empty table
                 raise ValueError(f"Could not find the previous snapshot: {self._parent_snapshot_id}")
@@ -855,7 +858,9 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
                     if entry.data_file.content == DataFileContent.DATA and entry.data_file in self._deleted_data_files
                 ]
 
-            list_of_entries = executor.map(_get_entries, previous_snapshot.manifests(self._io))
+            list_of_entries = executor.map(
+                _get_entries, previous_snapshot.manifests(self._io, table_uuid=table_metadata.table_uuid)
+            )
             deleted_entries = list(itertools.chain(*list_of_entries))
         else:
             deleted_entries = []
