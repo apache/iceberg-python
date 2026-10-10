@@ -580,6 +580,8 @@ class RestCatalog(Catalog):
         self._session = self._create_session()
         max_entries = int(self.properties.get(REST_TABLE_CACHE_MAX_ENTRIES, REST_TABLE_CACHE_MAX_ENTRIES_DEFAULT))
         ttl_ms = int(self.properties.get(REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS, REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS_DEFAULT))
+        if ttl_ms <= 0:
+            raise ValueError(f"Invalid value for {REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS}: {ttl_ms} (must be positive)")
         self._table_cache = TTLCache(maxsize=max_entries, ttl=ttl_ms / 1000) if max_entries > 0 else None
         self._table_cache_lock = threading.Lock()
 

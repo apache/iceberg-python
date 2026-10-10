@@ -41,6 +41,7 @@ from pyiceberg.catalog.rest import (
     REST_CLIENT_MAX_RETRIES,
     REST_CLIENT_RETRY_BACKOFF_FACTOR,
     REST_CLIENT_SOCKET_TIMEOUT_MS,
+    REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS,
     REST_TABLE_CACHE_MAX_ENTRIES,
     SIGV4_MAX_RETRIES,
     SIGV4_MAX_RETRIES_DEFAULT,
@@ -1494,6 +1495,12 @@ def test_load_table_cache_disabled_with_zero_max_entries(
     catalog.load_table(("fokko", "table"))
 
     assert "If-None-Match" not in rest_mock.last_request.headers
+
+
+@pytest.mark.parametrize("ttl_ms", ["0", "-1"])
+def test_table_cache_rejects_non_positive_expiry(rest_mock: Mocker, ttl_ms: str) -> None:
+    with pytest.raises(ValueError, match=REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS):
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS: ttl_ms})
 
 
 def test_load_table_honor_access_delegation(
