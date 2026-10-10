@@ -42,6 +42,11 @@ class DeletionVector:
         number_of_bitmaps = int.from_bytes(pl[0:8], byteorder="little")
         pl = pl[8:]
 
+        # Every bitmap contributes at least a 4-byte key, so a count that cannot fit
+        # in the remaining payload is invalid and must not be used as a loop bound.
+        if number_of_bitmaps * 4 > len(pl):
+            raise ValueError(f"Payload declares {number_of_bitmaps} bitmaps, but only holds {len(pl)} bytes")
+
         bitmaps = []
         last_key = -1
         for _ in range(number_of_bitmaps):
