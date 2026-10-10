@@ -22,7 +22,7 @@ import tempfile
 import uuid
 import warnings
 from collections.abc import Iterator
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -93,7 +93,7 @@ from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties, WriteTask
 from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.name_mapping import create_mapping_from_schema
-from pyiceberg.transforms import HourTransform, IdentityTransform
+from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -2782,6 +2782,40 @@ def test_partition_for_demo() -> None:
     assert (
         pa.concat_tables([table_partition.arrow_table_partition for table_partition in result]).num_rows == arrow_table.num_rows
     )
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_append_time_bucket_partition(tmp_path: Path, format_version: int) -> None:
+    schema = Schema(NestedField(1, "event_time", TimeType(), required=False))
+    spec = PartitionSpec(PartitionField(1, 1000, BucketTransform(16), "event_time_bucket"))
+    data = pa.table(
+        {"event_time": [time(0), time(12, 34, 56, 123456), time(23, 59, 59, 999999), None, time(0)]},
+        schema=schema.as_arrow(),
+    )
+
+    with InMemoryCatalog("test", warehouse=tmp_path.as_uri()) as catalog:
+        catalog.create_namespace("default")
+        table = catalog.create_table(
+            "default.events", schema=schema, partition_spec=spec, properties={"format-version": str(format_version)}
+        )
+        table.append(data)
+
+        rows = table.scan().to_arrow()["event_time"].to_pylist()
+        assert rows.count(None) == 1
+        assert sorted(value for value in rows if value is not None) == sorted(
+            value for value in data["event_time"].to_pylist() if value is not None
+        )
+
+        files = table.inspect.data_files().to_pylist()
+        assert {file["partition"]["event_time_bucket"]: file["record_count"] for file in files} == {
+            12: 2,
+            11: 1,
+            8: 1,
+            None: 1,
+        }
+        for file in files:
+            bucket = file["partition"]["event_time_bucket"]
+            assert f"/event_time_bucket={bucket if bucket is not None else 'null'}/" in file["file_path"]
 
 
 def test_partition_for_nested_field() -> None:

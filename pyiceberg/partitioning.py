@@ -546,8 +546,10 @@ def _(type: IcebergType, value: int | date | None) -> int | None:
 
 
 @_to_partition_representation.register(TimeType)
-def _(type: IcebergType, value: time | None) -> int | None:
-    return time_to_micros(value) if value is not None else None
+def _(type: IcebergType, value: int | time | None) -> int | None:
+    if value is None or isinstance(value, int):
+        return value
+    return time_to_micros(value)
 
 
 @_to_partition_representation.register(UUIDType)
