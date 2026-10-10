@@ -22,7 +22,14 @@ import pytest
 import requests
 from requests_mock import Mocker
 
-from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, EntraAuthManager, GoogleAuthManager, NoopAuthManager
+from pyiceberg.catalog.rest.auth import (
+    AuthManagerAdapter,
+    AuthManagerFactory,
+    BasicAuthManager,
+    EntraAuthManager,
+    GoogleAuthManager,
+    NoopAuthManager,
+)
 
 TEST_URI = "https://iceberg-test-catalog/"
 GOOGLE_CREDS_URI = "https://oauth2.googleapis.com/token"
@@ -59,6 +66,11 @@ def test_noop_auth_header(rest_mock: Mocker) -> None:
     assert len(history) == 1
     actual_headers = history[0].headers
     assert "Authorization" not in actual_headers
+
+
+def test_auth_manager_factory_wrong_type() -> None:
+    with pytest.raises(ValueError, match="auth.impl should be a subclass of AuthManager"):
+        AuthManagerFactory.create("pyiceberg.io.FileIO", {})
 
 
 def test_basic_auth_header(rest_mock: Mocker) -> None:
