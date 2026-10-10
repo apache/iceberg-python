@@ -122,6 +122,10 @@ class FileFormatWriter(ABC):
     def close(self) -> DataFileStatistics:
         """Finalize the file and return statistics."""
 
+    @abstractmethod
+    def length(self) -> int:
+        """Return the estimated size of the file in bytes, including rows buffered but not yet written."""
+
     def result(self) -> DataFileStatistics:
         """Return statistics from a previous close() call."""
         if self._result is None:
