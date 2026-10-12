@@ -1119,7 +1119,7 @@ class RestCatalog(Catalog):
 
                 url = str(request.url).split("?")[0]
                 query = str(parse.urlsplit(request.url).query)
-                params = dict(parse.parse_qsl(query))
+                params = dict(parse.parse_qsl(query, keep_blank_values=True))
 
                 # remove the connection header as it will be updated after signing
                 if "connection" in request.headers:
@@ -1410,10 +1410,11 @@ class RestCatalog(Catalog):
             params["pageSize"] = str(page_size)
 
         tables: list[Identifier] = []
-        page_token: str | None = None
+        # An empty pageToken opts in to pagination on the first request.
+        page_token: str | None = "" if page_size is not None else None
 
         while True:
-            if page_token:
+            if page_token is not None:
                 params["pageToken"] = page_token
             response = self._session.get(url, params=params)
             try:
@@ -1550,10 +1551,11 @@ class RestCatalog(Catalog):
             params["pageSize"] = str(page_size)
 
         views: list[Identifier] = []
-        page_token: str | None = None
+        # An empty pageToken opts in to pagination on the first request.
+        page_token: str | None = "" if page_size is not None else None
 
         while True:
-            if page_token:
+            if page_token is not None:
                 params["pageToken"] = page_token
 
             response = self._session.get(url, params=params)
@@ -1672,13 +1674,14 @@ class RestCatalog(Catalog):
             params["pageSize"] = str(page_size)
 
         namespaces: list[Identifier] = []
-        page_token: str | None = None
+        # An empty pageToken opts in to pagination on the first request.
+        page_token: str | None = "" if page_size is not None else None
 
         while True:
             if namespace_tuple:
                 # Query parameters are URL-encoded by requests, so the parts must not be quoted here as well
                 params["parent"] = self._namespace_separator.join(namespace_tuple)
-            if page_token:
+            if page_token is not None:
                 params["pageToken"] = page_token
             response = self._session.get(self.url(Endpoints.list_namespaces), params=params)
 
