@@ -17,7 +17,7 @@
 import math
 import struct
 import zlib
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from pyroaring import BitMap, FrozenBitMap
 
@@ -32,7 +32,6 @@ if TYPE_CHECKING:
 EMPTY_BITMAP = FrozenBitMap()
 MAX_JAVA_SIGNED = int(math.pow(2, 31)) - 1
 PROPERTY_REFERENCED_DATA_FILE = "referenced-data-file"
-_MAX_DELETION_VECTOR_CONTENT_SIZE = 2**31 - 1
 _DV_BLOB_LENGTH = struct.Struct(">I")
 _DV_BLOB_MAGIC = struct.Struct("<I")
 _DV_BLOB_CRC = struct.Struct(">I")
@@ -123,7 +122,7 @@ def _deserialize_dv_blob(blob: bytes, record_count: int | None = None) -> list[B
     return bitmaps
 
 
-def _validate_deletion_vector_content(dv: "DataFile") -> None:
+def _validate_deletion_vector_content(dv: "DataFile") -> tuple[int, int, str]:
     content_offset = dv.content_offset
     content_size_in_bytes = dv.content_size_in_bytes
     referenced_data_file = dv.referenced_data_file
@@ -136,13 +135,15 @@ def _validate_deletion_vector_content(dv: "DataFile") -> None:
         raise ValueError(f"Invalid deletion vector, content offset cannot be negative: {content_offset}")
     if content_size_in_bytes < 0:
         raise ValueError(f"Invalid deletion vector, content size cannot be negative: {content_size_in_bytes}")
-    if content_size_in_bytes > _MAX_DELETION_VECTOR_CONTENT_SIZE:
+    if content_size_in_bytes > MAX_JAVA_SIGNED:
         raise ValueError(f"Cannot read deletion vector larger than 2GB: {content_size_in_bytes}")
     if referenced_data_file is None:
         raise ValueError(f"Invalid deletion vector, referenced data file is missing: {dv.file_path}")
 
+    return content_offset, content_size_in_bytes, referenced_data_file
 
-def has_deletion_vector_content_reference(dv: "DataFile") -> bool:
+
+def _has_deletion_vector_content_reference(dv: "DataFile") -> bool:
     """Return whether any manifest content-reference field is present.
 
     Partial references must be validated as range reads. Whole-Puffin reads
@@ -152,11 +153,7 @@ def has_deletion_vector_content_reference(dv: "DataFile") -> bool:
 
 
 def _read_deletion_vector(io: "FileIO", dv: "DataFile") -> DeletionVector:
-    _validate_deletion_vector_content(dv)
-
-    content_offset = cast(int, dv.content_offset)
-    content_size_in_bytes = cast(int, dv.content_size_in_bytes)
-    referenced_data_file = cast(str, dv.referenced_data_file)
+    content_offset, content_size_in_bytes, referenced_data_file = _validate_deletion_vector_content(dv)
 
     with io.new_input(dv.file_path).open() as fi:
         fi.seek(content_offset)
@@ -173,7 +170,7 @@ def _read_deletion_vector(io: "FileIO", dv: "DataFile") -> DeletionVector:
 
 def read_deletion_vectors(io: "FileIO", dv: "DataFile") -> list[DeletionVector]:
     """Read deletion vectors from a delete file or its manifest content range."""
-    if has_deletion_vector_content_reference(dv):
+    if _has_deletion_vector_content_reference(dv):
         return [_read_deletion_vector(io, dv)]
 
     with io.new_input(dv.file_path).open() as fi:

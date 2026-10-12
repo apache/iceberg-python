@@ -28,7 +28,7 @@ from pyiceberg.table.deletion_vector import (
     _DV_BLOB_MAGIC_NUMBER,
     DeletionVector,
     _deserialize_dv_blob,
-    has_deletion_vector_content_reference,
+    _has_deletion_vector_content_reference,
     read_deletion_vectors,
 )
 
@@ -98,10 +98,10 @@ def _data_file(
 
 
 def test_has_deletion_vector_content_reference() -> None:
-    assert not has_deletion_vector_content_reference(_data_file())
-    assert has_deletion_vector_content_reference(_data_file(content_offset=0))
-    assert has_deletion_vector_content_reference(_data_file(content_size_in_bytes=1))
-    assert has_deletion_vector_content_reference(_data_file(referenced_data_file="data.parquet"))
+    assert not _has_deletion_vector_content_reference(_data_file())
+    assert _has_deletion_vector_content_reference(_data_file(content_offset=0))
+    assert _has_deletion_vector_content_reference(_data_file(content_size_in_bytes=1))
+    assert _has_deletion_vector_content_reference(_data_file(referenced_data_file="data.parquet"))
 
 
 def test_read_external_deletion_vector_content_range() -> None:
