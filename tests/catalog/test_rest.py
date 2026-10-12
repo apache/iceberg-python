@@ -579,8 +579,38 @@ def test_list_tables_page_size(rest_mock: Mocker) -> None:
     )
 
     result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_tables(namespace)
-    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/tables?pageSize=100"
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/tables?pageSize=100&pageToken="
 
+    assert result == [
+        ("examples", "table1"),
+        ("examples", "table2"),
+    ]
+
+
+def test_list_tables_page_size_paginated(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageSize=1&pageToken=",
+        complete_qs=True,
+        json={
+            "identifiers": [{"namespace": ["examples"], "name": "table1"}],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageSize=1&pageToken=page2token",
+        complete_qs=True,
+        json={
+            "identifiers": [{"namespace": ["examples"], "name": "table2"}],
+            "next-page-token": None,
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "1"}).list_tables(namespace)
     assert result == [
         ("examples", "table1"),
         ("examples", "table2"),
@@ -656,6 +686,33 @@ def test_sigv4_sign_request_with_body(rest_mock: Mocker) -> None:
     assert prepared.headers["Authorization"].startswith("AWS4-HMAC-SHA256")
     assert prepared.headers["Original-Authorization"] == f"Bearer {existing_token}"
     assert prepared.headers.get("x-amz-content-sha256") != EMPTY_BODY_SHA256
+
+
+def test_sigv4_sign_request_keeps_blank_query_params(rest_mock: Mocker) -> None:
+    from botocore.auth import SigV4Auth
+
+    catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": TEST_URI,
+            "token": TEST_TOKEN,
+            "rest.sigv4-enabled": "true",
+            "rest.signing-region": "us-west-2",
+            "client.access-key-id": "id",
+            "client.secret-access-key": "secret",
+        },
+    )
+
+    prepared = catalog._session.prepare_request(
+        Request("GET", f"{TEST_URI}v1/namespaces", params={"pageSize": "1", "pageToken": ""})
+    )
+    adapter = catalog._session.adapters[catalog.uri]
+    assert isinstance(adapter, HTTPAdapter)
+    with mock.patch.object(SigV4Auth, "add_auth", autospec=True) as add_auth:
+        adapter.add_headers(prepared)
+
+    # The signed query must match the one sent, including the empty pageToken
+    assert add_auth.call_args.args[1].params == {"pageSize": "1", "pageToken": ""}
 
 
 def test_sigv4_adapter_default_retry_config(rest_mock: Mocker) -> None:
@@ -848,7 +905,7 @@ def test_list_views_page_size(rest_mock: Mocker) -> None:
     )
 
     result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_views(namespace)
-    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/views?pageSize=100"
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/examples/views?pageSize=100&pageToken="
 
     assert result == [
         ("examples", "view1"),
@@ -1082,7 +1139,7 @@ def test_list_namespaces_page_size(rest_mock: Mocker) -> None:
     )
 
     result = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PAGE_SIZE: "100"}).list_namespaces()
-    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces?pageSize=100"
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces?pageSize=100&pageToken="
 
     assert result == [
         ("ns1",),
