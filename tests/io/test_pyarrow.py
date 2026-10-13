@@ -3305,6 +3305,8 @@ def test__to_requested_schema_null_list_of_structs(list_type: Callable[[pa.DataT
     result = _to_requested_schema(requested_schema, requested_schema, batch.slice(1, 3))
     assert result.column(0).to_pylist() == [[], None, [{"test": 2}, None]]
     assert result.column(1).to_pylist() == [[], None, [2, None]]
+
+
 @skip_if_pyarrow_too_old
 @pytest.mark.parametrize("scheme", ["abfs", "abfss", "wasb", "wasbs"])
 def test_adls_account_name_from_location(scheme: str) -> None:
