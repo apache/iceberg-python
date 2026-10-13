@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import os
+import platform
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -95,7 +96,7 @@ TEST_RESOURCE = "test_resource"
 
 TEST_HEADERS = {
     "Content-type": "application/json",
-    "User-Agent": f"PyIceberg/{pyiceberg.__version__}",
+    "User-Agent": f"pyiceberg/{pyiceberg.__version__} ({platform.python_implementation().lower()} {platform.python_version()})",
     "Authorization": f"Bearer {TEST_TOKEN}",
     "X-Iceberg-Access-Delegation": "vended-credentials",
 }
@@ -3215,6 +3216,20 @@ def test_auth_header(rest_mock: Mocker) -> None:
         mock_request.last_request.text
         == "grant_type=client_credentials&client_id=client&client_secret=secret_with%3Acolon&scope=catalog"
     )
+
+
+@pytest.mark.parametrize(
+    ("implementation", "python_version", "expected"),
+    [("CPython", "3.11.4", "pyiceberg/0.11.0 (cpython 3.11.4)"), ("PyPy", "3.10.16", "pyiceberg/0.11.0 (pypy 3.10.16)")],
+)
+def test_user_agent_header(
+    rest_mock: Mocker, monkeypatch: pytest.MonkeyPatch, implementation: str, python_version: str, expected: str
+) -> None:
+    monkeypatch.setattr("pyiceberg.catalog.rest.__version__", "0.11.0")
+    monkeypatch.setattr(platform, "python_implementation", lambda: implementation)
+    monkeypatch.setattr(platform, "python_version", lambda: python_version)
+    catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+    assert catalog._session.headers["User-Agent"] == expected
 
 
 def test_client_version_header(rest_mock: Mocker) -> None:
