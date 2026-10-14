@@ -609,6 +609,11 @@ def test_json_serialize_roundtrip(primitive_type: PrimitiveType, value: Any) -> 
     assert value == conversions.from_json(primitive_type, conversions.to_json(primitive_type, value))
 
 
+def test_json_float_is_read_as_float32() -> None:
+    assert conversions.from_json(FloatType(), 22.27) == 22.270000457763672
+    assert conversions.from_json(DoubleType(), 22.27) == 22.27
+
+
 def test_unknown_type_conversions() -> None:
     """Unknown values are always null, so they have no binary or partition representation."""
     unknown = UnknownType()
