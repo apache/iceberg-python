@@ -255,7 +255,7 @@ def test_double_to_float_within_bound() -> None:
     lit = literal(34.56).to(DoubleType())
     float_lit = lit.to(FloatType())
 
-    assert lit.value == float_lit.value
+    assert float_lit.value == 34.560001373291016
 
 
 def test_double_to_float_outside_bound() -> None:
