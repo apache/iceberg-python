@@ -1966,6 +1966,26 @@ def test_add_snapshot_update_fails_with_smaller_first_row_id(table_v3: Table) ->
         update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
 
 
+@pytest.mark.parametrize("table", [lf("table_v2"), lf("table_v3")])
+def test_add_snapshot_update_fails_with_stale_sequence_number(table: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=3055729675574597004,
+        sequence_number=table.metadata.last_sequence_number,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=1,
+        first_row_id=2,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add snapshot with sequence number 34 older than last sequence number 34",
+    ):
+        update_table_metadata(table.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
 def test_add_snapshot_update_updates_next_row_id(table_v3: Table) -> None:
     new_snapshot = Snapshot(
         snapshot_id=25,
