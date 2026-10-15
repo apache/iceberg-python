@@ -455,6 +455,46 @@ def test_all_primitive_types(is_required: bool) -> None:
         assert record[idx] == avro_entry_read_with_fastavro[idx], f"Invalid {field} read with fastavro"
 
 
+def test_repeated_named_types_round_trip() -> None:
+    """Named types used more than once are defined once in the file schema and read back by both readers"""
+    schema = Schema(
+        NestedField(field_id=1, name="price", field_type=DecimalType(10, 2), required=True),
+        NestedField(field_id=2, name="cost", field_type=DecimalType(10, 2), required=False),
+        NestedField(field_id=3, name="id", field_type=UUIDType(), required=True),
+        NestedField(field_id=4, name="parent_id", field_type=UUIDType(), required=False),
+        schema_id=1,
+    )
+    record = Record(
+        Decimal("123.45"),
+        Decimal("-6.78"),
+        UUID("12345678-1234-5678-1234-567812345678"),
+        UUID("87654321-4321-8765-4321-876543218765"),
+    )
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/repeated_named_types.avro"
+        with avro.AvroOutputFile[Record](PyArrowFileIO().new_output(tmp_avro_file), schema, "repeated_named_types") as out:
+            out.write_block([record])
+
+        with avro.AvroFile[Record](PyArrowFileIO().new_input(tmp_avro_file), schema, {-1: Record}) as avro_reader:
+            assert avro_reader.header.get_schema() == schema
+            avro_entry = next(iter(avro_reader))
+
+        with open(tmp_avro_file, "rb") as fo:
+            r = reader(fo=fo)
+            file_fields = r.writer_schema["fields"]
+            avro_entry_read_with_fastavro = list(next(iter(r)).values())
+
+    assert file_fields[1]["type"] == ["null", "decimal_10_2"]
+    assert file_fields[3]["type"] == ["null", "uuid_fixed"]
+    for idx in range(len(record)):
+        assert record[idx] == avro_entry[idx]
+    # fastavro returns a uuid stored as fixed as its raw bytes
+    price, cost, id_, parent_id = avro_entry_read_with_fastavro
+    assert (price, cost) == (record[0], record[1])
+    assert (UUID(bytes=id_), UUID(bytes=parent_id)) == (record[2], record[3])
+
+
 def manifest_entry(index: int) -> ManifestEntry:
     return ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,
