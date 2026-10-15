@@ -1454,6 +1454,19 @@ def test_last_assigned_partition_id(table_v2: Table) -> None:
         AssertLastAssignedPartitionId(last_assigned_partition_id=1).validate(base_metadata)
 
 
+@pytest.mark.parametrize("table", [lf("table_v2"), lf("table_v3")])
+def test_update_spec_reuses_removed_partition_field_id(table: Table) -> None:
+    txn = table.transaction()
+    txn.update_spec().remove_field("x").add_field("y", BucketTransform(16), "y_bucket").commit()
+    txn.update_spec().add_identity("x").commit()
+
+    assert txn.table_metadata.spec().fields == (
+        PartitionField(source_id=2, field_id=1001, transform=BucketTransform(16), name="y_bucket"),
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+    )
+    assert txn.table_metadata.last_partition_id == 1001
+
+
 def test_assert_default_spec_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertDefaultSpecId(default_spec_id=base_metadata.default_spec_id).validate(base_metadata)
