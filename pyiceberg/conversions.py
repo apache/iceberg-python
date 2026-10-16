@@ -614,8 +614,13 @@ def _(_: TimestamptzType, val: str | int | datetime) -> datetime:
 
 
 @from_json.register(FloatType)
+def _(_: FloatType, val: float) -> float:
+    """JSON float deserializes into a Python float, rounded to float32."""
+    return _FLOAT_STRUCT.unpack(_FLOAT_STRUCT.pack(val))[0]
+
+
 @from_json.register(DoubleType)
-def _(_: FloatType | DoubleType, val: float) -> float:
+def _(_: DoubleType, val: float) -> float:
     """JSON float deserializes into a Python float."""
     return val
 
