@@ -37,6 +37,11 @@ jobs:
       max-parallel: 15
       matrix:
         os: [ ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest ]
+        include:
+          - os: windows-11-arm
+            windows_archs: "ARM64"
+            before_test: "uv pip install pytest==9.1.1"
+            test_command: "python -m pytest --confcutdir={project}/tests/avro {project}/tests/avro/test_decoder.py"
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -76,11 +81,15 @@ jobs:
         env:
           # Ignore 32 bit architectures
           CIBW_ARCHS: "auto64"
+          CIBW_ARCHS_WINDOWS: ${{ matrix.windows_archs || 'auto64' }}
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.10,<3.15"
           # Keep these in sync with Python CI job `cibw-dev-env-smoke-test`
           # in .github/workflows/python-ci.yml to catch import-time regressions early.
-          CIBW_BEFORE_TEST: "uv sync --directory {project} --only-group dev --no-install-project"
-          CIBW_TEST_COMMAND: "uv run --directory {project} pytest tests/avro/test_decoder.py"
+          # Every platform runs the decoder wheel smoke test. PyArrow does not
+          # publish Windows ARM64 wheels, so that runner uses a minimal test
+          # environment and avoids loading the repository-wide conftest.
+          CIBW_BEFORE_TEST: ${{ matrix.before_test || 'uv sync --directory {project} --only-group dev --no-install-project' }}
+          CIBW_TEST_COMMAND: ${{ matrix.test_command || 'uv run --directory {project} pytest tests/avro/test_decoder.py' }}
           # Skip free-threaded (PEP 703) builds until we evaluate decoder_fast support
           CIBW_SKIP: "cp3*t-*"
 
