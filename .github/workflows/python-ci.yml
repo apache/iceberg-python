@@ -118,7 +118,7 @@ jobs:
   python-ci-required:
     if: ${{ always() }}
     needs: [lint-and-unit-test, windows-unit-test, cibw-dev-env-smoke-test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
     - name: Verify Python CI jobs succeeded
       env:
