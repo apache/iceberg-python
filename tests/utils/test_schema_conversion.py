@@ -465,6 +465,7 @@ def test_iceberg_to_avro_defines_named_types_once() -> None:
     )
 
     avro_schema = AvroSchemaConversion().iceberg_to_avro(schema, schema_name="r102")
+    assert isinstance(avro_schema, dict)
     fields = avro_schema["fields"]
     nested_fields = fields[3]["type"]["fields"]
 
