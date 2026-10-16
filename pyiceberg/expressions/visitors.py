@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import copy
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
@@ -561,8 +562,13 @@ class _ManifestEvalVisitor(BoundBooleanExpressionVisitor[bool]):
 
     def eval(self, manifest: ManifestFile) -> bool:
         if partitions := manifest.partitions:
-            self.partition_fields = partitions
-            return visit(self.partition_filter, self)
+            # manifest_evaluator hands this one instance to every caller, and callers such as
+            # _OverwriteFiles._deleted_entries evaluate manifests on a thread pool. Keeping the
+            # per-manifest summaries off self means a thread switch between storing and reading
+            # them cannot make this manifest be judged by another manifest's bounds.
+            visitor = copy.copy(self)
+            visitor.partition_fields = partitions
+            return visit(self.partition_filter, visitor)
 
         # No partition information
         return ROWS_MIGHT_MATCH
