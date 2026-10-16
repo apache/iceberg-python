@@ -66,6 +66,7 @@ from pyiceberg.io import (
     GCS_SERVICE_HOST,
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
+    GCS_TOKEN_EXPIRES_AT_MS,
     GCS_VERSION_AWARE,
     HF_ENDPOINT,
     HF_TOKEN,
@@ -95,6 +96,7 @@ from pyiceberg.io import (
 )
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
+from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 
 logger = logging.getLogger(__name__)
@@ -243,11 +245,16 @@ def _s3(properties: Properties) -> AbstractFileSystem:
 def _gs(properties: Properties) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
+    from google.oauth2.credentials import Credentials
+
+    token: str | Credentials | None = properties.get(GCS_TOKEN)
+    if token and (expires_at := properties.get(GCS_TOKEN_EXPIRES_AT_MS)):
+        token = Credentials(token, expiry=millis_to_datetime(int(expires_at)))
 
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
         access=properties.get(GCS_ACCESS, "full_control"),
-        token=properties.get(GCS_TOKEN),
+        token=token,
         consistency=properties.get(GCS_CONSISTENCY, "none"),
         cache_timeout=properties.get(GCS_CACHE_TIMEOUT),
         requester_pays=property_as_bool(properties, GCS_REQUESTER_PAYS, False),
