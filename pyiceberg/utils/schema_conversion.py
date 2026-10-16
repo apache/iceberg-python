@@ -81,7 +81,15 @@ LOGICAL_FIELD_TYPE_MAPPING: dict[tuple[str, str], PrimitiveType] = {
 AvroType = str | Any
 
 
+# Avro types that have a name and can be referred to by it later in the schema
+AVRO_NAMED_TYPES = {"record", "enum", "fixed"}
+
+
 class AvroSchemaConversion:
+    def __init__(self) -> None:
+        # Named types defined so far, so that a later reference by name resolves to them
+        self._named_types: dict[str, IcebergType] = {}
+
     def avro_to_iceberg(self, avro_schema: dict[str, Any]) -> Schema:
         """Convert an Apache Avro into an Apache Iceberg schema equivalent.
 
@@ -127,6 +135,7 @@ class AvroSchemaConversion:
         Returns:
             Equivalent Iceberg schema.
         """
+        self._named_types = {}
         return Schema(*[self._convert_field(field) for field in avro_schema["fields"]], schema_id=1)
 
     def iceberg_to_avro(self, schema: Schema, schema_name: str | None = None) -> AvroType:
@@ -197,26 +206,33 @@ class AvroSchemaConversion:
         """
         if isinstance(avro_type, str) and avro_type in PRIMITIVE_FIELD_TYPE_MAPPING:
             return PRIMITIVE_FIELD_TYPE_MAPPING[avro_type]
+        elif isinstance(avro_type, str) and avro_type in self._named_types:
+            # A reference to a named type defined earlier, e.g. "decimal_10_2"
+            return self._named_types[avro_type]
         elif isinstance(avro_type, dict):
             if "logicalType" in avro_type:
-                return self._convert_logical_type(avro_type)
+                iceberg_type = self._convert_logical_type(avro_type)
             else:
                 # Resolve potential nested types
                 while "type" in avro_type and isinstance(avro_type["type"], dict):
                     avro_type = avro_type["type"]
                 type_identifier = avro_type["type"]
                 if type_identifier == "record":
-                    return self._convert_record_type(avro_type)
+                    iceberg_type = self._convert_record_type(avro_type)
                 elif type_identifier == "array":
-                    return self._convert_array_type(avro_type)
+                    iceberg_type = self._convert_array_type(avro_type)
                 elif type_identifier == "map":
-                    return self._convert_map_type(avro_type)
+                    iceberg_type = self._convert_map_type(avro_type)
                 elif type_identifier == "fixed":
-                    return self._convert_fixed_type(avro_type)
+                    iceberg_type = self._convert_fixed_type(avro_type)
                 elif isinstance(type_identifier, str) and type_identifier in PRIMITIVE_FIELD_TYPE_MAPPING:
-                    return PRIMITIVE_FIELD_TYPE_MAPPING[type_identifier]
+                    iceberg_type = PRIMITIVE_FIELD_TYPE_MAPPING[type_identifier]
                 else:
                     raise TypeError(f"Type not recognized: {avro_type}")
+            if avro_type.get("type") in AVRO_NAMED_TYPES and isinstance(name := avro_type.get("name"), str):
+                # A repeated definition of the same name is accepted, as older writers produced it
+                self._named_types[name] = iceberg_type
+            return iceberg_type
         else:
             raise TypeError(f"Type not recognized: {avro_type}")
 
@@ -497,6 +513,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
     last_list_field_id: int
     last_map_key_field_id: int
     last_map_value_field_id: int
+    defined_names: set[str]
 
     def __init__(self, schema_name: str | None) -> None:
         """Convert an Iceberg schema to an Avro schema.
@@ -505,6 +522,18 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
             schema_name: The name of the root record.
         """
         self.schema_name = schema_name
+        self.defined_names: set[str] = set()
+
+    def _define_once(self, named_type: dict[str, Any]) -> AvroType:
+        """Return the definition of a named type the first time, and a reference to its name after that.
+
+        Avro allows only one definition per name; later uses must refer to it by name.
+        """
+        name = named_type["name"]
+        if name in self.defined_names:
+            return name
+        self.defined_names.add(name)
+        return named_type
 
     def schema(self, schema: Schema, struct_result: AvroType) -> AvroType:
         if isinstance(struct_result, dict) and self.schema_name is not None:
@@ -582,17 +611,19 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
             }
 
     def visit_fixed(self, fixed_type: FixedType) -> AvroType:
-        return {"type": "fixed", "size": len(fixed_type), "name": f"fixed_{len(fixed_type)}"}
+        return self._define_once({"type": "fixed", "size": len(fixed_type), "name": f"fixed_{len(fixed_type)}"})
 
     def visit_decimal(self, decimal_type: DecimalType) -> AvroType:
-        return {
-            "type": "fixed",
-            "size": decimal_required_bytes(decimal_type.precision),
-            "logicalType": "decimal",
-            "precision": decimal_type.precision,
-            "scale": decimal_type.scale,
-            "name": f"decimal_{decimal_type.precision}_{decimal_type.scale}",
-        }
+        return self._define_once(
+            {
+                "type": "fixed",
+                "size": decimal_required_bytes(decimal_type.precision),
+                "logicalType": "decimal",
+                "precision": decimal_type.precision,
+                "scale": decimal_type.scale,
+                "name": f"decimal_{decimal_type.precision}_{decimal_type.scale}",
+            }
+        )
 
     def visit_boolean(self, boolean_type: BooleanType) -> AvroType:
         return "boolean"
@@ -631,7 +662,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         return "string"
 
     def visit_uuid(self, uuid_type: UUIDType) -> AvroType:
-        return {"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed"}
+        return self._define_once({"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed"})
 
     def visit_binary(self, binary_type: BinaryType) -> AvroType:
         return "bytes"
