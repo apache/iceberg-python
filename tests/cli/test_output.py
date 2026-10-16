@@ -14,3 +14,65 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+import json
+
+import pytest
+
+from pyiceberg.cli.output import JsonOutput
+from pyiceberg.table.refs import SnapshotRefType
+
+
+def test_json_describe_refs_single_ref(capsys: pytest.CaptureFixture) -> None:
+    JsonOutput().describe_refs(
+        [
+            (
+                "main",
+                SnapshotRefType.BRANCH,
+                {
+                    "min_snapshots_to_keep": "1",
+                    "max_snapshot_age_ms": "432000000",
+                    "max_ref_age_ms": "forever",
+                },
+            )
+        ]
+    )
+
+    assert json.loads(capsys.readouterr().out) == [
+        {
+            "name": "main",
+            "type": "branch",
+            "min_snapshots_to_keep": "1",
+            "max_snapshot_age_ms": "432000000",
+            "max_ref_age_ms": "forever",
+        }
+    ]
+
+
+def test_json_describe_refs_multiple_refs(capsys: pytest.CaptureFixture) -> None:
+    JsonOutput().describe_refs(
+        [
+            (
+                "main",
+                SnapshotRefType.BRANCH,
+                {
+                    "min_snapshots_to_keep": "1",
+                    "max_snapshot_age_ms": "432000000",
+                    "max_ref_age_ms": "forever",
+                },
+            ),
+            ("v1.0", SnapshotRefType.TAG, {"max_ref_age_ms": "forever"}),
+            ("no-retention", SnapshotRefType.BRANCH, {}),
+        ]
+    )
+
+    assert json.loads(capsys.readouterr().out) == [
+        {
+            "name": "main",
+            "type": "branch",
+            "min_snapshots_to_keep": "1",
+            "max_snapshot_age_ms": "432000000",
+            "max_ref_age_ms": "forever",
+        },
+        {"name": "v1.0", "type": "tag", "max_ref_age_ms": "forever"},
+        {"name": "no-retention", "type": "branch"},
+    ]
