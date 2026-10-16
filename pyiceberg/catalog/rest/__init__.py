@@ -447,7 +447,12 @@ class NamespaceResponse(IcebergBaseModel):
 class UpdateNamespacePropertiesResponse(IcebergBaseModel):
     removed: list[str] = Field()
     updated: list[str] = Field()
-    missing: list[str] = Field()
+    # optional and nullable in the REST spec; servers may omit it when nothing is missing
+    missing: list[str] = Field(default_factory=list)
+
+    @field_validator("missing", mode="before")
+    def missing_null_to_empty(cls, missing: list[str] | None) -> list[str]:
+        return missing if missing is not None else []
 
 
 class ListTableResponseEntry(IcebergBaseModel):
