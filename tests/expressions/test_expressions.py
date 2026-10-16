@@ -818,6 +818,16 @@ def test_bound_is_not_null(term: BoundReference) -> None:
     assert bound_not_null == eval(repr(bound_not_null))
 
 
+def test_bound_is_null_direct_construction_does_not_fold_even_for_required_field() -> None:
+    # The required-field fold now lives in IsNull.bind()/NotNull.bind(), not here.
+    required_term = BoundReference(
+        field=NestedField(field_id=1, name="foo", field_type=StringType(), required=True),
+        accessor=Accessor(position=0),
+    )
+    assert isinstance(BoundIsNull(required_term), BoundIsNull)
+    assert isinstance(BoundNotNull(required_term), BoundNotNull)
+
+
 def test_is_null() -> None:
     ref = Reference("a")
     is_null = IsNull(ref)
@@ -1290,6 +1300,31 @@ def test_nested_bind() -> None:
     schema = Schema(NestedField(1, "foo", StructType(NestedField(2, "bar", StringType()))), schema_id=1)
     bound = BoundIsNull(BoundReference(schema.find_field(2), schema.accessor_for_field(2)))
     assert IsNull(Reference("foo.bar")).bind(schema) == bound
+
+
+def test_is_null_required_field_under_optional_ancestor_does_not_bind_to_always_false() -> None:
+    # "bar" is required but "foo" is optional, so "bar" can still be missing.
+    schema = Schema(
+        NestedField(1, "foo", StructType(NestedField(2, "bar", StringType(), required=True)), required=False),
+        schema_id=1,
+    )
+    bound = IsNull(Reference("foo.bar")).bind(schema)
+    assert bound != AlwaysFalse()
+    assert isinstance(bound, BoundIsNull)
+
+    bound_not_null = NotNull(Reference("foo.bar")).bind(schema)
+    assert bound_not_null != AlwaysTrue()
+    assert isinstance(bound_not_null, BoundNotNull)
+
+
+def test_is_null_required_field_under_required_ancestor_binds_to_always_false() -> None:
+    # Both "foo" and "bar" are required, so this still folds.
+    schema = Schema(
+        NestedField(1, "foo", StructType(NestedField(2, "bar", StringType(), required=True)), required=True),
+        schema_id=1,
+    )
+    assert IsNull(Reference("foo.bar")).bind(schema) == AlwaysFalse()
+    assert NotNull(Reference("foo.bar")).bind(schema) == AlwaysTrue()
 
 
 def test_bind_dot_name() -> None:
