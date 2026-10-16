@@ -3090,6 +3090,14 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     - Then we produce a set of partitions by filtering on each of the combinations
     - We combine the chunks to create a copy to avoid GIL congestion on the original table
     """
+    # PyArrow has no group by, filter or take kernels for view types, so replace them with their large counterparts
+    arrow_schema = pa.schema(
+        [field.with_type(_replace_view_types(field.type)) for field in arrow_table.schema],
+        metadata=arrow_table.schema.metadata,
+    )
+    if arrow_schema != arrow_table.schema:
+        arrow_table = arrow_table.cast(arrow_schema)
+
     # Assign unique names to columns where the partition transform has been applied
     # to avoid conflicts
     partition_fields = [f"_partition_{field.name}" for field in spec.fields]
@@ -3139,6 +3147,29 @@ def _partition_value_filter(partition_field_name: str, value: Any) -> pc.Express
     elif isinstance(value, float) and math.isnan(value):
         return pc.is_nan(pc.field(partition_field_name))
     return pc.field(partition_field_name) == value
+
+
+def _replace_view_types(arrow_type: pa.DataType) -> pa.DataType:
+    """Replace string_view and binary_view, including nested occurrences, with large_string and large_binary."""
+    if pa.types.is_string_view(arrow_type):
+        return pa.large_string()
+    elif pa.types.is_binary_view(arrow_type):
+        return pa.large_binary()
+    elif isinstance(arrow_type, pa.StructType):
+        return pa.struct([field.with_type(_replace_view_types(field.type)) for field in arrow_type])
+    elif isinstance(arrow_type, pa.MapType):
+        return pa.map_(
+            arrow_type.key_field.with_type(_replace_view_types(arrow_type.key_type)),
+            arrow_type.item_field.with_type(_replace_view_types(arrow_type.item_type)),
+            keys_sorted=arrow_type.keys_sorted,
+        )
+    elif isinstance(arrow_type, pa.LargeListType):
+        return pa.large_list(arrow_type.value_field.with_type(_replace_view_types(arrow_type.value_type)))
+    elif isinstance(arrow_type, pa.FixedSizeListType):
+        return pa.list_(arrow_type.value_field.with_type(_replace_view_types(arrow_type.value_type)), arrow_type.list_size)
+    elif isinstance(arrow_type, pa.ListType):
+        return pa.list_(arrow_type.value_field.with_type(_replace_view_types(arrow_type.value_type)))
+    return arrow_type
 
 
 def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:
