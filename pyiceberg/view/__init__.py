@@ -30,16 +30,20 @@ class View:
     _identifier: Identifier
     metadata: ViewMetadata
     config: dict[str, str]
+    # None when no metadata location is available, such as for directly constructed views.
+    metadata_location: str | None
 
     def __init__(
         self,
         identifier: Identifier,
         metadata: ViewMetadata,
         config: dict[str, str] = EMPTY_DICT,
+        metadata_location: str | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
         self.config = config
+        self.metadata_location = metadata_location
 
     def name(self) -> Identifier:
         """Return the identifier of this view."""
@@ -92,4 +96,5 @@ class View:
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the View class."""
+        # Metadata location is intentionally excluded from view equality.
         return self.name() == other.name() and self.metadata == other.metadata if isinstance(other, View) else False

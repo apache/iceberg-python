@@ -1765,6 +1765,7 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
     )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
+    assert actual.metadata_location == example_view_metadata_rest_json["metadata-location"]
 
 
 def test_create_view_409(
@@ -1812,6 +1813,7 @@ def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[
     expected = View(identifier=("fokko", "view"), metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]))
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
+    assert actual.metadata_location == example_view_metadata_rest_json["metadata-location"]
 
 
 def test_load_view_404(rest_mock: Mocker) -> None:
@@ -2772,6 +2774,7 @@ def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: d
     )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
+    assert actual.metadata_location == example_view_metadata_rest_json["metadata-location"]
 
 
 def test_register_view_409_view(rest_mock: Mocker) -> None:
