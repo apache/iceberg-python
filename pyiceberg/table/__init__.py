@@ -1211,6 +1211,39 @@ class Transaction:
 
         return self._table
 
+    def _changes_for_multi_table_commit(self) -> tuple[tuple[TableRequirement, ...], tuple[TableUpdate, ...]]:
+        """Return the requirements and updates to send in a multi-table commit.
+
+        Adds the same ``AssertTableUUID`` requirement that ``commit_transaction`` adds, so the
+        commit fails if the table was dropped and recreated under the same name.
+        """
+        if self._failed:
+            raise RuntimeError("This transaction failed to commit and cannot be reused; create a new transaction.")
+        if not any(isinstance(requirement, AssertTableUUID) for requirement in self._requirements):
+            self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
+        return self._requirements, self._updates
+
+    def _multi_table_commit_succeeded(self) -> None:
+        """Clean up after a multi-table commit that included this transaction succeeded."""
+        self._cleanup_uncommitted_manifests()
+        self._snapshot_producers = []
+        self._updates = ()
+        self._requirements = ()
+        self._table.refresh()
+
+    def _multi_table_commit_failed(self, outcome_known: bool) -> None:
+        """Handle a multi-table commit that included this transaction and did not succeed.
+
+        Args:
+            outcome_known: True if the commit is known not to have landed, so the files written
+                for it can be deleted. False if the outcome is unknown: the files are kept,
+                because the catalog may already reference them.
+        """
+        if outcome_known:
+            for producer in self._snapshot_producers:
+                producer._clean_all_uncommitted()
+        self._failed = True
+
     def _cleanup_uncommitted_manifests(self) -> None:
         """Clean up manifests from failed retry attempts after a successful commit."""
         for producer in self._snapshot_producers:
@@ -1316,6 +1349,12 @@ class CommitTableRequest(IcebergBaseModel):
     identifier: TableIdentifier = Field()
     requirements: tuple[TableRequirement, ...] = Field(default_factory=tuple)
     updates: tuple[TableUpdate, ...] = Field(default_factory=tuple)
+
+
+class CommitTransactionRequest(IcebergBaseModel):
+    """A pydantic BaseModel for a multi-table commit request."""
+
+    table_changes: list[CommitTableRequest] = Field(alias="table-changes")
 
 
 class CommitTableResponse(IcebergBaseModel):

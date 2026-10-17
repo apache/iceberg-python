@@ -1408,6 +1408,30 @@ assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
 New snapshot summaries automatically include `engine-name` (`pyiceberg`) and `engine-version`
 (the installed PyIceberg version). These values override same-named entries in `snapshot_properties`.
 
+## Multi-table commits
+
+With the REST catalog, changes to several tables can be committed atomically: either every table
+is updated, or none of them is. Stage the changes in one transaction per table, then pass the
+transactions to `commit_transactions`:
+
+```python
+orders_tx = orders.transaction()
+orders_tx.append(new_orders)
+items_tx = items.transaction()
+items_tx.append(new_items)
+
+catalog.commit_transactions(orders_tx, items_tx)
+```
+
+The commit uses the `POST /v1/{prefix}/transactions/commit` endpoint of the REST catalog
+specification, and each table is refreshed afterwards. A few things differ from committing one
+transaction:
+
+- A conflict raises `CommitFailedException` and isn't retried: nothing was applied, so stage the
+  changes again and commit again.
+- Each table can appear in only one transaction, and creating a table isn't supported.
+- Other catalogs raise `NotImplementedError`.
+
 ## Snapshot Management
 
 Manage snapshots with operations through the `Table` API:

@@ -54,6 +54,8 @@ from pyiceberg.catalog.rest import (
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
+    CommitFailedException,
+    CommitStateUnknownException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIdentifierError,
@@ -122,6 +124,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_DELETE_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
     Capability.V1_TABLE_SCAN_PLAN_TASKS,
+    Capability.V1_COMMIT_TRANSACTION,
 ]
 
 
@@ -3533,3 +3536,172 @@ def test_load_table_without_storage_credentials(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def _load_tables_for_multi_table_commit(
+    rest_mock: Mocker, table_metadata: dict[str, Any], names: tuple[str, ...] = ("orders", "items")
+) -> tuple[RestCatalog, list[Table]]:
+    for name in names:
+        rest_mock.get(
+            f"{TEST_URI}v1/namespaces/sales/tables/{name}",
+            json=table_metadata,
+            status_code=200,
+            request_headers=TEST_HEADERS,
+        )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    return catalog, [catalog.load_table(("sales", name)) for name in names]
+
+
+def test_commit_transactions_sends_one_request(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    catalog, (orders, items) = _load_tables_for_multi_table_commit(rest_mock, example_table_metadata_with_snapshot_v1_rest_json)
+    commit = rest_mock.post(f"{TEST_URI}v1/transactions/commit", status_code=204, request_headers=TEST_HEADERS)
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+
+    orders_tx = orders.transaction().set_properties(owner="sales")
+    items_tx = items.transaction().set_properties(owner="sales")
+    catalog.commit_transactions(orders_tx, items_tx)
+
+    assert commit.call_count == 1
+    assert commit.last_request.json() == {
+        "table-changes": [
+            {
+                "identifier": {"namespace": ["sales"], "name": name},
+                "requirements": [{"type": "assert-table-uuid", "uuid": table_uuid}],
+                "updates": [{"action": "set-properties", "updates": {"owner": "sales"}}],
+            }
+            for name in ("orders", "items")
+        ]
+    }
+    # Each table is loaded again after the commit, and the transactions are empty.
+    assert rest_mock.call_count == 1 + 2 + 1 + 2
+    assert orders_tx._updates == () and items_tx._updates == ()
+
+
+def test_commit_transactions_with_prefix(
+    requests_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={
+            "defaults": {},
+            "overrides": {"prefix": "lake"},
+            "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS],
+        },
+        status_code=200,
+    )
+    requests_mock.get(f"{TEST_URI}v1/lake/namespaces/sales/tables/orders", json=example_table_metadata_with_snapshot_v1_rest_json)
+    commit = requests_mock.post(f"{TEST_URI}v1/lake/transactions/commit", status_code=204)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    catalog.commit_transactions(catalog.load_table(("sales", "orders")).transaction().set_properties(owner="sales"))
+
+    assert commit.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("status_code", "exception"),
+    [
+        (404, NoSuchTableError),
+        (409, CommitFailedException),
+        (500, CommitStateUnknownException),
+        (502, CommitStateUnknownException),
+        (504, CommitStateUnknownException),
+    ],
+)
+def test_commit_transactions_errors(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    status_code: int,
+    exception: type[Exception],
+) -> None:
+    catalog, (orders, items) = _load_tables_for_multi_table_commit(rest_mock, example_table_metadata_with_snapshot_v1_rest_json)
+    rest_mock.post(
+        f"{TEST_URI}v1/transactions/commit",
+        json={"error": {"message": "Commit failed", "type": "Error", "code": status_code}},
+        status_code=status_code,
+        request_headers=TEST_HEADERS,
+    )
+    orders_tx = orders.transaction().set_properties(owner="sales")
+    items_tx = items.transaction().set_properties(owner="sales")
+
+    with pytest.raises(exception, match="Commit failed"):
+        catalog.commit_transactions(orders_tx, items_tx)
+
+    # Neither table was reloaded, and the failed transactions can't be committed again.
+    assert rest_mock.call_count == 1 + 2 + 1
+    with pytest.raises(RuntimeError, match="failed to commit"):
+        orders_tx.commit_transaction()
+
+
+@pytest.mark.parametrize(("status_code", "files_deleted"), [(409, True), (500, False)])
+def test_commit_transactions_cleans_up_only_when_nothing_was_applied(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any],
+    status_code: int,
+    files_deleted: bool,
+) -> None:
+    catalog, (orders,) = _load_tables_for_multi_table_commit(
+        rest_mock, example_table_metadata_with_snapshot_v1_rest_json, names=("orders",)
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/transactions/commit",
+        json={"error": {"message": "Commit failed", "type": "Error", "code": status_code}},
+        status_code=status_code,
+    )
+    orders_tx = orders.transaction().set_properties(owner="sales")
+    producer = mock.MagicMock()
+    orders_tx._snapshot_producers.append(producer)
+
+    with pytest.raises((CommitFailedException, CommitStateUnknownException)):
+        catalog.commit_transactions(orders_tx)
+
+    assert producer._clean_all_uncommitted.called is files_deleted
+
+
+def test_commit_transactions_skips_transactions_without_changes(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    catalog, (orders, items) = _load_tables_for_multi_table_commit(rest_mock, example_table_metadata_with_snapshot_v1_rest_json)
+    commit = rest_mock.post(f"{TEST_URI}v1/transactions/commit", status_code=204)
+
+    catalog.commit_transactions(orders.transaction(), items.transaction())
+    assert commit.call_count == 0
+
+    catalog.commit_transactions(orders.transaction().set_properties(owner="sales"), items.transaction())
+    assert [change["identifier"]["name"] for change in commit.last_request.json()["table-changes"]] == ["orders"]
+
+
+def test_commit_transactions_rejects_invalid_input(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    catalog, (orders, items) = _load_tables_for_multi_table_commit(rest_mock, example_table_metadata_with_snapshot_v1_rest_json)
+    other_catalog = RestCatalog("other", uri=TEST_URI, token=TEST_TOKEN)
+    orders_tx = orders.transaction().set_properties(owner="sales")
+
+    with pytest.raises(ValueError, match="At least one transaction"):
+        catalog.commit_transactions()
+    with pytest.raises(ValueError, match="only once"):
+        catalog.commit_transactions(orders_tx, orders_tx)
+    with pytest.raises(ValueError, match="More than one transaction changes table"):
+        catalog.commit_transactions(orders_tx, orders.transaction().set_properties(team="b"))
+    with pytest.raises(ValueError, match="belongs to a different catalog"):
+        other_catalog.commit_transactions(orders_tx)
+    assert not any(request.path.endswith("/transactions/commit") for request in rest_mock.request_history)
+
+
+def test_commit_transactions_endpoint_not_supported(
+    requests_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_TABLE)]},
+        status_code=200,
+    )
+    requests_mock.get(f"{TEST_URI}v1/namespaces/sales/tables/orders", json=example_table_metadata_with_snapshot_v1_rest_json)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    orders_tx = catalog.load_table(("sales", "orders")).transaction().set_properties(owner="sales")
+
+    with pytest.raises(NotImplementedError, match="transactions/commit"):
+        catalog.commit_transactions(orders_tx)
