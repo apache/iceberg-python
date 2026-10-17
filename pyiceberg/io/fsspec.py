@@ -231,6 +231,13 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if s3_additional_kwargs:
         s3_fs_kwargs["s3_additional_kwargs"] = s3_additional_kwargs
 
+    # Signers are registered after construction, so they are not part of the
+    # constructor kwargs fsspec uses as a cache key. Disable instance caching
+    # whenever a custom signer is in play so two catalogs do not share one FS
+    # and overwrite each other's before-sign handler.
+    if register_events:
+        s3_fs_kwargs["skip_instance_cache"] = True
+
     fs = S3FileSystem(**s3_fs_kwargs)
 
     for event_name, event_function in register_events.items():
