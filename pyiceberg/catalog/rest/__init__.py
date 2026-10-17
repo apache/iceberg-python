@@ -176,6 +176,7 @@ class Endpoints:
     register_view: str = "namespaces/{namespace}/register-view"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
+    rename_view: str = "views/rename"
     plan_table_scan: str = "namespaces/{namespace}/tables/{table}/plan"
     # Use plan_id (underscore) for str.format; Capability paths use {plan-id} to match the REST spec.
     fetch_planning_result: str = "namespaces/{namespace}/tables/{table}/plan/{plan_id}"
@@ -211,6 +212,7 @@ class Capability:
     V1_CREATE_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.create_view}")
     V1_REGISTER_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_view}")
     V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
+    V1_RENAME_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.rename_view}")
     V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
     # Spec advertises {plan-id}; must match ConfigResponse endpoint strings from servers.
     V1_FETCH_TABLE_SCAN_PLAN = Endpoint(
@@ -248,6 +250,7 @@ VIEW_ENDPOINTS: frozenset[Endpoint] = frozenset(
         Capability.V1_LOAD_VIEW,
         Capability.V1_CREATE_VIEW,
         Capability.V1_DELETE_VIEW,
+        Capability.V1_RENAME_VIEW,
     )
 )
 
@@ -1854,6 +1857,29 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchViewError})
+
+    @override
+    @retry(**_RETRY_ARGS)
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        self._check_endpoint(Capability.V1_RENAME_VIEW)
+        source = self._split_identifier_for_json(from_identifier)
+        destination = self._split_identifier_for_json(to_identifier)
+
+        # Ensure that namespaces exist on source and destination.
+        source_namespace = source["namespace"]
+        if not self.namespace_exists(source_namespace):
+            raise NoSuchNamespaceError(f"Source namespace does not exist: {source_namespace}")
+
+        destination_namespace = destination["namespace"]
+        if not self.namespace_exists(destination_namespace):
+            raise NoSuchNamespaceError(f"Destination namespace does not exist: {destination_namespace}")
+
+        payload = {"source": source, "destination": destination}
+        response = self._session.post(self.url(Endpoints.rename_view), json=payload)
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchViewError, 409: ViewAlreadyExistsError})
 
     def close(self) -> None:
         """Close the catalog and release Session connection adapters.
