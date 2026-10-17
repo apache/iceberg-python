@@ -81,12 +81,14 @@ from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
     CommitTableRequest,
     CommitTableResponse,
+    CommitTransactionRequest,
     CreateTableTransaction,
     FileScanTask,
     StagedTable,
     Table,
     TableIdentifier,
     TableProperties,
+    Transaction,
 )
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
@@ -182,6 +184,7 @@ class Endpoints:
     fetch_planning_result: str = "namespaces/{namespace}/tables/{table}/plan/{plan_id}"
     cancel_planning: str = "namespaces/{namespace}/tables/{table}/plan/{plan_id}"
     fetch_scan_tasks: str = "namespaces/{namespace}/tables/{table}/tasks"
+    commit_transaction: str = "transactions/commit"
 
 
 API_PREFIX = "/v1/{prefix}"
@@ -222,6 +225,7 @@ class Capability:
         http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/namespaces/{{namespace}}/tables/{{table}}/plan/{{plan-id}}"
     )
     V1_TABLE_SCAN_PLAN_TASKS = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.fetch_scan_tasks}")
+    V1_COMMIT_TRANSACTION = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.commit_transaction}")
 
 
 # Default endpoints for backwards compatibility with legacy servers that don't return endpoints
@@ -240,6 +244,7 @@ DEFAULT_ENDPOINTS: frozenset[Endpoint] = frozenset(
         Capability.V1_DELETE_TABLE,
         Capability.V1_RENAME_TABLE,
         Capability.V1_REGISTER_TABLE,
+        Capability.V1_COMMIT_TRANSACTION,
     )
 )
 
@@ -1637,6 +1642,97 @@ class RestCatalog(Catalog):
                 },
             )
         return CommitTableResponse.model_validate_json(response.text)
+
+    @override
+    def commit_transactions(self, *transactions: Transaction) -> None:
+        """Commit the changes of several table transactions atomically.
+
+        Sends the staged changes of every transaction in one request to the
+        ``transactions/commit`` endpoint: either all of them are applied, or none. Each
+        table is refreshed after a successful commit. Unlike ``Transaction.commit_transaction``,
+        a conflict is not retried: re-stage the changes and commit again.
+
+        Args:
+            transactions: The transactions to commit, at most one per table. Transactions
+                without staged changes are skipped.
+
+        Raises:
+            ValueError: If no transaction was given, a transaction is given twice, two
+                transactions change the same table, a transaction belongs to another catalog,
+                or a transaction creates a table.
+            NotImplementedError: If the server does not support multi-table commits.
+            NoSuchTableError: If one of the tables does not exist.
+            CommitFailedException: A requirement wasn't met, or a concurrent commit conflicted.
+                Nothing was applied.
+            CommitStateUnknownException: The catalog failed with an internal error; the commit
+                may or may not have been applied.
+        """
+        if not transactions:
+            raise ValueError("At least one transaction is required")
+        if len({id(transaction) for transaction in transactions}) != len(transactions):
+            raise ValueError("A transaction can be committed only once per call")
+        identifiers: set[Identifier] = set()
+        for transaction in transactions:
+            if isinstance(transaction, CreateTableTransaction):
+                raise ValueError("Creating a table in a multi-table commit is not supported")
+            table = transaction._table  # pylint: disable=W0212
+            if table.catalog is not self:
+                raise ValueError(f"Table {table.name()} belongs to a different catalog")
+            if table.name() in identifiers:
+                raise ValueError(f"More than one transaction changes table {table.name()}")
+            identifiers.add(table.name())
+
+        staged = [transaction for transaction in transactions if transaction._updates]  # pylint: disable=W0212
+        if not staged:
+            return
+        self._check_endpoint(Capability.V1_COMMIT_TRANSACTION)
+
+        table_changes = []
+        for transaction in staged:
+            requirements, updates = transaction._changes_for_multi_table_commit()  # pylint: disable=W0212
+            identifier = transaction._table.name()  # pylint: disable=W0212
+            table_changes.append(
+                CommitTableRequest(
+                    identifier=TableIdentifier(namespace=identifier[:-1], name=identifier[-1]),
+                    requirements=requirements,
+                    updates=updates,
+                )
+            )
+        request = CommitTransactionRequest(table_changes=table_changes)
+
+        try:
+            self._post_commit_transaction(request)
+        except (CommitFailedException, NoSuchTableError):
+            for transaction in staged:
+                transaction._multi_table_commit_failed(outcome_known=True)  # pylint: disable=W0212
+            raise
+        except Exception:
+            for transaction in staged:
+                transaction._multi_table_commit_failed(outcome_known=False)  # pylint: disable=W0212
+            raise
+
+        for transaction in staged:
+            transaction._multi_table_commit_succeeded()  # pylint: disable=W0212
+
+    @retry(**_RETRY_ARGS)
+    def _post_commit_transaction(self, request: CommitTransactionRequest) -> None:
+        response = self._session.post(
+            self.url(Endpoints.commit_transaction, prefixed=True),
+            data=request.model_dump_json().encode(UTF8),
+        )
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(
+                exc,
+                {
+                    404: NoSuchTableError,
+                    409: CommitFailedException,
+                    500: CommitStateUnknownException,
+                    502: CommitStateUnknownException,
+                    504: CommitStateUnknownException,
+                },
+            )
 
     @retry(**_RETRY_ARGS)
     @override
