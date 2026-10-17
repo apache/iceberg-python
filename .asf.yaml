@@ -35,22 +35,6 @@ github:
     rebase: true
   protected_branches:
     main:
-      required_status_checks:
-        contexts:
-          # Repository policy and security checks.
-          - Analyze Actions
-          - Run zizmor 🌈
-          - asf-allowlist-check
-          - rat
-
-          # Documentation checks.
-          - docs
-          - markdown-link-check
-
-          # Python workflow gates.
-          - python-ci-required
-          - python-integration-required
-
       required_pull_request_reviews:
         required_approving_review_count: 1
 
@@ -65,6 +49,24 @@ github:
             - "~DEFAULT_BRANCH"
           exclude: []
       rules:
+        - type: required_status_checks
+          parameters:
+            # Merge Queue already tests each entry against the latest main
+            strict_required_status_checks_policy: false
+            required_status_checks:
+              # Repository policy and security checks.
+              - context: Analyze Actions
+              - context: Run zizmor 🌈
+              - context: asf-allowlist-check
+              - context: rat
+
+              # Documentation checks.
+              - context: docs
+              - context: markdown-link-check
+
+              # Python workflow gates.
+              - context: python-ci-required
+              - context: python-integration-required
         - type: merge_queue
           parameters:
             check_response_timeout_minutes: 90
