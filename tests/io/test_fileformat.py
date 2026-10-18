@@ -74,6 +74,9 @@ def test_result_before_close_raises() -> None:
         def close(self) -> DataFileStatistics:
             raise NotImplementedError
 
+        def length(self) -> int:
+            return 0
+
     writer = _DummyWriter()
     with pytest.raises(RuntimeError, match="Writer has not been closed yet"):
         writer.result()
