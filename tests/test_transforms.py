@@ -17,7 +17,7 @@
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
@@ -1641,6 +1641,22 @@ def test_strict_binary(bound_reference_binary: BoundReference) -> None:
 )
 def test_to_partition_representation_timestamps(source_type: PrimitiveType, value: Any, expected: Any) -> None:
     assert _to_partition_representation(source_type, value) == expected
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        pytest.param(None, None, id="none"),
+        pytest.param(time(0), 0, id="midnight"),
+        pytest.param(time(12, 34, 56, 123456), 45_296_123_456, id="microseconds"),
+        pytest.param(time(23, 59, 59, 999999), 86_399_999_999, id="end_of_day"),
+        pytest.param(0, 0, id="zero_int_passthrough"),
+        pytest.param(12, 12, id="bucket_int_passthrough"),
+        pytest.param(86_399_999_999, 86_399_999_999, id="time_int_passthrough"),
+    ],
+)
+def test_to_partition_representation_time(value: int | time | None, expected: int | None) -> None:
+    assert _to_partition_representation(TimeType(), value) == expected
 
 
 def test_to_partition_representation_unrecognized_type_raises() -> None:
