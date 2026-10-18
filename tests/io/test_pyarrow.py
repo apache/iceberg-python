@@ -3211,6 +3211,48 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
 
 
+def test__to_requested_schema_null_map_of_structs() -> None:
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_map_with_struct",
+            MapType(
+                11,
+                StringType(),
+                12,
+                StructType(NestedField(121, "source", StringType(), required=False)),
+                value_required=False,
+            ),
+            required=False,
+        ),
+        NestedField(2, "col_map", MapType(21, StringType(), 22, IntegerType(), value_required=False), required=False),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("col_map_with_struct", pa.map_(pa.string(), pa.struct([pa.field("source", pa.string())]))),
+            pa.field("col_map", pa.map_(pa.string(), pa.int32())),
+        ]
+    )
+    batch = pa.RecordBatch.from_arrays(
+        [
+            pa.array(
+                [[("a", {"source": "x"})], [], None, [("b", {"source": "y"}), ("c", None)]], type=arrow_schema.field(0).type
+            ),
+            pa.array([[("a", 1)], [], None, [("b", 2), ("c", None)]], type=arrow_schema.field(1).type),
+        ],
+        schema=arrow_schema,
+    )
+
+    result = _to_requested_schema(requested_schema, requested_schema, batch)
+    assert result.column(0).to_pylist() == [[("a", {"source": "x"})], [], None, [("b", {"source": "y"}), ("c", None)]]
+    assert result.column(1).to_pylist() == [[("a", 1)], [], None, [("b", 2), ("c", None)]]
+
+    # A sliced batch has to keep the nulls as well
+    result = _to_requested_schema(requested_schema, requested_schema, batch.slice(1, 3))
+    assert result.column(0).to_pylist() == [[], None, [("b", {"source": "y"}), ("c", None)]]
+    assert result.column(1).to_pylist() == [[], None, [("b", 2), ("c", None)]]
+
+
 @pytest.mark.parametrize(
     "arrow_type,iceberg_type,expected_arrow_type",
     [

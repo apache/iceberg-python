@@ -1676,7 +1676,8 @@ class RestCatalog(Catalog):
 
         while True:
             if namespace_tuple:
-                params["parent"] = self._encode_namespace_path(namespace_tuple)
+                # Query parameters are URL-encoded by requests, so the parts must not be quoted here as well
+                params["parent"] = self._namespace_separator.join(namespace_tuple)
             if page_token:
                 params["pageToken"] = page_token
             response = self._session.get(self.url(Endpoints.list_namespaces), params=params)
