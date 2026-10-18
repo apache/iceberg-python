@@ -1607,6 +1607,51 @@ class _ConvertToSmallTypes(PyArrowSchemaVisitor[IcebergType | pa.Schema]):
         return primitive
 
 
+class _ConvertViewTypes(PyArrowSchemaVisitor[pa.Schema | pa.DataType]):
+    """Replace string_view and binary_view, including nested occurrences, with large_string and large_binary.
+
+    Everything else is kept as is: list flavour, field names, nullability, metadata and dictionary encoding.
+    """
+
+    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
+        return pa.schema(struct_result, metadata=schema.metadata)
+
+    def struct(self, struct: pa.StructType, field_results: builtins.list[pa.Field]) -> pa.StructType:
+        return pa.struct(field_results)
+
+    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:
+        return field.with_type(_keep_dictionary(field.type, field_result))
+
+    def list(self, list_type: pa.ListType | pa.LargeListType | pa.FixedSizeListType, element_result: pa.DataType) -> pa.DataType:
+        value_field = list_type.value_field.with_type(_keep_dictionary(list_type.value_type, element_result))
+        if isinstance(list_type, pa.FixedSizeListType):
+            return pa.list_(value_field, list_type.list_size)
+        elif isinstance(list_type, pa.LargeListType):
+            return pa.large_list(value_field)
+        return pa.list_(value_field)
+
+    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
+        return pa.map_(
+            map_type.key_field.with_type(_keep_dictionary(map_type.key_type, key_result)),
+            map_type.item_field.with_type(_keep_dictionary(map_type.item_type, value_result)),
+            keys_sorted=map_type.keys_sorted,
+        )
+
+    def primitive(self, primitive: pa.DataType) -> pa.DataType:
+        if pa.types.is_string_view(primitive):
+            return pa.large_string()
+        elif pa.types.is_binary_view(primitive):
+            return pa.large_binary()
+        return primitive
+
+
+def _keep_dictionary(original: pa.DataType, result: pa.DataType) -> pa.DataType:
+    """Re-apply dictionary encoding that visit_pyarrow strips before visiting the value type."""
+    if isinstance(original, pa.DictionaryType):
+        return pa.dictionary(original.index_type, result, ordered=original.ordered)
+    return result
+
+
 class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
     """
     Converts PyArrowSchema to Iceberg Schema with all -1 ids.
@@ -3112,10 +3157,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     - We combine the chunks to create a copy to avoid GIL congestion on the original table
     """
     # PyArrow has no group by, filter or take kernels for view types, so replace them with their large counterparts
-    arrow_schema = pa.schema(
-        [field.with_type(_replace_view_types(field.type)) for field in arrow_table.schema],
-        metadata=arrow_table.schema.metadata,
-    )
+    arrow_schema = visit_pyarrow(arrow_table.schema, _ConvertViewTypes())
     if arrow_schema != arrow_table.schema:
         arrow_table = arrow_table.cast(arrow_schema)
 
@@ -3168,29 +3210,6 @@ def _partition_value_filter(partition_field_name: str, value: Any) -> pc.Express
     elif isinstance(value, float) and math.isnan(value):
         return pc.is_nan(pc.field(partition_field_name))
     return pc.field(partition_field_name) == value
-
-
-def _replace_view_types(arrow_type: pa.DataType) -> pa.DataType:
-    """Replace string_view and binary_view, including nested occurrences, with large_string and large_binary."""
-    if pa.types.is_string_view(arrow_type):
-        return pa.large_string()
-    elif pa.types.is_binary_view(arrow_type):
-        return pa.large_binary()
-    elif isinstance(arrow_type, pa.StructType):
-        return pa.struct([field.with_type(_replace_view_types(field.type)) for field in arrow_type])
-    elif isinstance(arrow_type, pa.MapType):
-        return pa.map_(
-            arrow_type.key_field.with_type(_replace_view_types(arrow_type.key_type)),
-            arrow_type.item_field.with_type(_replace_view_types(arrow_type.item_type)),
-            keys_sorted=arrow_type.keys_sorted,
-        )
-    elif isinstance(arrow_type, pa.LargeListType):
-        return pa.large_list(arrow_type.value_field.with_type(_replace_view_types(arrow_type.value_type)))
-    elif isinstance(arrow_type, pa.FixedSizeListType):
-        return pa.list_(arrow_type.value_field.with_type(_replace_view_types(arrow_type.value_type)), arrow_type.list_size)
-    elif isinstance(arrow_type, pa.ListType):
-        return pa.list_(arrow_type.value_field.with_type(_replace_view_types(arrow_type.value_type)))
-    return arrow_type
 
 
 def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:
