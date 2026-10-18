@@ -445,7 +445,8 @@ def test_avro_to_iceberg_unknown_named_type_reference() -> None:
         AvroSchemaConversion().avro_to_iceberg(avro_schema)
 
 
-def test_iceberg_to_avro_defines_named_types_once() -> None:
+def test_iceberg_to_avro_names_fixed_types_by_field_id() -> None:
+    """A named type can be defined once per schema, so fixed types used by several fields get the field-id in their name"""
     schema = Schema(
         NestedField(field_id=1, name="a", field_type=DecimalType(10, 2), required=False),
         NestedField(field_id=2, name="b", field_type=DecimalType(10, 2), required=True),
@@ -460,7 +461,18 @@ def test_iceberg_to_avro_defines_named_types_once() -> None:
             required=True,
         ),
         NestedField(field_id=7, name="f", field_type=UUIDType(), required=False),
-        NestedField(field_id=8, name="g", field_type=DecimalType(9, 2), required=True),
+        NestedField(
+            field_id=8,
+            name="g",
+            field_type=ListType(element_id=9, element_type=UUIDType(), element_required=True),
+            required=True,
+        ),
+        NestedField(
+            field_id=10,
+            name="h",
+            field_type=MapType(key_id=11, key_type=UUIDType(), value_id=12, value_type=DecimalType(10, 2)),
+            required=True,
+        ),
         schema_id=1,
     )
 
@@ -468,14 +480,16 @@ def test_iceberg_to_avro_defines_named_types_once() -> None:
     assert isinstance(avro_schema, dict)
     fields = avro_schema["fields"]
     nested_fields = fields[3]["type"]["fields"]
+    map_fields = fields[6]["type"]["items"]["fields"]
 
-    assert fields[0]["type"] == ["null", DECIMAL_10_2]
-    assert fields[1]["type"] == "decimal_10_2"
-    assert fields[2]["type"] == {"type": "fixed", "size": 3, "name": "fixed_3"}
-    assert nested_fields[0]["type"] == ["null", "fixed_3"]
-    assert nested_fields[1]["type"] == {"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed"}
-    assert fields[4]["type"] == ["null", "uuid_fixed"]
-    # a different decimal is a different name, so it gets its own definition
-    assert fields[5]["type"]["name"] == "decimal_9_2"
-    # and the references read back as the same types
+    assert fields[0]["type"] == ["null", {**DECIMAL_10_2, "name": "decimal_10_2_1"}]
+    assert fields[1]["type"] == {**DECIMAL_10_2, "name": "decimal_10_2_2"}
+    assert fields[2]["type"] == {"type": "fixed", "size": 3, "name": "fixed_3_3"}
+    assert nested_fields[0]["type"] == ["null", {"type": "fixed", "size": 3, "name": "fixed_3_5"}]
+    assert nested_fields[1]["type"] == {"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed_6"}
+    assert fields[4]["type"] == ["null", {"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed_7"}]
+    assert fields[5]["type"]["items"]["name"] == "uuid_fixed_9"
+    assert map_fields[0]["type"]["name"] == "uuid_fixed_11"
+    assert map_fields[1]["type"]["name"] == "decimal_10_2_12"
+    # and the schema reads back as the same types
     assert AvroSchemaConversion().avro_to_iceberg(avro_schema) == schema

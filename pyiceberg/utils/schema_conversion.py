@@ -82,7 +82,7 @@ AvroType = str | Any
 
 
 # Avro types that have a name and can be referred to by it later in the schema
-AVRO_NAMED_TYPES = {"record", "enum", "fixed"}
+AVRO_NAMED_TYPES = frozenset({"record", "enum", "fixed"})
 
 
 class AvroSchemaConversion:
@@ -513,7 +513,6 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
     last_list_field_id: int
     last_map_key_field_id: int
     last_map_value_field_id: int
-    defined_names: set[str]
 
     def __init__(self, schema_name: str | None) -> None:
         """Convert an Iceberg schema to an Avro schema.
@@ -522,18 +521,16 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
             schema_name: The name of the root record.
         """
         self.schema_name = schema_name
-        self.defined_names: set[str] = set()
 
-    def _define_once(self, named_type: dict[str, Any]) -> AvroType:
-        """Return the definition of a named type the first time, and a reference to its name after that.
+    @staticmethod
+    def _name_fixed(result: AvroType, field_id: int) -> None:
+        """Add the field-id to the name of a fixed type.
 
-        Avro allows only one definition per name; later uses must refer to it by name.
+        Avro allows only one definition per name, and a decimal, uuid or fixed type can be used by more
+        than one field. Field-ids are unique, so the names stay unique, the same way records are named.
         """
-        name = named_type["name"]
-        if name in self.defined_names:
-            return name
-        self.defined_names.add(name)
-        return named_type
+        if isinstance(result, dict) and result.get("type") == "fixed":
+            result["name"] = f"{result['name']}_{field_id}"
 
     def schema(self, schema: Schema, struct_result: AvroType) -> AvroType:
         if isinstance(struct_result, dict) and self.schema_name is not None:
@@ -556,6 +553,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         # Sets the schema name
         if isinstance(field_result, dict) and field_result.get("type") == "record":
             field_result["name"] = f"r{field.field_id}"
+        self._name_fixed(field_result, field.field_id)
 
         original_name = field.name
         sanitized_name = make_compatible_name(original_name)
@@ -583,9 +581,12 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         # Sets the schema name in case of a record
         if isinstance(element_result, dict) and element_result.get("type") == "record":
             element_result["name"] = f"r{self.last_list_field_id}"
+        self._name_fixed(element_result, self.last_list_field_id)
         return {"type": "array", "element-id": self.last_list_field_id, "items": element_result}
 
     def map(self, map_type: MapType, key_result: AvroType, value_result: AvroType) -> AvroType:
+        self._name_fixed(key_result, self.last_map_key_field_id)
+        self._name_fixed(value_result, self.last_map_value_field_id)
         if isinstance(key_result, StringType):
             # Avro Maps does not support other keys than a String,
             return {
@@ -611,19 +612,17 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
             }
 
     def visit_fixed(self, fixed_type: FixedType) -> AvroType:
-        return self._define_once({"type": "fixed", "size": len(fixed_type), "name": f"fixed_{len(fixed_type)}"})
+        return {"type": "fixed", "size": len(fixed_type), "name": f"fixed_{len(fixed_type)}"}
 
     def visit_decimal(self, decimal_type: DecimalType) -> AvroType:
-        return self._define_once(
-            {
-                "type": "fixed",
-                "size": decimal_required_bytes(decimal_type.precision),
-                "logicalType": "decimal",
-                "precision": decimal_type.precision,
-                "scale": decimal_type.scale,
-                "name": f"decimal_{decimal_type.precision}_{decimal_type.scale}",
-            }
-        )
+        return {
+            "type": "fixed",
+            "size": decimal_required_bytes(decimal_type.precision),
+            "logicalType": "decimal",
+            "precision": decimal_type.precision,
+            "scale": decimal_type.scale,
+            "name": f"decimal_{decimal_type.precision}_{decimal_type.scale}",
+        }
 
     def visit_boolean(self, boolean_type: BooleanType) -> AvroType:
         return "boolean"
@@ -662,7 +661,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         return "string"
 
     def visit_uuid(self, uuid_type: UUIDType) -> AvroType:
-        return self._define_once({"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed"})
+        return {"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed"}
 
     def visit_binary(self, binary_type: BinaryType) -> AvroType:
         return "bytes"

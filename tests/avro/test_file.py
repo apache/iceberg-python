@@ -456,7 +456,7 @@ def test_all_primitive_types(is_required: bool) -> None:
 
 
 def test_repeated_named_types_round_trip() -> None:
-    """Named types used more than once are defined once in the file schema and read back by both readers"""
+    """Named types used by more than one field get unique names in the file schema and read back with both readers"""
     schema = Schema(
         NestedField(field_id=1, name="price", field_type=DecimalType(10, 2), required=True),
         NestedField(field_id=2, name="cost", field_type=DecimalType(10, 2), required=False),
@@ -485,8 +485,8 @@ def test_repeated_named_types_round_trip() -> None:
             file_fields = r.writer_schema["fields"]
             avro_entry_read_with_fastavro = list(next(iter(r)).values())
 
-    assert file_fields[1]["type"] == ["null", "decimal_10_2"]
-    assert file_fields[3]["type"] == ["null", "uuid_fixed"]
+    assert [f["name"] for f in (file_fields[0]["type"], file_fields[1]["type"][1])] == ["decimal_10_2_1", "decimal_10_2_2"]
+    assert [f["name"] for f in (file_fields[2]["type"], file_fields[3]["type"][1])] == ["uuid_fixed_3", "uuid_fixed_4"]
     for idx in range(len(record)):
         assert record[idx] == avro_entry[idx]
     # fastavro returns a uuid stored as fixed as its raw bytes
