@@ -3673,6 +3673,33 @@ def test_commit_transactions_skips_transactions_without_changes(
     assert [change["identifier"]["name"] for change in commit.last_request.json()["table-changes"]] == ["orders"]
 
 
+def test_commit_transactions_sends_requirements_of_snapshot_operations_that_staged_nothing(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    catalog, (orders, items) = _load_tables_for_multi_table_commit(rest_mock, example_table_metadata_with_snapshot_v1_rest_json)
+    commit = rest_mock.post(f"{TEST_URI}v1/transactions/commit", status_code=204)
+    table_uuid = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["table-uuid"]
+    snapshot_id = example_table_metadata_with_snapshot_v1_rest_json["metadata"]["current-snapshot-id"]
+
+    orders_tx = orders.transaction().set_properties(owner="sales")
+    # A delete whose filter matched no rows registers its producer but stages no updates.
+    items_tx = items.transaction()
+    producer = mock.MagicMock(_target_branch="main", _starting_snapshot_id=snapshot_id)
+    items_tx._snapshot_producers.append(producer)
+
+    catalog.commit_transactions(orders_tx, items_tx)
+
+    assert commit.last_request.json()["table-changes"][1] == {
+        "identifier": {"namespace": ["sales"], "name": "items"},
+        "requirements": [
+            {"type": "assert-table-uuid", "uuid": table_uuid},
+            {"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": snapshot_id},
+        ],
+        "updates": [],
+    }
+    assert items_tx._snapshot_producers == []
+
+
 def test_commit_transactions_rejects_invalid_input(
     rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:
