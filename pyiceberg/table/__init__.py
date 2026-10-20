@@ -1213,11 +1213,24 @@ class Transaction:
 
         Adds the same ``AssertTableUUID`` requirement that ``commit_transaction`` adds, so the
         commit fails if the table was dropped and recreated under the same name.
+
+        A snapshot operation that staged nothing (for example a delete whose filter matched no
+        rows) is sent as a requirement that the branch still points at the snapshot it started
+        from, with no updates. ``commit_transaction`` validates that case on the client after a
+        refresh; here the catalog checks it in the same atomic commit as the other tables.
         """
         if self._failed:
             raise RuntimeError("This transaction failed to commit and cannot be reused; create a new transaction.")
         if not any(isinstance(requirement, AssertTableUUID) for requirement in self._requirements):
             self._requirements += (AssertTableUUID(uuid=self.table_metadata.table_uuid),)
+        if not self._updates and self._snapshot_producers:
+            producer = self._snapshot_producers[0]
+            if producer._target_branch is not None and not any(
+                isinstance(requirement, AssertRefSnapshotId) for requirement in self._requirements
+            ):
+                self._requirements += (
+                    AssertRefSnapshotId(snapshot_id=producer._starting_snapshot_id, ref=producer._target_branch),
+                )
         return self._requirements, self._updates
 
     def _multi_table_commit_succeeded(self) -> None:

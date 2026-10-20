@@ -163,3 +163,29 @@ def test_commit_transactions_applies_nothing_on_conflict(catalog: RestCatalog, d
 
     assert catalog.load_table(orders.name()).scan().to_arrow().num_rows == 3
     assert catalog.load_table(items.name()).current_snapshot() is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+@pytest.mark.parametrize("concurrent_write", [False, True])
+@pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
+def test_commit_transactions_validates_a_delete_that_matched_nothing(
+    catalog: RestCatalog, database_name: str, concurrent_write: bool
+) -> None:
+    rows, (orders, items) = _create_tables_for_multi_table_commit(catalog, database_name)
+    orders.append(rows)
+    orders_tx = orders.transaction()
+    orders_tx.delete("id = 100")
+    items_tx = items.transaction()
+    items_tx.append(rows)
+    assert not orders_tx._updates
+
+    if concurrent_write:
+        # Another writer commits to orders after the delete was planned.
+        catalog.load_table(orders.name()).append(rows)
+        with pytest.raises(CommitFailedException):
+            catalog.commit_transactions(orders_tx, items_tx)
+        assert catalog.load_table(items.name()).current_snapshot() is None
+    else:
+        catalog.commit_transactions(orders_tx, items_tx)
+        assert catalog.load_table(items.name()).scan().to_arrow().num_rows == 3

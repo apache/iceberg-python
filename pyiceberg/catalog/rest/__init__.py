@@ -1654,7 +1654,9 @@ class RestCatalog(Catalog):
 
         Args:
             transactions: The transactions to commit, at most one per table. Transactions
-                without staged changes are skipped.
+                without staged changes are skipped. A snapshot operation that staged nothing,
+                such as a delete that matched no rows, is still sent with a requirement that
+                the table has not changed, so a concurrent change to it fails the whole commit.
 
         Raises:
             ValueError: If no transaction was given, a transaction is given twice, two
@@ -1682,7 +1684,11 @@ class RestCatalog(Catalog):
                 raise ValueError(f"More than one transaction changes table {table.name()}")
             identifiers.add(table.name())
 
-        staged = [transaction for transaction in transactions if transaction._updates]  # pylint: disable=W0212
+        staged = [
+            transaction
+            for transaction in transactions
+            if transaction._updates or transaction._snapshot_producers  # pylint: disable=W0212
+        ]
         if not staged:
             return
         self._check_endpoint(Capability.V1_COMMIT_TRANSACTION)
