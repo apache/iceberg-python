@@ -17,15 +17,15 @@
 
 services:
   object-store:
-    image: rustfs/rustfs:1.0.0
+    image: rustfs/rustfs:1.0.3
     container_name: pyiceberg-object-store
     ports:
-      - 9001:9001
       - 9000:9000
     environment:
       - RUSTFS_ACCESS_KEY=admin
       - RUSTFS_SECRET_KEY=password
       - RUSTFS_OBS_LOG_STDOUT_ENABLED=true
+      - RUSTFS_CONSOLE_ENABLE=false
     healthcheck:
       test: ["CMD-SHELL", "curl --fail http://127.0.0.1:9000/health/ready"]
       interval: 5s
