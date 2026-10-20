@@ -263,6 +263,20 @@ This command spins up the full integration test infrastructure via Docker Compos
 
 After running `make notebook-infra`, open `spark_integration_example.ipynb` in the Jupyter Lab interface to explore Spark integration capabilities.
 
+## Merging an urgent PR
+
+Committers can merge an urgent, approved pull request without waiting for the merge queue or required checks (for example, a security fix while CI is stuck). Use this only when necessary; otherwise, let the merge queue run.
+
+<!-- markdown-link-check-disable-next-line -->
+1. Join the [`apache/iceberg-public`](https://github.com/orgs/apache/teams/iceberg-public) team via [Boxer](https://gitbox.apache.org/boxer/) (one-time; membership syncs in about 15 minutes).
+2. Get the pull request approved by a committer.
+3. If the pull request is in the merge queue, click **Remove from queue**.
+4. Merge it directly:
+
+   ```sh
+   gh pr merge <number> --squash --admin
+   ```
+
 ## Code standards
 
 Below are the formalized conventions that we adhere to in the PyIceberg project. The goal of this is to have a common agreement on how to evolve the codebase, but also using it as guidelines for newcomers to the project.
