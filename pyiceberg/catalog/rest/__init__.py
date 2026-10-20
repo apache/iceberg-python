@@ -71,11 +71,14 @@ from pyiceberg.exceptions import (
     ViewAlreadyExistsError,
 )
 from pyiceberg.io import (
+    ADLS_SAS_TOKEN,
     AWS_ACCESS_KEY_ID,
     AWS_PROFILE_NAME,
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
+    GCS_TOKEN,
+    S3_SESSION_TOKEN,
     FileIO,
     load_file_io,
 )
@@ -343,6 +346,12 @@ def _parse_scan_planning_mode(properties: Properties, *, strict: bool = True) ->
         return None
 
 
+def _is_short_lived_credential(key: str) -> bool:
+    """Whether a loadTable config key carries a short-lived storage credential."""
+    key = key.lower()
+    return key in (S3_SESSION_TOKEN, GCS_TOKEN) or key.startswith(ADLS_SAS_TOKEN)
+
+
 def _retry_hook(retry_state: RetryCallState) -> None:
     rest_catalog: RestCatalog = retry_state.args[0]
     rest_catalog._refresh_token()  # pylint: disable=protected-access
@@ -561,7 +570,7 @@ class RestCatalog(Catalog):
     _auth_manager: AuthManager | None
     _supported_endpoints: set[Endpoint]
     _namespace_separator: str
-    # Stale entries are harmless: the server answers 304 only while the ETag matches.
+    # Loads that vend short-lived storage credentials are not cached, since a 304 cannot refresh them.
     _table_cache: TTLCache[Identifier, tuple[str, TableResponse]] | None
 
     def __init__(self, name: str, **properties: str):
@@ -584,6 +593,11 @@ class RestCatalog(Catalog):
             raise ValueError(f"Invalid value for {REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS}: {ttl_ms} (must be positive)")
         self._table_cache = TTLCache(maxsize=max_entries, ttl=ttl_ms / 1000) if max_entries > 0 else None
         self._table_cache_lock = threading.Lock()
+
+    def _invalidate_cached_table(self, identifier: str | Identifier) -> None:
+        if self._table_cache is not None:
+            with self._table_cache_lock:
+                self._table_cache.pop(self.identifier_to_tuple(identifier), None)
 
     def _create_session(self) -> Session:
         """Create a request session with provided catalog configuration."""
@@ -1371,6 +1385,7 @@ class RestCatalog(Catalog):
             overwrite=overwrite,
         )
         serialized_json = request.model_dump_json().encode(UTF8)
+        self._invalidate_cached_table(identifier)
         response = self._session.post(
             self.url(Endpoints.register_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
@@ -1471,12 +1486,21 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
+            if response.status_code == 404:
+                self._invalidate_cached_table(identifier)
             _handle_non_200_response(exc, {404: NoSuchTableError})
 
         table_response = TableResponse.model_validate_json(response.text)
-        if self._table_cache is not None and (etag := response.headers.get("ETag")):
+        if self._table_cache is not None:
+            etag = response.headers.get("ETag")
+            vends_credentials = bool(table_response.storage_credentials) or any(
+                map(_is_short_lived_credential, table_response.config)
+            )
             with self._table_cache_lock:
-                self._table_cache[identifier_tuple] = (etag, table_response)
+                if etag and not vends_credentials:
+                    self._table_cache[identifier_tuple] = (etag, table_response)
+                else:
+                    self._table_cache.pop(identifier_tuple, None)
         return self._response_to_table(identifier_tuple, table_response)
 
     @retry(**_RETRY_ARGS)
@@ -1509,6 +1533,7 @@ class RestCatalog(Catalog):
     @override
     def drop_table(self, identifier: str | Identifier, purge_requested: bool = False) -> None:
         self._check_endpoint(Capability.V1_DELETE_TABLE)
+        self._invalidate_cached_table(identifier)
         response = self._session.delete(
             self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
             params={"purgeRequested": purge_requested},
@@ -1541,6 +1566,7 @@ class RestCatalog(Catalog):
         if not self.namespace_exists(destination_namespace):
             raise NoSuchNamespaceError(f"Destination namespace does not exist: {destination_namespace}")
 
+        self._invalidate_cached_table(from_identifier)
         response = self._session.post(self.url(Endpoints.rename_table), json=payload)
         try:
             response.raise_for_status()
@@ -1642,6 +1668,7 @@ class RestCatalog(Catalog):
         if table_token := table.config.get(TOKEN):
             headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {table_token}"
 
+        self._invalidate_cached_table(identifier)
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
             data=table_request.model_dump_json().encode(UTF8),
