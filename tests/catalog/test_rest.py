@@ -3481,6 +3481,46 @@ def test_load_table_catalog_config_outranks_table_properties(
     assert table.io.properties["s3.proxy-uri"] == "http://table-only-proxy"
 
 
+def test_load_table_empty_catalog_signer_disables_remote_signing(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "config": {"s3.signer": "S3V4RestSigner", "s3.signer.uri": "http://signer"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"s3.signer": ""})
+    table = catalog.load_table(("fokko", "table"))
+
+    assert table.io.properties["s3.signer"] == ""
+
+
+def test_load_table_server_signer_kept_without_catalog_override(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "config": {"s3.signer": "S3V4RestSigner", "s3.signer.uri": "http://signer"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("fokko", "table"))
+
+    assert table.io.properties["s3.signer"] == "S3V4RestSigner"
+
+
 def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
