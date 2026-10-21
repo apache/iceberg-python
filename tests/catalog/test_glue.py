@@ -860,6 +860,36 @@ def test_commit_table_properties(
 
 
 @mock_aws
+def test_commit_table_prunes_removed_properties(
+    _glue: boto3.client,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(
+        identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a", "test_b": "test_b"}
+    )
+
+    transaction = table.transaction()
+    transaction.remove_properties("test_b")
+    transaction.commit_transaction()
+
+    assert table.metadata.properties == {"test_a": "test_a"}
+
+    table_info = _glue.get_table(DatabaseName=database_name, Name=table_name)
+    assert table_info["Table"]["Parameters"]["test_a"] == "test_a"
+    assert "test_b" not in table_info["Table"]["Parameters"]
+
+
+@mock_aws
 def test_commit_append_table_snapshot_properties(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
 ) -> None:

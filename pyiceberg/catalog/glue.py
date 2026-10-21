@@ -147,8 +147,13 @@ def _construct_parameters(
     glue_table: Optional["TableTypeDef"] = None,
     prev_metadata_location: str | None = None,
     metadata_properties: Properties | None = None,
+    prev_metadata_properties: Properties | None = None,
 ) -> Properties:
     new_parameters = glue_table.get("Parameters", {}) if glue_table else {}
+    if prev_metadata_properties:
+        for key in prev_metadata_properties:
+            if not metadata_properties or key not in metadata_properties:
+                new_parameters.pop(key, None)
     new_parameters.update({TABLE_TYPE: ICEBERG.upper(), METADATA_LOCATION: metadata_location})
     if prev_metadata_location:
         new_parameters[PREVIOUS_METADATA_LOCATION] = prev_metadata_location
@@ -243,11 +248,14 @@ def _construct_table_input(
     metadata: TableMetadata,
     glue_table: Optional["TableTypeDef"] = None,
     prev_metadata_location: str | None = None,
+    prev_metadata_properties: Properties | None = None,
 ) -> "TableInputTypeDef":
     table_input: TableInputTypeDef = {
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
-        "Parameters": _construct_parameters(metadata_location, glue_table, prev_metadata_location, properties),
+        "Parameters": _construct_parameters(
+            metadata_location, glue_table, prev_metadata_location, properties, prev_metadata_properties
+        ),
         "StorageDescriptor": {
             "Columns": _to_columns(metadata),
             "Location": metadata.location,
@@ -693,6 +701,7 @@ class GlueCatalog(MetastoreCatalog):
                 metadata=updated_staged_table.metadata,
                 glue_table=current_glue_table,
                 prev_metadata_location=current_table.metadata_location,
+                prev_metadata_properties=current_table.properties,
             )
             self._update_glue_table(
                 database_name=database_name,
