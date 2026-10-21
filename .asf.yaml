@@ -33,38 +33,60 @@ github:
     squash: true
     squash_commit_message: PR_TITLE_AND_COMMIT_DETAILS
     rebase: true
-  protected_branches:
-    main:
-      required_status_checks:
-        contexts:
-          # Repository policy and security checks.
-          - Analyze Actions
-          - Run zizmor 🌈
-          - asf-allowlist-check
-          - rat
-
-          # Documentation checks.
-          - docs
-          - markdown-link-check
-
-          # Python workflow gates.
-          - python-ci-required
-          - python-integration-required
-
+  # Disabled: GitHub blocks ruleset bypass while classic protection exists.
+  # The "Default Branch Protection" ruleset replaces it.
+  protected_branches: ~
+  rulesets:
+    - name: "Default Branch Protection"
+      type: branch
+      branches:
+        includes:
+          - "~DEFAULT_BRANCH"
+        excludes: []
+      bypass_teams:
+        - root
+      restrict_deletion: true
+      restrict_force_push: true
+      required_linear_history: true
       required_pull_request_reviews:
         required_approving_review_count: 1
-
-      required_linear_history: true
-  rulesets:
     - name: Merge Queue
       target: branch
       enforcement: active
+      bypass_actors:
+        # apache/root (ASF Infra).
+        - actor_id: 118420
+          actor_type: Team
+          bypass_mode: always
+        # apache/iceberg-public. Iceberg committers can opt into this team via
+        # https://gitbox.apache.org/boxer/.
+        - actor_id: 20107235
+          actor_type: Team
+          bypass_mode: pull_request
       conditions:
         ref_name:
           include:
             - "~DEFAULT_BRANCH"
           exclude: []
       rules:
+        - type: required_status_checks
+          parameters:
+            # Merge Queue already tests each entry against the latest main
+            strict_required_status_checks_policy: false
+            required_status_checks:
+              # Repository policy and security checks.
+              - context: Analyze Actions
+              - context: Run zizmor 🌈
+              - context: asf-allowlist-check
+              - context: rat
+
+              # Documentation checks.
+              - context: docs
+              - context: markdown-link-check
+
+              # Python workflow gates.
+              - context: python-ci-required
+              - context: python-integration-required
         - type: merge_queue
           parameters:
             check_response_timeout_minutes: 90
