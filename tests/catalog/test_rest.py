@@ -479,6 +479,7 @@ def test_list_tables_200(rest_mock: Mocker) -> None:
     )
 
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace) == [("examples", "fooshare")]
+    assert rest_mock.last_request.qs == {}
 
 
 def test_list_tables_paginated_200(rest_mock: Mocker) -> None:
@@ -805,6 +806,7 @@ def test_list_views_200(rest_mock: Mocker) -> None:
     )
 
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_views(namespace) == [("examples", "fooshare")]
+    assert rest_mock.last_request.qs == {}
 
 
 def test_list_views_paginated_200(rest_mock: Mocker) -> None:
@@ -1016,6 +1018,7 @@ def test_list_namespaces_200(rest_mock: Mocker) -> None:
         ("fokko",),
         ("system",),
     ]
+    assert rest_mock.last_request.qs == {}
 
 
 def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
