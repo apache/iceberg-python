@@ -14,11 +14,13 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import boto3
 import pyarrow as pa
 import pytest
+from botocore.credentials import AssumeRoleCredentialFetcher
 from moto import mock_aws
 
 from pyiceberg.catalog import _get_aws_session_with_assumed_role
@@ -837,6 +839,34 @@ def test_get_aws_session_with_assumed_role_returns_temporary_credentials() -> No
     # Temporary credentials from STS AssumeRole always carry a session token.
     assert credentials.token is not None
     assert assumed_session.region_name == "us-east-1"
+
+
+@mock_aws
+def test_glue_assume_role_credentials_are_refreshed_before_expiry() -> None:
+    catalog = GlueCatalog(
+        "glue",
+        **{"client.role-arn": "arn:aws:iam::123456789012:role/my-glue-role", "client.region": "us-east-1"},
+    )
+    credentials = catalog.glue._request_signer._credentials
+    now = datetime.now(timezone.utc)
+
+    with mock.patch.object(
+        AssumeRoleCredentialFetcher,
+        "_get_credentials",
+        autospec=True,
+        side_effect=AssumeRoleCredentialFetcher._get_credentials,
+    ) as mock_assume_role:
+        catalog.list_namespaces()
+        assert mock_assume_role.call_count == 1
+
+        # moto issues one-hour credentials: 48 minutes later they are inside botocore's 15-minute refresh window.
+        later = now + timedelta(minutes=48)
+        with (
+            mock.patch("botocore.credentials._local_now", return_value=later),
+            mock.patch.object(credentials, "_time_fetcher", return_value=later),
+        ):
+            catalog.list_namespaces()
+        assert mock_assume_role.call_count == 2
 
 
 @mock_aws
