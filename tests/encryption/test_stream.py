@@ -17,50 +17,30 @@
 
 import pytest
 
-from pyiceberg.encryption.ciphers import AesGcmCipher, SecureKey
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.stream import (
     _BLOCK_OVERHEAD,
     _CIPHER_BLOCK_SIZE,
+    _GCM_STREAM_HEADER,
     _GCM_STREAM_HEADER_LENGTH,
-    _GCM_STREAM_MAGIC,
-    _MAX_BLOCKS,
     _MIN_STREAM_LENGTH,
     _PLAIN_BLOCK_SIZE,
-    _Ags1Layout,
-    _decode_stream_header,
-    _encode_stream_header,
+    _decrypt_ags1,
+    _encrypt_ags1,
     _stream_block_aad,
 )
 
-KEY = SecureKey(b"0123456789012345")
+KEY = b"0123456789012345"
 AAD_PREFIX = b"0123456789abcdef"
+KEY_METADATA = StandardKeyMetadata(encryption_key=KEY, aad_prefix=AAD_PREFIX)
 
 # The header a Java `AesGcmOutputStream` writes: "AGS1" then 1 MiB as a little-endian int32.
 JAVA_HEADER = b"AGS1\x00\x00\x10\x00"
 
 
-def build_stream(plaintext: bytes, aad_prefix: bytes | None = AAD_PREFIX) -> bytes:
-    """Encrypt `plaintext` into an AGS1 stream, as an output stream implementation would.
-
-    An empty plaintext still gets one empty block, which is the form Java writes and the reader accepts.
-    """
-    blocks = [
-        AesGcmCipher(KEY).encrypt(plaintext[start : start + _PLAIN_BLOCK_SIZE], _stream_block_aad(aad_prefix, index))
-        for index, start in enumerate(range(0, len(plaintext), _PLAIN_BLOCK_SIZE) or [0])
-    ]
-    return _encode_stream_header() + b"".join(blocks)
-
-
-def decrypt_stream(stream: bytes, aad_prefix: bytes | None) -> bytes:
-    """Decrypt an AGS1 stream block by block, as an input stream implementation would."""
-    layout = _Ags1Layout.from_encrypted_length(len(stream))
-    return b"".join(
-        AesGcmCipher(KEY).decrypt(
-            stream[layout.encrypted_block_offset(index) : layout.encrypted_block_offset(index) + layout.cipher_block_size(index)],
-            _stream_block_aad(aad_prefix, index),
-        )
-        for index in range(layout.num_blocks)
-    )
+def decrypt(stream: bytes, key: bytes = KEY, aad_prefix: bytes | None = AAD_PREFIX) -> bytes:
+    """Decrypt `stream`, trusting its own length as the key metadata's `file_length`."""
+    return _decrypt_ags1(stream, StandardKeyMetadata(encryption_key=key, aad_prefix=aad_prefix, file_length=len(stream)))
 
 
 def patterned_plaintext(length: int) -> bytes:
@@ -69,47 +49,17 @@ def patterned_plaintext(length: int) -> bytes:
 
 
 def test_format_constants() -> None:
-    assert _GCM_STREAM_MAGIC == b"AGS1"
+    assert _GCM_STREAM_HEADER == JAVA_HEADER
     assert _PLAIN_BLOCK_SIZE == 1024 * 1024
     assert _GCM_STREAM_HEADER_LENGTH == 8
     assert _BLOCK_OVERHEAD == 28
     assert _CIPHER_BLOCK_SIZE == _PLAIN_BLOCK_SIZE + _BLOCK_OVERHEAD
-    assert _MAX_BLOCKS == 2**32 - 1
     assert _MIN_STREAM_LENGTH == 36
-
-
-def test_encode_stream_header_matches_java() -> None:
-    assert _encode_stream_header() == JAVA_HEADER
-
-
-def test_decode_stream_header() -> None:
-    assert _decode_stream_header(JAVA_HEADER) == _PLAIN_BLOCK_SIZE
-    assert _decode_stream_header(_encode_stream_header()) == _PLAIN_BLOCK_SIZE
-
-
-def test_decode_stream_header_ignores_trailing_block_bytes() -> None:
-    assert _decode_stream_header(JAVA_HEADER + b"block bytes") == _PLAIN_BLOCK_SIZE
-
-
-@pytest.mark.parametrize("length", [0, 4, 7])
-def test_decode_stream_header_rejects_a_short_header(length: int) -> None:
-    with pytest.raises(ValueError, match=f"Invalid AGS1 header: expected 8 bytes, got {length}"):
-        _decode_stream_header(bytes(length))
-
-
-def test_decode_stream_header_rejects_the_wrong_magic() -> None:
-    with pytest.raises(ValueError, match="magic b'AGS2' does not match b'AGS1'"):
-        _decode_stream_header(b"AGS2\x00\x00\x10\x00")
-
-
-def test_decode_stream_header_rejects_an_unsupported_block_size() -> None:
-    with pytest.raises(ValueError, match=f"Unsupported AGS1 block size: 512 \\(expected {_PLAIN_BLOCK_SIZE}\\)"):
-        _decode_stream_header(_GCM_STREAM_MAGIC + (512).to_bytes(4, "little"))
 
 
 @pytest.mark.parametrize(
     "block_index, expected",
-    [(0, b"\x00\x00\x00\x00"), (1, b"\x01\x00\x00\x00"), (258, b"\x02\x01\x00\x00"), (_MAX_BLOCKS, b"\xff\xff\xff\xff")],
+    [(0, b"\x00\x00\x00\x00"), (1, b"\x01\x00\x00\x00"), (258, b"\x02\x01\x00\x00"), (2**32 - 1, b"\xff\xff\xff\xff")],
 )
 def test_stream_block_aad_encodes_the_index_little_endian(block_index: int, expected: bytes) -> None:
     assert _stream_block_aad(None, block_index) == expected
@@ -117,153 +67,101 @@ def test_stream_block_aad_encodes_the_index_little_endian(block_index: int, expe
     assert _stream_block_aad(AAD_PREFIX, block_index) == AAD_PREFIX + expected
 
 
-@pytest.mark.parametrize(
-    "encrypted_length, plaintext_length, num_blocks, last_cipher_block_size",
-    [
-        (_GCM_STREAM_HEADER_LENGTH + _BLOCK_OVERHEAD, 0, 1, _BLOCK_OVERHEAD),
-        (_GCM_STREAM_HEADER_LENGTH + _BLOCK_OVERHEAD + 100, 100, 1, _BLOCK_OVERHEAD + 100),
-        (_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE, _PLAIN_BLOCK_SIZE, 1, _CIPHER_BLOCK_SIZE),
-        (_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE + _BLOCK_OVERHEAD + 5, _PLAIN_BLOCK_SIZE + 5, 2, _BLOCK_OVERHEAD + 5),
-        (_GCM_STREAM_HEADER_LENGTH + 2 * _CIPHER_BLOCK_SIZE, 2 * _PLAIN_BLOCK_SIZE, 2, _CIPHER_BLOCK_SIZE),
-    ],
-)
-def test_layout_from_encrypted_length(
-    encrypted_length: int, plaintext_length: int, num_blocks: int, last_cipher_block_size: int
-) -> None:
-    layout = _Ags1Layout.from_encrypted_length(encrypted_length)
-
-    assert layout == _Ags1Layout(
-        plaintext_length=plaintext_length, num_blocks=num_blocks, last_cipher_block_size=last_cipher_block_size
-    )
-
-
-@pytest.mark.parametrize("encrypted_length", [0, 1, 7, _GCM_STREAM_HEADER_LENGTH, _MIN_STREAM_LENGTH - 1])
-def test_layout_rejects_a_stream_shorter_than_one_block(encrypted_length: int) -> None:
-    """A header alone is not a stream, matching Java's `MIN_STREAM_LENGTH` and iceberg-rust."""
-    with pytest.raises(ValueError, match=f"expected at least {_MIN_STREAM_LENGTH} bytes, got {encrypted_length}"):
-        _Ags1Layout.from_encrypted_length(encrypted_length)
-
-
-@pytest.mark.parametrize("last_block_size", [1, 27])
-def test_layout_rejects_a_truncated_last_block(last_block_size: int) -> None:
-    with pytest.raises(ValueError, match=f"last block is {last_block_size} bytes, expected at least 28"):
-        _Ags1Layout.from_encrypted_length(_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE + last_block_size)
-
-
-def test_layout_rejects_more_blocks_than_the_index_can_address() -> None:
-    encrypted_length = _GCM_STREAM_HEADER_LENGTH + (_MAX_BLOCKS + 1) * _CIPHER_BLOCK_SIZE
-
-    with pytest.raises(ValueError, match=f"AGS1 streams hold at most {_MAX_BLOCKS} blocks"):
-        _Ags1Layout.from_encrypted_length(encrypted_length)
-
-
-def test_layout_block_sizes_and_offsets() -> None:
-    layout = _Ags1Layout.from_encrypted_length(_GCM_STREAM_HEADER_LENGTH + 2 * _CIPHER_BLOCK_SIZE + _BLOCK_OVERHEAD + 7)
-
-    assert layout.num_blocks == 3
-    assert layout.cipher_block_size(0) == layout.cipher_block_size(1) == _CIPHER_BLOCK_SIZE
-    assert layout.plain_block_size(0) == layout.plain_block_size(1) == _PLAIN_BLOCK_SIZE
-    assert layout.cipher_block_size(2) == _BLOCK_OVERHEAD + 7
-    assert layout.plain_block_size(2) == 7
-    assert layout.encrypted_block_offset(0) == _GCM_STREAM_HEADER_LENGTH
-    assert layout.encrypted_block_offset(1) == _GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE
-    assert layout.encrypted_block_offset(2) == _GCM_STREAM_HEADER_LENGTH + 2 * _CIPHER_BLOCK_SIZE
-
-
-@pytest.mark.parametrize("block_index", [-1, 1, 2])
-def test_layout_rejects_an_out_of_range_block_index(block_index: int) -> None:
-    layout = _Ags1Layout.from_encrypted_length(_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE)
-
-    with pytest.raises(ValueError, match=f"Block index out of range: {block_index} \\(stream holds 1 blocks\\)"):
-        layout.cipher_block_size(block_index)
-
-    with pytest.raises(ValueError, match=f"Block index out of range: {block_index}"):
-        layout.encrypted_block_offset(block_index)
-
-
-@pytest.mark.parametrize(
-    "plaintext_offset, expected",
-    [(0, 0), (1, 0), (_PLAIN_BLOCK_SIZE - 1, 0), (_PLAIN_BLOCK_SIZE, 1), (_PLAIN_BLOCK_SIZE + 6, 1)],
-)
-def test_layout_block_index_for_plaintext_offset(plaintext_offset: int, expected: int) -> None:
-    layout = _Ags1Layout.from_encrypted_length(_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE + _BLOCK_OVERHEAD + 7)
-
-    assert layout.block_index_for(plaintext_offset) == expected
-
-
-@pytest.mark.parametrize("plaintext_offset", [-1, _PLAIN_BLOCK_SIZE])
-def test_layout_rejects_an_out_of_range_plaintext_offset(plaintext_offset: int) -> None:
-    layout = _Ags1Layout.from_encrypted_length(_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE)
-
-    with pytest.raises(ValueError, match=f"Plaintext offset out of range: {plaintext_offset}"):
-        layout.block_index_for(plaintext_offset)
-
-
 @pytest.mark.parametrize("aad_prefix", [AAD_PREFIX, None])
 @pytest.mark.parametrize("plaintext_length", [0, 1, 100, _PLAIN_BLOCK_SIZE, _PLAIN_BLOCK_SIZE + 7, 2 * _PLAIN_BLOCK_SIZE])
-def test_layout_describes_a_real_stream(plaintext_length: int, aad_prefix: bytes | None) -> None:
-    """The layout derived from a stream's length must match the stream that was written."""
+def test_round_trip(plaintext_length: int, aad_prefix: bytes | None) -> None:
     plaintext = patterned_plaintext(plaintext_length)
-    stream = build_stream(plaintext, aad_prefix)
 
-    layout = _Ags1Layout.from_encrypted_length(len(stream))
+    stream = _encrypt_ags1(plaintext, StandardKeyMetadata(encryption_key=KEY, aad_prefix=aad_prefix))
 
-    assert _decode_stream_header(stream) == _PLAIN_BLOCK_SIZE
-    assert layout.plaintext_length == plaintext_length
-    assert layout.num_blocks == max(1, -(-plaintext_length // _PLAIN_BLOCK_SIZE))
-    assert decrypt_stream(stream, aad_prefix) == plaintext
+    assert stream.startswith(JAVA_HEADER)
+    assert decrypt(stream, aad_prefix=aad_prefix) == plaintext
 
 
-def test_blocks_cannot_be_reordered() -> None:
-    stream = build_stream(bytes(_PLAIN_BLOCK_SIZE + 7))
-    layout = _Ags1Layout.from_encrypted_length(len(stream))
-    first_block = stream[layout.encrypted_block_offset(0) : layout.encrypted_block_offset(1)]
-
-    with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
-        AesGcmCipher(KEY).decrypt(first_block, _stream_block_aad(AAD_PREFIX, 1))
-
-
-def test_blocks_cannot_be_moved_between_files() -> None:
-    stream = build_stream(bytes(100))
-    layout = _Ags1Layout.from_encrypted_length(len(stream))
-    block = stream[layout.encrypted_block_offset(0) :]
-
-    with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
-        AesGcmCipher(KEY).decrypt(block, _stream_block_aad(b"another file's prefix", 0))
+@pytest.mark.parametrize(
+    "plaintext_length, encrypted_length",
+    [
+        (0, _MIN_STREAM_LENGTH),
+        (100, _GCM_STREAM_HEADER_LENGTH + _BLOCK_OVERHEAD + 100),
+        (_PLAIN_BLOCK_SIZE, _GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE),
+        (_PLAIN_BLOCK_SIZE + 7, _GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE + _BLOCK_OVERHEAD + 7),
+        (2 * _PLAIN_BLOCK_SIZE, _GCM_STREAM_HEADER_LENGTH + 2 * _CIPHER_BLOCK_SIZE),
+    ],
+)
+def test_encrypted_length(plaintext_length: int, encrypted_length: int) -> None:
+    """An empty file gets one empty block, and a block-aligned file gets no trailing empty block, as in Java."""
+    assert len(_encrypt_ags1(bytes(plaintext_length), KEY_METADATA)) == encrypted_length
 
 
-def test_an_empty_file_is_one_empty_block() -> None:
-    """An empty file is a header plus one empty block, which is the shortest stream accepted."""
-    stream = build_stream(b"")
+def test_decrypt_requires_file_length() -> None:
+    stream = _encrypt_ags1(b"data", KEY_METADATA)
 
-    assert len(stream) == _MIN_STREAM_LENGTH
-    assert _Ags1Layout.from_encrypted_length(len(stream)) == _Ags1Layout(
-        plaintext_length=0, num_blocks=1, last_cipher_block_size=_BLOCK_OVERHEAD
-    )
-
-
-def test_a_block_aligned_stream_has_no_trailing_empty_block() -> None:
-    stream = build_stream(bytes(2 * _PLAIN_BLOCK_SIZE))
-
-    assert len(stream) == _GCM_STREAM_HEADER_LENGTH + 2 * _CIPHER_BLOCK_SIZE
+    with pytest.raises(ValueError, match="key metadata has no file_length"):
+        _decrypt_ags1(stream, KEY_METADATA)
 
 
 def test_a_truncated_stream_still_authenticates() -> None:
     """Dropping a trailing block leaves every remaining block valid, so the length must come from key metadata."""
-    plaintext = patterned_plaintext(2 * _PLAIN_BLOCK_SIZE)
-    truncated = build_stream(plaintext)[: _GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE]
+    stream = _encrypt_ags1(patterned_plaintext(2 * _PLAIN_BLOCK_SIZE), KEY_METADATA)
 
-    assert decrypt_stream(truncated, AAD_PREFIX) == plaintext[:_PLAIN_BLOCK_SIZE]
-
-
-def test_the_trusted_length_exposes_a_truncated_stream() -> None:
-    """The layout from the trusted length outruns a truncated file, which is how a reader detects the drop."""
-    stream = build_stream(bytes(2 * _PLAIN_BLOCK_SIZE))
     truncated = stream[: _GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE]
 
-    layout = _Ags1Layout.from_encrypted_length(len(stream))
-    last_block = layout.num_blocks - 1
+    assert decrypt(truncated) == patterned_plaintext(_PLAIN_BLOCK_SIZE)
 
-    assert layout.plaintext_length == 2 * _PLAIN_BLOCK_SIZE
-    assert layout.encrypted_block_offset(last_block) + layout.cipher_block_size(last_block) > len(truncated)
-    assert _Ags1Layout.from_encrypted_length(len(truncated)).plaintext_length == _PLAIN_BLOCK_SIZE
+
+@pytest.mark.parametrize("change", ["truncate", "extend"])
+def test_decrypt_rejects_a_length_other_than_the_trusted_length(change: str) -> None:
+    stream = _encrypt_ags1(patterned_plaintext(2 * _PLAIN_BLOCK_SIZE), KEY_METADATA)
+    key_metadata = StandardKeyMetadata(encryption_key=KEY, aad_prefix=AAD_PREFIX, file_length=len(stream))
+    changed = stream[: _GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE] if change == "truncate" else stream + b"\x00"
+
+    with pytest.raises(ValueError, match=f"key metadata expects {len(stream)} bytes, got {len(changed)}"):
+        _decrypt_ags1(changed, key_metadata)
+
+
+@pytest.mark.parametrize("length", [0, 7, _GCM_STREAM_HEADER_LENGTH, _MIN_STREAM_LENGTH - 1])
+def test_decrypt_rejects_a_stream_shorter_than_one_block(length: int) -> None:
+    """A header alone is not a stream, matching Java's `MIN_STREAM_LENGTH` and iceberg-rust."""
+    with pytest.raises(ValueError, match=f"expected at least {_MIN_STREAM_LENGTH} bytes, got {length}"):
+        decrypt((JAVA_HEADER + bytes(_BLOCK_OVERHEAD))[:length])
+
+
+def test_decrypt_rejects_the_wrong_magic() -> None:
+    with pytest.raises(ValueError, match="magic b'AGS2' does not match b'AGS1'"):
+        decrypt(b"AGS2" + JAVA_HEADER[4:] + bytes(_BLOCK_OVERHEAD))
+
+
+def test_decrypt_rejects_an_unsupported_block_size() -> None:
+    with pytest.raises(ValueError, match=f"Unsupported AGS1 block size: 512 \\(expected {_PLAIN_BLOCK_SIZE}\\)"):
+        decrypt(b"AGS1" + (512).to_bytes(4, "little") + bytes(_BLOCK_OVERHEAD))
+
+
+@pytest.mark.parametrize("last_block_length", [1, _BLOCK_OVERHEAD - 1])
+def test_decrypt_rejects_a_truncated_last_block(last_block_length: int) -> None:
+    with pytest.raises(ValueError, match=f"last block is {last_block_length} bytes, expected at least {_BLOCK_OVERHEAD}"):
+        decrypt(JAVA_HEADER + bytes(_CIPHER_BLOCK_SIZE + last_block_length))
+
+
+def test_decrypt_rejects_reordered_blocks() -> None:
+    stream = _encrypt_ags1(bytes(2 * _PLAIN_BLOCK_SIZE), KEY_METADATA)
+    first, second = (
+        stream[_GCM_STREAM_HEADER_LENGTH : _GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE],
+        stream[_GCM_STREAM_HEADER_LENGTH + _CIPHER_BLOCK_SIZE :],
+    )
+
+    with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
+        decrypt(JAVA_HEADER + second + first)
+
+
+def test_decrypt_rejects_another_files_aad_prefix() -> None:
+    stream = _encrypt_ags1(bytes(100), KEY_METADATA)
+
+    with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
+        decrypt(stream, aad_prefix=b"another file's prefix")
+
+
+def test_decrypt_rejects_the_wrong_key() -> None:
+    stream = _encrypt_ags1(bytes(100), KEY_METADATA)
+
+    with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
+        decrypt(stream, key=b"1123456789012345")
