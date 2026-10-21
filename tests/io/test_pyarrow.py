@@ -3579,6 +3579,33 @@ def test__to_requested_schema_null_map_of_structs() -> None:
     assert result.column(1).to_pylist() == [[], None, [("b", 2), ("c", None)]]
 
 
+def test__to_requested_schema_null_list_of_structs() -> None:
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_list_with_struct",
+            ListType(
+                11,
+                StructType(NestedField(111, "source", StringType(), required=False)),
+                element_required=False,
+            ),
+            required=False,
+        ),
+    )
+    arrow_schema = pa.schema([pa.field("col_list_with_struct", pa.list_(pa.struct([pa.field("source", pa.string())])))])
+    batch = pa.RecordBatch.from_arrays(
+        [pa.array([[{"source": "x"}], [], None, [{"source": "y"}, None]], type=arrow_schema.field(0).type)],
+        schema=arrow_schema,
+    )
+
+    result = _to_requested_schema(requested_schema, requested_schema, batch)
+    assert result.column(0).to_pylist() == [[{"source": "x"}], [], None, [{"source": "y"}, None]]
+
+    # A sliced batch has to keep the nulls as well
+    result = _to_requested_schema(requested_schema, requested_schema, batch.slice(1, 3))
+    assert result.column(0).to_pylist() == [[], None, [{"source": "y"}, None]]
+
+
 @pytest.mark.parametrize(
     "arrow_type,iceberg_type,expected_arrow_type",
     [
