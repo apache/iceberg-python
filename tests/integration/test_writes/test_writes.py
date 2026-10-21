@@ -1687,7 +1687,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (11, b"\x01"),
             (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
         ]
-        assert tbl_a_data_file["nan_value_counts"] == []
+        assert tbl_a_data_file["nan_value_counts"] == [(6, 0), (7, 0)]
         assert tbl_a_data_file["null_value_counts"] == [
             (1, 1),
             (2, 1),
