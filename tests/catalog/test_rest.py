@@ -3481,7 +3481,7 @@ def test_load_table_catalog_config_outranks_table_properties(
     assert table.io.properties["s3.proxy-uri"] == "http://table-only-proxy"
 
 
-def test_load_table_empty_catalog_signer_disables_remote_signing(
+def test_load_table_remote_signing_disabled_in_catalog_config(
     rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
 ) -> None:
     metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
@@ -3495,14 +3495,15 @@ def test_load_table_empty_catalog_signer_disables_remote_signing(
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"s3.signer": ""})
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"s3.remote-signing-enabled": "false"})
     table = catalog.load_table(("fokko", "table"))
 
-    assert table.io.properties["s3.signer"] == ""
+    assert "s3.signer" not in table.io.properties
 
 
-def test_load_table_server_signer_kept_without_catalog_override(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+@pytest.mark.parametrize("catalog_properties", [{}, {"s3.remote-signing-enabled": "true"}])
+def test_load_table_server_signer_kept_unless_disabled(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any], catalog_properties: dict[str, str]
 ) -> None:
     metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
     rest_mock.get(
@@ -3515,7 +3516,7 @@ def test_load_table_server_signer_kept_without_catalog_override(
         status_code=200,
         request_headers=TEST_HEADERS,
     )
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **catalog_properties)
     table = catalog.load_table(("fokko", "table"))
 
     assert table.io.properties["s3.signer"] == "S3V4RestSigner"
