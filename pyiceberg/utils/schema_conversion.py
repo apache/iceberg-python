@@ -73,7 +73,6 @@ PRIMITIVE_FIELD_TYPE_MAPPING: dict[str, PrimitiveType] = {
 LOGICAL_FIELD_TYPE_MAPPING: dict[tuple[str, str], PrimitiveType] = {
     ("date", "int"): DateType(),
     ("time-micros", "long"): TimeType(),
-    ("timestamp-micros", "long"): TimestampType(),
     ("uuid", "fixed"): UUIDType(),
     ("uuid", "string"): UUIDType(),
 }
