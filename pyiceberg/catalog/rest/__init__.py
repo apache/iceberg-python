@@ -499,6 +499,17 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
         return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
 
 
+def _connection_timeout(properties: Properties) -> float | None:
+    """Return the request timeout in seconds from the `rest.client.*` timeout properties, or None when unset."""
+    connection_timeout_ms = property_as_int(properties, REST_CLIENT_CONNECTION_TIMEOUT_MS)
+    socket_timeout_ms = property_as_int(properties, REST_CLIENT_SOCKET_TIMEOUT_MS)
+    if connection_timeout_ms is None and socket_timeout_ms is None:
+        return None
+    # requests uses a single timeout and cannot split connect vs socket, so follow the Java client
+    # and sum the two (milliseconds), flooring to whole seconds.
+    return ((connection_timeout_ms or 0) + (socket_timeout_ms or 0)) // 1000
+
+
 def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapter | None:
     """Build a connection adapter from the optional `rest.client.*` properties.
 
@@ -524,14 +535,8 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
     if all(value is None for value in (connection_timeout_ms, socket_timeout_ms, retries, backoff_factor)):
         return None
 
-    # requests uses a single timeout and cannot split connect vs socket, so follow the Java client
-    # and sum the two (milliseconds), flooring to whole seconds.
-    timeout: float | None = None
-    if connection_timeout_ms is not None or socket_timeout_ms is not None:
-        timeout = ((connection_timeout_ms or 0) + (socket_timeout_ms or 0)) // 1000
-
     return _RetryTimeoutHTTPAdapter(
-        timeout=timeout,
+        timeout=_connection_timeout(properties),
         max_retries=Retry(
             # `retries` and `backoff_factor` fall back to a no-op Retry when unset, so a user can
             # configure only one without having to specify the rest of the policy.
@@ -575,7 +580,7 @@ class RestCatalog(Catalog):
         session = Session()
 
         # Mount the retry/timeout adapter when `connection.*` properties are set.
-        # SigV4's adapter mounted below at `self.uri` is a longer prefix and still wins for that host.
+        # SigV4's adapter mounted below at `self.uri` is a longer prefix and wins for that host; it applies the same timeout.
         if (connection_adapter := _create_connection_adapter(self.properties)) is not None:
             session.mount("http://", connection_adapter)
             session.mount("https://", connection_adapter)
@@ -1098,11 +1103,11 @@ class RestCatalog(Catalog):
         from botocore.auth import SigV4Auth
         from botocore.awsrequest import AWSRequest
 
-        class SigV4Adapter(HTTPAdapter):
+        class SigV4Adapter(_RetryTimeoutHTTPAdapter):
             def __init__(self, **properties: str):
                 self._properties = properties
-                max_retries = property_as_int(self._properties, SIGV4_MAX_RETRIES, SIGV4_MAX_RETRIES_DEFAULT)
-                super().__init__(max_retries=max_retries)
+                max_retries: int = property_as_int(self._properties, SIGV4_MAX_RETRIES, SIGV4_MAX_RETRIES_DEFAULT)  # type: ignore  # The default is set with non-None value.
+                super().__init__(timeout=_connection_timeout(self._properties), max_retries=max_retries)
                 self._boto_session = boto3.Session(
                     profile_name=get_first_property_value(self._properties, AWS_PROFILE_NAME),
                     region_name=get_first_property_value(self._properties, AWS_REGION),
