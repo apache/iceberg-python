@@ -1314,6 +1314,15 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         return self
 
 
+def _active_files_count(manifests: list[ManifestFile]) -> int:
+    count = 0
+    for manifest in manifests:
+        if manifest.added_files_count is None or manifest.existing_files_count is None:
+            raise ValueError(f"Missing file counts in {manifest.manifest_path}")
+        count += manifest.added_files_count + manifest.existing_files_count
+    return count
+
+
 class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
     """Rewrite the current snapshot's data manifests without changing data.
 
@@ -1370,6 +1379,9 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
         self._manifest_predicate = predicate
         return self
 
+    def _validate_concurrency(self) -> None:
+        """Skip validation; a retry replans against the refreshed branch head, so concurrent commits are kept."""
+
     def _deleted_entries(self) -> list[ManifestEntry]:
         return []
 
@@ -1419,6 +1431,7 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
                 kept_manifests.append(manifest)
 
         new_manifests: list[ManifestFile] = []
+        rewritten_manifests: list[ManifestFile] = []
         for spec_id, manifests in data_manifests_by_spec.items():
             for group in self._group_by_target_size(manifests):
                 if len(group) == 1 and self._manifest_predicate is None:
@@ -1438,8 +1451,17 @@ class RewriteManifests(_SnapshotProducer["RewriteManifests"]):
                         self._entries_processed += 1
 
                 new_manifests.append(writer.to_manifest_file())
+                rewritten_manifests.extend(group)
                 self._created_count += 1
                 self._rewritten_count += len(group)
+
+        created_files_count = _active_files_count(new_manifests)
+        replaced_files_count = _active_files_count(rewritten_manifests)
+        if created_files_count != replaced_files_count:
+            raise ValidationException(
+                "Replaced and created manifests must have the same number of active files: "
+                f"{created_files_count} (new), {replaced_files_count} (old)"
+            )
 
         self._kept_count = len(kept_manifests)
         self.snapshot_properties = {
