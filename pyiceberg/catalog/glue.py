@@ -254,7 +254,11 @@ def _construct_table_input(
         "Name": table_name,
         "TableType": EXTERNAL_TABLE,
         "Parameters": _construct_parameters(
-            metadata_location, glue_table, prev_metadata_location, properties, prev_metadata_properties
+            metadata_location=metadata_location,
+            glue_table=glue_table,
+            prev_metadata_location=prev_metadata_location,
+            metadata_properties=properties,
+            prev_metadata_properties=prev_metadata_properties,
         ),
         "StorageDescriptor": {
             "Columns": _to_columns(metadata),
