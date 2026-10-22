@@ -15,13 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
 import pytest
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.memory import InMemoryCatalog
-from pyiceberg.manifest import ManifestContent, ManifestFile
+from pyiceberg.exceptions import ValidationException
+from pyiceberg.manifest import ManifestContent, ManifestEntry, ManifestFile
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation
 
@@ -303,3 +305,41 @@ def test_rewrites_needed_is_false_when_every_group_is_a_single_manifest(catalog:
     table = catalog.load_table("default.test_rewrite")
     assert table.current_snapshot() == snapshot_before
     assert len(_data_manifests(table)) == 3
+
+
+def test_rewrite_manifests_replans_after_concurrent_append(catalog: Catalog) -> None:
+    _create_table_with_appends(catalog, appends=3)
+    rewrite = catalog.load_table("default.test_rewrite").maintenance.rewrite_manifests()
+
+    # another writer commits between planning and committing the rewrite
+    catalog.load_table("default.test_rewrite").append(_arrow_table(offset=9))
+
+    rewrite.commit()
+
+    table = catalog.load_table("default.test_rewrite")
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.summary is not None
+    assert snapshot.summary.operation == Operation.REPLACE
+    # the concurrently appended file is merged in, not dropped
+    assert sorted(table.scan().to_arrow()["id"].to_pylist()) == list(range(1, 13))
+    assert len(_data_manifests(table)) == 1
+    assert snapshot.summary["manifests-replaced"] == "4"
+
+
+def test_rewrite_manifests_rejects_rewrite_that_drops_files(catalog: Catalog, monkeypatch: pytest.MonkeyPatch) -> None:
+    table = _create_table_with_appends(catalog, appends=3)
+    snapshot_before = table.current_snapshot()
+    lost_manifest_path = _data_manifests(table)[0].manifest_path
+    fetch_manifest_entry = ManifestFile.fetch_manifest_entry
+
+    def fetch_losing_one_manifest(self: ManifestFile, *args: Any, **kwargs: Any) -> list[ManifestEntry]:
+        entries = fetch_manifest_entry(self, *args, **kwargs)
+        return [] if self.manifest_path == lost_manifest_path else entries
+
+    monkeypatch.setattr(ManifestFile, "fetch_manifest_entry", fetch_losing_one_manifest)
+
+    with pytest.raises(ValidationException, match="same number of active files: 2 \\(new\\), 3 \\(old\\)"):
+        table.maintenance.rewrite_manifests().commit()
+
+    assert catalog.load_table("default.test_rewrite").current_snapshot() == snapshot_before
