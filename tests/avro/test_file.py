@@ -455,6 +455,30 @@ def test_all_primitive_types(is_required: bool) -> None:
         assert record[idx] == avro_entry_read_with_fastavro[idx], f"Invalid {field} read with fastavro"
 
 
+@pytest.mark.parametrize("is_required", [True, False])
+@pytest.mark.parametrize("sync_interval", [1, avro.DEFAULT_SYNC_INTERVAL])
+def test_project_decimal_field(is_required: bool, sync_interval: int) -> None:
+    file_schema = Schema(
+        NestedField(field_id=1, name="amount", field_type=DecimalType(6, 2), required=is_required),
+        NestedField(field_id=2, name="id", field_type=IntegerType(), required=True),
+    )
+    records = [Record(Decimal("0.00"), 10), Record(Decimal("123.45"), 42), Record(Decimal("-123.45"), -42)]
+    if not is_required:
+        records.insert(0, Record(None, 0))
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/decimal_projection.avro"
+        with avro.AvroOutputFile[Record](
+            PyArrowFileIO().new_output(tmp_avro_file), file_schema, "decimal_projection", sync_interval=sync_interval
+        ) as out:
+            out.write_block(records)
+
+        with avro.AvroFile[Record](
+            PyArrowFileIO().new_input(tmp_avro_file), read_schema=Schema(file_schema.find_field(2))
+        ) as avro_reader:
+            assert [record[0] for record in avro_reader] == [record[1] for record in records]
+
+
 def manifest_entry(index: int) -> ManifestEntry:
     return ManifestEntry.from_args(
         status=ManifestEntryStatus.ADDED,

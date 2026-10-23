@@ -277,7 +277,7 @@ class DecimalReader(Reader):
         return bytes_to_decimal(decoder.read(self._length), self.scale)
 
     def skip(self, decoder: BinaryDecoder) -> None:
-        decoder.skip_bytes()
+        decoder.skip(self._length)
 
     def __repr__(self) -> str:
         """Return the string representation of the DecimalReader class."""
