@@ -248,11 +248,56 @@ class UnsupportedPyArrowTypeException(Exception):
         super().__init__(*args)
 
 
+def _fsync_dir(path: str) -> None:
+    """Make the entries of a local directory durable."""
+    if os.name == "nt":
+        # A directory cannot be opened on Windows, and NTFS journals its directory entries
+        return
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+class _SyncOnCloseOutputStream(pyarrow.BufferedOutputStream):
+    """A buffered local output stream that is flushed to disk when it is closed.
+
+    A catalog may point at a file as soon as it has been written, so the contents and the directory entry
+    must survive a power loss before the commit, as an acknowledged PUT does on an object store.
+    """
+
+    def __init__(self, path: str, buffer_size: int):
+        self._raw = pyarrow.OSFile(path, mode="wb")
+        super().__init__(self._raw, buffer_size)
+        self._path = path
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        try:
+            self.flush()
+            os.fsync(self._raw.fileno())
+        finally:
+            super().close()
+        _fsync_dir(os.path.dirname(self._path) or ".")
+
+
 class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
     def open_output_stream(self, path: str, *args: Any, **kwargs: Any) -> pyarrow.NativeFile:
         # In LocalFileSystem, parent directories must be first created before opening an output stream
+        parent = os.path.dirname(path)
+        missing: list[str] = []
+        while parent and not os.path.isdir(parent):
+            missing.append(parent)
+            parent = os.path.dirname(parent)
         self.create_dir(os.path.dirname(path), recursive=True)
-        return super().open_output_stream(path, *args, **kwargs)
+        for directory in reversed(missing):
+            _fsync_dir(os.path.dirname(directory) or ".")
+        if args or kwargs.keys() - {"buffer_size"}:
+            # Compression or metadata was requested, which only pyarrow's own stream supports; it is not synced
+            return super().open_output_stream(path, *args, **kwargs)
+        return _SyncOnCloseOutputStream(path, kwargs.get("buffer_size") or ONE_MEGABYTE)
 
 
 class PyArrowFile(InputFile, OutputFile):
