@@ -53,6 +53,8 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import (
     AWS_ACCESS_KEY_ID,
+    AWS_ASSUME_ROLE_ARN,
+    AWS_ASSUME_ROLE_SESSION_NAME,
     AWS_PROFILE_NAME,
     AWS_REGION,
     AWS_ROLE_ARN,
@@ -356,11 +358,13 @@ class GlueCatalog(MetastoreCatalog):
                 aws_secret_access_key=get_first_property_value(properties, GLUE_SECRET_ACCESS_KEY, AWS_SECRET_ACCESS_KEY),
                 aws_session_token=get_first_property_value(properties, GLUE_SESSION_TOKEN, AWS_SESSION_TOKEN),
             )
-            if role_arn := get_first_property_value(properties, GLUE_ROLE_ARN, AWS_ROLE_ARN):
+            if role_arn := get_first_property_value(properties, GLUE_ROLE_ARN, AWS_ASSUME_ROLE_ARN, AWS_ROLE_ARN):
                 session = _get_aws_session_with_assumed_role(
                     session=session,
                     role_arn=role_arn,
-                    role_session_name=get_first_property_value(properties, GLUE_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME),
+                    role_session_name=get_first_property_value(
+                        properties, GLUE_ROLE_SESSION_NAME, AWS_ASSUME_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME
+                    ),
                     region_name=region_name,
                 )
             self.glue: GlueClient = session.client(

@@ -685,6 +685,30 @@ def test_dynamodb_assume_role_prefixed_properties_take_precedence() -> None:
 
 
 @mock_aws
+def test_dynamodb_assume_role_properties_take_precedence_over_role_properties() -> None:
+    session_properties: Properties = {
+        "client.assume-role.arn": "arn:aws:iam::123456789012:role/assume-role",
+        "client.assume-role.session-name": "assume-role-session",
+        "client.role-arn": "arn:aws:iam::123456789012:role/role",
+        "client.role-session-name": "role-session",
+        "client.region": "us-east-1",
+    }
+
+    with mock.patch(
+        "pyiceberg.catalog.dynamodb._get_aws_session_with_assumed_role",
+        wraps=_get_aws_session_with_assumed_role,
+    ) as mock_assume_role:
+        DynamoDbCatalog("dynamodb", **session_properties)
+
+    mock_assume_role.assert_called_once_with(
+        session=mock.ANY,
+        role_arn="arn:aws:iam::123456789012:role/assume-role",
+        role_session_name="assume-role-session",
+        region_name="us-east-1",
+    )
+
+
+@mock_aws
 def test_dynamodb_no_role_arn_does_not_assume_role() -> None:
     with mock.patch("pyiceberg.catalog.dynamodb._get_aws_session_with_assumed_role") as mock_assume_role:
         DynamoDbCatalog("dynamodb", **{"client.region": "us-east-1"})

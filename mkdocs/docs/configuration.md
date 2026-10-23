@@ -944,8 +944,10 @@ configures the AWS credentials for both Glue Catalog and S3 FileIO.
 | client.secret-access-key | password       | Configure the static secret access key used to access both the Glue/DynamoDB Catalog and the S3 FileIO                                 |
 | client.session-token     | AQoDYXdzEJr... | Configure the static session token used to access both the Glue/DynamoDB Catalog and the S3 FileIO                                     |
 | client.profile-name      | default        | Configure the AWS profile used to access both the Glue/DynamoDB Catalog and the S3 FileIO (only supported by `FsspecFileIO` currently) |
-| client.role-session-name | session        | An optional identifier for the assumed role session used to access both the Glue/DynamoDB Catalog and the S3 FileIO.                    |
-| client.role-arn          | arn:aws:...    | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role before accessing both the Glue/DynamoDB Catalog and the S3 FileIO. |
+| client.assume-role.arn          | arn:aws:...    | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role before accessing both the Glue/DynamoDB Catalog and the S3 FileIO. |
+| client.assume-role.session-name | session        | An optional identifier for the assumed role session used to access both the Glue/DynamoDB Catalog and the S3 FileIO. |
+| client.role-arn                 | arn:aws:...    | Same as `client.assume-role.arn`, used when that key is not set. |
+| client.role-session-name        | session        | Same as `client.assume-role.session-name`, used when that key is not set. |
 
 <!-- prettier-ignore-start -->
 
