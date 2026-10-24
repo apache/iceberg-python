@@ -720,6 +720,42 @@ def test_rest_drop_view(
 
 
 @pytest.mark.integration
+def test_rest_identifiers_with_special_characters(
+    rest_catalog: RestCatalog, table_schema_simple: Schema, example_view_metadata_v1: dict[str, Any]
+) -> None:
+    """Names that need URL encoding must round-trip unchanged through path, query, and body parameters."""
+    # "%" is omitted because the REST fixture rejects "%25" in URL paths with a 400
+    for name in ["with space", "a+b&c=d", "\u65e5\u672c"]:
+        parent = (f"{name}_{uuid.uuid4().hex}",)
+        namespace = (*parent, name)
+        table_identifier = (*namespace, f"table {name}")
+        view_identifier = (*namespace, f"view {name}")
+
+        rest_catalog.create_namespace(parent)
+        rest_catalog.create_namespace(namespace, properties={"key": name})
+        assert parent in rest_catalog.list_namespaces()
+        assert rest_catalog.list_namespaces(parent) == [namespace]
+        assert rest_catalog.namespace_exists(namespace)
+        assert rest_catalog.load_namespace_properties(namespace)["key"] == name
+
+        rest_catalog.create_table(table_identifier, table_schema_simple)
+        assert rest_catalog.table_exists(table_identifier)
+        assert rest_catalog.list_tables(namespace) == [table_identifier]
+        assert rest_catalog.load_table(table_identifier).name() == table_identifier
+
+        view = View(view_identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+        rest_catalog.create_view(view_identifier, view.schema(), view.current_version())
+        assert rest_catalog.view_exists(view_identifier)
+        assert rest_catalog.list_views(namespace) == [view_identifier]
+
+        rest_catalog.drop_view(view_identifier)
+        rest_catalog.drop_table(table_identifier)
+        rest_catalog.drop_namespace(namespace)
+        rest_catalog.drop_namespace(parent)
+        assert not rest_catalog.namespace_exists(parent)
+
+
+@pytest.mark.integration
 def test_rest_custom_namespace_separator(rest_catalog: RestCatalog, table_schema_simple: Schema) -> None:
     """
     Tests that the REST catalog correctly picks up the namespace-separator from the config endpoint.
