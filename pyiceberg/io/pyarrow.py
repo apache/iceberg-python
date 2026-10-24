@@ -2986,7 +2986,7 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
     if compression_codec == ICEBERG_UNCOMPRESSED_CODEC:
         compression_codec = PYARROW_UNCOMPRESSED_CODEC
 
-    return {
+    kwargs: dict[str, Any] = {
         "compression": compression_codec,
         "compression_level": compression_level,
         "data_page_size": property_as_int(
@@ -2999,12 +2999,17 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
             property_name=TableProperties.PARQUET_DICT_SIZE_BYTES,
             default=TableProperties.PARQUET_DICT_SIZE_BYTES_DEFAULT,
         ),
-        "write_batch_size": property_as_int(
+    }
+    # pyarrow added max_rows_per_page, the per-page row limit, in 23.0.0.
+    if tuple(map(int, pa.__version__.split(".")[:2])) >= (23, 0):
+        kwargs["max_rows_per_page"] = property_as_int(
             properties=table_properties,
             property_name=TableProperties.PARQUET_PAGE_ROW_LIMIT,
             default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
-        ),
-    }
+        )
+    elif TableProperties.PARQUET_PAGE_ROW_LIMIT in table_properties:
+        warnings.warn(f"{TableProperties.PARQUET_PAGE_ROW_LIMIT} requires pyarrow >= 23.0.0", stacklevel=2)
+    return kwargs
 
 
 def _dataframe_to_data_files(
