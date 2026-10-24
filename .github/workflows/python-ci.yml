@@ -28,7 +28,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-unit-test:
@@ -48,7 +48,7 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -82,7 +82,7 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     - name: Install
@@ -91,7 +91,7 @@ jobs:
       run: uv run python -m pytest tests/ -m unit --ignore=tests/integration -v -x
 
   cibw-dev-env-smoke-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -100,7 +100,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     # Why this exists:
@@ -118,7 +118,7 @@ jobs:
   python-ci-required:
     if: ${{ always() }}
     needs: [lint-and-unit-test, windows-unit-test, cibw-dev-env-smoke-test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
     - name: Verify Python CI jobs succeeded
       env:
