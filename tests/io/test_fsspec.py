@@ -712,15 +712,20 @@ def test_adls_account_name_resolved_per_location() -> None:
 
 
 def test_adls_does_not_mutate_properties() -> None:
-    """Resolving an account from a location must not write it back into the shared properties."""
-    session_properties: Properties = {"adls.tenant-id": "test-tenant-id"}
+    """Resolving an account or SAS token from a location must not write it back into the shared properties."""
+    original_properties: Properties = {
+        "adls.tenant-id": "test-tenant-id",
+        "adls.sas-token.accountone.dfs.core.windows.net": "test-sas-token",
+    }
+    session_properties: Properties = dict(original_properties)
 
     with mock.patch("adlfs.AzureBlobFileSystem"):
         adls_fileio = FsspecFileIO(properties=session_properties)
         adls_fileio.new_input(location="abfss://data@accountone.dfs.core.windows.net/wh/t/a.parquet")
 
     assert "adls.account-name" not in adls_fileio.properties
-    assert session_properties == {"adls.tenant-id": "test-tenant-id"}
+    assert "adls.sas-token" not in adls_fileio.properties
+    assert session_properties == original_properties
 
 
 def test_adls_account_name_not_overridden_when_in_properties() -> None:
