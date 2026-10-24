@@ -106,7 +106,7 @@ from pyiceberg.table.deletion_vector import (
 from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
-from pyiceberg.transforms import HourTransform, IdentityTransform
+from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -3192,6 +3192,83 @@ def test_determine_partitions_identity_nan() -> None:
         repr(p.partition_key.partition[0]): sorted(p.arrow_table_partition["id"].to_pylist()) for p in partitions
     }
     assert rows_by_partition == {"1.0": [1], "nan": [2, 4], "None": [3]}
+
+
+@pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(4), TruncateTransform(1)])
+def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) -> None:
+    schema = Schema(
+        NestedField(id=1, name="region", field_type=StringType(), required=False),
+        NestedField(id=2, name="payload", field_type=BinaryType(), required=False),
+        NestedField(
+            id=3,
+            name="info",
+            field_type=StructType(
+                NestedField(id=4, name="tags", field_type=ListType(5, StringType(), element_required=False), required=False),
+                NestedField(id=6, name="attrs", field_type=MapType(7, StringType(), 8, BinaryType()), required=False),
+            ),
+            required=False,
+        ),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=transform, name="region_part"))
+    arrow_schema = pa.schema(
+        [
+            pa.field("region", pa.string_view()),
+            pa.field("payload", pa.binary_view()),
+            pa.field(
+                "info",
+                pa.struct(
+                    [
+                        pa.field("tags", pa.list_(pa.string_view())),
+                        pa.field("attrs", pa.map_(pa.string_view(), pa.binary_view())),
+                    ]
+                ),
+            ),
+        ]
+    )
+    rows = [
+        {"region": "us", "payload": b"a", "info": {"tags": ["x"], "attrs": [("k", b"v")]}},
+        {"region": "eu", "payload": None, "info": None},
+        {"region": "us", "payload": b"b", "info": {"tags": None, "attrs": None}},
+        {"region": None, "payload": b"c", "info": {"tags": ["y", None], "attrs": []}},
+    ]
+    arrow_table = pa.Table.from_pylist(rows, schema=arrow_schema)
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    assert {p.partition_key.partition[0] for p in partitions} == {
+        transform.transform(StringType())(region) for region in ("us", "eu", None)
+    }
+    written = pa.concat_tables([p.arrow_table_partition for p in partitions])
+    assert sorted(written.to_pylist(), key=str) == sorted(rows, key=str)
+
+
+def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="region", field_type=StringType(), required=False),
+        NestedField(id=3, name="payload", field_type=BinaryType(), required=False),
+        NestedField(id=4, name="category", field_type=StringType(), required=False),
+        NestedField(id=5, name="labels", field_type=ListType(6, StringType(), element_required=False), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="region"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_view_types", schema=schema, partition_spec=spec)
+
+    categories = pa.array(["a", "b", None], type=pa.string_view()).dictionary_encode()
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "region": pa.array(["us", "eu", "us"], type=pa.string_view()),
+            "payload": pa.array([b"a", None, b"c"], type=pa.binary_view()),
+            # Polars exports Categorical as dictionary<string_view> and List(Categorical) as large_list<dictionary<string_view>>
+            "category": categories,
+            "labels": pa.LargeListArray.from_arrays([0, 1, 1, 3], categories),
+        }
+    )
+    table.append(arrow_table)
+
+    assert len(table.inspect.partitions()) == 2
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
 
 
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
