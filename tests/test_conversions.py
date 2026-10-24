@@ -616,6 +616,23 @@ def test_json_serialize_roundtrip(primitive_type: PrimitiveType, value: Any) -> 
     assert value == conversions.from_json(primitive_type, conversions.to_json(primitive_type, value))
 
 
+@pytest.mark.parametrize(
+    "primitive_type, json_val, expected",
+    [
+        (TimestampType(), "2017-11-16T22:31:08.123456789", datetime(2017, 11, 16, 22, 31, 8, 123456)),
+        (
+            TimestamptzType(),
+            "2017-11-16T22:31:08.123456789+00:00",
+            datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=timezone.utc),
+        ),
+    ],
+)
+def test_json_single_deserialization_with_nano_precision(
+    primitive_type: PrimitiveType, json_val: str, expected: datetime
+) -> None:
+    assert conversions.from_json(primitive_type, json_val) == expected
+
+
 def test_unknown_type_conversions() -> None:
     """Unknown values are always null, so they have no binary or partition representation."""
     unknown = UnknownType()
