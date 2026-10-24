@@ -969,7 +969,7 @@ class MetastoreCatalog(Catalog, ABC):
         manifest_lists_to_delete = set()
         manifests_to_delete: list[ManifestFile] = []
         for snapshot in metadata.snapshots:
-            manifests_to_delete += snapshot.manifests(io)
+            manifests_to_delete += snapshot.manifests(io, table_uuid=metadata.table_uuid)
             manifest_lists_to_delete.add(snapshot.manifest_list)
 
         manifest_paths_to_delete = {manifest.manifest_path for manifest in manifests_to_delete}
