@@ -916,11 +916,15 @@ class LiteralPredicate(UnboundPredicate, ABC):
                 return AlwaysTrue()
             elif isinstance(self, (GreaterThan, GreaterThanOrEqual, EqualTo)):
                 return AlwaysFalse()
+            else:
+                raise ValueError(f"Cannot bind {type(self).__name__} with AboveMax literal")
         elif isinstance(lit, BelowMin):
             if isinstance(self, (GreaterThan, GreaterThanOrEqual, NotEqualTo)):
                 return AlwaysTrue()
             elif isinstance(self, (LessThan, LessThanOrEqual, EqualTo)):
                 return AlwaysFalse()
+            else:
+                raise ValueError(f"Cannot bind {type(self).__name__} with BelowMin literal")
 
         return self.as_bound(bound_term, lit)  # type: ignore
 
