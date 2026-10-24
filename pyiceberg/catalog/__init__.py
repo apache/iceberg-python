@@ -74,6 +74,7 @@ from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
+    import boto3
     import pyarrow as pa
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,54 @@ URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
 BOTOCORE_SESSION = "botocore_session"
+
+DEFAULT_ROLE_SESSION_NAME = "pyiceberg"
+
+
+def _get_aws_session_with_assumed_role(
+    session: boto3.Session,
+    role_arn: str,
+    role_session_name: str | None,
+    region_name: str | None,
+) -> boto3.Session:
+    """Return a boto3 session whose credentials come from assuming an IAM role via STS.
+
+    This mirrors the assume-role behavior already available for the S3 FileIO (``client.role-arn`` /
+    ``client.role-session-name``) so that the AWS catalog clients (Glue, DynamoDB) can honor the same
+    properties. The role is assumed on first use and again before the temporary credentials expire,
+    so a long-lived catalog keeps working past the role session duration.
+
+    Args:
+        session: The base boto3 session whose credentials are used to call STS.
+        role_arn: The ARN of the role to assume.
+        role_session_name: An identifier for the assumed-role session. Defaults to ``pyiceberg``.
+        region_name: The region for the returned session.
+
+    Returns:
+        A new boto3 session authenticated with refreshable assumed-role credentials.
+    """
+    import boto3
+    import botocore.session
+    from botocore.credentials import AssumeRoleCredentialFetcher, DeferredRefreshableCredentials
+
+    source_credentials = session.get_credentials()
+    if source_credentials is None:
+        raise ValueError(f"No AWS credentials found to assume role {role_arn}")
+
+    fetcher = AssumeRoleCredentialFetcher(
+        client_creator=session.client,
+        source_credentials=source_credentials,
+        role_arn=role_arn,
+        extra_args={"RoleSessionName": role_session_name or DEFAULT_ROLE_SESSION_NAME},
+    )
+    botocore_session = botocore.session.Session()
+    # botocore has no public setter for refreshable credentials on a session.
+    botocore_session._credentials = DeferredRefreshableCredentials(
+        refresh_using=fetcher.fetch_credentials,
+        method="assume-role",
+    )
+    return boto3.Session(botocore_session=botocore_session, region_name=region_name)
+
 
 TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     r"""
