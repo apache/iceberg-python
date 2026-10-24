@@ -919,19 +919,31 @@ def test_decimal_to_long_below_min() -> None:
     assert isinstance(DecimalLiteral(Decimal(LongType.min - 1)).to(LongType()), LongBelowMin)
 
 
-@pytest.mark.parametrize("value", ["2.5", "2.6", "-2.5", "0.1"])
-@pytest.mark.parametrize("target_type", [IntegerType(), LongType()])
-def test_fractional_decimal_to_integral_type_raises(value: str, target_type: PrimitiveType) -> None:
+def test_fractional_decimal_to_integral_type_raises() -> None:
     # Rounding would change the predicate, e.g. x > 2.6 would become x > 3 and drop x = 3
-    with pytest.raises(ValueError, match=f"Could not convert {value} into a {target_type}"):
-        _ = DecimalLiteral(Decimal(value)).to(target_type)
+    for target_type in [IntegerType(), LongType()]:
+        for value in ["2.5", "2.6", "-2.5", "0.1"]:
+            with pytest.raises(ValueError, match=f"Could not convert {value} into a {target_type}"):
+                _ = DecimalLiteral(Decimal(value)).to(target_type)
 
 
-@pytest.mark.parametrize("value", ["2", "2.0", "2.00", "-2.0"])
-@pytest.mark.parametrize("target_type", [IntegerType(), LongType()])
-def test_integral_decimal_to_integral_type(value: str, target_type: PrimitiveType) -> None:
+def test_integral_decimal_to_integral_type() -> None:
     # A decimal literal without a fractional part, such as 2.0, still converts exactly
-    assert DecimalLiteral(Decimal(value)).to(target_type) == LongLiteral(int(Decimal(value)))
+    for target_type in [IntegerType(), LongType()]:
+        for value in ["2", "2.0", "2.00", "-2.0"]:
+            assert DecimalLiteral(Decimal(value)).to(target_type) == LongLiteral(int(Decimal(value)))
+
+
+def test_fractional_decimal_near_integral_type_bounds_raises() -> None:
+    # Rejected even when rounding would cross the bound
+    for target_type, bound in [
+        (IntegerType(), IntegerType.max),
+        (IntegerType(), IntegerType.min),
+        (LongType(), LongType.max),
+        (LongType(), LongType.min),
+    ]:
+        with pytest.raises(ValueError, match="value has a fractional part"):
+            _ = DecimalLiteral(Decimal(f"{bound}.9")).to(target_type)
 
 
 def test_string_to_integer_type_invalid_value() -> None:

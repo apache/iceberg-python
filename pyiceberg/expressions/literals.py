@@ -535,23 +535,23 @@ class DecimalLiteral(Literal[Decimal]):
 
     @to.register(IntegerType)
     def _(self, type_var: IntegerType) -> Literal[int]:
-        value_int = int(self.value.to_integral_value())
+        value_int = _to_integral(self.value, type_var)
         if value_int > IntegerType.max:
             return IntAboveMax()
         elif value_int < IntegerType.min:
             return IntBelowMin()
         else:
-            return LongLiteral(_to_integral(self.value, type_var))
+            return LongLiteral(value_int)
 
     @to.register(LongType)
     def _(self, type_var: LongType) -> Literal[int]:
-        value_int = int(self.value.to_integral_value())
+        value_int = _to_integral(self.value, type_var)
         if value_int > LongType.max:
             return LongAboveMax()
         elif value_int < LongType.min:
             return LongBelowMin()
         else:
-            return LongLiteral(_to_integral(self.value, type_var))
+            return LongLiteral(value_int)
 
     @to.register(FloatType)
     def _(self, _: FloatType) -> Literal[float]:
