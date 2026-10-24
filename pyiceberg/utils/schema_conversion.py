@@ -541,7 +541,8 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         result = {
             "name": sanitized_name,
             FIELD_ID_PROP: field.field_id,
-            "type": field_result if field.required else ["null", field_result],
+            # Unknown maps to Avro "null", and a union cannot contain "null" twice
+            "type": field_result if field.required or isinstance(field.field_type, UnknownType) else ["null", field_result],
         }
 
         if original_name != sanitized_name:

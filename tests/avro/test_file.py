@@ -56,6 +56,7 @@ from pyiceberg.types import (
     TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.schema_conversion import AvroSchemaConversion
@@ -571,3 +572,23 @@ def test_avro_output_file_tell_includes_buffered_records() -> None:
             out.write_block([manifest_entry(0)])
 
             assert out.tell() > after_header
+
+
+def test_write_optional_unknown_type() -> None:
+    # A partition field whose source column was dropped has the unknown type
+    schema = Schema(
+        NestedField(field_id=1, name="before", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="dropped", field_type=UnknownType(), required=False),
+        NestedField(field_id=3, name="after", field_type=LongType(), required=True),
+    )
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/unknown.avro"
+        with avro.AvroOutputFile[Record](PyArrowFileIO().new_output(tmp_avro_file), schema, "unknown") as out:
+            out.write_block([Record("hello", None, 42)])
+
+        with avro.AvroFile[Record](PyArrowFileIO().new_input(tmp_avro_file), schema, {-1: Record}) as avro_reader:
+            assert list(avro_reader) == [Record("hello", None, 42)]
+
+        with open(tmp_avro_file, "rb") as fo:
+            assert list(reader(fo=fo)) == [{"before": "hello", "dropped": None, "after": 42}]
