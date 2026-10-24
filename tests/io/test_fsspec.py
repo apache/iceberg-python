@@ -20,10 +20,14 @@ import pickle
 import tempfile
 import threading
 import uuid
+from typing import Any
 from unittest import mock
 
 import pytest
+from botocore.auth import S3SigV4Auth
 from botocore.awsrequest import AWSRequest
+from botocore.config import Config
+from botocore.credentials import Credentials
 from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
 from requests_mock import Mocker
@@ -993,6 +997,43 @@ def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
         "X-Custom-Header": "value",
     }
+
+
+@pytest.mark.s3
+def test_s3v4_rest_signer_write_read_delete(request: pytest.FixtureRequest, requests_mock: Mocker) -> None:
+    """Test writing, reading, and deleting an S3 file through a REST signing service"""
+    credentials = Credentials(request.config.getoption("--s3.access-key-id"), request.config.getoption("--s3.secret-access-key"))
+
+    def sign(signer_request: Any, _: Any) -> dict[str, Any]:
+        signer_body = signer_request.json()
+        aws_request = AWSRequest(
+            method=signer_body["method"],
+            url=signer_body["uri"],
+            headers={key: values[0] for key, values in signer_body["headers"].items()},
+        )
+        # Upload bodies are not forwarded for signing, so leave the payload unsigned
+        aws_request.context["client_config"] = Config(s3={"payload_signing_enabled": False})
+        S3SigV4Auth(credentials, "s3", signer_body["region"]).add_auth(aws_request)
+        signed_headers = ("Authorization", "X-Amz-Content-SHA256", "X-Amz-Date")
+        return {"uri": signer_body["uri"], "headers": {key: [aws_request.headers[key]] for key in signed_headers}}
+
+    requests_mock.post(f"{TEST_URI}/v1/aws/s3/sign", json=sign)
+    fileio = FsspecFileIO(
+        properties={"s3.endpoint": request.config.getoption("--s3.endpoint"), "s3.signer": "S3V4RestSigner", "uri": TEST_URI}
+    )
+    filename = str(uuid.uuid4())
+    location = f"s3://warehouse/{filename}"
+
+    with fileio.new_output(location).create() as f:
+        f.write(b"foo")
+    assert fileio.new_input(location).open().read() == b"foo"
+    fileio.delete(location)
+    assert not fileio.new_input(location).exists()
+
+    signer_bodies = [signer_request.json() for signer_request in requests_mock.request_history]
+    request_bodies = [signer_body["body"] for signer_body in signer_bodies if "body" in signer_body]
+    assert len(request_bodies) == 1
+    assert f"<Key>{filename}</Key>" in request_bodies[0]
 
 
 def test_s3v4_rest_signer_endpoint(requests_mock: Mocker) -> None:
