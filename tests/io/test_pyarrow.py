@@ -160,6 +160,27 @@ def test_pyarrow_local_fs_can_create_path_without_parent_dir() -> None:
             pytest.fail("Failed to write to file without parent directory")
 
 
+def test_pyarrow_local_fs_syncs_file_and_new_directories_on_close(tmp_path: Path) -> None:
+    """Test a closed local file and the directory entries created for it are flushed to disk"""
+    file_path = f"{tmp_path}/foo/bar/baz.txt"
+    synced: list[int] = []
+    real_fsync = os.fsync
+
+    def record_fsync(fd: int) -> None:
+        synced.append(os.fstat(fd).st_ino)
+        real_fsync(fd)
+
+    with patch("os.fsync", side_effect=record_fsync):
+        with PyArrowFileIO().new_output(file_path).create() as f:
+            f.write(b"foo")
+
+    expected = [os.stat(file_path).st_ino]
+    if os.name != "nt":
+        expected += [os.stat(directory).st_ino for directory in (tmp_path, tmp_path / "foo", tmp_path / "foo" / "bar")]
+    assert sorted(synced) == sorted(expected)
+    assert Path(file_path).read_bytes() == b"foo"
+
+
 def test_pyarrow_input_file() -> None:
     """Test reading a file using PyArrowFile"""
 
