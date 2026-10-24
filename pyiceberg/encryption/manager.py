@@ -41,11 +41,7 @@ KEK_CACHE_TTL_SECONDS = 3600
 
 
 class EncryptionManager:
-    """Generates file keys and wraps manifest list key metadata for an encrypted table.
-
-    Mirrors iceberg-rust's `EncryptionManager`. Keys it writes can be read by Java's
-    `StandardEncryptionManager`, and the reverse.
-    """
+    """Generates file keys and wraps manifest list key metadata for an encrypted table."""
 
     def __init__(
         self,
