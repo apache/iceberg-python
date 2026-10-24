@@ -63,7 +63,9 @@ from pyiceberg.expressions import (
     BoundNotStartsWith,
     BoundReference,
     BoundStartsWith,
+    EqualTo,
     GreaterThan,
+    IsNull,
     Not,
     Or,
 )
@@ -1493,6 +1495,42 @@ def test_identity_transform_column_projection_with_falsy_value(
     assert table.scan(row_filter=row_filter, selected_fields=("other_field",)).to_arrow() == pa.table(
         {"other_field": ["foo", "bar"]}
     )
+
+
+def test_identity_transform_null_partition_value_takes_precedence_over_initial_default(tmpdir: str) -> None:
+    """A null identity partition value must project as null, not as the field's initial-default."""
+    table_schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False),
+        NestedField(2, "partition_col", IntegerType(), required=False, initial_default=7),
+    )
+    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_col"))
+    table_metadata = TableMetadataV3(
+        location=str(tmpdir), last_column_id=2, schemas=[table_schema], partition_specs=[partition_spec], next_row_id=0
+    )
+
+    arrow_schema = pa.schema([pa.field("other_field", pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    file_path = _write_table_to_file(
+        f"{tmpdir}/null_partition.parquet", arrow_schema, pa.table({"other_field": ["foo", "bar"]}, schema=arrow_schema)
+    )
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(None),
+        record_count=2,
+        file_size_in_bytes=os.path.getsize(file_path),
+        spec_id=partition_spec.spec_id,
+    )
+
+    def scan(projected_schema: Schema, row_filter: BooleanExpression) -> pa.Table:
+        return ArrowScan(table_metadata, PyArrowFileIO(), projected_schema, row_filter).to_table([FileScanTask(data_file)])
+
+    assert scan(table_schema, AlwaysTrue()).to_pydict() == {"other_field": ["foo", "bar"], "partition_col": [None, None]}
+
+    # Filters on the partition column see null whether or not the column is projected
+    for projected_schema in (table_schema, Schema(table_schema.fields[0])):
+        assert scan(projected_schema, IsNull("partition_col"))["other_field"].to_pylist() == ["foo", "bar"]
+        assert scan(projected_schema, EqualTo("partition_col", 7)).num_rows == 0
 
 
 @pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])
