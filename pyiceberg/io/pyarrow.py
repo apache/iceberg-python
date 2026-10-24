@@ -2111,7 +2111,14 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             if isinstance(value_array, pa.StructArray):
                 # This can be removed once this has been fixed:
                 # https://github.com/apache/arrow/issues/38809
-                list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)
+                # Pass the validity mask, otherwise null lists become empty lists. Arrow refuses a mask
+                # with sliced offsets, so rebase the offsets onto the values the list covers.
+                start, end = list_array.offsets[0].as_py(), list_array.offsets[-1].as_py()
+                list_array = pa.LargeListArray.from_arrays(
+                    pc.subtract(list_array.offsets, start),
+                    value_array.slice(start, end - start),
+                    mask=list_array.is_null(),
+                )
             value_array = self._cast_if_needed(list_type.element_field, value_array)
             arrow_field = list_initializer(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
