@@ -20,7 +20,7 @@ from typing import Any
 from uuid import UUID
 
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Identifier
+from pyiceberg.typedef import EMPTY_DICT, Identifier
 from pyiceberg.view.metadata import SQLViewRepresentation, ViewHistoryEntry, ViewMetadata, ViewVersion
 
 
@@ -29,14 +29,17 @@ class View:
 
     _identifier: Identifier
     metadata: ViewMetadata
+    config: dict[str, str]
 
     def __init__(
         self,
         identifier: Identifier,
         metadata: ViewMetadata,
+        config: dict[str, str] = EMPTY_DICT,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
+        self.config = config
 
     def name(self) -> Identifier:
         """Return the identifier of this view."""

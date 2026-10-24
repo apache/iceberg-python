@@ -268,6 +268,15 @@ def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
 predicate = (between | comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
 
 
+@predicate.add_parse_action
+def _(result: ParseResults) -> BooleanExpression:
+    # A bare "true" or "false" in an operand position folds to AlwaysTrue or AlwaysFalse
+    expr = result[0]
+    if isinstance(expr, BooleanLiteral):
+        return AlwaysTrue() if expr.value else AlwaysFalse()
+    return expr
+
+
 def handle_not(result: ParseResults) -> Not:
     return Not(result[0][0])
 
@@ -280,29 +289,14 @@ def handle_or(result: ParseResults) -> Or:
     return Or(*result[0])
 
 
-def handle_always_expression(result: ParseResults) -> BooleanExpression:
-    # If the entire result is "true" or "false", return AlwaysTrue or AlwaysFalse
-    expr = result[0]
-    if isinstance(expr, BooleanLiteral):
-        if expr.value:
-            return AlwaysTrue()
-        else:
-            return AlwaysFalse()
-    return result[0]
-
-
-boolean_expression = (
-    infix_notation(
-        predicate,
-        [
-            (Suppress(NOT), 1, opAssoc.RIGHT, handle_not),
-            (Suppress(AND), 2, opAssoc.LEFT, handle_and),
-            (Suppress(OR), 2, opAssoc.LEFT, handle_or),
-        ],
-    )
-    .set_name("expr")
-    .add_parse_action(handle_always_expression)
-)
+boolean_expression = infix_notation(
+    predicate,
+    [
+        (Suppress(NOT), 1, opAssoc.RIGHT, handle_not),
+        (Suppress(AND), 2, opAssoc.LEFT, handle_and),
+        (Suppress(OR), 2, opAssoc.LEFT, handle_or),
+    ],
+).set_name("expr")
 
 
 def parse(expr: str) -> BooleanExpression:

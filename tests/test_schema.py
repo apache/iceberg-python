@@ -119,6 +119,18 @@ def test_schema_repr_two_fields() -> None:
     assert expected == actual
 
 
+def test_empty_schema_equality() -> None:
+    assert Schema() == Schema()
+
+
+def test_schema_equality_ignores_identifier_field_order() -> None:
+    fields = (
+        NestedField(field_id=1, name="foo", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=LongType(), required=True),
+    )
+    assert Schema(*fields, identifier_field_ids=[1, 2]) == Schema(*fields, identifier_field_ids=[2, 1])
+
+
 def test_schema_raise_on_duplicate_names() -> None:
     """Test schema representation"""
     with pytest.raises(ValueError) as exc_info:
@@ -1105,7 +1117,7 @@ def test_add_nested_lists(primitive_fields: NestedField, table_v2: Table) -> Non
                                     element_id=7,
                                     element_type=ListType(
                                         element_id=8,
-                                        element_type=ListType(element_id=9, element_type=DecimalType(precision=11, scale=20)),
+                                        element_type=ListType(element_id=9, element_type=DecimalType(precision=20, scale=11)),
                                         element_required=False,
                                     ),
                                     element_required=False,

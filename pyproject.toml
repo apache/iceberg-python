@@ -117,7 +117,7 @@ dev = [
     "typing-extensions==4.16.0",
     "pytest-mock==3.15.1",
     "pyspark[connect]==4.0.1",
-    "protobuf==7.36.1", # match Spark Connect's gencode
+    "protobuf==7.36.2", # match Spark Connect's gencode
     "cython>=3.0.0",
     "deptry>=0.14",
     "docutils!=0.21.post1",
@@ -129,7 +129,7 @@ dev = [
     "papermill>=2.6.0",
     "nbformat>=5.10.0",
     "ipykernel>=6.29.0",
-    "ty==0.0.80",
+    "ty==0.0.84",
 ]
 # for mkdocs
 docs = [
@@ -137,7 +137,7 @@ docs = [
     "griffe==2.3.0",
     "jinja2==3.1.6",
     "mkdocstrings==1.0.6",
-    "mkdocstrings-python==2.0.8",
+    "mkdocstrings-python==2.0.9",
     "mkdocs-literate-nav==0.6.3",
     "mkdocs-autorefs==1.4.4",
     "mkdocs-gen-files==0.6.1",
@@ -243,8 +243,8 @@ markers = [
 # Turns a warning into an error
 filterwarnings = [
   "error",
-  # Ignore Python version deprecation warning from google.api_core while we still support 3.10
-  "ignore:You are using a Python version.*which Google will stop supporting:FutureWarning:google.api_core",
+  # Ignore Python version deprecation, end-of-life and unsupported warnings from google.api_core while we still support 3.10
+  "ignore:You are using a (non-supported )?Python version:FutureWarning:google.api_core",
   # Python 3.13 sqlite3 module ResourceWarnings for unclosed database connections
   "ignore:unclosed database in <sqlite3.Connection object*:ResourceWarning",
   # Ignore Ray subprocess cleanup warnings
