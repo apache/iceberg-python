@@ -3247,16 +3247,22 @@ def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> Non
         NestedField(id=1, name="id", field_type=LongType(), required=False),
         NestedField(id=2, name="region", field_type=StringType(), required=False),
         NestedField(id=3, name="payload", field_type=BinaryType(), required=False),
+        NestedField(id=4, name="category", field_type=StringType(), required=False),
+        NestedField(id=5, name="labels", field_type=ListType(6, StringType(), element_required=False), required=False),
     )
     spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="region"))
     catalog.create_namespace("default")
     table = catalog.create_table("default.test_append_view_types", schema=schema, partition_spec=spec)
 
+    categories = pa.array(["a", "b", None], type=pa.string_view()).dictionary_encode()
     arrow_table = pa.table(
         {
             "id": pa.array([1, 2, 3], type=pa.int64()),
             "region": pa.array(["us", "eu", "us"], type=pa.string_view()),
             "payload": pa.array([b"a", None, b"c"], type=pa.binary_view()),
+            # Polars exports Categorical as dictionary<string_view> and List(Categorical) as large_list<dictionary<string_view>>
+            "category": categories,
+            "labels": pa.LargeListArray.from_arrays([0, 1, 1, 3], categories),
         }
     )
     table.append(arrow_table)
