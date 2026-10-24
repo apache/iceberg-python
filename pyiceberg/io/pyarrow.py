@@ -2574,6 +2574,7 @@ def data_file_statistics_from_parquet_metadata(
     parquet_metadata: pq.FileMetaData,
     stats_columns: dict[int, StatisticsCollector],
     parquet_column_mapping: dict[str, int],
+    nan_value_counts: dict[int, int] | None = None,
 ) -> DataFileStatistics:
     """
     Compute and return DataFileStatistics that includes the following.
@@ -2591,13 +2592,15 @@ def data_file_statistics_from_parquet_metadata(
         stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
             set the mode for column metrics collection
         parquet_column_mapping (Dict[str, int]): The mapping of the parquet file name to the field ID
+        nan_value_counts (Optional[Dict[int, int]]): The NaN counts collected from the written data,
+            as Parquet statistics do not track NaN values
     """
     column_sizes: dict[int, int] = {}
     value_counts: dict[int, int] = {}
     split_offsets: list[int] = []
 
     null_value_counts: dict[int, int] = {}
-    nan_value_counts: dict[int, int] = {}
+    nan_value_counts = dict(nan_value_counts) if nan_value_counts else {}
 
     col_aggs = {}
 
@@ -2689,6 +2692,40 @@ def data_file_statistics_from_parquet_metadata(
     )
 
 
+def _nan_value_counts(table: pa.Table, schema: Schema, stats_columns: dict[int, StatisticsCollector]) -> dict[int, int]:
+    """Count the NaN values of the float and double columns that collect metrics."""
+    nan_field_ids = {
+        field_id
+        for field_id, stats_col in stats_columns.items()
+        if isinstance(stats_col.iceberg_type, (FloatType, DoubleType)) and stats_col.mode != MetricsMode(MetricModeTypes.NONE)
+    }
+    nan_value_counts: dict[int, int] = {}
+    if not nan_field_ids:
+        return nan_value_counts
+
+    def count(field_id: int, field_type: IcebergType, array: pa.Array) -> None:
+        if isinstance(field_type, StructType):
+            for nested_field in field_type.fields:
+                if array.type.get_field_index(nested_field.name) >= 0:
+                    # struct_field also applies the validity of the parent struct
+                    count(nested_field.field_id, nested_field.field_type, pc.struct_field(array, nested_field.name))
+        elif isinstance(field_type, ListType):
+            count(field_type.element_id, field_type.element_type, array.flatten())
+        elif isinstance(field_type, MapType):
+            entries = array.cast(pa.list_(pa.struct([array.type.key_field, array.type.item_field]))).flatten()
+            count(field_type.key_id, field_type.key_type, entries.field(0))
+            count(field_type.value_id, field_type.value_type, entries.field(1))
+        elif field_id in nan_field_ids and pa.types.is_floating(array.type):
+            nan_value_counts[field_id] = nan_value_counts.get(field_id, 0) + (pc.sum(pc.is_nan(array)).as_py() or 0)
+
+    for field in schema.fields:
+        if table.schema.get_field_index(field.name) >= 0:
+            for chunk in table.column(field.name).chunks:
+                count(field.field_id, field.field_type, chunk)
+
+    return nan_value_counts
+
+
 class ParquetFormatWriter(FileFormatWriter):
     """Writes Arrow tables to a Parquet file."""
 
@@ -2698,6 +2735,8 @@ class ParquetFormatWriter(FileFormatWriter):
         self._properties = properties
         self._writer: pq.ParquetWriter | None = None
         self._fos: OutputStream | None = None
+        self._stats_columns = compute_statistics_plan(file_schema, properties)
+        self._nan_value_counts: dict[int, int] = {}
         self._parquet_writer_kwargs = _get_parquet_writer_kwargs(properties)
         self._row_group_size = property_as_int(
             properties=properties,
@@ -2720,6 +2759,9 @@ class ParquetFormatWriter(FileFormatWriter):
                 raise
             self._fos = fos
         self._writer.write(table, row_group_size=self._row_group_size)
+        # Parquet statistics do not track NaN values, so count them while writing
+        for field_id, nan_count in _nan_value_counts(table, self._file_schema, self._stats_columns).items():
+            self._nan_value_counts[field_id] = self._nan_value_counts.get(field_id, 0) + nan_count
 
     def close(self) -> DataFileStatistics:
         if self._result is not None:
@@ -2730,8 +2772,9 @@ class ParquetFormatWriter(FileFormatWriter):
             self._writer.close()
             self._result = data_file_statistics_from_parquet_metadata(
                 parquet_metadata=self._writer.writer.metadata,
-                stats_columns=compute_statistics_plan(self._file_schema, self._properties),
+                stats_columns=self._stats_columns,
                 parquet_column_mapping=parquet_path_to_id_mapping(self._file_schema),
+                nan_value_counts=self._nan_value_counts,
             )
         return self._result
 
