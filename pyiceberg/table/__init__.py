@@ -44,7 +44,15 @@ from pyiceberg.expressions.visitors import (
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
+from pyiceberg.manifest import (
+    DataFile,
+    DataFileContent,
+    FileFormat,
+    ManifestContent,
+    ManifestEntry,
+    ManifestEntryStatus,
+    ManifestFile,
+)
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.delete_file_index import DeleteFileIndex
@@ -855,7 +863,6 @@ class Transaction:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
@@ -866,26 +873,25 @@ class Transaction:
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
-            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+        To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
-                Example Use Cases:
-                    Case 1: Both Parameters = True (Full Upsert)
-                    Existing row found → Update it
-                    New row found → Insert it
+            Example Use Cases:
+                Case 1: Both Parameters = True (Full Upsert)
+                Existing row found → Update it
+                New row found → Insert it
 
-                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
-                    Existing row found → Do nothing (no updates)
-                    New row found → Insert it
+                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                Existing row found → Do nothing (no updates)
+                New row found → Insert it
 
-                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
-                    Existing row found → Update it
-                    New row found → Do nothing (no inserts)
+                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                Existing row found → Update it
+                New row found → Do nothing (no inserts)
 
-                    Case 4: Both Parameters = False (No Merge Effect)
-                    Existing row found → Do nothing
-                    New row found → Do nothing
-                    (Function effectively does nothing)
-
+                Case 4: Both Parameters = False (No Merge Effect)
+                Existing row found → Do nothing
+                New row found → Do nothing
+                (Function effectively does nothing)
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
@@ -1660,7 +1666,6 @@ class Table:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
@@ -1671,26 +1676,25 @@ class Table:
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
-            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+        To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
-                Example Use Cases:
-                    Case 1: Both Parameters = True (Full Upsert)
-                    Existing row found → Update it
-                    New row found → Insert it
+            Example Use Cases:
+                Case 1: Both Parameters = True (Full Upsert)
+                Existing row found → Update it
+                New row found → Insert it
 
-                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
-                    Existing row found → Do nothing (no updates)
-                    New row found → Insert it
+                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                Existing row found → Do nothing (no updates)
+                New row found → Insert it
 
-                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
-                    Existing row found → Update it
-                    New row found → Do nothing (no inserts)
+                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                Existing row found → Update it
+                New row found → Do nothing (no inserts)
 
-                    Case 4: Both Parameters = False (No Merge Effect)
-                    Existing row found → Do nothing
-                    New row found → Do nothing
-                    (Function effectively does nothing)
-
+                Case 4: Both Parameters = False (No Merge Effect)
+                Existing row found → Do nothing
+                New row found → Do nothing
+                (Function effectively does nothing)
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
@@ -2277,7 +2281,7 @@ class FileScanTask(ScanTask):
                 delete_file = delete_files[idx]
                 if isinstance(delete_file, RESTEqualityDeleteFile):
                     raise NotImplementedError(f"PyIceberg does not yet support equality deletes: {delete_file.file_path}")
-                resolved_deletes.add(_rest_file_to_data_file(delete_file))
+                resolved_deletes.add(_rest_file_to_data_file(delete_file, default_referenced_data_file=data_file.file_path))
 
         return FileScanTask(
             data_file=data_file,
@@ -2286,9 +2290,9 @@ class FileScanTask(ScanTask):
         )
 
 
-def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
+def _rest_file_to_data_file(rest_file: RESTContentFile, default_referenced_data_file: str | None = None) -> DataFile:
     """Convert a REST content file to a manifest DataFile."""
-    from pyiceberg.catalog.rest.scan_planning import RESTDataFile
+    from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTPositionDeleteFile
 
     if isinstance(rest_file, RESTDataFile):
         column_sizes = rest_file.column_sizes.to_dict() if rest_file.column_sizes else None
@@ -2300,6 +2304,17 @@ def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
         value_counts = None
         null_value_counts = None
         nan_value_counts = None
+
+    referenced_data_file = None
+    if isinstance(rest_file, RESTPositionDeleteFile):
+        referenced_data_file = rest_file.referenced_data_file
+        # Infer the DV target from its task only for range reads, preserving whole-Puffin fallback.
+        if (
+            referenced_data_file is None
+            and rest_file.file_format == FileFormat.PUFFIN
+            and (rest_file.content_offset is not None or rest_file.content_size_in_bytes is not None)
+        ):
+            referenced_data_file = default_referenced_data_file
 
     data_file = DataFile.from_args(
         content=DataFileContent.from_rest_type(rest_file.content),
@@ -2314,6 +2329,9 @@ def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
         nan_value_counts=nan_value_counts,
         split_offsets=rest_file.split_offsets,
         sort_order_id=rest_file.sort_order_id,
+        referenced_data_file=referenced_data_file,
+        content_offset=rest_file.content_offset if isinstance(rest_file, RESTPositionDeleteFile) else None,
+        content_size_in_bytes=rest_file.content_size_in_bytes if isinstance(rest_file, RESTPositionDeleteFile) else None,
     )
     data_file.spec_id = rest_file.spec_id
     return data_file
