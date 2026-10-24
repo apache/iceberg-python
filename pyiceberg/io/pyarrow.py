@@ -149,11 +149,10 @@ from pyiceberg.schema import (
     visit_with_partner,
 )
 from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TableProperties
-from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file
+from pyiceberg.table.deletion_vector import read_deletion_vectors
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
-from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
@@ -447,7 +446,7 @@ class PyArrowFileIO(FileIO):
             return self._initialize_gcs_fs()
 
         elif scheme in ADLS_SCHEMES:
-            return self._initialize_azure_fs()
+            return self._initialize_azure_fs(netloc)
 
         elif scheme in {"file"}:
             return self._initialize_local_fs()
@@ -555,7 +554,7 @@ class PyArrowFileIO(FileIO):
 
         return S3FileSystem(**client_kwargs)
 
-    def _initialize_azure_fs(self) -> FileSystem:
+    def _initialize_azure_fs(self, netloc: str | None = None) -> FileSystem:
         # https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html
         from packaging import version
 
@@ -570,7 +569,11 @@ class PyArrowFileIO(FileIO):
 
         client_kwargs: dict[str, str] = {}
 
-        if account_name := self.properties.get(ADLS_ACCOUNT_NAME):
+        account_name = self.properties.get(ADLS_ACCOUNT_NAME)
+        if account_name is None and netloc and "@" in netloc:
+            account_name = netloc.rpartition("@")[2].split(".")[0] or None
+
+        if account_name:
             client_kwargs["account_name"] = account_name
 
         if account_key := self.properties.get(ADLS_ACCOUNT_KEY):
@@ -1171,10 +1174,7 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
                 for path in table.column("file_path").unique()
             }
     elif data_file.file_format == FileFormat.PUFFIN:
-        with io.new_input(data_file.file_path).open() as fi:
-            payload = fi.read()
-
-        return {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors_from_puffin_file(PuffinFile(payload))}
+        return {dv.referenced_data_file: dv.to_vector() for dv in read_deletion_vectors(io, data_file)}
     else:
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
@@ -1741,14 +1741,28 @@ def _task_to_record_batches(
             )
 
 
+@dataclass(frozen=True, slots=True)
+class _DeleteFileKey:
+    """Identity of a delete file or a referenced DV range."""
+
+    file_path: str
+    content_offset: int | None
+    content_size_in_bytes: int | None
+
+
 def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[str, list[ChunkedArray]]:
     deletes_per_file: dict[str, list[ChunkedArray]] = {}
-    unique_deletes = set(itertools.chain.from_iterable([task.delete_files for task in tasks]))
+    # DataFile equality uses only the path; DVs from different tasks may share a file.
+    unique_deletes: dict[_DeleteFileKey, DataFile] = {}
+    for task in tasks:
+        for delete_file in task.delete_files:
+            key = _DeleteFileKey(delete_file.file_path, delete_file.content_offset, delete_file.content_size_in_bytes)
+            unique_deletes.setdefault(key, delete_file)
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(
             lambda args: _read_deletes(*args),
-            [(io, delete_file) for delete_file in unique_deletes],
+            [(io, delete_file) for delete_file in unique_deletes.values()],
         )
         for delete in deletes_per_files:
             for file, arr in delete.items():
@@ -2116,7 +2130,18 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             )
             if isinstance(value_result, pa.StructArray):
                 # Arrow does not allow reordering of fields, therefore we have to copy the array :(
-                return pa.MapArray.from_arrays(map_array.offsets, key_result, value_result, arrow_field)
+                entries = pa.StructArray.from_arrays(
+                    [key_result, value_result], fields=[arrow_field.key_field, arrow_field.item_field]
+                )
+                # Keep the validity and offsets buffers of the original array, otherwise null maps become empty maps
+                return pa.Array.from_buffers(
+                    arrow_field,
+                    len(map_array),
+                    map_array.buffers()[:2],
+                    map_array.null_count,
+                    map_array.offset,
+                    [entries],
+                )
             else:
                 return map_array.cast(arrow_field)
         else:
@@ -2961,7 +2986,7 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
     if compression_codec == ICEBERG_UNCOMPRESSED_CODEC:
         compression_codec = PYARROW_UNCOMPRESSED_CODEC
 
-    return {
+    kwargs: dict[str, Any] = {
         "compression": compression_codec,
         "compression_level": compression_level,
         "data_page_size": property_as_int(
@@ -2974,12 +2999,17 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
             property_name=TableProperties.PARQUET_DICT_SIZE_BYTES,
             default=TableProperties.PARQUET_DICT_SIZE_BYTES_DEFAULT,
         ),
-        "write_batch_size": property_as_int(
+    }
+    # pyarrow added max_rows_per_page, the per-page row limit, in 23.0.0.
+    if tuple(map(int, pa.__version__.split(".")[:2])) >= (23, 0):
+        kwargs["max_rows_per_page"] = property_as_int(
             properties=table_properties,
             property_name=TableProperties.PARQUET_PAGE_ROW_LIMIT,
             default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
-        ),
-    }
+        )
+    elif TableProperties.PARQUET_PAGE_ROW_LIMIT in table_properties:
+        warnings.warn(f"{TableProperties.PARQUET_PAGE_ROW_LIMIT} requires pyarrow >= 23.0.0", stacklevel=2)
+    return kwargs
 
 
 def _dataframe_to_data_files(

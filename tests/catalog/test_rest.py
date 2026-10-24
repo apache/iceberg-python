@@ -23,6 +23,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, cast
 from unittest import mock
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from requests import Request
@@ -970,6 +971,42 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",)) == [
         ("accounting", "tax"),
     ]
+
+
+@pytest.mark.parametrize(
+    "parent",
+    [
+        ("accounting",),
+        ("accounting", "tax"),
+        ("my namespace",),
+        ("dept/finance", "tax"),
+        ("100%",),
+        ("\u65e5\u672c",),
+    ],
+)
+def test_list_namespace_with_parent_is_encoded_once(rest_mock: Mocker, parent: tuple[str, ...]) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [[*parent, "child"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(parent) == [(*parent, "child")]
+    query = parse_qs(urlsplit(rest_mock.last_request.url).query)
+    assert query["parent"] == ["\x1f".join(parent)]
+
+
+def test_list_namespace_with_parent_custom_separator(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["my namespace", "tax", "child"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"namespace-separator": "."})
+    assert catalog.list_namespaces(("my namespace", "tax")) == [("my namespace", "tax", "child")]
+    query = parse_qs(urlsplit(rest_mock.last_request.url).query)
+    assert query["parent"] == ["my namespace.tax"]
 
 
 def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
