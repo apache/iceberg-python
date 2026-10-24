@@ -20,12 +20,14 @@ import pickle
 import tempfile
 import threading
 import uuid
+from datetime import datetime
 from unittest import mock
 
 import pytest
 from botocore.awsrequest import AWSRequest
 from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
+from google.oauth2.credentials import Credentials
 from requests_mock import Mocker
 
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
@@ -723,6 +725,29 @@ def test_adls_account_name_not_overridden_when_in_properties() -> None:
             account_host=None,
             anon=None,
         )
+
+
+def test_fsspec_gcs_token_with_expiry() -> None:
+    """Test that a GCS token with an expiry is passed to gcsfs as google-auth credentials."""
+    properties: Properties = {"gcs.oauth2.token": "token", "gcs.oauth2.token-expires-at": "1700000000000"}
+
+    with mock.patch("gcsfs.GCSFileSystem") as mock_gcsfs:
+        FsspecFileIO(properties=properties).new_input(location="gs://bucket/path/file.parquet")
+
+    token = mock_gcsfs.call_args.kwargs["token"]
+    assert isinstance(token, Credentials)
+    assert token.token == "token"
+    assert token.expiry == datetime(2023, 11, 14, 22, 13, 20)
+
+
+def test_fsspec_gcs_token_without_expiry() -> None:
+    """Test that a GCS token without an expiry is passed to gcsfs unchanged."""
+    properties: Properties = {"gcs.oauth2.token": "token"}
+
+    with mock.patch("gcsfs.GCSFileSystem") as mock_gcsfs:
+        FsspecFileIO(properties=properties).new_input(location="gs://bucket/path/file.parquet")
+
+    assert mock_gcsfs.call_args.kwargs["token"] == "token"
 
 
 @pytest.mark.gcs
