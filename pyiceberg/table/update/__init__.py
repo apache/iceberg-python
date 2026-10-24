@@ -453,7 +453,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
     elif base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
     elif (
-        base_metadata.format_version == 2
+        base_metadata.format_version >= 2
         and update.snapshot.sequence_number is not None
         and update.snapshot.sequence_number <= base_metadata.last_sequence_number
         and update.snapshot.parent_snapshot_id is not None
