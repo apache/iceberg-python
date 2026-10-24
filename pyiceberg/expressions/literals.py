@@ -522,7 +522,7 @@ class DecimalLiteral(Literal[Decimal]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
-        if type_var.scale == abs(int(self.value.as_tuple().exponent)):
+        if type_var.scale == -int(self.value.as_tuple().exponent):
             return self
         raise ValueError(f"Could not convert {self.value} into a {type_var}")
 
@@ -628,7 +628,7 @@ class StringLiteral(Literal[str]):
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
         dec = Decimal(self.value)
-        scale = abs(int(dec.as_tuple().exponent))
+        scale = -int(dec.as_tuple().exponent)
         if type_var.scale == scale:
             return DecimalLiteral(dec)
         else:
