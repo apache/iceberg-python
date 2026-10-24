@@ -26,7 +26,6 @@ from pyiceberg.types import (
     DateType,
     DecimalType,
     FixedType,
-    IcebergType,
     IntegerType,
     ListType,
     LongType,
@@ -350,20 +349,17 @@ def test_convert_timestamp_micros_type() -> None:
     assert actual == TimestampType()
 
 
-@pytest.mark.parametrize(
-    "adjust_to_utc, expected",
-    [
+def test_convert_timestamp_nanos_type() -> None:
+    for adjust_to_utc, expected in [
         (None, TimestampNanoType()),
         (False, TimestampNanoType()),
         (True, TimestamptzNanoType()),
-    ],
-)
-def test_convert_timestamp_nanos_type(adjust_to_utc: bool | None, expected: IcebergType) -> None:
-    avro_logical_type: dict[str, Any] = {"type": "long", "logicalType": "timestamp-nanos"}
-    if adjust_to_utc is not None:
-        avro_logical_type["adjust-to-utc"] = adjust_to_utc
-    actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
-    assert actual == expected
+    ]:
+        avro_logical_type: dict[str, Any] = {"type": "long", "logicalType": "timestamp-nanos"}
+        if adjust_to_utc is not None:
+            avro_logical_type["adjust-to-utc"] = adjust_to_utc
+        actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
+        assert actual == expected, f"adjust-to-utc={adjust_to_utc}"
 
 
 def test_timestamp_nanos_avro_schema_round_trip() -> None:
