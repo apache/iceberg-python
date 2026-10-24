@@ -160,7 +160,9 @@ def _construct_parameters(
 
     if metadata_properties:
         for key, value in metadata_properties.items():
-            new_parameters[key] = str(value)
+            # Reserved parameters are managed by the catalog and must not be overwritten by table properties
+            if key not in (TABLE_TYPE, METADATA_LOCATION, PREVIOUS_METADATA_LOCATION):
+                new_parameters[key] = str(value)
 
     return new_parameters
 

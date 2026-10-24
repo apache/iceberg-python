@@ -890,6 +890,38 @@ def test_commit_table_prunes_removed_properties(
 
 
 @mock_aws
+def test_commit_table_properties_do_not_overwrite_reserved_parameters(
+    _glue: boto3.client,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
+    previous_metadata_location = table.metadata_location
+
+    table.transaction().set_properties(
+        table_type="bogus",
+        metadata_location="s3://bogus/metadata.json",
+        previous_metadata_location="s3://bogus/previous.metadata.json",
+    ).commit_transaction()
+
+    parameters = _glue.get_table(DatabaseName=database_name, Name=table_name)["Table"]["Parameters"]
+    assert parameters["table_type"] == "ICEBERG"
+    assert parameters["metadata_location"] == table.metadata_location
+    assert parameters["previous_metadata_location"] == previous_metadata_location
+    assert test_catalog.load_table(identifier).metadata_location == table.metadata_location
+
+    # Removing the properties must not prune the reserved parameters either
+    table.transaction().remove_properties("table_type", "metadata_location", "previous_metadata_location").commit_transaction()
+    assert test_catalog.load_table(identifier).metadata_location == table.metadata_location
+
+
+@mock_aws
 def test_commit_append_table_snapshot_properties(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_simple: Schema, database_name: str, table_name: str
 ) -> None:
