@@ -291,6 +291,9 @@ def test_decimal_to_decimal_conversion() -> None:
     with pytest.raises(ValueError) as e:
         _ = lit.to(DecimalType(9, 3))
     assert "Could not convert 34.11 into a decimal(9, 3)" in str(e.value)
+    with pytest.raises(ValueError) as e:
+        _ = literal(Decimal("1E+2")).to(DecimalType(9, 2))
+    assert "Could not convert 1E+2 into a decimal(9, 2)" in str(e.value)
 
 
 def test_timestamp_to_date() -> None:
@@ -947,6 +950,9 @@ def test_string_to_decimal_type_invalid_value() -> None:
     with pytest.raises(ValueError) as e:
         _ = literal("18.15").to(DecimalType(10, 0))
     assert "Could not convert 18.15 into a decimal(10, 0), scales differ 0 <> 2" in str(e.value)
+    with pytest.raises(ValueError) as e:
+        _ = literal("1E+2").to(DecimalType(10, 2))
+    assert "Could not convert 1E+2 into a decimal(10, 2), scales differ 2 <> -2" in str(e.value)
 
 
 def test_decimal_literal_increment() -> None:
