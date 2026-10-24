@@ -15,16 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
+import json
 import logging
 import os
+import struct
 import sys
 import tempfile
 import uuid
 import warnings
+import zlib
 from collections.abc import Iterator
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -36,7 +39,9 @@ import pyarrow.parquet as pq
 import pytest
 from packaging import version
 from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3FileSystem
+from pyroaring import BitMap
 
+from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTDeleteFile, RESTFileScanTask, RESTPositionDeleteFile
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -75,6 +80,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _determine_partitions,
     _primitive_to_physical,
+    _read_all_delete_files,
     _read_deletes,
     _task_to_record_batches,
     _to_requested_schema,
@@ -87,12 +93,19 @@ from pyiceberg.io.pyarrow import (
     schema_to_pyarrow,
     write_file,
 )
-from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties, WriteTask
-from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.table.delete_file_index import DeleteFileIndex
+from pyiceberg.table.deletion_vector import (
+    _DV_BLOB_MAGIC_NUMBER,
+    PROPERTY_REFERENCED_DATA_FILE,
+    deletion_vectors_from_puffin_file,
+)
+from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
 from pyiceberg.table.name_mapping import create_mapping_from_schema
+from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
 from pyiceberg.transforms import HourTransform, IdentityTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
@@ -1840,6 +1853,319 @@ def test_read_deletes(deletes_file: str, request: pytest.FixtureRequest) -> None
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
 
 
+def _deletion_vector_bitmap_payload(values: list[int] | None = None) -> bytes:
+    return (1).to_bytes(8, byteorder="little") + (0).to_bytes(4, byteorder="little") + BitMap(values or [1, 3, 5]).serialize()
+
+
+def _deletion_vector_blob(bitmap_payload: bytes) -> bytes:
+    bitmap_data = struct.pack("<I", _DV_BLOB_MAGIC_NUMBER) + bitmap_payload
+    return struct.pack(">I", len(bitmap_data)) + bitmap_data + struct.pack(">I", zlib.crc32(bitmap_data) & 0xFFFFFFFF)
+
+
+def _deletion_vector_puffin_payload(referenced_data_file: str) -> bytes:
+    dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload())
+    footer_payload = json.dumps(
+        {
+            "blobs": [
+                {
+                    "type": "deletion-vector-v1",
+                    "fields": [2147483546],
+                    "snapshot-id": 1,
+                    "sequence-number": 1,
+                    "offset": len(MAGIC_BYTES) + 4,
+                    "length": len(dv_blob),
+                    "properties": {PROPERTY_REFERENCED_DATA_FILE: referenced_data_file},
+                }
+            ],
+            "properties": {},
+        }
+    ).encode()
+
+    return (
+        MAGIC_BYTES
+        + b"\x00\x00\x00\x00"
+        + dv_blob
+        + footer_payload
+        + len(footer_payload).to_bytes(4, byteorder="little")
+        + b"\x00\x00\x00\x00"
+        + MAGIC_BYTES
+    )
+
+
+def test_deletion_vectors_from_puffin_file(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    puffin_payload = _deletion_vector_puffin_payload(referenced_data_file)
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(puffin_payload)
+
+    with open(delete_file_path, "rb") as f:
+        deletion_vectors = deletion_vectors_from_puffin_file(PuffinFile(f.read()))
+
+    assert {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors} == {
+        referenced_data_file: pa.chunked_array([[1, 3, 5]])
+    }
+
+
+def test_read_deletes_from_whole_puffin_file(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(_deletion_vector_puffin_payload(referenced_data_file))
+
+    deletes = _read_deletes(
+        PyArrowFileIO(),
+        DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.POSITION_DELETES,
+            file_path=delete_file_path,
+            file_format=FileFormat.PUFFIN,
+            record_count=3,
+        ),
+    )
+
+    assert deletes == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+
+@pytest.mark.parametrize(
+    ("missing_field", "error"),
+    [
+        ("content_offset", "content offset is missing"),
+        ("content_size_in_bytes", "content size is missing"),
+        ("referenced_data_file", "referenced data file is missing"),
+    ],
+)
+def test_read_deletes_rejects_partial_content_reference(tmp_path: Path, missing_field: str, error: str) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+    puffin_payload = _deletion_vector_puffin_payload(referenced_data_file)
+    blob = PuffinFile(puffin_payload).footer.blobs[0]
+
+    with open(delete_file_path, "wb") as f:
+        f.write(puffin_payload)
+
+    dv = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_file_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=3,
+        content_offset=blob.offset if missing_field != "content_offset" else None,
+        content_size_in_bytes=blob.length if missing_field != "content_size_in_bytes" else None,
+        referenced_data_file=referenced_data_file if missing_field != "referenced_data_file" else None,
+    )
+
+    with pytest.raises(ValueError, match=error):
+        _read_deletes(PyArrowFileIO(), dv)
+
+
+def test_read_deletion_vector_blob_from_content_range(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload())
+    prefix = b"\x01not-a-puffin-file"
+    delete_file_path = f"{tmp_path}/deletes.bin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(prefix + dv_blob + b"trailing-bytes")
+
+    deletes = _read_deletes(
+        PyArrowFileIO(),
+        DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.POSITION_DELETES,
+            file_path=delete_file_path,
+            file_format=FileFormat.PUFFIN,
+            record_count=3,
+            referenced_data_file=referenced_data_file,
+            content_offset=len(prefix),
+            content_size_in_bytes=len(dv_blob),
+        ),
+    )
+
+    assert deletes == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+
+def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tmp_path: Path) -> None:
+    referenced_data_files = [f"{tmp_path}/data-{index}.parquet" for index in range(2)]
+    first_dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload([1, 3]))
+    second_dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload([5]))
+    delete_file_path = f"{tmp_path}/deletes.bin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(first_dv_blob + second_dv_blob)
+
+    first_dv = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_file_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=2,
+        referenced_data_file=referenced_data_files[0],
+        content_offset=0,
+        content_size_in_bytes=len(first_dv_blob),
+    )
+    second_dv = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_file_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=1,
+        referenced_data_file=referenced_data_files[1],
+        content_offset=len(first_dv_blob),
+        content_size_in_bytes=len(second_dv_blob),
+    )
+    data_files = [
+        DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=referenced_data_file,
+            file_format=FileFormat.PARQUET,
+            record_count=10,
+            file_size_in_bytes=100,
+        )
+        for referenced_data_file in referenced_data_files
+    ]
+
+    deletes = _read_all_delete_files(
+        PyArrowFileIO(),
+        [
+            FileScanTask(data_file=data_file, delete_files={dv})
+            for data_file, dv in zip(data_files, [first_dv, second_dv], strict=True)
+        ],
+    )
+
+    assert deletes == {
+        referenced_data_files[0]: [pa.chunked_array([[1, 3]])],
+        referenced_data_files[1]: [pa.chunked_array([[5]])],
+    }
+
+
+@pytest.mark.parametrize("selected_indices", [(0, 1, 2, 3, 4, 5), (0, 3, 5)])
+@pytest.mark.parametrize("planning_mode", ["local", "rest"])
+def test_read_all_delete_files_from_external_packed_deletion_vectors(
+    tmp_path: Path, selected_indices: tuple[int, ...], planning_mode: Literal["local", "rest"]
+) -> None:
+    """Apply selected DV ranges from an externally generated .bin file to their data files."""
+    fixture_path = Path(__file__).parents[1] / "table" / "deletion_vector" / "v1" / "packed-deletion-vectors.bin"
+    # (content_offset, content_size_in_bytes, expected deleted row positions)
+    # Ranges copied from the fixture's V3 manifest; each DV references a different ten-row data file.
+    content_ranges = [
+        (1, 46, [1, 4, 7]),
+        (47, 48, [0, 3, 6, 9]),
+        (95, 42, [0]),
+        (137, 50, [1, 3, 5, 7, 9]),
+        (187, 52, [0, 2, 4, 6, 8, 9]),
+        (239, 44, [0, 2]),
+    ]
+    schema = Schema(NestedField(1, "id", LongType(), required=True))
+    data_files: list[DataFile] = []
+    delete_files: list[DataFile] = []
+    expected_deletes: dict[str, list[pa.ChunkedArray]] = {}
+    expected_rows: list[int] = []
+    for index, (content_offset, content_size_in_bytes, expected_positions) in enumerate(content_ranges):
+        data_path = tmp_path / f"data-{index}.parquet"
+        referenced_data_file = str(data_path)
+        rows = list(range(index * 10, (index + 1) * 10))
+        pq.write_table(pa.table({"id": rows}, schema=schema_to_pyarrow(schema)), data_path)
+        dv = DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.POSITION_DELETES,
+            file_path=str(fixture_path),
+            file_format=FileFormat.PUFFIN,
+            partition=Record(),
+            record_count=len(expected_positions),
+            file_size_in_bytes=fixture_path.stat().st_size,
+            content_offset=content_offset,
+            content_size_in_bytes=content_size_in_bytes,
+            referenced_data_file=referenced_data_file,
+        )
+        dv.spec_id = 0
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=referenced_data_file,
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=10,
+            file_size_in_bytes=data_path.stat().st_size,
+            first_row_id=index * 10,
+        )
+        data_file.spec_id = 0
+        data_files.append(data_file)
+        delete_files.append(dv)
+        if index in selected_indices:
+            expected_deletes[referenced_data_file] = [pa.chunked_array([expected_positions])]
+            expected_rows.extend(row for position, row in enumerate(rows) if position not in expected_positions)
+
+    if planning_mode == "local":
+        delete_index = DeleteFileIndex()
+        for dv in delete_files:
+            delete_index.add_delete_file(
+                ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=2, data_file=dv)
+            )
+        tasks = [
+            FileScanTask(data_file=data_files[index], delete_files=delete_index.for_data_file(1, data_files[index]))
+            for index in selected_indices
+        ]
+    else:
+        rest_deletes: list[RESTDeleteFile] = [
+            RESTPositionDeleteFile(
+                spec_id=0,
+                file_path=dv.file_path,
+                file_format=dv.file_format,
+                file_size_in_bytes=dv.file_size_in_bytes,
+                record_count=dv.record_count,
+                content_offset=dv.content_offset,
+                content_size_in_bytes=dv.content_size_in_bytes,
+            )
+            for dv in delete_files
+        ]
+        tasks = [
+            FileScanTask.from_rest_response(
+                RESTFileScanTask(
+                    data_file=RESTDataFile(
+                        spec_id=0,
+                        file_path=data_files[index].file_path,
+                        file_format=FileFormat.PARQUET,
+                        file_size_in_bytes=data_files[index].file_size_in_bytes,
+                        record_count=10,
+                    ),
+                    delete_file_references=[index, index],
+                ),
+                rest_deletes,
+            )
+            for index in selected_indices
+        ]
+
+    for task, index in zip(tasks, selected_indices, strict=True):
+        assert isinstance(task.delete_files, set)
+        assert len(task.delete_files) == 1
+        dv = next(iter(task.delete_files))
+        assert dv.referenced_data_file == task.file.file_path
+        assert (dv.content_offset, dv.content_size_in_bytes) == content_ranges[index][:2]
+
+    # Repeated tasks must not cause a DV to be loaded more than once.
+    deletes = _read_all_delete_files(PyArrowFileIO(), iter(tasks + tasks[::-1]))
+
+    assert deletes == expected_deletes
+
+    result = ArrowScan(
+        table_metadata=TableMetadataV3(
+            location=str(tmp_path),
+            last_column_id=1,
+            schemas=[schema],
+            current_schema_id=schema.schema_id,
+            partition_specs=[PartitionSpec()],
+            next_row_id=60,
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+    ).to_table(tasks)
+
+    assert sorted(result.column("id").to_pylist()) == expected_rows
+
+
 def test_delete(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:
     # Determine file format from the file extension
     file_format = FileFormat.PARQUET if deletes_file.endswith(".parquet") else FileFormat.ORC
@@ -3209,6 +3535,48 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
         _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
 
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
+
+
+def test__to_requested_schema_null_map_of_structs() -> None:
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_map_with_struct",
+            MapType(
+                11,
+                StringType(),
+                12,
+                StructType(NestedField(121, "source", StringType(), required=False)),
+                value_required=False,
+            ),
+            required=False,
+        ),
+        NestedField(2, "col_map", MapType(21, StringType(), 22, IntegerType(), value_required=False), required=False),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("col_map_with_struct", pa.map_(pa.string(), pa.struct([pa.field("source", pa.string())]))),
+            pa.field("col_map", pa.map_(pa.string(), pa.int32())),
+        ]
+    )
+    batch = pa.RecordBatch.from_arrays(
+        [
+            pa.array(
+                [[("a", {"source": "x"})], [], None, [("b", {"source": "y"}), ("c", None)]], type=arrow_schema.field(0).type
+            ),
+            pa.array([[("a", 1)], [], None, [("b", 2), ("c", None)]], type=arrow_schema.field(1).type),
+        ],
+        schema=arrow_schema,
+    )
+
+    result = _to_requested_schema(requested_schema, requested_schema, batch)
+    assert result.column(0).to_pylist() == [[("a", {"source": "x"})], [], None, [("b", {"source": "y"}), ("c", None)]]
+    assert result.column(1).to_pylist() == [[("a", 1)], [], None, [("b", 2), ("c", None)]]
+
+    # A sliced batch has to keep the nulls as well
+    result = _to_requested_schema(requested_schema, requested_schema, batch.slice(1, 3))
+    assert result.column(0).to_pylist() == [[], None, [("b", {"source": "y"}), ("c", None)]]
+    assert result.column(1).to_pylist() == [[], None, [("b", 2), ("c", None)]]
 
 
 @pytest.mark.parametrize(

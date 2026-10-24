@@ -48,7 +48,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UnknownType,
@@ -397,6 +399,11 @@ class AvroSchemaConversion:
                 return TimestamptzType()
             else:
                 return TimestampType()
+        elif logical_type == "timestamp-nanos":
+            if avro_logical_type.get("adjust-to-utc", False) is True:
+                return TimestamptzNanoType()
+            else:
+                return TimestampNanoType()
         elif (logical_type, physical_type) in LOGICAL_FIELD_TYPE_MAPPING:
             return LOGICAL_FIELD_TYPE_MAPPING[(logical_type, physical_type)]
         else:
@@ -648,13 +655,13 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
     def visit_timestamp(self, timestamp_type: TimestampType) -> AvroType:
         return {"type": "long", "logicalType": "timestamp-micros", "adjust-to-utc": False}
 
-    def visit_timestamp_ns(self, timestamp_type: TimestampType) -> AvroType:
+    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType) -> AvroType:
         return {"type": "long", "logicalType": "timestamp-nanos", "adjust-to-utc": False}
 
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> AvroType:
         return {"type": "long", "logicalType": "timestamp-micros", "adjust-to-utc": True}
 
-    def visit_timestamptz_ns(self, timestamptz_type: TimestamptzType) -> AvroType:
+    def visit_timestamptz_ns(self, timestamptz_ns_type: TimestamptzNanoType) -> AvroType:
         return {"type": "long", "logicalType": "timestamp-nanos", "adjust-to-utc": True}
 
     def visit_string(self, string_type: StringType) -> AvroType:

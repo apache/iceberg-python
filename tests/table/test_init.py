@@ -18,6 +18,7 @@
 import json
 import uuid
 from copy import copy
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -37,6 +38,7 @@ from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
     CommitTableRequest,
     StagedTable,
@@ -612,6 +614,26 @@ def test_static_table_version_hint_same_as_table(
     ]:
         static_table = StaticTable.from_metadata(table_location)
         assert isinstance(static_table, Table)
+        assert static_table.metadata == table_v2.metadata
+
+
+def test_static_table_version_hint_uri_location(table_v2: Table, tmp_path: Path) -> None:
+    # Fails on Windows if the locations are built with os.path.join
+    table_root = f"file://{tmp_path}"
+    file_io = load_file_io(location=table_root)
+
+    for version_hint_content, metadata_file in [
+        ("v3.metadata.json", "v3.metadata.json"),
+        ("3", "v3.metadata.json"),
+        ("some-uuid", "some-uuid.metadata.json"),
+    ]:
+        metadata_location = f"{table_root}/metadata/{metadata_file}"
+        ToOutputFile.table_metadata(table_v2.metadata, file_io.new_output(metadata_location), overwrite=True)
+        with file_io.new_output(f"{table_root}/metadata/version-hint.text").create(overwrite=True) as f:
+            f.write(version_hint_content.encode("utf-8"))
+
+        static_table = StaticTable.from_metadata(table_root)
+        assert static_table.metadata_location == metadata_location
         assert static_table.metadata == table_v2.metadata
 
 
@@ -2067,3 +2089,29 @@ def test_static_table_forwards_location_to_table_file_io(metadata_location: str,
 
     assert seen_locations, "expected at least one load_file_io call"
     assert all(loc is not None for loc in seen_locations), f"load_file_io called without a location: {seen_locations}"
+
+
+def test_table_to_polars_forwards_kwargs(table_v2: Table, monkeypatch: pytest.MonkeyPatch) -> None:
+    import polars as pl
+
+    recorded_calls: list[tuple[Any, dict[str, Any]]] = []
+
+    def mock_scan_iceberg(source: Any, **kwargs: Any) -> Any:
+        recorded_calls.append((source, kwargs))
+        return "mock_lazy_frame"
+
+    monkeypatch.setattr(pl, "scan_iceberg", mock_scan_iceberg)
+
+    # Test without kwargs
+    res1 = table_v2.to_polars()
+    assert res1 == "mock_lazy_frame"
+    assert recorded_calls[0] == (table_v2, {})
+
+    # Test with kwargs
+    storage_options = {"s3": {"endpoint": "https://s3.custom.endpoint"}}
+    res2 = table_v2.to_polars(storage_options=storage_options, snapshot_id=12345, reader_override="native")
+    assert res2 == "mock_lazy_frame"
+    assert recorded_calls[1] == (
+        table_v2,
+        {"storage_options": storage_options, "snapshot_id": 12345, "reader_override": "native"},
+    )
