@@ -87,18 +87,23 @@ class ConsoleOutput(Output):
     def _table(self) -> RichTable:
         return RichTable.grid(padding=(0, 2))
 
+    def _console(self, *, stderr: bool = False, soft_wrap: bool = False) -> Console:
+        # Identifiers, properties, schemas and paths all originate outside the CLI,
+        # so console markup stays disabled to keep them from styling the output.
+        return Console(markup=False, stderr=stderr, soft_wrap=soft_wrap)
+
     def exception(self, ex: Exception) -> None:
         if self.verbose:
-            Console(stderr=True).print_exception()
+            self._console(stderr=True).print_exception()
         else:
-            Console(stderr=True).print(ex)
+            self._console(stderr=True).print(ex)
 
     def identifiers(self, identifiers: list[Identifier]) -> None:
         table = self._table
         for identifier in identifiers:
             table.add_row(".".join(identifier))
 
-        Console().print(table)
+        self._console().print(table)
 
     def describe_table(self, table: Table) -> None:
         metadata = table.metadata
@@ -126,7 +131,7 @@ class ConsoleOutput(Output):
         output_table.add_row("Current snapshot", str(table.current_snapshot()))
         output_table.add_row("Snapshots", snapshot_tree)
         output_table.add_row("Properties", table_properties)
-        Console().print(output_table)
+        self._console().print(output_table)
 
     def describe_view(self, view: View) -> None:
         metadata = view.metadata
@@ -151,7 +156,7 @@ class ConsoleOutput(Output):
         output_table.add_row("Current schema", schema_tree)
         output_table.add_row("SQL", representations_tree)
         output_table.add_row("Properties", view_properties)
-        Console().print(output_table)
+        self._console().print(output_table)
 
     def files(self, table: Table, history: bool) -> None:
         if history:
@@ -175,31 +180,31 @@ class ConsoleOutput(Output):
                 manifest_tree = list_tree.add(f"Manifest: {manifest.manifest_path}")
                 for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=False):
                     manifest_tree.add(f"Datafile: {manifest_entry.data_file.file_path}")
-        Console().print(snapshot_tree)
+        self._console().print(snapshot_tree)
 
     def describe_properties(self, properties: Properties) -> None:
         output_table = self._table
         for k, v in properties.items():
             output_table.add_row(k, v)
-        Console().print(output_table)
+        self._console().print(output_table)
 
     def text(self, response: str) -> None:
-        Console(soft_wrap=True).print(response)
+        self._console(soft_wrap=True).print(response)
 
     def schema(self, schema: Schema) -> None:
         output_table = self._table
         for field in schema.fields:
             output_table.add_row(field.name, str(field.field_type), field.doc or "")
-        Console().print(output_table)
+        self._console().print(output_table)
 
     def spec(self, spec: PartitionSpec) -> None:
-        Console().print(str(spec))
+        self._console().print(str(spec))
 
     def uuid(self, uuid: UUID | None) -> None:
-        Console().print(str(uuid) if uuid else "missing")
+        self._console().print(str(uuid) if uuid else "missing")
 
     def version(self, version: str) -> None:
-        Console().print(version)
+        self._console().print(version)
 
     def describe_refs(self, ref_details: list[tuple[str, SnapshotRefType, dict[str, str]]]) -> None:
         refs_table = RichTable(title="Snapshot Refs")
@@ -212,7 +217,7 @@ class ConsoleOutput(Output):
             refs_table.add_row(
                 name, type, ref_detail["max_ref_age_ms"], ref_detail["min_snapshots_to_keep"], ref_detail["max_snapshot_age_ms"]
             )
-        Console().print(refs_table)
+        self._console().print(refs_table)
 
 
 class JsonOutput(Output):
