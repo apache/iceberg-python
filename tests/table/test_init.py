@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
@@ -46,7 +46,7 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
-from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata import EncryptedKey, TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -63,6 +63,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.table.statistics import BlobMetadata, PartitionStatisticsFile, StatisticsFile
 from pyiceberg.table.update import (
+    AddEncryptionKeyUpdate,
     AddPartitionSpecUpdate,
     AddSnapshotUpdate,
     AddSortOrderUpdate,
@@ -74,6 +75,7 @@ from pyiceberg.table.update import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
+    RemoveEncryptionKeyUpdate,
     RemovePartitionSpecsUpdate,
     RemovePartitionStatisticsUpdate,
     RemovePropertiesUpdate,
@@ -86,6 +88,7 @@ from pyiceberg.table.update import (
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SetStatisticsUpdate,
+    TableUpdate,
     _apply_table_update,
     _TableMetadataUpdateContext,
     update_table_metadata,
@@ -1949,6 +1952,75 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
             table_v2_with_statistics.metadata,
             (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
         )
+
+
+def test_add_encryption_key_update(table_v3: Table) -> None:
+    kek = EncryptedKey(key_id="kek", encrypted_key_metadata=b"wrapped-kek", encrypted_by_id="master", properties={"a": "b"})
+    manifest_list_key = EncryptedKey(key_id="manifest-list-key", encrypted_key_metadata=b"wrapped-dek", encrypted_by_id="kek")
+
+    new_metadata = update_table_metadata(
+        table_v3.metadata,
+        (AddEncryptionKeyUpdate(encryption_key=kek), AddEncryptionKeyUpdate(encryption_key=manifest_list_key)),
+    )
+
+    assert new_metadata.encryption_keys == [kek, manifest_list_key]
+
+
+def test_add_encryption_key_update_with_existing_key_id(table_v3: Table) -> None:
+    key = EncryptedKey(key_id="kek", encrypted_key_metadata=b"wrapped-kek")
+    base_metadata = update_table_metadata(table_v3.metadata, (AddEncryptionKeyUpdate(encryption_key=key),))
+
+    context = _TableMetadataUpdateContext()
+    duplicate = EncryptedKey(key_id="kek", encrypted_key_metadata=b"other")
+    new_metadata = _apply_table_update(AddEncryptionKeyUpdate(encryption_key=duplicate), base_metadata, context)
+
+    assert new_metadata.encryption_keys == [key]
+    assert not context.has_changes()
+
+
+def test_remove_encryption_key_update(table_v3: Table) -> None:
+    first = EncryptedKey(key_id="first", encrypted_key_metadata=b"first")
+    second = EncryptedKey(key_id="second", encrypted_key_metadata=b"second")
+    base_metadata = update_table_metadata(
+        table_v3.metadata, (AddEncryptionKeyUpdate(encryption_key=first), AddEncryptionKeyUpdate(encryption_key=second))
+    )
+
+    new_metadata = update_table_metadata(base_metadata, (RemoveEncryptionKeyUpdate(key_id="first"),))
+
+    assert new_metadata.encryption_keys == [second]
+
+
+def test_remove_encryption_key_update_with_missing_key_id(table_v3: Table) -> None:
+    context = _TableMetadataUpdateContext()
+    new_metadata = _apply_table_update(RemoveEncryptionKeyUpdate(key_id="missing"), table_v3.metadata, context)
+
+    assert new_metadata == table_v3.metadata
+    assert not context.has_changes()
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        AddEncryptionKeyUpdate(encryption_key=EncryptedKey(key_id="a", encrypted_key_metadata=b"key")),
+        RemoveEncryptionKeyUpdate(key_id="a"),
+    ],
+)
+def test_encryption_key_updates_require_v3(table_v2: Table, update: TableUpdate) -> None:
+    with pytest.raises(ValueError, match="Encryption keys are not supported in format version 2"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_serialize_encryption_key_updates() -> None:
+    add = AddEncryptionKeyUpdate(encryption_key=EncryptedKey(key_id="a", encrypted_key_metadata=b"key", encrypted_by_id="b"))
+    remove = RemoveEncryptionKeyUpdate(key_id="a")
+
+    assert json.loads(add.model_dump_json()) == {
+        "action": "add-encryption-key",
+        "encryption-key": {"key-id": "a", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "b", "properties": {}},
+    }
+    assert json.loads(remove.model_dump_json()) == {"action": "remove-encryption-key", "key-id": "a"}
+    assert TypeAdapter(TableUpdate).validate_json(add.model_dump_json()) == add
+    assert TypeAdapter(TableUpdate).validate_json(remove.model_dump_json()) == remove
 
 
 def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:
