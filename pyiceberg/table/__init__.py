@@ -1962,6 +1962,7 @@ class StaticTable(Table):
 
     @classmethod
     def _metadata_location_from_version_hint(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> str:
+        # Using os.path.join here would produce "\" separators on Windows, breaking URI locations
         metadata_dir = f"{metadata_location.rstrip('/')}/metadata"
         version_hint_location = f"{metadata_dir}/version-hint.text"
         io = load_file_io(properties=properties, location=version_hint_location)
