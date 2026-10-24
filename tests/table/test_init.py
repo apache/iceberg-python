@@ -18,6 +18,7 @@
 import json
 import uuid
 from copy import copy
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -37,6 +38,7 @@ from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
     CommitTableRequest,
     StagedTable,
@@ -612,6 +614,26 @@ def test_static_table_version_hint_same_as_table(
     ]:
         static_table = StaticTable.from_metadata(table_location)
         assert isinstance(static_table, Table)
+        assert static_table.metadata == table_v2.metadata
+
+
+def test_static_table_version_hint_uri_location(table_v2: Table, tmp_path: Path) -> None:
+    # Fails on Windows if the locations are built with os.path.join
+    table_root = f"file://{tmp_path}"
+    file_io = load_file_io(location=table_root)
+
+    for version_hint_content, metadata_file in [
+        ("v3.metadata.json", "v3.metadata.json"),
+        ("3", "v3.metadata.json"),
+        ("some-uuid", "some-uuid.metadata.json"),
+    ]:
+        metadata_location = f"{table_root}/metadata/{metadata_file}"
+        ToOutputFile.table_metadata(table_v2.metadata, file_io.new_output(metadata_location), overwrite=True)
+        with file_io.new_output(f"{table_root}/metadata/version-hint.text").create(overwrite=True) as f:
+            f.write(version_hint_content.encode("utf-8"))
+
+        static_table = StaticTable.from_metadata(table_root)
+        assert static_table.metadata_location == metadata_location
         assert static_table.metadata == table_v2.metadata
 
 
