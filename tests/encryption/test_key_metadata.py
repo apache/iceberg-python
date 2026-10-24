@@ -20,6 +20,7 @@ import io
 import pytest
 
 from pyiceberg.avro.encoder import BinaryEncoder
+from pyiceberg.encryption.ciphers import AesKeySize
 from pyiceberg.encryption.key_metadata import KEY_METADATA_V1, StandardKeyMetadata
 
 AES128_KEY = b"0123456789012345"
@@ -61,6 +62,16 @@ def test_key_metadata_defaults() -> None:
 
     assert key_metadata.aad_prefix is None
     assert key_metadata.file_length is None
+
+
+@pytest.mark.parametrize("key_size", list(AesKeySize))
+def test_key_metadata_generate(key_size: AesKeySize) -> None:
+    key_metadata = StandardKeyMetadata.generate(key_size)
+
+    assert len(key_metadata.encryption_key) == key_size.key_length
+    assert key_metadata.aad_prefix is not None and len(key_metadata.aad_prefix) == 16
+    assert key_metadata.file_length is None
+    assert StandardKeyMetadata.generate(key_size) != key_metadata
 
 
 def test_key_metadata_repr_redacts_encryption_key() -> None:
