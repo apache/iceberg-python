@@ -638,8 +638,13 @@ class RestCatalog(Catalog):
 
         return best_match.config if best_match else {}
 
-    def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
-        merged_properties = {**self.properties, **properties}
+    def _load_file_io(
+        self,
+        properties: Properties = EMPTY_DICT,
+        location: str | None = None,
+        table_properties: Properties = EMPTY_DICT,
+    ) -> FileIO:
+        merged_properties = {**table_properties, **self.properties, **properties}
         if self._auth_manager:
             merged_properties[AUTH_MANAGER] = self._auth_manager
         return load_file_io(merged_properties, location)
@@ -1152,8 +1157,9 @@ class RestCatalog(Catalog):
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config, **credential_config},
+                {**table_response.config, **credential_config},
                 table_response.metadata_location,
+                table_properties=table_response.metadata.properties,
             ),
             catalog=self,
             config=table_response.config,
@@ -1169,8 +1175,9 @@ class RestCatalog(Catalog):
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
             io=self._load_file_io(
-                {**table_response.metadata.properties, **table_response.config, **credential_config},
+                {**table_response.config, **credential_config},
                 table_response.metadata_location,
+                table_properties=table_response.metadata.properties,
             ),
             catalog=self,
         )
@@ -1179,6 +1186,7 @@ class RestCatalog(Catalog):
         return View(
             identifier=identifier_tuple,
             metadata=view_response.metadata,
+            config=view_response.config,
         )
 
     def _refresh_token(self) -> None:
@@ -1668,7 +1676,8 @@ class RestCatalog(Catalog):
 
         while True:
             if namespace_tuple:
-                params["parent"] = self._encode_namespace_path(namespace_tuple)
+                # Query parameters are URL-encoded by requests, so the parts must not be quoted here as well
+                params["parent"] = self._namespace_separator.join(namespace_tuple)
             if page_token:
                 params["pageToken"] = page_token
             response = self._session.get(self.url(Endpoints.list_namespaces), params=params)

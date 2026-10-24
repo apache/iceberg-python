@@ -23,6 +23,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, cast
 from unittest import mock
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from requests import Request
@@ -65,7 +66,7 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     ViewAlreadyExistsError,
 )
-from pyiceberg.io import load_file_io
+from pyiceberg.io import ARROW_FILE_IO, FSSPEC_FILE_IO, PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
@@ -972,6 +973,42 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "parent",
+    [
+        ("accounting",),
+        ("accounting", "tax"),
+        ("my namespace",),
+        ("dept/finance", "tax"),
+        ("100%",),
+        ("\u65e5\u672c",),
+    ],
+)
+def test_list_namespace_with_parent_is_encoded_once(rest_mock: Mocker, parent: tuple[str, ...]) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [[*parent, "child"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(parent) == [(*parent, "child")]
+    query = parse_qs(urlsplit(rest_mock.last_request.url).query)
+    assert query["parent"] == ["\x1f".join(parent)]
+
+
+def test_list_namespace_with_parent_custom_separator(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["my namespace", "tax", "child"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"namespace-separator": "."})
+    assert catalog.list_namespaces(("my namespace", "tax")) == [("my namespace", "tax", "child")]
+    query = parse_qs(urlsplit(rest_mock.last_request.url).query)
+    assert query["parent"] == ["my namespace.tax"]
+
+
 def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
     # First page with next-page-token
     rest_mock.get(
@@ -1764,6 +1801,7 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
     )
     assert actual == expected
+    assert actual.config == example_view_metadata_rest_json["config"]
 
 
 def test_create_view_409(
@@ -1810,6 +1848,7 @@ def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[
     actual = catalog.load_view(("fokko", "view"))
     expected = View(identifier=("fokko", "view"), metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]))
     assert actual == expected
+    assert actual.config == example_view_metadata_rest_json["config"]
 
 
 def test_load_view_404(rest_mock: Mocker) -> None:
@@ -2769,6 +2808,7 @@ def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: d
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
     )
     assert actual == expected
+    assert actual.config == example_view_metadata_rest_json["config"]
 
 
 def test_register_view_409_view(rest_mock: Mocker) -> None:
@@ -3413,6 +3453,32 @@ def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_me
     assert table.io.properties["s3.access-key-id"] == "vended-key"
     assert table.io.properties["s3.secret-access-key"] == "vended-secret"
     assert table.io.properties["s3.session-token"] == "vended-token"
+
+
+def test_load_table_catalog_config_outranks_table_properties(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": {
+                **example_table_metadata_with_snapshot_v1,
+                "properties": {PY_IO_IMPL: FSSPEC_FILE_IO, "s3.proxy-uri": "http://table-only-proxy"},
+            },
+            "config": {"s3.region": "from-config"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PY_IO_IMPL: ARROW_FILE_IO, "s3.region": "from-catalog"})
+    table = catalog.load_table(("fokko", "table"))
+
+    assert table.io.properties[PY_IO_IMPL] == ARROW_FILE_IO
+    # Server config and a key the catalog leaves unset keep working.
+    assert table.io.properties["s3.region"] == "from-config"
+    assert table.io.properties["s3.proxy-uri"] == "http://table-only-proxy"
 
 
 def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:

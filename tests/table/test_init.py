@@ -290,6 +290,31 @@ def test_table_scan_ref(table_v2: Table) -> None:
     assert scan.use_ref("test").snapshot_id == 3051729675574597004
 
 
+@pytest.mark.parametrize(
+    "snapshot_id, expected_snapshot_id",
+    [(None, 3055729675574597004), (0, 0), (3051729675574597004, 3051729675574597004)],
+)
+def test_table_scan_snapshot(table_v2: Table, snapshot_id: int | None, expected_snapshot_id: int) -> None:
+    table_v2.metadata.snapshots.append(
+        Snapshot(snapshot_id=0, timestamp_ms=1515100955769, manifest_list="s3://a/b/zero.avro", schema_id=0)
+    )
+
+    snapshot = table_v2.scan(snapshot_id=snapshot_id).snapshot()
+
+    assert snapshot is not None
+    assert snapshot.snapshot_id == expected_snapshot_id
+
+
+def test_table_scan_missing_snapshot_zero(table_v2: Table) -> None:
+    assert table_v2.scan(snapshot_id=0).snapshot() is None
+
+
+@pytest.mark.parametrize("snapshot_id", [0, 3051729675574597004])
+def test_table_scan_ref_cannot_override_snapshot(table_v2: Table, snapshot_id: int) -> None:
+    with pytest.raises(ValueError, match=f"Cannot override ref, already set snapshot id={snapshot_id}"):
+        table_v2.scan(snapshot_id=snapshot_id).use_ref("test")
+
+
 def test_table_scan_ref_does_not_exists(table_v2: Table) -> None:
     scan = table_v2.scan()
 
@@ -593,6 +618,12 @@ def test_static_table_version_hint_same_as_table(
 def test_static_table_io_does_not_exist(metadata_location: str) -> None:
     with pytest.raises(ValueError):
         StaticTable.from_metadata(metadata_location, {PY_IO_IMPL: "pyiceberg.does.not.exist.FileIO"})
+
+
+def test_static_table_properties_outrank_metadata_properties(metadata_location: str) -> None:
+    static_table = StaticTable.from_metadata(metadata_location, {"read.split.target.size": "1"})
+    assert static_table.metadata.properties["read.split.target.size"] == "134217728"
+    assert static_table.io.properties["read.split.target.size"] == "1"
 
 
 def test_serialize_set_properties_updates() -> None:

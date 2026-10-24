@@ -36,6 +36,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io import ARROW_FILE_IO, FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, StringType, strtobool
 
@@ -297,6 +298,25 @@ def test_idempotent_when_column_already_exists(warehouse: Path) -> None:
     # Verify initialization is idempotent when column already exists
     catalog._init_catalog()
     assert "iceberg_type" in get_columns(catalog.engine)
+
+
+def test_load_table_ranks_catalog_config_above_table_properties(warehouse: Path) -> None:
+    catalog = SqlCatalog(
+        name="test",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{warehouse}",
+        **{PY_IO_IMPL: ARROW_FILE_IO},
+    )
+    catalog.create_namespace("ns")
+    catalog.create_table(
+        ("ns", "tbl"),
+        Schema(NestedField(1, "id", StringType(), required=True)),
+        properties={PY_IO_IMPL: FSSPEC_FILE_IO, "s3.proxy-uri": "http://table-only-proxy"},
+    )
+
+    io = catalog.load_table(("ns", "tbl")).io
+    assert io.properties[PY_IO_IMPL] == ARROW_FILE_IO
+    assert io.properties["s3.proxy-uri"] == "http://table-only-proxy"
 
 
 def test_list_tables_filters_by_iceberg_type(warehouse: Path) -> None:

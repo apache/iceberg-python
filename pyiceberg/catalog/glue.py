@@ -389,7 +389,7 @@ class GlueCatalog(MetastoreCatalog):
             identifier=(database_name, table_name),
             metadata=metadata,
             metadata_location=metadata_location,
-            io=self._load_file_io(metadata.properties, metadata_location),
+            io=self._load_file_io(location=metadata_location, table_properties=metadata.properties),
             catalog=self,
         )
 
@@ -535,7 +535,7 @@ class GlueCatalog(MetastoreCatalog):
             identifier=self.identifier_to_tuple(identifier),
             metadata=staged_table.metadata,
             metadata_location=staged_table.metadata_location,
-            io=self._load_file_io(staged_table.metadata.properties, staged_table.metadata_location),
+            io=self._load_file_io(location=staged_table.metadata_location, table_properties=staged_table.metadata.properties),
             catalog=self,
         )
 
@@ -599,7 +599,7 @@ class GlueCatalog(MetastoreCatalog):
             identifier=self.identifier_to_tuple(identifier),
             metadata=staged_table.metadata,
             metadata_location=staged_table.metadata_location,
-            io=self._load_file_io(staged_table.metadata.properties, staged_table.metadata_location),
+            io=self._load_file_io(location=staged_table.metadata_location, table_properties=staged_table.metadata.properties),
             catalog=self,
         )
 
