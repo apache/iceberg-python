@@ -1406,6 +1406,7 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
     assert table.scan(
         row_filter="partition_id = 1 AND other_field = 'bar'", selected_fields=("other_field",)
     ).to_arrow() == pa.table({"other_field": ["bar"]})
+    assert table.scan(row_filter="partition_id = 1 AND other_field = 'bar'", selected_fields=("other_field",)).count() == 1
 
 
 @pytest.mark.parametrize(

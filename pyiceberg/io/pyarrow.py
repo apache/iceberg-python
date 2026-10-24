@@ -1629,7 +1629,7 @@ def _get_column_projection_values(
     partition_spec: PartitionSpec | None,
     file_project_field_ids: set[int],
 ) -> dict[int, Any]:
-    """Resolve missing identity partition values for output and filter columns."""
+    """Return identity partition values for projected field IDs missing from the data file."""
     missing_field_ids = projected_field_ids.difference(file_project_field_ids)
     if len(missing_field_ids) == 0 or partition_spec is None:
         return EMPTY_DICT
