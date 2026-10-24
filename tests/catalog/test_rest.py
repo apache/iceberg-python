@@ -3481,6 +3481,47 @@ def test_load_table_catalog_config_outranks_table_properties(
     assert table.io.properties["s3.proxy-uri"] == "http://table-only-proxy"
 
 
+def test_load_table_remote_signing_disabled_in_catalog_config(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "config": {"s3.signer": "S3V4RestSigner", "s3.signer.uri": "http://signer"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"s3.remote-signing-enabled": "false"})
+    table = catalog.load_table(("fokko", "table"))
+
+    assert "s3.signer" not in table.io.properties
+
+
+@pytest.mark.parametrize("catalog_properties", [{}, {"s3.remote-signing-enabled": "true"}])
+def test_load_table_server_signer_kept_unless_disabled(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any], catalog_properties: dict[str, str]
+) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "config": {"s3.signer": "S3V4RestSigner", "s3.signer.uri": "http://signer"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **catalog_properties)
+    table = catalog.load_table(("fokko", "table"))
+
+    assert table.io.properties["s3.signer"] == "S3V4RestSigner"
+
+
 def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
