@@ -1379,6 +1379,25 @@ def test_update_namespace_properties_200(rest_mock: Mocker) -> None:
     assert response == PropertiesUpdateSummary(removed=[], updated=["prop"], missing=["abc"])
 
 
+@pytest.mark.parametrize(
+    "response_json",
+    [
+        {"removed": ["a", "b"], "updated": []},
+        {"removed": ["a", "b"], "updated": [], "missing": None},
+    ],
+)
+def test_update_namespace_properties_200_without_missing(rest_mock: Mocker, response_json: dict[str, Any]) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/properties",
+        json=response_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    response = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).update_namespace_properties(("fokko",), {"a", "b"})
+
+    assert response == PropertiesUpdateSummary(removed=["a", "b"], updated=[], missing=[])
+
+
 def test_namespace_exists_200(rest_mock: Mocker) -> None:
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/fokko",
