@@ -308,7 +308,7 @@ def _adls(properties: Properties, hostname: str | None = None) -> AbstractFileSy
         client_id=properties.get(ADLS_CLIENT_ID),
         client_secret=properties.get(ADLS_CLIENT_SECRET),
         account_host=properties.get(ADLS_ACCOUNT_HOST),
-        anon=properties.get(ADLS_ANON),
+        anon=property_as_bool(properties, ADLS_ANON, False) if properties.get(ADLS_ANON) not in (None, "") else None,
     )
 
 

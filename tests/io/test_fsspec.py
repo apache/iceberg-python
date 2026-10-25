@@ -756,6 +756,22 @@ def test_adls_account_name_not_overridden_when_in_properties() -> None:
         )
 
 
+def test_adls_anon_parsed_as_bool() -> None:
+    cases: list[tuple[Properties, bool | None]] = [
+        ({"adls.anon": "false"}, False),
+        ({"adls.anon": "true"}, True),
+        ({"adls.anon": False}, False),
+        ({"adls.anon": True}, True),
+        ({}, None),
+    ]
+    for properties, expected in cases:
+        with mock.patch("adlfs.AzureBlobFileSystem") as mock_adlfs:
+            adls_fileio = FsspecFileIO(properties=properties)
+            adls_fileio.new_input(location="abfss://data@accountone.dfs.core.windows.net/wh/t/a.parquet")
+
+        assert mock_adlfs.call_args.kwargs["anon"] is expected
+
+
 @pytest.mark.gcs
 def test_fsspec_new_input_file_gcs(fsspec_fileio_gcs: FsspecFileIO) -> None:
     """Test creating a new input file from a fsspec file-io"""
