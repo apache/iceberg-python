@@ -299,6 +299,15 @@ def test_from_table_metadata_without_key_id(kms: CountingKeyManagementClient, ex
 def test_from_table_metadata_before_v3(kms: CountingKeyManagementClient, example_table_metadata_v2: dict[str, Any]) -> None:
     metadata = TableMetadataUtil.parse_obj({**example_table_metadata_v2, "properties": {"encryption.key-id": MASTER_KEY_ID}})
 
+    with pytest.raises(ValueError, match="Invalid properties for v2: encryption.key-id"):
+        EncryptionManager.from_table_metadata(kms, metadata)
+
+
+def test_from_table_metadata_before_v3_without_key_id(
+    kms: CountingKeyManagementClient, example_table_metadata_v2: dict[str, Any]
+) -> None:
+    metadata = TableMetadataUtil.parse_obj({**example_table_metadata_v2, "properties": {}})
+
     assert EncryptionManager.from_table_metadata(kms, metadata) is None
 
 

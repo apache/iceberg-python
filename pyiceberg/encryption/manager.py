@@ -64,11 +64,11 @@ class EncryptionManager:
             kms_client (KeyManagementClient | None): Wraps and unwraps KEKs with the table's master key.
             metadata (TableMetadata): The table's metadata, holding `encryption.key-id` and its encryption keys.
         """
-        if not isinstance(metadata, TableMetadataV3):
-            return None
-
         if (table_key_id := metadata.properties.get(TableProperties.ENCRYPTION_KEY_ID)) is None:
             return None
+
+        if not isinstance(metadata, TableMetadataV3):
+            raise ValueError(f"Invalid properties for v{metadata.format_version}: {TableProperties.ENCRYPTION_KEY_ID}")
 
         if kms_client is None:
             raise ValueError(f"Table has {TableProperties.ENCRYPTION_KEY_ID} set but no key management client was provided")
