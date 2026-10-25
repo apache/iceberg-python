@@ -3431,6 +3431,7 @@ class TestRestCatalogClose:
         # View endpoints should be supported when enabled
         catalog._check_endpoint(Capability.V1_LIST_VIEWS)
         catalog._check_endpoint(Capability.V1_DELETE_VIEW)
+        catalog._check_endpoint(Capability.V1_RENAME_VIEW)
 
 
 def test_table_uuid_check_on_commit(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:

@@ -731,6 +731,7 @@ def test_rest_identifiers_with_special_characters(
         table_identifier = (*namespace, f"table {name}")
         view_identifier = (*namespace, f"view {name}")
         registered_view_identifier = (*namespace, f"registered view {name}")
+        renamed_view_identifier = (*namespace, f"renamed view {name}")
 
         rest_catalog.create_namespace(parent)
         rest_catalog.create_namespace(namespace, properties={"key": name})
@@ -758,7 +759,10 @@ def test_rest_identifiers_with_special_characters(
         assert rest_catalog.view_exists(registered_view_identifier)
         assert sorted(rest_catalog.list_views(namespace)) == sorted([view_identifier, registered_view_identifier])
 
-        rest_catalog.drop_view(registered_view_identifier)
+        rest_catalog.rename_view(registered_view_identifier, renamed_view_identifier)
+        assert sorted(rest_catalog.list_views(namespace)) == sorted([view_identifier, renamed_view_identifier])
+
+        rest_catalog.drop_view(renamed_view_identifier)
         rest_catalog.drop_view(view_identifier)
         rest_catalog.drop_table(table_identifier)
         rest_catalog.drop_namespace(namespace)
