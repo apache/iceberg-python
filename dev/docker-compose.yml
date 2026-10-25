@@ -33,7 +33,7 @@ services:
       retries: 10
       start_period: 5s
   aws-cli:
-    image: amazon/aws-cli:2.37.2
+    image: amazon/aws-cli:2.38.5
     container_name: pyiceberg-aws-cli
     depends_on:
       object-store:
