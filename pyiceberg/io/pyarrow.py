@@ -1849,11 +1849,13 @@ class ArrowScan:
         limit: int | None = None,
         *,
         dictionary_columns: tuple[str, ...] = (),
+        row_filter_schema: Schema | None = None,
     ) -> None:
         self._table_metadata = table_metadata
         self._io = io
         self._projected_schema = projected_schema
-        self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
+        filter_schema = row_filter_schema if row_filter_schema is not None else table_metadata.schema()
+        self._bound_row_filter = bind(filter_schema, row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._limit = limit
         self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)

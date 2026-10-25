@@ -1423,6 +1423,20 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
     ).to_arrow() == pa.table({"other_field": ["bar"]})
     assert table.scan(row_filter="partition_id = 1 AND other_field = 'bar'", selected_fields=("other_field",)).count() == 1
 
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    with table.update_schema() as update:
+        update.rename_column("partition_id", "renamed_partition_id")
+
+    scan = table.scan(
+        snapshot_id=snapshot.snapshot_id,
+        row_filter="partition_id = 1 AND other_field = 'bar'",
+        selected_fields=("other_field",),
+    )
+    assert scan.to_arrow() == pa.table({"other_field": ["bar"]})
+    assert scan.to_arrow_batch_reader().read_all().to_pydict() == {"other_field": ["bar"]}
+    assert scan.count() == 1
+
 
 @pytest.mark.parametrize(
     "partition_field_type, arrow_partition_type, partition_value, row_filter",
@@ -5959,10 +5973,9 @@ def test_to_arrow_batch_reader_preserves_dictionary_columns(tmpdir: str) -> None
     # RecordBatchReader.cast(target_schema) was called with a plain schema, silently converting
     # dictionary arrays back to their value type so to_arrow_batch_reader(dictionary_columns=...)
     # .read_all() returned plain strings instead of dictionary-encoded arrays.
-    from pyiceberg.expressions import AlwaysTrue
     from pyiceberg.io.pyarrow import PyArrowFileIO
     from pyiceberg.partitioning import PartitionSpec
-    from pyiceberg.table import FileScanTask, _to_arrow_batch_reader_via_file_scan_tasks
+    from pyiceberg.table import DataScan, FileScanTask, _to_arrow_batch_reader_via_file_scan_tasks
     from pyiceberg.table.metadata import TableMetadataV2
 
     arrow_schema = pa.schema(
@@ -5990,17 +6003,9 @@ def test_to_arrow_batch_reader_preserves_dictionary_columns(tmpdir: str) -> None
         partition_specs=[PartitionSpec()],
     )
 
-    class _MockScan:
-        def __init__(self) -> None:
-            self.table_metadata = table_metadata
-            self.io = PyArrowFileIO()
-            self.row_filter = AlwaysTrue()
-            self.case_sensitive = True
-            self.limit = None
-
     tasks = [FileScanTask(data_file)]
     result = _to_arrow_batch_reader_via_file_scan_tasks(
-        _MockScan(),  # type: ignore[arg-type]
+        DataScan(table_metadata=table_metadata, io=PyArrowFileIO()),
         iceberg_schema,
         tasks,
         dictionary_columns=("label",),

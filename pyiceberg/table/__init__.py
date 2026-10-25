@@ -791,7 +791,17 @@ class Transaction:
             file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
             if branch is not None:
                 file_scan = file_scan.use_ref(branch)
-            files = file_scan.plan_files()
+            snapshot = file_scan.snapshot()
+            files = (
+                ManifestGroupPlanner(
+                    table_metadata=self.table_metadata,
+                    io=self._table.io,
+                    row_filter=delete_filter,
+                    case_sensitive=case_sensitive,
+                ).plan_files(snapshot.manifests(self._table.io))
+                if snapshot is not None
+                else []
+            )
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -2087,6 +2097,9 @@ class BaseScan(ABC):
         self.options = options
         self.limit = limit
 
+    def _scan_schema(self) -> Schema:
+        return self.table_metadata.schema()
+
     @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]: ...
 
@@ -2205,7 +2218,7 @@ class TableScan(BaseScan):
             return self.table_metadata.snapshot_by_id(self.snapshot_id)
         return self.table_metadata.current_snapshot()
 
-    def projection(self) -> Schema:
+    def _scan_schema(self) -> Schema:
         current_schema = self.table_metadata.schema()
         if self.snapshot_id is not None:
             snapshot = self.table_metadata.snapshot_by_id(self.snapshot_id)
@@ -2219,6 +2232,10 @@ class TableScan(BaseScan):
                         warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}", stacklevel=2)
             else:
                 raise ValueError(f"Snapshot not found: {self.snapshot_id}")
+        return current_schema
+
+    def projection(self) -> Schema:
+        current_schema = self._scan_schema()
 
         if "*" in self.selected_fields:
             return current_schema
@@ -2384,6 +2401,7 @@ def _to_arrow_via_file_scan_tasks(
         scan.case_sensitive,
         scan.limit,
         dictionary_columns=dictionary_columns,
+        row_filter_schema=scan._scan_schema(),
     ).to_table(tasks)
 
 
@@ -2404,6 +2422,7 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
         scan.case_sensitive,
         scan.limit,
         dictionary_columns=dictionary_columns,
+        row_filter_schema=scan._scan_schema(),
     ).to_record_batches(tasks)
 
     if dictionary_columns:
@@ -2433,6 +2452,7 @@ class DataScan(TableScan):
             row_filter=self.row_filter,
             case_sensitive=self.case_sensitive,
             options=self.options,
+            schema=self._scan_schema(),
         )
 
     @cached_property
@@ -2565,6 +2585,7 @@ class DataScan(TableScan):
                     projected_schema=self.projection(),
                     row_filter=self.row_filter,
                     case_sensitive=self.case_sensitive,
+                    row_filter_schema=self._scan_schema(),
                 )
                 tbl = arrow_scan.to_table([task])
                 res += len(tbl)
@@ -2767,6 +2788,7 @@ class ManifestGroupPlanner:
     row_filter: BooleanExpression
     case_sensitive: bool
     options: Properties
+    schema: Schema
 
     def __init__(
         self,
@@ -2775,12 +2797,14 @@ class ManifestGroupPlanner:
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         case_sensitive: bool = True,
         options: Properties = EMPTY_DICT,
+        schema: Schema | None = None,
     ):
         self.table_metadata = table_metadata
         self.io = io
         self.row_filter = _parse_row_filter(row_filter)
         self.case_sensitive = case_sensitive
         self.options = options
+        self.schema = schema if schema is not None else table_metadata.schema()
 
     @cached_property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
@@ -2873,16 +2897,16 @@ class ManifestGroupPlanner:
         ]
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
+        project = inclusive_projection(self.schema, self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         spec = self.table_metadata.specs()[spec_id]
-        return manifest_evaluator(spec, self.table_metadata.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        return manifest_evaluator(spec, self.schema, self.partition_filters[spec_id], self.case_sensitive)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
         spec = self.table_metadata.specs()[spec_id]
-        partition_type = spec.partition_type(self.table_metadata.schema())
+        partition_type = spec.partition_type(self.schema)
         partition_schema = Schema(*partition_type.fields)
         partition_expr = self.partition_filters[spec_id]
         evaluator = expression_evaluator(partition_schema, partition_expr, self.case_sensitive)
@@ -2892,7 +2916,7 @@ class ManifestGroupPlanner:
         return lambda data_file: evaluator(data_file.partition)
 
     def _build_metrics_evaluator(self) -> Callable[[DataFile], bool]:
-        schema = self.table_metadata.schema()
+        schema = self.schema
         include_empty_files = strtobool(self.options.get("include_empty_files", "false"))
 
         # Metrics evaluators keep file-specific state local to each call, so one
@@ -2916,7 +2940,7 @@ class ManifestGroupPlanner:
             spec=spec,
             expr=self.row_filter,
             case_sensitive=self.case_sensitive,
-            schema=self.table_metadata.schema(),
+            schema=self.schema,
         )
 
     @staticmethod

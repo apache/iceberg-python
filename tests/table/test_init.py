@@ -21,6 +21,7 @@ from copy import copy
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from pytest_lazy_fixtures import lf
@@ -368,6 +369,83 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
         _ = scan.select("a").projection()
 
     assert "Could not find column: 'a'" in str(exc_info.value)
+
+
+def test_time_travel_row_filter_after_drop_and_readd(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.readded_column", schema=arrow_table_simple.schema)
+    table.append(arrow_table_simple)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    table.manage_snapshots().create_tag(snapshot.snapshot_id, "before_schema_change").commit()
+
+    with table.update_schema() as update:
+        update.delete_column("bar")
+    with table.update_schema() as update:
+        update.add_column("bar", IntegerType())
+
+    for scan in (
+        table.scan(snapshot_id=snapshot.snapshot_id, row_filter="bar >= 2"),
+        table.scan(row_filter="BAR >= 2", case_sensitive=False).use_ref("before_schema_change"),
+    ):
+        for selected_fields in (("*",), ("foo",)):
+            projected_scan = scan.select(*selected_fields)
+            expected = arrow_table_simple.slice(1)
+            if selected_fields != ("*",):
+                expected = expected.select(selected_fields)
+            assert projected_scan.to_arrow().to_pydict() == expected.to_pydict()
+            assert projected_scan.to_arrow_batch_reader().read_all().to_pydict() == expected.to_pydict()
+            assert projected_scan.count() == 2
+
+    for current_scan in (table.scan(row_filter="bar >= 2"), table.incremental_append_scan(row_filter="bar >= 2")):
+        assert current_scan.to_arrow().num_rows == 0
+        assert current_scan.to_arrow_batch_reader().read_all().num_rows == 0
+    assert table.scan(row_filter="bar >= 2").count() == 0
+    assert table.scan(row_filter="bar IS NULL").count() == 3
+
+
+def test_time_travel_row_filter_after_partition_column_rename(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.renamed_partition_column", schema=arrow_table_simple.schema)
+    with table.update_spec() as update:
+        update.add_identity("baz")
+    table.append(arrow_table_simple)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    with table.update_schema() as update:
+        update.rename_column("baz", "enabled")
+        update.add_column("added", IntegerType())
+
+    scan = table.scan(snapshot_id=snapshot.snapshot_id, row_filter="baz = false", selected_fields=("foo",))
+    tasks = list(scan.plan_files())
+    assert len(tasks) == 1
+    assert tasks[0].residual == AlwaysTrue()
+    assert scan.to_arrow().to_pydict() == {"foo": ["b"]}
+    assert scan.to_arrow_batch_reader().read_all().to_pydict() == {"foo": ["b"]}
+    assert scan.count() == 1
+
+    for column, row_filter in (("enabled", "enabled = false"), ("added", "added = 1")):
+        with pytest.raises(ValueError, match=f"Could not find field with name {column}"):
+            table.scan(snapshot_id=snapshot.snapshot_id, row_filter=row_filter).to_arrow()
+    assert table.scan(row_filter="enabled = false", selected_fields=("foo",)).to_arrow().to_pydict() == {"foo": ["b"]}
+
+
+def test_delete_after_column_rename_uses_current_schema(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
+    catalog.create_namespace("default")
+    for branch in (MAIN_BRANCH, "audit"):
+        table = catalog.create_table(f"default.delete_after_rename_{branch}", schema=arrow_table_simple.schema)
+        table.append(arrow_table_simple)
+        snapshot = table.current_snapshot()
+        assert snapshot is not None
+        if branch != MAIN_BRANCH:
+            table.manage_snapshots().create_branch(snapshot.snapshot_id, branch).commit()
+        with table.update_schema() as update:
+            update.rename_column("bar", "score")
+
+        table.delete("score >= 2", branch=branch)
+        assert table.scan().use_ref(branch).to_arrow().to_pydict() == {"foo": ["a"], "score": [1], "baz": [True]}
+        if branch != MAIN_BRANCH:
+            assert table.scan().count() == 3
 
 
 def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> None:
