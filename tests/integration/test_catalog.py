@@ -724,7 +724,7 @@ def test_rest_identifiers_with_special_characters(
     rest_catalog: RestCatalog, table_schema_simple: Schema, example_view_metadata_v1: dict[str, Any]
 ) -> None:
     """Names that need URL encoding must round-trip unchanged through path, query, and body parameters."""
-    # "%" is omitted because the REST fixture rejects "%25" in URL paths with a 400
+    # "%" is omitted because the REST fixture's Jetty rejects "%25" in URL paths ("400 Ambiguous URI path encoding")
     for name in ["with space", "a+b&c=d", "\u65e5\u672c"]:
         parent = (f"{name}_{uuid.uuid4().hex}",)
         namespace = (*parent, name)
