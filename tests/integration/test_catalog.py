@@ -730,6 +730,7 @@ def test_rest_identifiers_with_special_characters(
         namespace = (*parent, name)
         table_identifier = (*namespace, f"table {name}")
         view_identifier = (*namespace, f"view {name}")
+        registered_view_identifier = (*namespace, f"registered view {name}")
 
         rest_catalog.create_namespace(parent)
         rest_catalog.create_namespace(namespace, properties={"key": name})
@@ -748,10 +749,16 @@ def test_rest_identifiers_with_special_characters(
         assert rest_catalog.load_table(table_identifier).properties["key"] == name
 
         view = View(view_identifier, ViewMetadata.model_validate(example_view_metadata_v1))
-        rest_catalog.create_view(view_identifier, view.schema(), view.current_version())
+        created_view = rest_catalog.create_view(view_identifier, view.schema(), view.current_version())
         assert rest_catalog.view_exists(view_identifier)
         assert rest_catalog.list_views(namespace) == [view_identifier]
 
+        assert created_view.metadata_location is not None
+        rest_catalog.register_view(registered_view_identifier, created_view.metadata_location)
+        assert rest_catalog.view_exists(registered_view_identifier)
+        assert sorted(rest_catalog.list_views(namespace)) == sorted([view_identifier, registered_view_identifier])
+
+        rest_catalog.drop_view(registered_view_identifier)
         rest_catalog.drop_view(view_identifier)
         rest_catalog.drop_table(table_identifier)
         rest_catalog.drop_namespace(namespace)
