@@ -65,7 +65,7 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - Bias towards adding tests to existing files, rather than creating new files.
 - Use existing test fixtures when possible.
 - We have a strong bias towards integration testing over mocks. Mocks should be avoided whenever possible and should only be used if similar, existing tests are using mocks.
-- Prefer a `for` loop in a single test over `@pytest.mark.parametrize`; each parametrized case adds per-test overhead that slows the suite. Include the input in assertion messages so failures are identifiable. Use `parametrize` only when cases need different fixtures (e.g., multiple catalogs).
+- Prefer a `for` loop over `@pytest.mark.parametrize` for many simple cases; each parametrized case adds per-test overhead. Use `parametrize` when cases need different fixtures, and separate tests when cases are complex.
 
 ### Required CI and Merge Queue
 
