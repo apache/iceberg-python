@@ -26,6 +26,7 @@ from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from pydantic import ValidationError
 from requests import Request
 from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
@@ -1854,6 +1855,19 @@ def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[
     )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
+
+
+def test_load_view_missing_metadata_location(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    response = {k: v for k, v in example_view_metadata_rest_json.items() if k != "metadata-location"}
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=response,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(ValidationError, match="metadata-location"):
+        catalog.load_view(("fokko", "view"))
 
 
 def test_load_view_404(rest_mock: Mocker) -> None:
