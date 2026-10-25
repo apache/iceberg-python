@@ -116,6 +116,9 @@ class EncryptionManager:
         if key.encrypted_by_id is None:
             raise ValueError(f"Encryption key {key_id} has no encrypted-by-id")
 
+        if key.encrypted_by_id == self._table_key_id:
+            raise ValueError(f"{key_id} is a key encryption key, not manifest list key metadata")
+
         if (kek := self._encryption_keys.get(key.encrypted_by_id)) is None:
             raise ValueError(f"KEK not found in encryption keys: {key.encrypted_by_id}")
 

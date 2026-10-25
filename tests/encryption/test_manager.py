@@ -231,6 +231,14 @@ def test_unwrap_key_with_missing_kek(kms: CountingKeyManagementClient) -> None:
         manager.decrypt_manifest_list_key_metadata("key")
 
 
+def test_unwrap_kek_id(manager: EncryptionManager) -> None:
+    manager.encrypt_manifest_list_key_metadata(KEY_METADATA)
+    kek = manager.encryption_keys[0]
+
+    with pytest.raises(ValueError, match=f"{kek.key_id} is a key encryption key, not manifest list key metadata"):
+        manager.decrypt_manifest_list_key_metadata(kek.key_id)
+
+
 def replace_kek_properties(manager: EncryptionManager, key_id: str, properties: dict[str, str]) -> list[EncryptedKey]:
     kek_id = next(key.encrypted_by_id for key in manager.encryption_keys if key.key_id == key_id)
     return [key.model_copy(update={"properties": properties}) if key.key_id == kek_id else key for key in manager.encryption_keys]
