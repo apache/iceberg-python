@@ -361,7 +361,7 @@ class LoadCredentialsResponse(IcebergBaseModel):
 
 
 class ViewResponse(IcebergBaseModel):
-    metadata_location: str | None = Field(alias="metadata-location", default=None)
+    metadata_location: str = Field(..., alias="metadata-location")
     metadata: ViewMetadata
     config: Properties = Field(default_factory=dict)
 
