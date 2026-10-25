@@ -1859,8 +1859,8 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchViewError})
 
-    @override
     @retry(**_RETRY_ARGS)
+    @override
     def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
         self._check_endpoint(Capability.V1_RENAME_VIEW)
         source = self._split_identifier_for_json(from_identifier)
