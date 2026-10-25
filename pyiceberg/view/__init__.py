@@ -96,5 +96,8 @@ class View:
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the View class."""
-        # Metadata location is intentionally excluded from view equality.
-        return self.name() == other.name() and self.metadata == other.metadata if isinstance(other, View) else False
+        return (
+            self.name() == other.name() and self.metadata == other.metadata and self.metadata_location == other.metadata_location
+            if isinstance(other, View)
+            else False
+        )
