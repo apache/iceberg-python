@@ -1799,6 +1799,7 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
     expected = View(
         identifier=("fokko", "fokko2"),
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
     )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
@@ -1846,7 +1847,11 @@ def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     actual = catalog.load_view(("fokko", "view"))
-    expected = View(identifier=("fokko", "view"), metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]))
+    expected = View(
+        identifier=("fokko", "view"),
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
+    )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
 
@@ -2806,6 +2811,7 @@ def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: d
     expected = View(
         identifier=("default", "registered_view"),
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
     )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
