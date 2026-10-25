@@ -23,7 +23,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, cast
 from unittest import mock
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 import pytest
 from pydantic import ValidationError
@@ -1806,6 +1806,27 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
     assert actual.config == example_view_metadata_rest_json["config"]
 
 
+def test_create_view_name_is_not_encoded_in_body(
+    rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    view_version = ViewVersion(
+        schema_id=1,
+        summary={"engine-name": "spark", "engineVersion": "3.3"},
+        representations=[],
+        default_namespace=["default"],
+    )
+    for view_name in ["my view", "dept/view", "100%", "\u65e5\u672c"]:
+        catalog.create_view(identifier=("fokko", view_name), schema=table_schema_simple, view_version=view_version)
+        assert rest_mock.last_request.json()["name"] == view_name
+
+
 def test_create_view_409(
     rest_mock: Mocker,
     table_schema_simple: Schema,
@@ -2829,6 +2850,24 @@ def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: d
     )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
+
+
+def test_register_view_name_is_not_encoded_in_body(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/register-view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    for view_name in ["my view", "dept/view", "100%", "\u65e5\u672c"]:
+        rest_mock.head(
+            f"{TEST_URI}v1/namespaces/default/tables/{quote(view_name, safe='')}",
+            status_code=404,
+            request_headers=TEST_HEADERS,
+        )
+        catalog.register_view(identifier=("default", view_name), metadata_location="s3://warehouse/database/view/metadata.json")
+        assert rest_mock.last_request.json()["name"] == view_name
 
 
 def test_register_view_409_view(rest_mock: Mocker) -> None:
