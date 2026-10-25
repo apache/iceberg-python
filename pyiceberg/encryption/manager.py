@@ -29,7 +29,6 @@ from collections.abc import Iterable
 from pyiceberg.encryption.ciphers import AesGcmCipher, AesKeySize, SecureKey
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.kms import KeyManagementClient
-from pyiceberg.table import TableProperties
 from pyiceberg.table.metadata import EncryptedKey, TableMetadata, TableMetadataV3
 from pyiceberg.utils.properties import property_as_int
 
@@ -64,6 +63,8 @@ class EncryptionManager:
             kms_client (KeyManagementClient | None): Wraps and unwraps KEKs with the table's master key.
             metadata (TableMetadata): The table's metadata, holding `encryption.key-id` and its encryption keys.
         """
+        from pyiceberg.table import TableProperties
+
         if (table_key_id := metadata.properties.get(TableProperties.ENCRYPTION_KEY_ID)) is None:
             return None
 
