@@ -1825,6 +1825,7 @@ class RestCatalog(Catalog):
     @override
     def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
         self._check_endpoint(Capability.V1_REGISTER_VIEW)
+        namespace_and_view = self._split_identifier_for_path(identifier, IdentifierKind.VIEW)
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
         if self.table_exists(identifier):
             raise TableAlreadyExistsError(f"Table {'.'.join(identifier_tuple)} already exists")
@@ -1832,7 +1833,7 @@ class RestCatalog(Catalog):
         request = RegisterViewRequest(name=identifier_tuple[-1], metadata_location=metadata_location)
         serialized_json = request.model_dump_json().encode(UTF8)
         response = self._session.post(
-            self.url(Endpoints.register_view, namespace=self._encode_namespace_path(identifier_tuple[:-1])),
+            self.url(Endpoints.register_view, namespace=namespace_and_view["namespace"]),
             data=serialized_json,
         )
         try:
