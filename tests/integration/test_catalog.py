@@ -731,6 +731,7 @@ def test_rest_identifiers_with_special_characters(
         table_identifier = (*namespace, f"table {name}")
         view_identifier = (*namespace, f"view {name}")
         registered_view_identifier = (*namespace, f"registered view {name}")
+        renamed_view_identifier = (*namespace, f"renamed view {name}")
 
         rest_catalog.create_namespace(parent)
         rest_catalog.create_namespace(namespace, properties={"key": name})
@@ -758,12 +759,55 @@ def test_rest_identifiers_with_special_characters(
         assert rest_catalog.view_exists(registered_view_identifier)
         assert sorted(rest_catalog.list_views(namespace)) == sorted([view_identifier, registered_view_identifier])
 
-        rest_catalog.drop_view(registered_view_identifier)
+        rest_catalog.rename_view(registered_view_identifier, renamed_view_identifier)
+        assert sorted(rest_catalog.list_views(namespace)) == sorted([view_identifier, renamed_view_identifier])
+
+        rest_catalog.drop_view(renamed_view_identifier)
         rest_catalog.drop_view(view_identifier)
         rest_catalog.drop_table(table_identifier)
         rest_catalog.drop_namespace(namespace)
         rest_catalog.drop_namespace(parent)
         assert not rest_catalog.namespace_exists(parent)
+
+
+@pytest.mark.integration
+def test_rest_rename_view(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    from_identifier = (database_name, view_name)
+    to_identifier = (database_name, f"{view_name}_renamed")
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    view = View(from_identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    rest_catalog.create_view(from_identifier, view.schema(), view.current_version())
+    assert rest_catalog.view_exists(from_identifier)
+
+    rest_catalog.rename_view(from_identifier, to_identifier)
+
+    assert not rest_catalog.view_exists(from_identifier)
+    assert rest_catalog.view_exists(to_identifier)
+
+
+@pytest.mark.integration
+def test_rest_rename_view_across_namespaces(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    to_database_name = f"{database_name}_renamed"
+    from_identifier = (database_name, view_name)
+    to_identifier = (to_database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    rest_catalog.create_namespace_if_not_exists(to_database_name)
+    view = View(from_identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    rest_catalog.create_view(from_identifier, view.schema(), view.current_version())
+    assert rest_catalog.view_exists(from_identifier)
+
+    rest_catalog.rename_view(from_identifier, to_identifier)
+
+    assert not rest_catalog.view_exists(from_identifier)
+    assert rest_catalog.view_exists(to_identifier)
 
 
 @pytest.mark.integration
