@@ -741,7 +741,11 @@ def test_rest_identifiers_with_special_characters(
         rest_catalog.create_table(table_identifier, table_schema_simple)
         assert rest_catalog.table_exists(table_identifier)
         assert rest_catalog.list_tables(namespace) == [table_identifier]
-        assert rest_catalog.load_table(table_identifier).name() == table_identifier
+        table = rest_catalog.load_table(table_identifier)
+        assert table.name() == table_identifier
+        with table.transaction() as tx:
+            tx.set_properties(key=name)
+        assert rest_catalog.load_table(table_identifier).properties["key"] == name
 
         view = View(view_identifier, ViewMetadata.model_validate(example_view_metadata_v1))
         rest_catalog.create_view(view_identifier, view.schema(), view.current_version())
