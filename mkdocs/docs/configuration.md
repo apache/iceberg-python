@@ -419,6 +419,48 @@ catalog:
 
 When server-side planning returns `storage-credentials` on a completed plan, PyIceberg applies them to the scan-scoped FileIO (layered on top of the existing table/load-time IO properties) so planned data and delete files can be read using the creds vended by the server.
 
+#### Vended credential refresh
+
+Enable automatic refresh for long-running reads and writes that use temporary storage credentials from a REST catalog:
+
+```yaml
+catalog:
+  default:
+    type: rest
+    uri: https://rest-catalog.example/
+    client.refresh-credentials-enabled: true
+    header.X-Iceberg-Access-Delegation: vended-credentials
+```
+
+`client.refresh-credentials-enabled` defaults to `false`. Both `PyArrowFileIO` and `FsspecFileIO` support refresh for S3 and GCS.
+The catalog must advertise its table credentials endpoint (`GET /v1/{prefix}/namespaces/{namespace}/tables/{table}/credentials`)
+in its configuration response. Enabling refresh when vended credentials are present but that endpoint is unsupported raises an error while loading the table.
+
+| Storage | URI schemes | Required temporary credential properties | Expiration property |
+| --- | --- | --- | --- |
+| S3 | `s3`, `s3a`, `s3n` | `s3.access-key-id`, `s3.secret-access-key`, `s3.session-token` | `s3.session-token-expires-at-ms` |
+| GCS | `gs`, `gcs` | `gcs.oauth2.token` | `gcs.oauth2.token-expires-at` |
+
+Expiration values are integer milliseconds since the Unix epoch. GCS also accepts the `gcs.oauth2.token_expires_at` spelling;
+the canonical `gcs.oauth2.token-expires-at` takes precedence when both are supplied.
+Credentials without an expiration are not automatically refreshed; the selected backend's credential requirements still apply.
+
+The client selects the longest matching prefix in `storage-credentials` for each file location.
+If a table response has no `storage-credentials`, temporary credentials in its legacy `config` are also eligible for refresh.
+Refreshed credentials take precedence over baseline configuration without retaining overrides from a previous credential snapshot.
+
+Refresh occurs on demand, starting up to five minutes before expiration. For shorter lifetimes, the margin is bounded to half
+the remaining lifetime when credentials are received, so a fresh short-lived token is reused between refreshes.
+Concurrent accesses share a successful refresh. Catalog errors propagate, and missing, incomplete, or already-expired refresh results are rejected.
+
+Refresh applies to metadata, manifests, data and delete files, staged writes, and scan-scoped credentials.
+Retained file handles resolve current credentials when opened or created again. An already-open native stream keeps its original credentials;
+its lifetime should fit within the credential lifetime. External engines that manage their own storage clients must manage their own credential refresh.
+
+FileIO instances remain pickleable with refresh enabled. Deserialization performs no network requests; catalog access and authentication
+are recreated lazily when needed. Worker processes need access to the configured catalog and authentication services, and any configured
+credential files or application-default credentials. Serialized FileIO state contains credential-bearing configuration and should be handled accordingly.
+
 #### Retry and timeout
 
 The REST Catalog uses `requests` with no retries and no timeout by default, so transient
