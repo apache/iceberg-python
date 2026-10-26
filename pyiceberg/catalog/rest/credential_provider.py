@@ -84,12 +84,21 @@ class CredentialsProvider:
         storage_credentials: list[StorageCredential],
         refresh_fn: Callable[[], LoadCredentialsResponse],
         needs_refresh_by_scheme: dict[str, Callable[[Properties], bool]] | None = None,
-    ):
+    ) -> None:
         self._storage_credentials = storage_credentials
         self._refresh_fn = refresh_fn
         self._needs_refresh_by_scheme = (
             needs_refresh_by_scheme if needs_refresh_by_scheme is not None else NEEDS_REFRESH_BY_SCHEME
         )
+        self._lock = threading.Lock()
+
+    def __getstate__(self) -> dict[str, object]:
+        """Serialize credential state without the process-local lock."""
+        return {key: value for key, value in self.__dict__.items() if key != "_lock"}
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        """Restore credential state and create a new lock."""
+        self.__dict__.update(state)
         self._lock = threading.Lock()
 
     def _can_refresh(self, location: str) -> bool:
