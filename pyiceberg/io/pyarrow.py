@@ -294,8 +294,16 @@ class PyArrowFile(InputFile, OutputFile):
     _path: str
     _buffer_size: int
 
-    def __init__(self, location: str, path: str, fs: FileSystem, buffer_size: int = ONE_MEGABYTE):
+    def __init__(
+        self,
+        location: str,
+        path: str,
+        fs: FileSystem,
+        buffer_size: int = ONE_MEGABYTE,
+        fs_resolver: Callable[[], FileSystem] | None = None,
+    ):
         self._filesystem = fs
+        self._fs_resolver = fs_resolver
         self._path = path
         self._buffer_size = buffer_size
         super().__init__(location=location)
@@ -308,7 +316,7 @@ class PyArrowFile(InputFile, OutputFile):
                 an AWS error code 15.
         """
         try:
-            file_info = self._filesystem.get_file_info(self._path)
+            file_info = self._current_filesystem().get_file_info(self._path)
         except OSError as e:
             if e.errno == 13 or "AWS Error [code 15]" in str(e):
                 raise PermissionError(f"Cannot get file info, access denied: {self.location}") from e
@@ -350,9 +358,9 @@ class PyArrowFile(InputFile, OutputFile):
         """
         try:
             if seekable:
-                input_file = self._filesystem.open_input_file(self._path)
+                input_file = self._current_filesystem().open_input_file(self._path)
             else:
-                input_file = self._filesystem.open_input_stream(self._path, buffer_size=self._buffer_size)
+                input_file = self._current_filesystem().open_input_stream(self._path, buffer_size=self._buffer_size)
         except (FileNotFoundError, PermissionError):
             raise
         except OSError as e:
@@ -386,7 +394,7 @@ class PyArrowFile(InputFile, OutputFile):
         try:
             if not overwrite and self.exists() is True:
                 raise FileExistsError(f"Cannot create file, already exists: {self.location}")
-            output_file = self._filesystem.open_output_stream(self._path, buffer_size=self._buffer_size)
+            output_file = self._current_filesystem().open_output_stream(self._path, buffer_size=self._buffer_size)
         except PermissionError:
             raise
         except OSError as e:
@@ -404,6 +412,9 @@ class PyArrowFile(InputFile, OutputFile):
         a copy of the same instance.
         """
         return self
+
+    def _current_filesystem(self) -> FileSystem:
+        return self._fs_resolver() if self._fs_resolver is not None else self._filesystem
 
 
 class PyArrowFileIO(_TransientStateMixin, FileIO):
@@ -462,7 +473,8 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
         self, scheme: str, netloc: str | None = None, creds_key: frozenset[tuple[str, str]] = frozenset()
     ) -> FileSystem:
         """Initialize FileSystem for different scheme."""
-        props = {**self.properties, **dict(creds_key)}
+        baseline = self._credentials_properties if self._credentials_provider is not None else self.properties
+        props = {**baseline, **dict(creds_key)}
 
         if scheme in {"oss"}:
             return self._initialize_oss_fs(props)
@@ -485,8 +497,8 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
         else:
             raise ValueError(f"Unrecognized filesystem type in URI: {scheme}")
 
-    def _set_tls_ca_file_path(self, client_kwargs: dict[str, Any]) -> None:
-        if tls_ca_file_path := self.properties.get(S3_SSL_CA_CERT):
+    def _set_tls_ca_file_path(self, client_kwargs: dict[str, Any], properties: Properties) -> None:
+        if tls_ca_file_path := properties.get(S3_SSL_CA_CERT):
             min_pyarrow_version_supporting_tls_ca_file_path = (21, 0)
             if tuple(map(int, pa.__version__.split(".")[:2])) < min_pyarrow_version_supporting_tls_ca_file_path:
                 raise ImportError(
@@ -519,13 +531,15 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
         if role_arn := get_first_property_value(properties, S3_ROLE_ARN, AWS_ASSUME_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
 
-        if session_name := get_first_property_value(properties, S3_ROLE_SESSION_NAME, AWS_ASSUME_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+        if session_name := get_first_property_value(
+            properties, S3_ROLE_SESSION_NAME, AWS_ASSUME_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME
+        ):
             client_kwargs["session_name"] = session_name
 
         if s3_anonymous := properties.get(S3_ANONYMOUS):
             client_kwargs["anonymous"] = strtobool(s3_anonymous)
 
-        self._set_tls_ca_file_path(client_kwargs)
+        self._set_tls_ca_file_path(client_kwargs, properties)
 
         return S3FileSystem(**client_kwargs)
 
@@ -567,7 +581,9 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
         if role_arn := get_first_property_value(properties, S3_ROLE_ARN, AWS_ASSUME_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
 
-        if session_name := get_first_property_value(properties, S3_ROLE_SESSION_NAME, AWS_ASSUME_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+        if session_name := get_first_property_value(
+            properties, S3_ROLE_SESSION_NAME, AWS_ASSUME_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME
+        ):
             client_kwargs["session_name"] = session_name
 
         if properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
@@ -581,7 +597,7 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
         if s3_anonymous := properties.get(S3_ANONYMOUS):
             client_kwargs["anonymous"] = strtobool(s3_anonymous)
 
-        self._set_tls_ca_file_path(client_kwargs)
+        self._set_tls_ca_file_path(client_kwargs, properties)
 
         return S3FileSystem(**client_kwargs)
 
@@ -699,6 +715,9 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
+            fs_resolver=(
+                functools.partial(self._fs_for_location, location, scheme, netloc) if self._credentials_provider else None
+            ),
         )
 
     @override
@@ -717,6 +736,9 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
+            fs_resolver=(
+                functools.partial(self._fs_for_location, location, scheme, netloc) if self._credentials_provider else None
+            ),
         )
 
     @override

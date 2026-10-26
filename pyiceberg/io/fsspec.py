@@ -23,7 +23,7 @@ import logging
 import os
 import threading
 from collections.abc import Callable
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -266,6 +266,18 @@ def _gs(properties: Properties) -> AbstractFileSystem:
     if token and (expires_at := properties.get(GCS_TOKEN_EXPIRES_AT_MS)):
         token = Credentials(token, expiry=millis_to_datetime(int(expires_at)))
 
+    token = properties.get(GCS_TOKEN)
+    if (
+        isinstance(token, str)
+        and GCS_TOKEN_EXPIRES_AT_MS in properties
+        and token not in {"anon", "cloud", "cache", "google_default", "browser"}
+        and not os.path.isfile(token)
+    ):
+        from google.oauth2.credentials import Credentials
+
+        # FileIO owns token renewal. An SDK expiry would trigger a separate OAuth refresh flow.
+        token = Credentials(token=token)
+
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
         access=properties.get(GCS_ACCESS, "full_control"),
@@ -367,14 +379,15 @@ class FsspecInputFile(InputFile):
         fs (AbstractFileSystem): An fsspec filesystem instance.
     """
 
-    def __init__(self, location: str, fs: AbstractFileSystem):
+    def __init__(self, location: str, fs: AbstractFileSystem, fs_resolver: Callable[[], AbstractFileSystem] | None = None):
         self._fs = fs
+        self._fs_resolver = fs_resolver
         super().__init__(location=location)
 
     @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
-        object_info = self._fs.info(self.location)
+        object_info = self._current_filesystem().info(self.location)
         if "Size" in object_info:
             return object_info["Size"]
         elif "size" in object_info:
@@ -384,7 +397,7 @@ class FsspecInputFile(InputFile):
     @override
     def exists(self) -> bool:
         """Check whether the location exists."""
-        return self._fs.lexists(self.location)
+        return self._current_filesystem().lexists(self.location)
 
     @override
     def open(self, seekable: bool = True) -> InputStream:
@@ -400,10 +413,13 @@ class FsspecInputFile(InputFile):
             FileNotFoundError: If the file does not exist.
         """
         try:
-            return self._fs.open(self.location, "rb")
+            return self._current_filesystem().open(self.location, "rb")
         except FileNotFoundError as e:
             # To have a consistent error handling experience, make sure exception contains missing file location.
             raise e if e.filename else FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.location) from e
+
+    def _current_filesystem(self) -> AbstractFileSystem:
+        return self._fs_resolver() if self._fs_resolver is not None else self._fs
 
 
 class FsspecOutputFile(OutputFile):
@@ -414,14 +430,15 @@ class FsspecOutputFile(OutputFile):
         fs (AbstractFileSystem): An fsspec filesystem instance.
     """
 
-    def __init__(self, location: str, fs: AbstractFileSystem):
+    def __init__(self, location: str, fs: AbstractFileSystem, fs_resolver: Callable[[], AbstractFileSystem] | None = None):
         self._fs = fs
+        self._fs_resolver = fs_resolver
         super().__init__(location=location)
 
     @override
     def __len__(self) -> int:
         """Return the total length of the file, in bytes."""
-        object_info = self._fs.info(self.location)
+        object_info = self._current_filesystem().info(self.location)
         if "Size" in object_info:
             return object_info["Size"]
         elif "size" in object_info:
@@ -431,7 +448,7 @@ class FsspecOutputFile(OutputFile):
     @override
     def exists(self) -> bool:
         """Check whether the location exists."""
-        return self._fs.lexists(self.location)
+        return self._current_filesystem().lexists(self.location)
 
     @override
     def create(self, overwrite: bool = False) -> OutputStream:
@@ -454,12 +471,15 @@ class FsspecOutputFile(OutputFile):
         """
         if not overwrite and self.exists():
             raise FileExistsError(f"Cannot create file, file already exists: {self.location}")
-        return self._fs.open(self.location, "wb")
+        return self._current_filesystem().open(self.location, "wb")
+
+    def _current_filesystem(self) -> AbstractFileSystem:
+        return self._fs_resolver() if self._fs_resolver is not None else self._fs
 
     @override
     def to_input_file(self) -> FsspecInputFile:
         """Return a new FsspecInputFile for the location at `self.location`."""
-        return FsspecInputFile(location=self.location, fs=self._fs)
+        return FsspecInputFile(location=self.location, fs=self._fs, fs_resolver=self._fs_resolver)
 
 
 class FsspecFileIO(_TransientStateMixin, FileIO):
@@ -487,7 +507,11 @@ class FsspecFileIO(_TransientStateMixin, FileIO):
         """
         uri = urlparse(location)
         fs = self._get_fs_from_uri(uri, location)
-        return FsspecInputFile(location=location, fs=fs)
+        return FsspecInputFile(
+            location=location,
+            fs=fs,
+            fs_resolver=partial(self._get_fs_from_uri, uri, location) if self._credentials_provider else None,
+        )
 
     @override
     def new_output(self, location: str) -> FsspecOutputFile:
@@ -501,7 +525,11 @@ class FsspecFileIO(_TransientStateMixin, FileIO):
         """
         uri = urlparse(location)
         fs = self._get_fs_from_uri(uri, location)
-        return FsspecOutputFile(location=location, fs=fs)
+        return FsspecOutputFile(
+            location=location,
+            fs=fs,
+            fs_resolver=partial(self._get_fs_from_uri, uri, location) if self._credentials_provider else None,
+        )
 
     @override
     def delete(self, location: str | InputFile | OutputFile) -> None:
@@ -554,7 +582,8 @@ class FsspecFileIO(_TransientStateMixin, FileIO):
         if scheme not in self._scheme_to_fs:
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
 
-        properties = {**self.properties, **dict(creds_key)}
+        baseline = self._credentials_properties if self._credentials_provider is not None else self.properties
+        properties = {**baseline, **dict(creds_key)}
 
         if scheme in _ADLS_SCHEMES:
             return _adls(properties, hostname)
