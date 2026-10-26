@@ -1336,6 +1336,20 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     assert repr(result_table.schema) == "id: int32"
 
 
+def test_projection_no_columns_keeps_row_count(schema_int: Schema, file_int: str) -> None:
+    result_table = project(Schema(), [file_int, file_int], table_schema=schema_int)
+
+    assert result_table.num_columns == 0
+    assert result_table.num_rows == 6
+
+
+def test_projection_no_columns_with_filter(schema_int: Schema, file_int: str) -> None:
+    result_table = project(Schema(), [file_int], expr=GreaterThan("id", 0), table_schema=schema_int)
+
+    assert result_table.num_columns == 0
+    assert result_table.num_rows == 2
+
+
 @pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])
 def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog, with_field_ids: bool) -> None:
     # Test by adding a non-partitioned data file to a partitioned table, verifying partition value
