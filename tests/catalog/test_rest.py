@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import base64
 import os
+import pickle
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 from urllib.parse import parse_qs, quote, urlsplit
@@ -3711,6 +3713,104 @@ def test_load_table_no_provider_when_flag_disabled(
         catalog.load_table(("fokko", "table"))
 
     mock_set_credentials_provider.assert_not_called()
+
+
+def test_refresh_enabled_file_io_requires_supported_credentials_endpoint(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    from pyiceberg.catalog.rest.credential_provider import REFRESH_CREDENTIALS_ENABLED
+
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_TABLE)]},
+    )
+    _mock_table_with_storage_credentials(rest_mock, example_table_metadata_with_snapshot_v1)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{REFRESH_CREDENTIALS_ENABLED: "true"})
+
+    with pytest.raises(NotImplementedError, match="Server does not support endpoint"):
+        catalog.load_table(("fokko", "table"))
+
+
+def test_refresh_enabled_file_io_reads_and_writes_after_pickle(
+    rest_mock: Mocker,
+    example_table_metadata_with_snapshot_v1: dict[str, Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fsspec.implementations.memory import MemoryFileSystem
+    from pyarrow.fs import LocalFileSystem
+
+    from pyiceberg.catalog.rest.credential_provider import REFRESH_CREDENTIALS_ENABLED
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "warehouse").mkdir()
+    token_url = "https://auth.example/token"
+    rest_mock.post(token_url, json={"access_token": TEST_TOKEN, "expires_in": 3600})
+    credentials_url = f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials"
+    credential_config = {
+        "s3.access-key-id": "vended-key",
+        "s3.secret-access-key": "vended-secret",
+        "s3.session-token": "expired-token",
+        "s3.session-token-expires-at-ms": "0",
+    }
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": "s3://warehouse/metadata.json",
+            "metadata": example_table_metadata_with_snapshot_v1,
+            "storage-credentials": [{"prefix": "s3://warehouse/", "config": credential_config}],
+        },
+    )
+    refreshed = rest_mock.get(
+        credentials_url,
+        request_headers={"Authorization": f"Bearer {TEST_TOKEN}"},
+        json={
+            "storage-credentials": [
+                {
+                    "prefix": "s3://warehouse/",
+                    "config": {
+                        **credential_config,
+                        "s3.session-token": "refreshed-token",
+                        "s3.session-token-expires-at-ms": "4102444800000",
+                    },
+                }
+            ]
+        },
+    )
+    for implementation in (ARROW_FILE_IO, FSSPEC_FILE_IO):
+        catalog = RestCatalog(
+            "rest",
+            uri=TEST_URI,
+            **{
+                REFRESH_CREDENTIALS_ENABLED: "true",
+                PY_IO_IMPL: implementation,
+                "s3.region": "us-east-1",
+                "auth": {
+                    "type": "oauth2",
+                    "oauth2": {"client_id": "client", "client_secret": "secret", "token_url": token_url},
+                },
+            },
+        )
+        table = catalog.load_table(("fokko", "table"))
+        requests_before = rest_mock.call_count
+        restored = pickle.loads(pickle.dumps(table.io))
+        assert rest_mock.call_count == requests_before
+
+        with (
+            mock.patch("pyarrow.fs.S3FileSystem", return_value=LocalFileSystem()) as arrow_factory,
+            mock.patch("s3fs.S3FileSystem", return_value=MemoryFileSystem()) as fsspec_factory,
+        ):
+            location = "s3://warehouse/serialization.bin"
+            with restored.new_output(location).create() as stream:
+                stream.write(b"after credential refresh")
+            with restored.new_input(location).open() as stream:
+                assert stream.read() == b"after credential refresh"
+            restored.delete(location)
+            if implementation == ARROW_FILE_IO:
+                assert arrow_factory.call_args.kwargs["session_token"] == "refreshed-token"
+            else:
+                assert fsspec_factory.call_args.kwargs["client_kwargs"]["aws_session_token"] == "refreshed-token"
+        assert refreshed.called
 
 
 def test_attached_provider_refresh_fn_returns_full_response(

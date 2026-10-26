@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import deque
 from collections.abc import Mapping
@@ -554,6 +555,39 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
             raise_on_status=False,
         ),
     )
+
+
+class _RestCredentialSource(AuthManager):
+    """Reconstruct authenticated catalog access lazily after serialization."""
+
+    def __init__(self, catalog: RestCatalog, identifier: Identifier) -> None:
+        self._name = catalog.name
+        self._properties = dict(catalog.properties)
+        self._identifier = identifier
+        self._catalog: RestCatalog | None = catalog
+        self._lock = threading.Lock()
+
+    def _get_catalog(self) -> RestCatalog:
+        with self._lock:
+            if self._catalog is None:
+                self._catalog = RestCatalog(self._name, **self._properties)
+            return self._catalog
+
+    def __call__(self) -> LoadCredentialsResponse:
+        return self._get_catalog()._load_credentials(self._identifier)
+
+    def auth_header(self) -> str | None:
+        """Return catalog authorization using the same authentication as credential refresh."""
+        manager = self._get_catalog()._auth_manager
+        return manager.auth_header() if manager is not None else None
+
+    def __getstate__(self) -> tuple[str, Properties, Identifier]:
+        return self._name, self._properties, self._identifier
+
+    def __setstate__(self, state: tuple[str, Properties, Identifier]) -> None:
+        self._name, self._properties, self._identifier = state
+        self._catalog = None
+        self._lock = threading.Lock()
 
 
 class RestCatalog(Catalog):
@@ -1143,7 +1177,7 @@ class RestCatalog(Catalog):
             table_response.metadata_location,
             table_properties=table_response.metadata.properties,
         )
-        self._attach_credentials_provider(io, identifier_tuple, table_response.storage_credentials)
+        self._attach_credentials_provider_to_io(io, identifier_tuple, table_response.storage_credentials)
         return Table(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
@@ -1161,7 +1195,7 @@ class RestCatalog(Catalog):
             table_response.metadata_location,
             table_properties=table_response.metadata.properties,
         )
-        self._attach_credentials_provider(io, identifier_tuple, table_response.storage_credentials)
+        self._attach_credentials_provider_to_io(io, identifier_tuple, table_response.storage_credentials)
         return StagedTable(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
@@ -1170,7 +1204,7 @@ class RestCatalog(Catalog):
             catalog=self,
         )
 
-    def _attach_credentials_provider(
+    def _attach_credentials_provider_to_io(
         self, io: FileIO, identifier: str | Identifier, storage_credentials: list[StorageCredential]
     ) -> None:
         """Attach a CredentialsProvider to io if credential refresh is enabled and credentials were vended.
@@ -1179,9 +1213,10 @@ class RestCatalog(Catalog):
         longest-prefix matching against the freshly vended credentials.
         """
         if storage_credentials and property_as_bool(self.properties, REFRESH_CREDENTIALS_ENABLED, False):
-            io.set_credentials_provider(
-                CredentialsProvider(storage_credentials, refresh_fn=lambda: self._load_credentials(identifier))
-            )
+            self._check_endpoint(Capability.V1_LOAD_CREDENTIALS)
+            source = _RestCredentialSource(self, self.identifier_to_tuple(identifier))
+            io.properties[AUTH_MANAGER] = source
+            io.set_credentials_provider(CredentialsProvider(storage_credentials, refresh_fn=source))
 
     def _response_to_view(self, identifier_tuple: tuple[str, ...], view_response: ViewResponse) -> View:
         return View(
