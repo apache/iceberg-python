@@ -36,7 +36,7 @@ jobs:
     strategy:
       max-parallel: 15
       matrix:
-        os: [ ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest ]
+        os: [ ubuntu-24.04, ubuntu-24.04-arm, windows-latest, macos-15-intel, macos-latest ]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,7 +66,7 @@ jobs:
       # the repository, otherwise the tests will fail
       - name: Compile source distribution
         run: uv build --sdist
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
 
       - name: Build wheels
         uses: pypa/cibuildwheel@e090b81e30c4d855ea63bf4b6e59204c09a101ae # v4.2.1
@@ -86,7 +86,7 @@ jobs:
 
 
       - name: Add source distribution
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: ls -lah dist/* && cp dist/* wheelhouse/
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
