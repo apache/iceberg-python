@@ -97,6 +97,16 @@ def resolve_storage_credentials(storage_credentials: list[StorageCredential], lo
     return policy.normalize(match.config) if policy is not None else dict(match.config)
 
 
+def _credentials_from_config(config: Properties, location: str) -> list[StorageCredential]:
+    scheme = urlparse(location).scheme
+    policy = _POLICIES_BY_SCHEME.get(scheme)
+    if policy is None or policy.expiration_ms(config) is None:
+        return []
+    keys = (*policy.required_properties, *policy.expiration_properties)
+    properties = {key: config[key] for key in keys if key in config}
+    return [StorageCredential(prefix=f"{scheme}://", config=properties)]
+
+
 @dataclass(frozen=True)
 class _CredentialState:
     prefix: str

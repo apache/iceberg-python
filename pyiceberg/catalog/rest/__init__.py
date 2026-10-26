@@ -41,6 +41,7 @@ from pyiceberg.catalog.rest.auth import AUTH_MANAGER, AuthManager, AuthManagerAd
 from pyiceberg.catalog.rest.credential_provider import (
     REFRESH_CREDENTIALS_ENABLED,
     CredentialsProvider,
+    _credentials_from_config,
     resolve_storage_credentials,
 )
 from pyiceberg.catalog.rest.response import _handle_non_200_response
@@ -924,6 +925,9 @@ class RestCatalog(Catalog):
         existing_properties: Properties,
         storage_credentials: list[StorageCredential],
         location: str | None = None,
+        *,
+        identifier: Identifier | None = None,
+        existing_io: FileIO | None = None,
     ) -> FileIO | None:
         """Build a scan-scoped FileIO from plan storage credentials.
 
@@ -944,7 +948,15 @@ class RestCatalog(Catalog):
         if not credential_config:
             return None
 
-        return self._load_file_io({**existing_properties, **credential_config}, resolve_location)
+        baseline = (
+            existing_io._credentials_properties
+            if existing_io is not None and existing_io._credentials_provider is not None
+            else existing_properties
+        )
+        io = self._load_file_io({**baseline, **credential_config}, resolve_location)
+        if identifier is not None:
+            self._attach_credentials_provider_to_io(io, identifier, storage_credentials, base_properties=baseline)
+        return io
 
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
         """Create the LegacyOAuth2AuthManager by fetching required properties.
@@ -1169,43 +1181,50 @@ class RestCatalog(Catalog):
 
         session.mount(self.uri, SigV4Adapter(**self.properties))
 
-    def _response_to_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> Table:
-        # Per Iceberg spec: storage-credentials take precedence over config
-        credential_config = resolve_storage_credentials(table_response.storage_credentials, table_response.metadata_location)
+    def _table_file_io(self, identifier: Identifier, table_response: TableResponse) -> FileIO:
+        credentials = table_response.storage_credentials
+        baseline_config = table_response.config
+        location = table_response.metadata_location or table_response.metadata.location
+        if not credentials and property_as_bool(self.properties, REFRESH_CREDENTIALS_ENABLED, False):
+            credentials = _credentials_from_config(table_response.config, location)
+            if credentials:
+                baseline_config = {key: value for key, value in baseline_config.items() if key not in credentials[0].config}
+        credential_config = resolve_storage_credentials(credentials, location)
         io = self._load_file_io(
             {**table_response.config, **credential_config},
             table_response.metadata_location,
             table_properties=table_response.metadata.properties,
         )
-        self._attach_credentials_provider_to_io(io, identifier_tuple, table_response.storage_credentials)
+        baseline = {**table_response.metadata.properties, **self.properties, **baseline_config}
+        self._attach_credentials_provider_to_io(io, identifier, credentials, base_properties=baseline)
+        return io
+
+    def _response_to_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> Table:
         return Table(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
-            io=io,
+            io=self._table_file_io(identifier_tuple, table_response),
             catalog=self,
             config=table_response.config,
         )
 
     def _response_to_staged_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> StagedTable:
-        # Per Iceberg spec: storage-credentials take precedence over config
-        credential_config = resolve_storage_credentials(table_response.storage_credentials, table_response.metadata_location)
-        io = self._load_file_io(
-            {**table_response.config, **credential_config},
-            table_response.metadata_location,
-            table_properties=table_response.metadata.properties,
-        )
-        self._attach_credentials_provider_to_io(io, identifier_tuple, table_response.storage_credentials)
         return StagedTable(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
             metadata=table_response.metadata,
-            io=io,
+            io=self._table_file_io(identifier_tuple, table_response),
             catalog=self,
         )
 
     def _attach_credentials_provider_to_io(
-        self, io: FileIO, identifier: str | Identifier, storage_credentials: list[StorageCredential]
+        self,
+        io: FileIO,
+        identifier: str | Identifier,
+        storage_credentials: list[StorageCredential],
+        *,
+        base_properties: Properties | None = None,
     ) -> None:
         """Attach a CredentialsProvider to io if credential refresh is enabled and credentials were vended.
 
@@ -1216,7 +1235,8 @@ class RestCatalog(Catalog):
             self._check_endpoint(Capability.V1_LOAD_CREDENTIALS)
             source = _RestCredentialSource(self, self.identifier_to_tuple(identifier))
             io.properties[AUTH_MANAGER] = source
-            io.set_credentials_provider(CredentialsProvider(storage_credentials, refresh_fn=source))
+            baseline = {**(io.properties if base_properties is None else base_properties), AUTH_MANAGER: source}
+            io.set_credentials_provider(CredentialsProvider(storage_credentials, refresh_fn=source), base_properties=baseline)
 
     def _response_to_view(self, identifier_tuple: tuple[str, ...], view_response: ViewResponse) -> View:
         return View(

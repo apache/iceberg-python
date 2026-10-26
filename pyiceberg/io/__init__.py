@@ -318,16 +318,19 @@ class FileIO(ABC):
             FileNotFoundError: When the file at the provided location does not exist.
         """
 
-    def set_credentials_provider(self, provider: CredentialsProviderProtocol) -> None:
+    def set_credentials_provider(
+        self, provider: CredentialsProviderProtocol, *, base_properties: Properties | None = None
+    ) -> None:
         """Inject a credentials provider for refreshing vended storage credentials.
 
-        Backends that support credential refresh (e.g. S3) consult the provider at file-access
-        time and rebuild their underlying filesystem when credentials change. Backends that do
-        not support refresh simply hold the reference without using it.
+        PyArrow and fsspec consult the provider for S3 and GCS file access and rebuild their
+        underlying filesystem when credentials change. Other backends can implement the same contract.
 
         Args:
             provider (CredentialsProviderProtocol): Resolves credential properties for a file location.
+            base_properties: Configuration before applying any location-specific vended credentials.
         """
+        self._credentials_properties = dict(self.properties if base_properties is None else base_properties)
         self._credentials_provider = provider
 
 

@@ -2476,7 +2476,13 @@ class DataScan(TableScan):
 
         result = self.catalog._plan_scan_result(self.table_identifier, request)
         location = result.tasks[0].file.file_path if result.tasks else None
-        plan_io = self.catalog._file_io_from_plan(self.io.properties, result.storage_credentials, location)
+        plan_io = self.catalog._file_io_from_plan(
+            self.io.properties,
+            result.storage_credentials,
+            location,
+            identifier=self.table_identifier,
+            existing_io=self.io,
+        )
         if plan_io is not None:
             self.io = plan_io
         return result.tasks

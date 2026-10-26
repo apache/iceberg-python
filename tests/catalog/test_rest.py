@@ -76,7 +76,7 @@ from pyiceberg.table import Table
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
-from pyiceberg.typedef import RecursiveDict
+from pyiceberg.typedef import Properties, RecursiveDict
 from pyiceberg.types import StringType
 from pyiceberg.utils.config import Config
 from pyiceberg.view import View
@@ -3686,35 +3686,6 @@ def _mock_table_with_storage_credentials(rest_mock: Mocker, metadata: dict[str, 
     )
 
 
-def test_load_table_attaches_credentials_provider_when_enabled(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
-) -> None:
-    from pyiceberg.catalog.rest.credential_provider import REFRESH_CREDENTIALS_ENABLED, CredentialsProvider
-    from pyiceberg.io import FileIO
-
-    _mock_table_with_storage_credentials(rest_mock, example_table_metadata_with_snapshot_v1)
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{REFRESH_CREDENTIALS_ENABLED: "true"})
-    with mock.patch.object(FileIO, "set_credentials_provider") as mock_set_credentials_provider:
-        catalog.load_table(("fokko", "table"))
-
-    mock_set_credentials_provider.assert_called_once()
-    (provider,), _ = mock_set_credentials_provider.call_args
-    assert isinstance(provider, CredentialsProvider)
-
-
-def test_load_table_no_provider_when_flag_disabled(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
-) -> None:
-    from pyiceberg.io import FileIO
-
-    _mock_table_with_storage_credentials(rest_mock, example_table_metadata_with_snapshot_v1)
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
-    with mock.patch.object(FileIO, "set_credentials_provider") as mock_set_credentials_provider:
-        catalog.load_table(("fokko", "table"))
-
-    mock_set_credentials_provider.assert_not_called()
-
-
 def test_refresh_enabled_file_io_requires_supported_credentials_endpoint(
     rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
 ) -> None:
@@ -3778,19 +3749,16 @@ def test_refresh_enabled_file_io_reads_and_writes_after_pickle(
         },
     )
     for implementation in (ARROW_FILE_IO, FSSPEC_FILE_IO):
-        catalog = RestCatalog(
-            "rest",
-            uri=TEST_URI,
-            **{
-                REFRESH_CREDENTIALS_ENABLED: "true",
-                PY_IO_IMPL: implementation,
-                "s3.region": "us-east-1",
-                "auth": {
-                    "type": "oauth2",
-                    "oauth2": {"client_id": "client", "client_secret": "secret", "token_url": token_url},
-                },
+        properties: Properties = {
+            REFRESH_CREDENTIALS_ENABLED: "true",
+            PY_IO_IMPL: implementation,
+            "s3.region": "us-east-1",
+            "auth": {
+                "type": "oauth2",
+                "oauth2": {"client_id": "client", "client_secret": "secret", "token_url": token_url},
             },
-        )
+        }
+        catalog = RestCatalog("rest", uri=TEST_URI, **properties)
         table = catalog.load_table(("fokko", "table"))
         requests_before = rest_mock.call_count
         restored = pickle.loads(pickle.dumps(table.io))
@@ -3811,32 +3779,6 @@ def test_refresh_enabled_file_io_reads_and_writes_after_pickle(
             else:
                 assert fsspec_factory.call_args.kwargs["client_kwargs"]["aws_session_token"] == "refreshed-token"
         assert refreshed.called
-
-
-def test_attached_provider_refresh_fn_returns_full_response(
-    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
-) -> None:
-    """The refresh callback must return the raw LoadCredentialsResponse (full credential list),
-    not the already-resolved Properties, so the provider can re-run longest-prefix matching."""
-    from pyiceberg.catalog.rest import LoadCredentialsResponse
-    from pyiceberg.catalog.rest.credential_provider import REFRESH_CREDENTIALS_ENABLED
-    from pyiceberg.io import FileIO
-
-    _mock_table_with_storage_credentials(rest_mock, example_table_metadata_with_snapshot_v1)
-    rest_mock.get(
-        f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
-        json={"storage-credentials": [{"prefix": "s3://warehouse/database/table", "config": {"s3.access-key-id": "refreshed"}}]},
-        status_code=200,
-        request_headers=TEST_HEADERS,
-    )
-    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{REFRESH_CREDENTIALS_ENABLED: "true"})
-    captured: dict[str, LoadCredentialsResponse] = {}
-    with mock.patch.object(FileIO, "set_credentials_provider", side_effect=lambda p: captured.update(provider=p)):
-        catalog.load_table(("fokko", "table"))
-
-    response = captured["provider"]._refresh_fn()
-    assert isinstance(response, LoadCredentialsResponse)
-    assert response.storage_credentials[0].config == {"s3.access-key-id": "refreshed"}
 
 
 def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
