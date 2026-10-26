@@ -20,7 +20,7 @@ from typing import Any
 from uuid import UUID
 
 from pyiceberg.schema import Schema
-from pyiceberg.typedef import Identifier
+from pyiceberg.typedef import EMPTY_DICT, Identifier
 from pyiceberg.view.metadata import SQLViewRepresentation, ViewHistoryEntry, ViewMetadata, ViewVersion
 
 
@@ -29,14 +29,21 @@ class View:
 
     _identifier: Identifier
     metadata: ViewMetadata
+    config: dict[str, str]
+    # None when no metadata location is available, such as for directly constructed views.
+    metadata_location: str | None
 
     def __init__(
         self,
         identifier: Identifier,
         metadata: ViewMetadata,
+        config: dict[str, str] = EMPTY_DICT,
+        metadata_location: str | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
+        self.config = config
+        self.metadata_location = metadata_location
 
     def name(self) -> Identifier:
         """Return the identifier of this view."""
@@ -89,4 +96,8 @@ class View:
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the View class."""
-        return self.name() == other.name() and self.metadata == other.metadata if isinstance(other, View) else False
+        return (
+            self.name() == other.name() and self.metadata == other.metadata and self.metadata_location == other.metadata_location
+            if isinstance(other, View)
+            else False
+        )

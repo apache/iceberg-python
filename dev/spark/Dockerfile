@@ -13,16 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE_SPARK_VERSION=4.0.1
+ARG BASE_IMAGE_SPARK_VERSION=4.1.3
 
 FROM apache/spark:${BASE_IMAGE_SPARK_VERSION}
 
 # Dependency versions - keep these compatible
 # Changing these will invalidate the JAR download cache layer
-ARG ICEBERG_VERSION=1.11.0
-ARG ICEBERG_SPARK_RUNTIME_VERSION=4.0_2.13
-ARG HADOOP_VERSION=3.4.1
-ARG AWS_SDK_VERSION=2.24.6
+ARG ICEBERG_VERSION=1.12.0
+ARG ICEBERG_SPARK_RUNTIME_VERSION=4.1_2.13
+ARG HADOOP_VERSION=3.4.2
+ARG AWS_SDK_VERSION=2.57.3
+ARG HIVE_METASTORE_VERSION=4.2.1
 ARG MAVEN_MIRROR=https://repo.maven.apache.org/maven2
 
 USER root
@@ -36,6 +37,11 @@ RUN apt-get update -qq && \
     mkdir -p /home/iceberg/spark-events && \
     chown -R spark:spark /home/iceberg
 
+# Iceberg's Hive catalog uses the metastore client from the class path, and the bundled
+# Hive 2.3 one calls get_table, which Hive dropped in 4.0.1. Move it aside for a Hive 4 client.
+RUN mkdir -p "${SPARK_HOME}/hive-metastore-jars" && \
+    mv "${SPARK_HOME}"/jars/hive-metastore-*.jar "${SPARK_HOME}/hive-metastore-jars/"
+
 # Download JARs with retry logic (most cacheable - only changes when versions change)
 # This is the slowest step, so we do it before copying config files
 RUN set -e && \
@@ -44,6 +50,8 @@ RUN set -e && \
         "org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar" \
         "org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar" \
         "org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" \
+        "org/apache/hive/hive-standalone-metastore-common/${HIVE_METASTORE_VERSION}/hive-standalone-metastore-common-${HIVE_METASTORE_VERSION}.jar" \
+        "org/apache/hive/hive-standalone-metastore-client/${HIVE_METASTORE_VERSION}/hive-standalone-metastore-client-${HIVE_METASTORE_VERSION}.jar" \
         "software/amazon/awssdk/bundle/${AWS_SDK_VERSION}/bundle-${AWS_SDK_VERSION}.jar"; \
     do \
         jar_name=$(basename "${jar_path}") && \

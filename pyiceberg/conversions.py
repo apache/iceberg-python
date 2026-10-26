@@ -310,15 +310,23 @@ def _(primitive_type: DecimalType, value: Decimal) -> bytes:
         bytes: The byte representation of `value`.
     """
     _, digits, exponent = value.as_tuple()
-    exponent = abs(int(exponent))
-    if exponent != primitive_type.scale:
-        raise ValueError(f"Cannot serialize value, scale of value does not match type {primitive_type}: {exponent}")
+    # A Decimal carries the negated scale as its exponent, so a value with a negative
+    # scale (1E+2) must not be read as if it had the matching positive one
+    value_scale = -int(exponent)
+    if value_scale != primitive_type.scale:
+        raise ValueError(f"Cannot serialize value, scale of value does not match type {primitive_type}: {value_scale}")
     elif len(digits) > primitive_type.precision:
         raise ValueError(
             f"Cannot serialize value, precision of value is greater than precision of type {primitive_type}: {len(digits)}"
         )
 
     return decimal_to_bytes(value)
+
+
+@to_bytes.register(UnknownType)
+def _(_: UnknownType, value: Any) -> None:
+    """Return None since the unknown type has no binary representation."""
+    return None
 
 
 @singledispatch  # type: ignore

@@ -744,6 +744,20 @@ class Catalog(ABC):
             ViewAlreadyExistsError: If a view with the name already exists.
         """
 
+    @abstractmethod
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        """Rename a fully qualified view name.
+
+        Args:
+            from_identifier (str | Identifier): Existing view identifier.
+            to_identifier (str | Identifier): New view identifier.
+
+        Raises:
+            NoSuchViewError: If a view with the name does not exist.
+            ViewAlreadyExistsError: If a table or view with the target name already exists.
+            NoSuchNamespaceError: If the source or destination namespace does not exist.
+        """
+
     @staticmethod
     def identifier_to_tuple(identifier: str | Identifier) -> Identifier:
         """Parse an identifier to a tuple.
@@ -833,8 +847,15 @@ class Catalog(ABC):
 
         return tuple_identifier[0], tuple_identifier[1]
 
-    def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
-        return load_file_io({**self.properties, **properties}, location)
+    def _load_file_io(
+        self,
+        properties: Properties = EMPTY_DICT,
+        location: str | None = None,
+        table_properties: Properties = EMPTY_DICT,
+    ) -> FileIO:
+        # table_properties ranks lowest: a principal who can commit to a table must not
+        # be able to redirect its readers.
+        return load_file_io({**table_properties, **self.properties, **properties}, location)
 
     @staticmethod
     def _convert_schema_if_needed(
@@ -1020,7 +1041,7 @@ class MetastoreCatalog(Catalog, ABC):
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
-        io = self._load_file_io(properties=properties, location=metadata_location)
+        io = self._load_file_io(location=metadata_location, table_properties=properties)
         return StagedTable(
             identifier=(database_name, table_name),
             metadata=metadata,
@@ -1054,7 +1075,7 @@ class MetastoreCatalog(Catalog, ABC):
             identifier=table_identifier,
             metadata=updated_metadata,
             metadata_location=new_metadata_location,
-            io=self._load_file_io(properties=updated_metadata.properties, location=new_metadata_location),
+            io=self._load_file_io(location=new_metadata_location, table_properties=updated_metadata.properties),
             catalog=self,
         )
 

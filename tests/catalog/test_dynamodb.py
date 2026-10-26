@@ -57,7 +57,7 @@ def test_create_dynamodb_catalog_with_table_name(_dynamodb, _bucket_initialize: 
     assert response["Table"]["TableStatus"] == ACTIVE
 
     custom_table_name = "custom_table_name"
-    DynamoDbCatalog("test_ddb_catalog", **{"table-name": custom_table_name})
+    DynamoDbCatalog("test_ddb_catalog", client=None, **{"table-name": custom_table_name})
     response = _dynamodb.describe_table(TableName=custom_table_name)
     assert response["Table"]["TableName"] == custom_table_name
     assert response["Table"]["TableStatus"] == ACTIVE
@@ -69,7 +69,7 @@ def test_create_table_with_database_location(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -86,7 +86,7 @@ def test_create_table_with_pyarrow_schema(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
     table = test_catalog.create_table(identifier, pyarrow_schema_simple_without_ids)
     assert table.name() == identifier
@@ -99,7 +99,9 @@ def test_create_table_with_default_warehouse(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog = DynamoDbCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -112,7 +114,7 @@ def test_create_table_with_given_location(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(
         identifier=identifier, schema=table_schema_nested, location=f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
@@ -127,7 +129,7 @@ def test_create_table_removes_trailing_slash_in_location(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name)
     location = f"s3://{BUCKET_NAME}/{database_name}.db/{table_name}"
     table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested, location=f"{location}/")
@@ -153,7 +155,7 @@ def test_create_table_with_strips(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db/"})
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -166,7 +168,9 @@ def test_create_table_with_strips_bucket_root(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"})
+    test_catalog = DynamoDbCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}/"}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table_strip = test_catalog.create_table(identifier, table_schema_nested)
     assert table_strip.name() == identifier
@@ -188,7 +192,9 @@ def test_create_duplicated_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        "test_ddb_catalog", client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     with pytest.raises(TableAlreadyExistsError):
@@ -200,7 +206,9 @@ def test_create_table_if_not_exists_duplicated_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        "test_ddb_catalog", client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table1 = test_catalog.create_table(identifier, table_schema_nested)
     table2 = test_catalog.create_table_if_not_exists(identifier, table_schema_nested)
@@ -213,7 +221,9 @@ def test_load_table(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        catalog_name, client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
@@ -227,7 +237,9 @@ def test_load_table_from_self_identifier(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        catalog_name, client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     intermediate = test_catalog.load_table(identifier)
@@ -251,7 +263,9 @@ def test_drop_table(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        catalog_name, client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
@@ -268,7 +282,9 @@ def test_drop_table_from_self_identifier(
 ) -> None:
     catalog_name = "test_ddb_catalog"
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        catalog_name, client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     table = test_catalog.load_table(identifier)
@@ -297,7 +313,9 @@ def test_rename_table(
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (database_name, new_table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        catalog_name, client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -320,7 +338,9 @@ def test_rename_table_from_self_identifier(
     new_table_name = f"{table_name}_new"
     identifier = (database_name, table_name)
     new_identifier = (database_name, new_table_name)
-    test_catalog = DynamoDbCatalog(catalog_name, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        catalog_name, client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     table = test_catalog.create_table(identifier, table_schema_nested)
     assert table.name() == identifier
@@ -394,7 +414,9 @@ def test_fail_on_rename_non_iceberg_table(
 def test_list_tables(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_list: list[str]
 ) -> None:
-    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        "test_ddb_catalog", client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     for table_name in table_list:
         test_catalog.create_table((database_name, table_name), table_schema_nested)
@@ -469,7 +491,9 @@ def test_drop_non_empty_namespace(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        "test_ddb_catalog", client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     assert len(test_catalog.list_tables(database_name)) == 1
@@ -618,7 +642,9 @@ def test_table_exists(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
     identifier = (database_name, table_name)
-    test_catalog = DynamoDbCatalog("test_ddb_catalog", **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url})
+    test_catalog = DynamoDbCatalog(
+        "test_ddb_catalog", client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
     test_catalog.create_namespace(namespace=database_name)
     test_catalog.create_table(identifier, table_schema_nested)
     # Act and Assert for an existing table

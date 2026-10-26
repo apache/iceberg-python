@@ -20,10 +20,8 @@
 name: "Python CI Docs"
 
 on:
-  push:
-    branches:
-      - 'main'
   pull_request:
+  merge_group:
 
 permissions:
   contents: read
@@ -31,7 +29,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   docs:
@@ -45,8 +43,6 @@ jobs:
         with:
           python-version: 3.12
       - name: Install UV
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Build docs
         run: make docs-build
-      - name: Run linters
-        run: make lint

@@ -27,7 +27,9 @@ from urllib.parse import urlparse
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from hive_metastore.ttypes import LockRequest, LockResponse, LockState, UnlockRequest
+from hive_metastore.ThriftHiveMetastore import Client
+from hive_metastore.ttypes import GetTableRequest, LockRequest, LockResponse, LockState, UnlockRequest
+from hive_metastore.ttypes import Table as HiveTable
 from pyarrow.fs import S3FileSystem
 from pydantic_core import ValidationError
 from pyspark.sql import SparkSession
@@ -67,6 +69,11 @@ DEFAULT_PROPERTIES = {"write.parquet.compression-codec": "zstd"}
 
 
 TABLE_NAME = ("default", "t1")
+
+
+def _get_hive_table(open_client: Client) -> HiveTable:
+    database_name, table_name = TABLE_NAME
+    return open_client.get_table_req(GetTableRequest(dbName=database_name, tblName=table_name)).table
 
 
 def create_table(catalog: Catalog) -> Table:
@@ -124,7 +131,7 @@ def test_hive_properties(catalog: Catalog) -> None:
     hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
 
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("abc") == "def"
         assert hive_table.parameters.get("p1") == "123"
         assert hive_table.parameters.get("not_exist_parameter") is None
@@ -132,7 +139,7 @@ def test_hive_properties(catalog: Catalog) -> None:
     table.transaction().remove_properties("abc").commit_transaction()
 
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("abc") is None
 
 
@@ -149,14 +156,14 @@ def test_hive_preserves_hms_specific_properties(catalog: Catalog) -> None:
     table = create_table(catalog)
     hive_client: _HiveClient = _HiveClient(catalog.properties["uri"])
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         # Add HMS-specific properties that aren't managed by Iceberg
         hive_table.parameters["table_category"] = "production"
         hive_table.parameters["data_owner"] = "data_team"
         open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
 
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("table_category") == "production"
         assert hive_table.parameters.get("data_owner") == "data_team"
 
@@ -164,7 +171,7 @@ def test_hive_preserves_hms_specific_properties(catalog: Catalog) -> None:
 
     # Verify that HMS-specific properties are STILL present after commit
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         # HMS-specific properties should be preserved
         assert hive_table.parameters.get("table_category") == "production", (
             "HMS property 'table_category' was lost during commit!"
@@ -189,7 +196,7 @@ def test_iceberg_property_deletion_not_restored_from_old_hms_state(session_catal
 
     # Verify both properties exist
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("prop_to_keep") == "keep_value"
         assert hive_table.parameters.get("prop_to_delete") == "delete_me"
 
@@ -198,7 +205,7 @@ def test_iceberg_property_deletion_not_restored_from_old_hms_state(session_catal
 
     # Verify property is deleted from HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("prop_to_keep") == "keep_value"
         assert hive_table.parameters.get("prop_to_delete") is None, "Deleted property should not exist in HMS!"
 
@@ -207,7 +214,7 @@ def test_iceberg_property_deletion_not_restored_from_old_hms_state(session_catal
 
     # Ensure deleted property doesn't come back from old state
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("prop_to_keep") == "keep_value"
         assert hive_table.parameters.get("new_prop") == "new_value"
         assert hive_table.parameters.get("prop_to_delete") is None, "Deleted property should NOT be restored from old HMS state!"
@@ -229,13 +236,13 @@ def test_iceberg_metadata_is_source_of_truth(catalog: Catalog) -> None:
 
     # External tool modifies the same property in HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         hive_table.parameters["my_prop"] = "hms_value"  # Conflicting value
         open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
 
     # Verify HMS has the external value
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("my_prop") == "hms_value"
 
     # Perform another Iceberg commit
@@ -243,7 +250,7 @@ def test_iceberg_metadata_is_source_of_truth(catalog: Catalog) -> None:
 
     # Iceberg's value should take precedence
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("my_prop") == "iceberg_value", (
             "Iceberg property value should take precedence over conflicting HMS value!"
         )
@@ -262,7 +269,7 @@ def test_hive_critical_properties_always_from_iceberg(catalog: Catalog) -> None:
 
     # Get original metadata_location
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         original_metadata_location = hive_table.parameters.get("metadata_location")
         assert original_metadata_location is not None
         assert hive_table.parameters.get("EXTERNAL") == "TRUE"
@@ -270,7 +277,7 @@ def test_hive_critical_properties_always_from_iceberg(catalog: Catalog) -> None:
 
     # Try to tamper with critical properties via HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         hive_table.parameters["EXTERNAL"] = "FALSE"  # Try to change
         open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
 
@@ -279,7 +286,7 @@ def test_hive_critical_properties_always_from_iceberg(catalog: Catalog) -> None:
 
     # Critical properties should be restored by Iceberg
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("EXTERNAL") == "TRUE", "EXTERNAL should always be TRUE from Iceberg!"
         assert hive_table.parameters.get("table_type") == "ICEBERG", "table_type should always be ICEBERG!"
         # metadata_location should be updated (new metadata file)
@@ -301,13 +308,13 @@ def test_hive_native_properties_cannot_be_deleted_via_iceberg(catalog: Catalog) 
 
     # Set an HMS-native property directly (not through Iceberg)
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         hive_table.parameters["hms_native_prop"] = "native_value"
         open_client.alter_table(TABLE_NAME[0], TABLE_NAME[1], hive_table)
 
     # Verify the HMS-native property exists in HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("hms_native_prop") == "native_value"
 
     # Refresh the Iceberg table to get the latest state
@@ -323,7 +330,7 @@ def test_hive_native_properties_cannot_be_deleted_via_iceberg(catalog: Catalog) 
 
     # HMS-native property should still exist (cannot be deleted via Iceberg)
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("hms_native_prop") == "native_value", (
             "HMS-native property should still exist since Iceberg removal failed!"
         )
@@ -333,7 +340,7 @@ def test_hive_native_properties_cannot_be_deleted_via_iceberg(catalog: Catalog) 
 
     # Verify it's updated in both places
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("hms_native_prop") == "iceberg_value"
 
     # Now we CAN delete it via Iceberg (because it's now tracked in Iceberg metadata)
@@ -341,7 +348,7 @@ def test_hive_native_properties_cannot_be_deleted_via_iceberg(catalog: Catalog) 
 
     # Property should be deleted from HMS
     with hive_client as open_client:
-        hive_table = open_client.get_table(*TABLE_NAME)
+        hive_table = _get_hive_table(open_client)
         assert hive_table.parameters.get("hms_native_prop") is None, (
             "Property should be deletable after being SET via Iceberg (making it tracked)!"
         )

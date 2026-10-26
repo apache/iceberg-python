@@ -53,7 +53,7 @@ def fixture_glue_client() -> boto3.client:
 def fixture_test_catalog() -> Generator[Catalog, None, None]:
     """Configure the pre- and post-setting of aws integration test."""
     test_catalog = GlueCatalog(
-        CATALOG_NAME, **{"warehouse": get_s3_path(get_bucket_name()), GLUE_CATALOG_ENDPOINT: get_glue_endpoint()}
+        CATALOG_NAME, client=None, **{"warehouse": get_s3_path(get_bucket_name()), GLUE_CATALOG_ENDPOINT: get_glue_endpoint()}
     )
     yield test_catalog
     clean_up(test_catalog)

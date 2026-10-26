@@ -115,16 +115,13 @@ class Schema(IcebergBaseModel):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the Schema class."""
-        if not other:
-            return False
-
         if not isinstance(other, Schema):
             return False
 
         if len(self.columns) != len(other.columns):
             return False
 
-        identifier_field_ids_is_equal = self.identifier_field_ids == other.identifier_field_ids
+        identifier_field_ids_is_equal = set(self.identifier_field_ids) == set(other.identifier_field_ids)
         schema_is_equal = all(lhs == rhs for lhs, rhs in zip(self.columns, other.columns, strict=True))
 
         return identifier_field_ids_is_equal and schema_is_equal
@@ -1697,7 +1694,7 @@ def _(file_type: BinaryType, read_type: IcebergType) -> IcebergType:
 @promote.register(DecimalType)
 def _(file_type: DecimalType, read_type: IcebergType) -> IcebergType:
     if isinstance(read_type, DecimalType):
-        if file_type.precision <= read_type.precision and file_type.scale == file_type.scale:
+        if file_type.precision <= read_type.precision and file_type.scale == read_type.scale:
             return read_type
         else:
             raise ResolveError(f"Cannot reduce precision from {file_type} to {read_type}")

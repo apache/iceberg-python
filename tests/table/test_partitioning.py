@@ -225,7 +225,7 @@ def test_partition_type_missing_source_field(table_schema_simple: Schema) -> Non
     [
         (IntegerType(), 22),
         (LongType(), 22),
-        (DecimalType(5, 9), Decimal(19.25)),
+        (DecimalType(9, 5), Decimal(19.25)),
         (DateType(), datetime.date(1925, 5, 22)),
         (TimeType(), datetime.time(19, 25, 00)),
         (TimestampType(), datetime.datetime(2022, 5, 1, 22, 1, 1)),
@@ -270,6 +270,12 @@ def test_deserialize_partition_field_v3() -> None:
 def test_deserialize_partition_field_empty_source_ids_rejected() -> None:
     json_partition_spec = """{"source-ids": [], "field-id": 1000, "transform": "identity", "name": "x"}"""
     with pytest.raises(Exception, match="Empty source-ids is not allowed"):
+        PartitionField.model_validate_json(json_partition_spec)
+
+
+def test_deserialize_partition_field_source_id_and_source_ids_rejected() -> None:
+    json_partition_spec = """{"source-id": 5, "source-ids": [1, 2], "field-id": 1000, "transform": "bucket[4]", "name": "m"}"""
+    with pytest.raises(Exception, match="source-id and source-ids are mutually exclusive"):
         PartitionField.model_validate_json(json_partition_spec)
 
 

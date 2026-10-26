@@ -144,6 +144,12 @@ def test_deserialize_sort_field_empty_source_ids_rejected() -> None:
         SortField.model_validate_json(payload)
 
 
+def test_deserialize_sort_field_source_id_and_source_ids_rejected() -> None:
+    payload = '{"source-id":5,"source-ids":[19,20],"transform":"bucket[4]","direction":"asc","null-order":"nulls-first"}'
+    with pytest.raises(Exception, match="source-id and source-ids are mutually exclusive"):
+        SortField.model_validate_json(payload)
+
+
 def test_incompatible_source_column_not_found(sort_order: SortOrder) -> None:
     schema = Schema(NestedField(1, "foo", IntegerType()), NestedField(2, "bar", IntegerType()))
 

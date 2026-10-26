@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from copy import copy
 from enum import Enum
 from types import TracebackType
@@ -55,7 +55,7 @@ from pyiceberg.utils.config import Config
 
 UNASSIGNED_SEQ = -1
 DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
-DEFAULT_READ_VERSION: Literal[2] = 2
+DEFAULT_READ_VERSION: Literal[3] = 3
 
 INITIAL_SEQUENCE_NUMBER = 0
 
@@ -295,7 +295,7 @@ DATA_FILE_TYPE: dict[int, StructType] = {
         NestedField(
             field_id=135,
             name="equality_ids",
-            field_type=ListType(element_id=136, element_type=LongType(), element_required=True),
+            field_type=ListType(element_id=136, element_type=IntegerType(), element_required=True),
             required=False,
             doc="Field ids used to determine row equality in equality delete files.",
         ),
@@ -305,6 +305,13 @@ DATA_FILE_TYPE: dict[int, StructType] = {
             field_type=IntegerType(),
             required=False,
             doc="ID representing sort order for this file",
+        ),
+        NestedField(
+            field_id=143,
+            name="referenced_data_file",
+            field_type=StringType(),
+            required=False,
+            doc="Fully qualified location (URI with FS scheme) of a data file that all deletes reference",
         ),
     ),
     3: StructType(
@@ -390,7 +397,7 @@ DATA_FILE_TYPE: dict[int, StructType] = {
         NestedField(
             field_id=135,
             name="equality_ids",
-            field_type=ListType(element_id=136, element_type=LongType(), element_required=True),
+            field_type=ListType(element_id=136, element_type=IntegerType(), element_required=True),
             required=False,
             doc="Field ids used to determine row equality in equality delete files.",
         ),
@@ -464,9 +471,14 @@ def data_file_with_partition(partition_type: StructType, format_version: TableVe
 
 class DataFile(Record):
     @classmethod
-    def from_args(cls, _table_format_version: TableVersion = DEFAULT_READ_VERSION, **arguments: Any) -> DataFile:
+    def from_args(
+        cls, _table_format_version: TableVersion = DEFAULT_READ_VERSION, *, spec_id: int | None = None, **arguments: Any
+    ) -> DataFile:
         struct = DATA_FILE_TYPE[_table_format_version]
-        return super()._bind(struct, **arguments)
+        data_file = super()._bind(struct, **arguments)
+        if spec_id is not None:
+            data_file.spec_id = spec_id
+        return data_file
 
     @property
     def content(self) -> DataFileContent:
@@ -531,6 +543,22 @@ class DataFile(Record):
     @property
     def sort_order_id(self) -> int | None:
         return self._data[15]
+
+    @property
+    def first_row_id(self) -> int | None:
+        return self._data[16]
+
+    @property
+    def referenced_data_file(self) -> str | None:
+        return self._data[17]
+
+    @property
+    def content_offset(self) -> int | None:
+        return self._data[18]
+
+    @property
+    def content_size_in_bytes(self) -> int | None:
+        return self._data[19]
 
     # Spec ID should not be stored in the file
     _spec_id: int
@@ -853,19 +881,29 @@ class ManifestFile(Record):
     def key_metadata(self) -> bytes | None:
         return self._data[14]
 
+    @property
+    def first_row_id(self) -> int | None:
+        return self._data[15]
+
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
 
     def has_existing_files(self) -> bool:
         return self.existing_files_count is None or self.existing_files_count > 0
 
-    def fetch_manifest_entry(self, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+    def fetch_manifest_entry(
+        self,
+        io: FileIO,
+        discard_deleted: bool = True,
+        entry_filter: Callable[[ManifestEntry], bool] | None = None,
+    ) -> list[ManifestEntry]:
         """
         Read the manifest entries from the manifest file.
 
         Args:
             io: The FileIO to fetch the file.
             discard_deleted: Filter on live entries.
+            entry_filter: Optional predicate to filter manifest entries.
 
         Returns:
             An Iterator of manifest entries.
@@ -877,11 +915,17 @@ class ManifestFile(Record):
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
-            return [
+            result = []
+
+            for entry in reader:
+                if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
+                    continue
                 _inherit_from_manifest(entry, self)
-                for entry in reader
-                if not discard_deleted or entry.status != ManifestEntryStatus.DELETED
-            ]
+
+                if entry_filter is None or entry_filter(entry):
+                    result.append(entry)
+
+            return result
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the ManifestFile class."""

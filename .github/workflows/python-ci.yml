@@ -20,34 +20,19 @@
 name: "Python CI"
 
 on:
-  push:
-    branches:
-    - 'main'
   pull_request:
-    paths:
-    - '**'                              # Include all files and directories in the repository by default.
-    - '!.github/workflows/**'           # Exclude all workflow files
-    - '.github/workflows/python-ci.yml' # except the current file.
-    - '!.github/ISSUE_TEMPLATE/**'      # Exclude files and directories that don't impact tests or code like templates, metadata, and documentation.
-    - '!.gitignore'
-    - '!.asf.yml'
-    - '!mkdocs/**'
-    - '!.gitattributes'
-    - '!README.md'
-    - '!CONTRIBUTING.md'
-    - '!LICENSE'
-    - '!NOTICE'
+  merge_group:
 
 permissions:
   contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-unit-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       max-parallel: 15
@@ -63,16 +48,18 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Check uv.lock is up to date
+      if: matrix.python == '3.10'
       run: uv lock --check
     - name: Install
       run: make install
     - name: Run linters
+      if: matrix.python == '3.10'
       run: make lint
     - name: Run unit tests with coverage
       run: COVERAGE=1 make test
@@ -95,16 +82,16 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     - name: Install
       run: uv sync --all-extras --no-extra hive-kerberos
     - name: Run unit tests
-      run: uv run python -m pytest tests/ -m "(unmarked or parametrize) and not integration" --ignore=tests/integration -v -x
+      run: uv run python -m pytest tests/ -m unit --ignore=tests/integration -v -x
 
   cibw-dev-env-smoke-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -113,7 +100,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     # Why this exists:
@@ -127,3 +114,17 @@ jobs:
       run: uv sync --directory . --only-group dev --no-install-project
     - name: Mirror wheel CIBW_TEST_COMMAND
       run: uv run --directory . pytest tests/avro/test_decoder.py
+
+  python-ci-required:
+    if: ${{ always() }}
+    needs: [lint-and-unit-test, windows-unit-test, cibw-dev-env-smoke-test]
+    runs-on: ubuntu-slim
+    steps:
+    - name: Verify Python CI jobs succeeded
+      env:
+        RESULTS: ${{ join(needs.*.result, ' ') }}
+      run: |
+        read -ra results <<< "$RESULTS"
+        for result in "${results[@]}"; do
+          test "$result" = "success"
+        done

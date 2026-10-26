@@ -44,9 +44,9 @@ from pyiceberg.schema import INITIAL_SCHEMA_ID, Schema
 from pyiceberg.table.metadata import INITIAL_SPEC_ID
 from pyiceberg.table.sorting import INITIAL_SORT_ORDER_ID, SortField, SortOrder
 from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
-from pyiceberg.types import IntegerType, LongType, NestedField, TimestampType, UUIDType
+from pyiceberg.types import IntegerType, LongType, NestedField, StringType, TimestampType, UUIDType
 from pyiceberg.view import View
-from pyiceberg.view.metadata import ViewMetadata
+from pyiceberg.view.metadata import SQLViewRepresentation, ViewMetadata, ViewRepresentation, ViewVersion
 from tests.conftest import (
     clean_up,
     does_support_atomic_concurrent_updates,
@@ -621,6 +621,56 @@ def test_register_table_existing(test_catalog: Catalog, table_schema_nested: Sch
 
 
 @pytest.mark.integration
+def test_rest_basic_create_view(rest_catalog: RestCatalog, database_name: str, view_name: str) -> None:
+    """Ported from Java's ViewCatalogTests#basicCreateView."""
+    identifier = (database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    assert not rest_catalog.view_exists(identifier)
+
+    view = rest_catalog.create_view(
+        identifier,
+        schema=Schema(
+            NestedField(field_id=3, name="id", field_type=IntegerType(), required=True, doc="unique ID"),
+            NestedField(field_id=4, name="data", field_type=StringType(), required=True),
+            schema_id=5,
+        ),
+        view_version=ViewVersion(
+            version_id=1,
+            schema_id=0,
+            representations=[ViewRepresentation(SQLViewRepresentation(type="sql", sql="select * from ns.tbl", dialect="spark"))],
+            default_namespace=(database_name,),
+        ),
+    )
+
+    assert rest_catalog.view_exists(identifier)
+    assert view.name() == identifier
+    assert len(view.history()) == 1
+    assert view.history()[0].version_id == 1
+    assert view.schema().schema_id == 0
+
+    assert (
+        view.schema().as_struct()
+        == Schema(
+            NestedField(field_id=1, name="id", field_type=IntegerType(), required=True, doc="unique ID"),
+            NestedField(field_id=2, name="data", field_type=StringType(), required=True),
+        ).as_struct()
+    )
+    assert list(view.schemas().keys()) == [0]
+    assert view.versions == [view.current_version()]
+
+    current_version = view.current_version()
+    assert current_version == ViewVersion(
+        version_id=1,
+        schema_id=0,
+        timestamp_ms=current_version.timestamp_ms,
+        summary=current_version.summary,
+        representations=[ViewRepresentation(SQLViewRepresentation(type="sql", sql="select * from ns.tbl", dialect="spark"))],
+        default_namespace=(database_name,),
+    )
+
+
+@pytest.mark.integration
 def test_rest_list_views(
     rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
 ) -> None:
@@ -667,6 +717,97 @@ def test_rest_drop_view(
 
     rest_catalog.drop_view(identifier)
     assert not rest_catalog.view_exists(identifier)
+
+
+@pytest.mark.integration
+def test_rest_identifiers_with_special_characters(
+    rest_catalog: RestCatalog, table_schema_simple: Schema, example_view_metadata_v1: dict[str, Any]
+) -> None:
+    """Names that need URL encoding must round-trip unchanged through path, query, and body parameters."""
+    # "%" is omitted because the REST fixture's Jetty rejects "%25" in URL paths ("400 Ambiguous URI path encoding")
+    for name in ["with space", "a+b&c=d", "\u65e5\u672c"]:
+        parent = (f"{name}_{uuid.uuid4().hex}",)
+        namespace = (*parent, name)
+        table_identifier = (*namespace, f"table {name}")
+        view_identifier = (*namespace, f"view {name}")
+        registered_view_identifier = (*namespace, f"registered view {name}")
+        renamed_view_identifier = (*namespace, f"renamed view {name}")
+
+        rest_catalog.create_namespace(parent)
+        rest_catalog.create_namespace(namespace, properties={"key": name})
+        assert parent in rest_catalog.list_namespaces()
+        assert rest_catalog.list_namespaces(parent) == [namespace]
+        assert rest_catalog.namespace_exists(namespace)
+        assert rest_catalog.load_namespace_properties(namespace)["key"] == name
+
+        rest_catalog.create_table(table_identifier, table_schema_simple)
+        assert rest_catalog.table_exists(table_identifier)
+        assert rest_catalog.list_tables(namespace) == [table_identifier]
+        table = rest_catalog.load_table(table_identifier)
+        assert table.name() == table_identifier
+        with table.transaction() as tx:
+            tx.set_properties(key=name)
+        assert rest_catalog.load_table(table_identifier).properties["key"] == name
+
+        view = View(view_identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+        created_view = rest_catalog.create_view(view_identifier, view.schema(), view.current_version())
+        assert rest_catalog.view_exists(view_identifier)
+        assert rest_catalog.list_views(namespace) == [view_identifier]
+
+        assert created_view.metadata_location is not None
+        rest_catalog.register_view(registered_view_identifier, created_view.metadata_location)
+        assert rest_catalog.view_exists(registered_view_identifier)
+        assert sorted(rest_catalog.list_views(namespace)) == sorted([view_identifier, registered_view_identifier])
+
+        rest_catalog.rename_view(registered_view_identifier, renamed_view_identifier)
+        assert sorted(rest_catalog.list_views(namespace)) == sorted([view_identifier, renamed_view_identifier])
+
+        rest_catalog.drop_view(renamed_view_identifier)
+        rest_catalog.drop_view(view_identifier)
+        rest_catalog.drop_table(table_identifier)
+        rest_catalog.drop_namespace(namespace)
+        rest_catalog.drop_namespace(parent)
+        assert not rest_catalog.namespace_exists(parent)
+
+
+@pytest.mark.integration
+def test_rest_rename_view(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    from_identifier = (database_name, view_name)
+    to_identifier = (database_name, f"{view_name}_renamed")
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    view = View(from_identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    rest_catalog.create_view(from_identifier, view.schema(), view.current_version())
+    assert rest_catalog.view_exists(from_identifier)
+
+    rest_catalog.rename_view(from_identifier, to_identifier)
+
+    assert not rest_catalog.view_exists(from_identifier)
+    assert rest_catalog.view_exists(to_identifier)
+
+
+@pytest.mark.integration
+def test_rest_rename_view_across_namespaces(
+    rest_catalog: RestCatalog, example_view_metadata_v1: dict[str, Any], database_name: str, view_name: str
+) -> None:
+    to_database_name = f"{database_name}_renamed"
+    from_identifier = (database_name, view_name)
+    to_identifier = (to_database_name, view_name)
+
+    rest_catalog.create_namespace_if_not_exists(database_name)
+    rest_catalog.create_namespace_if_not_exists(to_database_name)
+    view = View(from_identifier, ViewMetadata.model_validate(example_view_metadata_v1))
+
+    rest_catalog.create_view(from_identifier, view.schema(), view.current_version())
+    assert rest_catalog.view_exists(from_identifier)
+
+    rest_catalog.rename_view(from_identifier, to_identifier)
+
+    assert not rest_catalog.view_exists(from_identifier)
+    assert rest_catalog.view_exists(to_identifier)
 
 
 @pytest.mark.integration

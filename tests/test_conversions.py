@@ -109,6 +109,7 @@ from pyiceberg.types import (
     TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -510,6 +511,13 @@ def test_raise_on_unregistered_type() -> None:
     "primitive_type, value, expected_error_message",
     [
         (DecimalType(7, 3), Decimal("123.4567"), "Cannot serialize value, scale of value does not match type decimal(7, 3): 4"),
+        # A Decimal with a negative scale must not pass as its positive counterpart
+        (DecimalType(10, 2), Decimal("1E+2"), "Cannot serialize value, scale of value does not match type decimal(10, 2): -2"),
+        (
+            DecimalType(10, 2),
+            Decimal("100").normalize(),
+            "Cannot serialize value, scale of value does not match type decimal(10, 2): -2",
+        ),
         (
             DecimalType(18, 8),
             Decimal("123456789.123456789"),
@@ -569,7 +577,7 @@ def test_datetime_obj_to_bytes(primitive_type: PrimitiveType, value: datetime | 
         (DoubleType(), 1.0, 1.0),
         (DecimalType(9, 4), Decimal("123.4500"), "123.4500"),
         (DecimalType(9, 0), Decimal("2"), "2"),
-        (DecimalType(9, -20), Decimal("2E+20"), "2E+20"),
+        (DecimalType(9, 9), Decimal("0.123456789"), "0.123456789"),
         (DateType(), date(2017, 11, 16), "2017-11-16"),
         (TimeType(), time(22, 31, 8, 123456), "22:31:08.123456"),
         (TimestampType(), datetime(2017, 11, 16, 22, 31, 8, 123456), "2017-11-16T22:31:08.123456"),
@@ -594,7 +602,7 @@ def test_json_single_serialization(primitive_type: PrimitiveType, value: Any, ex
         (DoubleType(), 1.0),
         (DecimalType(9, 4), Decimal("123.4500")),
         (DecimalType(9, 0), Decimal("2")),
-        (DecimalType(9, -20), Decimal("2E+20")),
+        (DecimalType(9, 9), Decimal("0.123456789")),
         (DateType(), date(2017, 11, 16)),
         (TimeType(), time(22, 31, 8, 123456)),
         (TimestampType(), datetime(2017, 11, 16, 22, 31, 8, 123456)),
@@ -606,3 +614,20 @@ def test_json_single_serialization(primitive_type: PrimitiveType, value: Any, ex
 )
 def test_json_serialize_roundtrip(primitive_type: PrimitiveType, value: Any) -> None:
     assert value == conversions.from_json(primitive_type, conversions.to_json(primitive_type, value))
+
+
+def test_unknown_type_conversions() -> None:
+    """Unknown values are always null, so they have no binary or partition representation."""
+    unknown = UnknownType()
+
+    assert conversions.to_bytes(unknown, "iceberg") is None
+    assert conversions.from_bytes(unknown, b"\x01\x02\x03\xff") is None
+    assert conversions.partition_to_py(unknown, "iceberg") is None
+
+    # The spec defines no JSON single-value representation for unknown, since a
+    # non-null initial-default or write-default is invalid for the type.
+    with pytest.raises(TypeError):
+        conversions.to_json(unknown, "iceberg")
+
+    with pytest.raises(TypeError):
+        conversions.from_json(unknown, "iceberg")

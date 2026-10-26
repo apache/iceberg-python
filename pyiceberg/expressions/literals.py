@@ -75,6 +75,13 @@ def _parse_numeric_string(value: str) -> Decimal:
     return number
 
 
+def _to_integral(value: Decimal, type_var: IcebergType) -> int:
+    """Convert a Decimal to an int, rejecting values with a fractional part instead of rounding them."""
+    if value != value.to_integral_value():
+        raise ValueError(f"Could not convert {value} into a {type_var}, value has a fractional part")
+    return int(value)
+
+
 class Literal(IcebergRootModel[L], Generic[L], ABC):  # type: ignore
     """Literal which has a value and can be converted between types."""
 
@@ -174,6 +181,9 @@ def literal(value: L) -> Literal[L]:
 
 
 class AboveMax(Literal[L]):
+    def __init__(self, value: L, value_type: type[L], /, **data: Any) -> None:
+        Literal.__init__(self, value, value_type, **data)
+
     def __repr__(self) -> str:
         """Return the string representation of the AboveMax class."""
         return f"{self.__class__.__name__}()"
@@ -184,6 +194,9 @@ class AboveMax(Literal[L]):
 
 
 class BelowMin(Literal[L]):
+    def __init__(self, value: L, value_type: type[L], /, **data: Any) -> None:
+        Literal.__init__(self, value, value_type, **data)
+
     def __repr__(self) -> str:
         """Return the string representation of the BelowMin class."""
         return f"{self.__class__.__name__}()"
@@ -516,13 +529,13 @@ class DecimalLiteral(Literal[Decimal]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
-        if type_var.scale == abs(int(self.value.as_tuple().exponent)):
+        if type_var.scale == -int(self.value.as_tuple().exponent):
             return self
         raise ValueError(f"Could not convert {self.value} into a {type_var}")
 
     @to.register(IntegerType)
-    def _(self, _: IntegerType) -> Literal[int]:
-        value_int = int(self.value.to_integral_value())
+    def _(self, type_var: IntegerType) -> Literal[int]:
+        value_int = _to_integral(self.value, type_var)
         if value_int > IntegerType.max:
             return IntAboveMax()
         elif value_int < IntegerType.min:
@@ -531,8 +544,8 @@ class DecimalLiteral(Literal[Decimal]):
             return LongLiteral(value_int)
 
     @to.register(LongType)
-    def _(self, _: LongType) -> Literal[int]:
-        value_int = int(self.value.to_integral_value())
+    def _(self, type_var: LongType) -> Literal[int]:
+        value_int = _to_integral(self.value, type_var)
         if value_int > LongType.max:
             return LongAboveMax()
         elif value_int < LongType.min:
@@ -622,7 +635,7 @@ class StringLiteral(Literal[str]):
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
         dec = Decimal(self.value)
-        scale = abs(int(dec.as_tuple().exponent))
+        scale = -int(dec.as_tuple().exponent)
         if type_var.scale == scale:
             return DecimalLiteral(dec)
         else:

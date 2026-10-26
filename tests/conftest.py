@@ -48,6 +48,7 @@ from pydantic_core import to_json
 from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
     ADLS_ACCOUNT_KEY,
@@ -103,11 +104,31 @@ if TYPE_CHECKING:
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
+# Markers for suites that run separately from the unit tests
+NON_UNIT_TEST_MARKERS = {"integration", "s3", "adls", "gcs", "notebook", "benchmark"}
+
+
+_original_environment_context_get = EnvironmentContext.get
+
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
-        if not any(item.iter_markers()):
-            item.add_marker("unmarked")
+        if not any(marker.name in NON_UNIT_TEST_MARKERS for marker in item.iter_markers()):
+            item.add_marker("unit")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _disable_environment_context() -> Generator[None, None, None]:
+    """Disable engine metadata for existing tests, including session-scoped fixtures."""
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(EnvironmentContext, "get", staticmethod(dict))
+        yield
+
+
+@pytest.fixture
+def enable_environment_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restore real engine metadata for tests that explicitly request it."""
+    monkeypatch.setattr(EnvironmentContext, "get", staticmethod(_original_environment_context_get))
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -646,7 +667,7 @@ def all_avro_types() -> dict[str, Any]:
     }
 
 
-EXAMPLE_TABLE_METADATA_V1 = {
+EXAMPLE_TABLE_METADATA_V1: dict[str, Any] = {
     "format-version": 1,
     "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
     "location": "s3://bucket/test/location",
@@ -672,7 +693,7 @@ def example_table_metadata_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V1
 
 
-EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1 = {
+EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1: dict[str, Any] = {
     "format-version": 1,
     "table-uuid": "b55d9dda-6561-423a-8bfc-787980ce421f",
     "location": "s3://warehouse/database/table",
@@ -746,7 +767,7 @@ def example_table_metadata_with_snapshot_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1
 
 
-EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1 = {
+EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1: dict[str, Any] = {
     "format-version": 1,
     "table-uuid": "bf289591-dcc0-4234-ad4f-5c3eed811a29",
     "location": "s3://warehouse/database/table",
@@ -870,7 +891,7 @@ def example_table_metadata_v2_with_extensive_snapshots() -> dict[str, Any]:
     }
 
 
-EXAMPLE_TABLE_METADATA_V2 = {
+EXAMPLE_TABLE_METADATA_V2: dict[str, Any] = {
     "format-version": 2,
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
     "location": "s3://bucket/test/location",
@@ -932,7 +953,7 @@ EXAMPLE_TABLE_METADATA_V2 = {
     "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
 }
 
-EXAMPLE_TABLE_METADATA_V3 = {
+EXAMPLE_TABLE_METADATA_V3: dict[str, Any] = {
     "format-version": 3,
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
     "location": "s3://bucket/test/location",
