@@ -69,7 +69,7 @@ jobs:
     if: github.repository == 'apache/iceberg-python' # Only run for apache repo
     needs:
       - nightly-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: testpypi
       url: https://test.pypi.org/p/pyiceberg
