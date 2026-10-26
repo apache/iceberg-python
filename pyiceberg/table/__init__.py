@@ -326,7 +326,7 @@ class Transaction:
 
     def _scan(self, row_filter: str | BooleanExpression = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
         """Minimal data scan of the table with the current state of the transaction."""
-        return DataScan(
+        return _TransactionScan(
             table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
         )
 
@@ -791,17 +791,7 @@ class Transaction:
             file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
             if branch is not None:
                 file_scan = file_scan.use_ref(branch)
-            snapshot = file_scan.snapshot()
-            files = (
-                ManifestGroupPlanner(
-                    table_metadata=self.table_metadata,
-                    io=self._table.io,
-                    row_filter=delete_filter,
-                    case_sensitive=case_sensitive,
-                ).plan_files(snapshot.manifests(self._table.io))
-                if snapshot is not None
-                else []
-            )
+            files = file_scan.plan_files()
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -946,9 +936,7 @@ class Transaction:
 
         # We must use Transaction.table_metadata for the scan. This includes all uncommitted - but relevant - changes.
 
-        matched_iceberg_record_batches_scan = DataScan(
-            table_metadata=self.table_metadata,
-            io=self._table.io,
+        matched_iceberg_record_batches_scan = self._scan(
             row_filter=matched_predicate,
             case_sensitive=case_sensitive,
         )
@@ -2590,6 +2578,11 @@ class DataScan(TableScan):
                 tbl = arrow_scan.to_table([task])
                 res += len(tbl)
         return res
+
+
+class _TransactionScan(DataScan):
+    def _scan_schema(self) -> Schema:
+        return self.table_metadata.schema()
 
 
 IAS = TypeVar("IAS", bound="IncrementalAppendScan", covariant=True)
