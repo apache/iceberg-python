@@ -18,82 +18,124 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from datetime import datetime
+from dataclasses import dataclass, field
+from time import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from pyiceberg.catalog.rest.scan_planning import StorageCredential
-from pyiceberg.io import S3_SESSION_TOKEN_EXPIRES_AT_MS
+from pyiceberg.io import (
+    GCS_TOKEN,
+    GCS_TOKEN_EXPIRES_AT_MS,
+    S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY,
+    S3_SESSION_TOKEN,
+    S3_SESSION_TOKEN_EXPIRES_AT_MS,
+)
 from pyiceberg.typedef import Properties
-from pyiceberg.utils.properties import get_first_property_value
 
 if TYPE_CHECKING:
     from pyiceberg.catalog.rest import LoadCredentialsResponse
 
 REFRESH_CREDENTIALS_ENABLED = "client.refresh-credentials-enabled"
+_REFRESH_MARGIN_MS = 300_000
 
 
-def is_s3_credential_expired(config: Properties, threshold_seconds: int = 300) -> bool:
-    """Return True if the S3 session token expires within threshold_seconds (5 mins)."""
-    if expiry := get_first_property_value(config, S3_SESSION_TOKEN_EXPIRES_AT_MS):
-        expires_at = datetime.fromtimestamp(int(expiry) / 1000)
-        seconds_remaining = (expires_at - datetime.now()).total_seconds()
-        return seconds_remaining < threshold_seconds
-    return False
+@dataclass(frozen=True)
+class _CredentialPolicy:
+    required_properties: tuple[str, ...]
+    expiration_properties: tuple[str, ...]
+
+    def expiration_ms(self, config: Properties) -> int | None:
+        for key in self.expiration_properties:
+            if key in config:
+                try:
+                    return int(config[key])
+                except (TypeError, ValueError, OverflowError):
+                    raise ValueError(f"Invalid expiration property: {key}") from None
+        return None
+
+    def normalize(self, config: Properties) -> Properties:
+        properties = dict(config)
+        if (expiration := self.expiration_ms(properties)) is not None:
+            for key in self.required_properties:
+                if not properties.get(key):
+                    raise ValueError(f"Missing vended credential property: {key}")
+            for key in self.expiration_properties:
+                properties.pop(key, None)
+            properties[self.expiration_properties[0]] = str(expiration)
+        return properties
 
 
-# Per-scheme hooks for detecting whether a resolved credential needs to be refreshed.
-# Other schemes (e.g. gs, abfss) can register here later.
-NEEDS_REFRESH_BY_SCHEME: dict[str, Callable[[Properties], bool]] = {
-    "s3": is_s3_credential_expired,
-    "s3a": is_s3_credential_expired,
-    "s3n": is_s3_credential_expired,
+_S3_POLICY = _CredentialPolicy((S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_SESSION_TOKEN), (S3_SESSION_TOKEN_EXPIRES_AT_MS,))
+_GCS_POLICY = _CredentialPolicy((GCS_TOKEN,), (GCS_TOKEN_EXPIRES_AT_MS, "gcs.oauth2.token_expires_at"))
+_POLICIES_BY_SCHEME = {
+    "s3": _S3_POLICY,
+    "s3a": _S3_POLICY,
+    "s3n": _S3_POLICY,
+    "gs": _GCS_POLICY,
+    "gcs": _GCS_POLICY,
 }
 
 
+def is_s3_credential_expired(config: Properties, threshold_seconds: int = 300) -> bool:
+    """Return whether an S3 credential expires within the given threshold."""
+    expiration = _S3_POLICY.expiration_ms(config)
+    return expiration is not None and expiration - time() * 1000 <= threshold_seconds * 1000
+
+
 def resolve_storage_credentials(storage_credentials: list[StorageCredential], location: str | None) -> Properties:
-    """Resolve the best-matching storage credential by longest prefix match.
-
-    Mirrors the Java implementation in S3FileIO.clientForStoragePath() which iterates
-    over storage credential prefixes and selects the one with the longest match.
-
-    See: https://github.com/apache/iceberg/blob/main/aws/src/main/java/org/apache/iceberg/aws/s3/S3FileIO.java
-    """
-    if not storage_credentials or not location:
+    """Return credential properties for the longest matching storage prefix."""
+    if location is None:
         return {}
+    match = max(
+        (cred for cred in storage_credentials if location.startswith(cred.prefix)), key=lambda c: len(c.prefix), default=None
+    )
+    if match is None:
+        return {}
+    policy = _POLICIES_BY_SCHEME.get(urlparse(location).scheme)
+    return policy.normalize(match.config) if policy is not None else dict(match.config)
 
-    best_match: StorageCredential | None = None
-    for cred in storage_credentials:
-        if location.startswith(cred.prefix):
-            if best_match is None or len(cred.prefix) > len(best_match.prefix):
-                best_match = cred
 
-    return best_match.config if best_match else {}
+@dataclass(frozen=True)
+class _CredentialState:
+    prefix: str
+    config: Properties = field(repr=False)
+    expiration_ms: int | None
+    refresh_at_ms: int | None
+
+
+def _credential_states(credentials: list[StorageCredential], received_at_ms: int) -> tuple[_CredentialState, ...]:
+    states = []
+    for credential in credentials:
+        policy = _POLICIES_BY_SCHEME.get(urlparse(credential.prefix).scheme)
+        config = policy.normalize(credential.config) if policy is not None else dict(credential.config)
+        expiration = policy.expiration_ms(config) if policy is not None else None
+        refresh_at = None
+        if expiration is not None:
+            refresh_at = expiration - min(_REFRESH_MARGIN_MS, max(0, expiration - received_at_ms) // 2)
+        states.append(_CredentialState(credential.prefix, config, expiration, refresh_at))
+    return tuple(states)
+
+
+def _matching_state(states: tuple[_CredentialState, ...], location: str) -> _CredentialState | None:
+    return max((state for state in states if location.startswith(state.prefix)), key=lambda s: len(s.prefix), default=None)
 
 
 class CredentialsProvider:
-    """Vended-credential refresh and location-based lookup for a REST catalog table."""
-
-    _storage_credentials: list[StorageCredential]
-    _refresh_fn: Callable[[], LoadCredentialsResponse]
-    _needs_refresh_by_scheme: dict[str, Callable[[Properties], bool]]
-    _lock: threading.Lock
+    """Resolve and refresh prefix-scoped storage credentials for a REST table."""
 
     def __init__(
         self,
         storage_credentials: list[StorageCredential],
         refresh_fn: Callable[[], LoadCredentialsResponse],
-        needs_refresh_by_scheme: dict[str, Callable[[Properties], bool]] | None = None,
     ) -> None:
-        self._storage_credentials = storage_credentials
+        self._states = _credential_states(storage_credentials, int(time() * 1000))
         self._refresh_fn = refresh_fn
-        self._needs_refresh_by_scheme = (
-            needs_refresh_by_scheme if needs_refresh_by_scheme is not None else NEEDS_REFRESH_BY_SCHEME
-        )
         self._lock = threading.Lock()
 
     def __getstate__(self) -> dict[str, object]:
-        """Serialize credential state without the process-local lock."""
+        """Serialize absolute refresh deadlines without the process-local lock."""
         return {key: value for key, value in self.__dict__.items() if key != "_lock"}
 
     def __setstate__(self, state: dict[str, object]) -> None:
@@ -101,21 +143,27 @@ class CredentialsProvider:
         self.__dict__.update(state)
         self._lock = threading.Lock()
 
-    def _can_refresh(self, location: str) -> bool:
-        scheme = urlparse(location).scheme
-        refresh_by_scheme = self._needs_refresh_by_scheme.get(scheme)
-        config = resolve_storage_credentials(self._storage_credentials, location)
-        return config != {} and refresh_by_scheme is not None and refresh_by_scheme(config)
-
     def properties_for(self, location: str) -> Properties:
-        """Return the credential properties that apply to the given location, refreshing if needed."""
-        config = resolve_storage_credentials(self._storage_credentials, location)
-
-        if self._can_refresh(location):
+        """Return the current properties for a location, refreshing when due."""
+        match = _matching_state(self._states, location)
+        if match is None:
+            return {}
+        if match.refresh_at_ms is not None and time() * 1000 >= match.refresh_at_ms:
             with self._lock:
-                if self._can_refresh(location):
+                match = _matching_state(self._states, location)
+                if match is None:
+                    raise ValueError("No vended credentials for the requested location after refresh")
+                if match.refresh_at_ms is not None and time() * 1000 >= match.refresh_at_ms:
                     response = self._refresh_fn()
-                    self._storage_credentials = response.storage_credentials
-                config = resolve_storage_credentials(self._storage_credentials, location)
-
-        return config
+                    now_ms = int(time() * 1000)
+                    states = _credential_states(response.storage_credentials, now_ms)
+                    refreshed = _matching_state(states, location)
+                    if refreshed is None:
+                        raise ValueError("Credential refresh returned no matching storage credentials")
+                    if refreshed.expiration_ms is None:
+                        raise ValueError("Refreshed storage credentials have no expiration")
+                    if refreshed.expiration_ms <= now_ms:
+                        raise ValueError("Refreshed storage credentials have already expired")
+                    self._states = states
+                    match = refreshed
+        return dict(match.config)
