@@ -459,9 +459,8 @@ Refresh applies to metadata, manifests, data and delete files, staged writes, an
 Retained file handles resolve current credentials when opened or created again. An already-open native stream keeps its original credentials;
 its lifetime should fit within the credential lifetime. External engines that manage their own storage clients must manage their own credential refresh.
 
-FileIO instances remain pickleable with refresh enabled. Deserialization performs no network requests; catalog access and authentication
-are recreated lazily when needed. Worker processes need access to the configured catalog and authentication services, and any configured
-credential files or application-default credentials. Serialized FileIO state contains credential-bearing configuration and should be handled accordingly.
+Worker processes need access to the configured catalog and authentication services, and any configured credential files or application-default credentials.
+Serialized FileIO instances contain credential-bearing configuration and should be handled accordingly.
 
 #### Retry and timeout
 
