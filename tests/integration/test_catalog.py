@@ -87,8 +87,16 @@ def sqlite_catalog_file(warehouse: Path) -> Generator[Catalog, None, None]:
 
 
 @pytest.fixture(scope="function")
-def rest_catalog(session_catalog: Catalog) -> Generator[Catalog, None, None]:
-    test_catalog = RestCatalog("rest", **session_catalog.properties)
+def rest_catalog() -> Generator[Catalog, None, None]:
+    test_catalog = RestCatalog(
+        "rest",
+        **{
+            "uri": "http://localhost:8181",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "admin",
+            "s3.secret-access-key": "password",
+        },
+    )
 
     yield test_catalog
 
@@ -1062,44 +1070,44 @@ def test_load_missing_table(test_catalog: Catalog, database_name: str, table_nam
 
 @pytest.mark.integration
 @pytest.mark.parametrize("test_catalog", CATALOGS)
-@pytest.mark.parametrize("format_version", [1, 2])
-def test_replace_table_transaction(test_catalog: Catalog, table_name: str, database_name: str, format_version: int) -> None:
+def test_replace_table_transaction(test_catalog: Catalog, table_name: str, database_name: str) -> None:
     import pyarrow as pa
 
-    identifier = (database_name, table_name)
     test_catalog.create_namespace(database_name)
     original = pa.table({"id": [1], "value": ["original"]})
-    table = test_catalog.create_table(
-        identifier,
-        Schema(NestedField(1, "id", LongType()), NestedField(2, "value", StringType())),
-        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "id")),
-        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
-        properties={"format-version": str(format_version)},
-    )
-    table.append(original)
-    old_snapshot = table.current_snapshot()
-    assert old_snapshot is not None
-    table.manage_snapshots().create_tag(old_snapshot.snapshot_id, "original").commit()
-    original_metadata = table.metadata
+    for format_version in (1, 2):
+        identifier = (database_name, f"{table_name}_v{format_version}")
+        table = test_catalog.create_table(
+            identifier,
+            Schema(NestedField(1, "id", LongType()), NestedField(2, "value", StringType())),
+            partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "id")),
+            sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+            properties={"format-version": str(format_version)},
+        )
+        table.append(original)
+        old_snapshot = table.current_snapshot()
+        assert old_snapshot is not None
+        table.manage_snapshots().create_tag(old_snapshot.snapshot_id, "original").commit()
+        original_metadata = table.metadata
 
-    replacement = pa.table({"id": ["replacement"], "new": [True]})
-    with test_catalog.replace_table_transaction(identifier, replacement.schema) as tx:
-        tx.append(replacement)
-        assert test_catalog.load_table(identifier).scan().to_arrow().to_pylist() == original.to_pylist()
+        replacement = pa.table({"id": ["replacement"], "new": [True]})
+        with test_catalog.replace_table_transaction(identifier, replacement.schema) as tx:
+            tx.append(replacement)
+            assert test_catalog.load_table(identifier).scan().to_arrow().to_pylist() == original.to_pylist()
 
-    replaced = test_catalog.load_table(identifier)
-    assert replaced.scan().to_arrow().to_pylist() == replacement.to_pylist()
-    assert replaced.metadata.table_uuid == original_metadata.table_uuid
-    assert replaced.metadata.snapshot_by_id(old_snapshot.snapshot_id) == old_snapshot
-    assert replaced.metadata.refs["original"].snapshot_id == old_snapshot.snapshot_id
-    assert replaced.sort_order().order_id == 0
-    new_snapshot = replaced.current_snapshot()
-    assert new_snapshot is not None
-    assert new_snapshot.parent_snapshot_id is None
+        replaced = test_catalog.load_table(identifier)
+        assert replaced.scan().to_arrow().to_pylist() == replacement.to_pylist()
+        assert replaced.metadata.table_uuid == original_metadata.table_uuid
+        assert replaced.metadata.snapshot_by_id(old_snapshot.snapshot_id) == old_snapshot
+        assert replaced.metadata.refs["original"].snapshot_id == old_snapshot.snapshot_id
+        assert replaced.sort_order().order_id == 0
+        new_snapshot = replaced.current_snapshot()
+        assert new_snapshot is not None
+        assert new_snapshot.parent_snapshot_id is None
 
-    with test_catalog.replace_table_transaction(identifier, replacement.schema):
-        pass
-    empty = test_catalog.load_table(identifier)
-    assert empty.current_snapshot() is None
-    assert len(empty.snapshots()) == 2
-    assert empty.scan().to_arrow().num_rows == 0
+        with test_catalog.replace_table_transaction(identifier, replacement.schema):
+            pass
+        empty = test_catalog.load_table(identifier)
+        assert empty.current_snapshot() is None
+        assert len(empty.snapshots()) == 2
+        assert empty.scan().to_arrow().num_rows == 0
