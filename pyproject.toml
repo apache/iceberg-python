@@ -129,6 +129,7 @@ dev = [
     "nbformat>=5.10.0",
     "ipykernel>=6.29.0",
     "ty==0.0.84",
+    "mypy==1.18.2",
 ]
 # for mkdocs
 docs = [
@@ -262,6 +263,7 @@ filterwarnings = [
 ]
 
 [tool.mypy]
+exclude = ["^vendor/"]
 mypy_path = "python"
 no_implicit_optional = true
 namespace_packages = false
