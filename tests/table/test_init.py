@@ -1025,6 +1025,38 @@ def test_apply_set_properties_update(table_v2: Table) -> None:
     assert new_metadata_add_only.last_updated_ms > base_metadata.last_updated_ms
 
 
+@pytest.mark.parametrize("table_fixture", ["table_v1", "table_v2"])
+@pytest.mark.parametrize("property_name", ["encryption.key-id", "encryption.data-key-length"])
+def test_apply_set_properties_update_rejects_encryption_before_v3(
+    table_fixture: str, property_name: str, request: pytest.FixtureRequest
+) -> None:
+    table: Table = request.getfixturevalue(table_fixture)
+
+    with pytest.raises(ValueError, match=rf"Invalid properties for v{table.format_version}: \['{property_name}'\]"):
+        update_table_metadata(table.metadata, (SetPropertiesUpdate(updates={property_name: "value"}),))
+
+
+def test_apply_set_properties_update_allows_encryption_on_v3(table_v3: Table) -> None:
+    new_metadata = update_table_metadata(
+        table_v3.metadata,
+        (SetPropertiesUpdate(updates={"encryption.key-id": "key", "encryption.data-key-length": "32"}),),
+    )
+
+    assert new_metadata.properties["encryption.key-id"] == "key"
+    assert new_metadata.properties["encryption.data-key-length"] == "32"
+
+
+def test_apply_remove_encryption_property_before_v3(table_v2: Table) -> None:
+    # A pre-v3 table that already has encryption.key-id must be repairable
+    base_metadata = table_v2.metadata.model_copy(
+        update={"properties": {**table_v2.metadata.properties, "encryption.key-id": "key"}}
+    )
+
+    new_metadata = update_table_metadata(base_metadata, (RemovePropertiesUpdate(removals=["encryption.key-id"]),))
+
+    assert "encryption.key-id" not in new_metadata.properties
+
+
 def test_apply_remove_properties_update(table_v2: Table) -> None:
     base_metadata = update_table_metadata(
         table_v2.metadata,
