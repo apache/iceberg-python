@@ -87,8 +87,8 @@ def sqlite_catalog_file(warehouse: Path) -> Generator[Catalog, None, None]:
 
 
 @pytest.fixture(scope="function")
-def rest_catalog() -> Generator[Catalog, None, None]:
-    test_catalog = RestCatalog("rest", uri="http://localhost:8181")
+def rest_catalog(session_catalog: Catalog) -> Generator[Catalog, None, None]:
+    test_catalog = RestCatalog("rest", **session_catalog.properties)
 
     yield test_catalog
 
