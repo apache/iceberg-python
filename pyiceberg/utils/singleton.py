@@ -30,6 +30,8 @@ More information on metaclasses: https://docs.python.org/3/reference/datamodel.h
 
 from typing import Any, ClassVar
 
+from typing_extensions import Self
+
 
 def _convert_to_hashable_type(element: Any) -> Any:
     if isinstance(element, dict):
@@ -40,15 +42,15 @@ def _convert_to_hashable_type(element: Any) -> Any:
 
 
 class Singleton:
-    _instances: ClassVar[dict] = {}  # type: ignore
+    _instances: ClassVar[dict[Any, Any]] = {}
 
-    def __new__(cls, *args, **kwargs):  # type: ignore
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         key = (cls, tuple(args), _convert_to_hashable_type(kwargs))
         if key not in cls._instances:
             cls._instances[key] = super().__new__(cls)
         return cls._instances[key]
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> Any:
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
         """
         Prevent deep copy operations for singletons.
 
