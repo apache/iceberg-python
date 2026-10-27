@@ -93,8 +93,7 @@ def resolve_storage_credentials(storage_credentials: list[StorageCredential], lo
     )
     if match is None:
         return {}
-    policy = _POLICIES_BY_SCHEME.get(urlparse(location).scheme)
-    return policy.normalize(match.config) if policy is not None else dict(match.config)
+    return dict(match.config)
 
 
 def _credentials_from_config(config: Properties, location: str) -> list[StorageCredential]:

@@ -3641,6 +3641,38 @@ def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_me
     assert table.io.properties["s3.session-token"] == "vended-token"
 
 
+def test_load_table_preserves_storage_credentials_when_refresh_disabled(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    from pyiceberg.catalog.rest.credential_provider import REFRESH_CREDENTIALS_ENABLED
+
+    credential_configs = [
+        ("s3", {"s3.access-key-id": "vended-key", "s3.session-token-expires-at-ms": "4102444800000"}),
+        ("s3", {"s3.session-token-expires-at-ms": "not-a-timestamp"}),
+        ("gs", {"gcs.oauth2.token-expires-at": "4102444800000"}),
+        ("gs", {"gcs.oauth2.token": "vended-token", "gcs.oauth2.token-expires-at": "not-a-timestamp"}),
+        ("gs", {"gcs.oauth2.token": "vended-token", "gcs.oauth2.token_expires_at": "4102444800000"}),
+    ]
+    for properties in ({}, {REFRESH_CREDENTIALS_ENABLED: "false"}):
+        catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **properties)
+        for scheme, config in credential_configs:
+            rest_mock.get(
+                f"{TEST_URI}v1/namespaces/fokko/tables/table",
+                json={
+                    "metadata-location": f"{scheme}://warehouse/database/table/metadata.json",
+                    "metadata": example_table_metadata_with_snapshot_v1,
+                    "storage-credentials": [{"prefix": f"{scheme}://warehouse/", "config": config}],
+                },
+                request_headers=TEST_HEADERS,
+            )
+
+            table = catalog.load_table(("fokko", "table"))
+
+            assert {key: table.io.properties[key] for key in config} == config
+            if "gcs.oauth2.token_expires_at" in config:
+                assert "gcs.oauth2.token-expires-at" not in table.io.properties
+
+
 def test_load_table_catalog_config_outranks_table_properties(
     rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
 ) -> None:
