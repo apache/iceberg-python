@@ -26,7 +26,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from functools import cached_property
-from itertools import chain
+from itertools import chain, count
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -52,8 +52,15 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
 )
-from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.partitioning import (
+    PARTITION_FIELD_ID_START,
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionField,
+    PartitionKey,
+    PartitionSpec,
+    assign_fresh_partition_spec_ids,
+)
+from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.locations import LocationProvider, load_location_provider
@@ -69,16 +76,22 @@ from pyiceberg.table.snapshots import (
     is_ancestor_of,
     is_parent_ancestor_of,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
     AddSchemaUpdate,
     AddSortOrderUpdate,
     AssertCreate,
+    AssertCurrentSchemaId,
+    AssertDefaultSortOrderId,
+    AssertDefaultSpecId,
+    AssertLastAssignedFieldId,
+    AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
     AssignUUIDUpdate,
     RemovePropertiesUpdate,
+    RemoveSnapshotRefUpdate,
     SetCurrentSchemaUpdate,
     SetDefaultSortOrderUpdate,
     SetDefaultSpecUpdate,
@@ -96,7 +109,7 @@ from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _Fa
 from pyiceberg.table.update.sorting import UpdateSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import IdentityTransform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     IcebergBaseModel,
@@ -1231,6 +1244,118 @@ class Transaction:
             producer._validate_concurrency()
             updates, requirements = producer._commit()
             self._stage(updates, requirements)
+
+
+class ReplaceTableTransaction(Transaction):
+    """A transaction that atomically replaces a table while retaining its history."""
+
+    def __init__(
+        self,
+        table: Table,
+        schema: Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ):
+        super().__init__(table)
+        base = table.metadata
+        schema.check_format_version_compatibility(int(properties.get(TableProperties.FORMAT_VERSION, base.format_version)))
+        next_id = count(base.last_column_id + 1)
+        fresh_schema = assign_fresh_schema_ids(schema, lambda: next(next_id), base.schema())
+        existing_schema = next((old for old in base.schemas if old == fresh_schema), None)
+        updates: tuple[TableUpdate, ...] = (RemoveSnapshotRefUpdate(ref_name=MAIN_BRANCH),)
+        if existing_schema is None:
+            fresh_schema = fresh_schema.model_copy(update={"schema_id": max(old.schema_id for old in base.schemas) + 1})
+            updates += (AddSchemaUpdate(schema_=fresh_schema),)
+        else:
+            fresh_schema = existing_schema
+        updates += (SetCurrentSchemaUpdate(schema_id=fresh_schema.schema_id),)
+
+        fresh_spec = assign_fresh_partition_spec_ids(partition_spec, schema, fresh_schema)
+        fresh_spec = self._replacement_spec(fresh_spec)
+        fresh_spec.check_compatible(fresh_schema)
+        if fresh_spec.spec_id not in base.specs():
+            updates += (AddPartitionSpecUpdate(spec=fresh_spec),)
+        updates += (SetDefaultSpecUpdate(spec_id=fresh_spec.spec_id),)
+
+        fresh_order = assign_fresh_sort_order_ids(sort_order, schema, fresh_schema)
+        fresh_order.check_compatible(fresh_schema)
+        existing_order = next((old for old in base.sort_orders if old.fields == fresh_order.fields), None)
+        if existing_order is None:
+            if not fresh_order.is_unsorted:
+                fresh_order = fresh_order.model_copy(
+                    update={"order_id": max((old.order_id for old in base.sort_orders), default=0) + 1}
+                )
+            updates += (AddSortOrderUpdate(sort_order=fresh_order),)
+        else:
+            fresh_order = existing_order
+        updates += (SetDefaultSortOrderUpdate(sort_order_id=fresh_order.order_id),)
+
+        persisted_properties = dict(properties)
+        if format_version := persisted_properties.pop(TableProperties.FORMAT_VERSION, None):
+            updates += (UpgradeFormatVersionUpdate(format_version=int(format_version)),)
+        if location is not None:
+            updates += (SetLocationUpdate(location=location.rstrip("/")),)
+        updates += (SetPropertiesUpdate(updates=persisted_properties),)
+        self._stage(
+            updates,
+            (
+                AssertLastAssignedFieldId(last_assigned_field_id=base.last_column_id),
+                AssertCurrentSchemaId(current_schema_id=base.current_schema_id),
+                AssertLastAssignedPartitionId(last_assigned_partition_id=base.last_partition_id),
+                AssertDefaultSpecId(default_spec_id=base.default_spec_id),
+                AssertDefaultSortOrderId(default_sort_order_id=base.default_sort_order_id),
+                AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=base.current_snapshot_id),
+            ),
+        )
+
+    def _replacement_spec(self, spec: PartitionSpec) -> PartitionSpec:
+        base = self._table.metadata
+        next_id = count((base.last_partition_id or PARTITION_FIELD_ID_START - 1) + 1)
+        fields: list[PartitionField] = []
+        if base.format_version == 1:
+            remaining = {(field.source_id, str(field.transform)): field for field in spec.fields}
+            new_names = {field.name for field in spec.fields}
+            for old in base.spec().fields:
+                if replacement := remaining.pop((old.source_id, str(old.transform)), None):
+                    fields.append(replacement.model_copy(update={"field_id": old.field_id}))
+                else:
+                    fields.append(
+                        old.model_copy(
+                            update={
+                                "transform": VoidTransform(),
+                                "name": f"{old.name}_{old.field_id}" if old.name in new_names else old.name,
+                            }
+                        )
+                    )
+            fields.extend(field.model_copy(update={"field_id": next(next_id)}) for field in remaining.values())
+        else:
+            historical_ids: dict[tuple[int, str], int] = {}
+            for old_spec in base.partition_specs:
+                for field in old_spec.fields:
+                    key = (field.source_id, str(field.transform))
+                    historical_ids[key] = max(historical_ids.get(key, 0), field.field_id)
+            for field in spec.fields:
+                key = (field.source_id, str(field.transform))
+                if key not in historical_ids:
+                    historical_ids[key] = next(next_id)
+                fields.append(field.model_copy(update={"field_id": historical_ids[key]}))
+        existing_spec = next((old for old in base.partition_specs if old.fields == tuple(fields)), None)
+        return existing_spec or PartitionSpec(*fields, spec_id=max(old.spec_id for old in base.partition_specs) + 1)
+
+    def _stage(self, updates: tuple[TableUpdate, ...], requirements: tuple[TableRequirement, ...] = ()) -> Transaction:
+        # Main is cleared in staged metadata, so guard the published head instead.
+        replaces_main = any(isinstance(req, AssertRefSnapshotId) and req.ref == MAIN_BRANCH for req in requirements)
+        super()._stage(
+            updates,
+            tuple(req for req in requirements if not (isinstance(req, AssertRefSnapshotId) and req.ref == MAIN_BRANCH)),
+        )
+        if replaces_main and not any(
+            isinstance(req, AssertRefSnapshotId) and req.ref == MAIN_BRANCH for req in self._requirements
+        ):
+            self._requirements += (AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=self._table.metadata.current_snapshot_id),)
+        return self
 
 
 class CreateTableTransaction(Transaction):

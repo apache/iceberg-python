@@ -185,6 +185,29 @@ with catalog.create_table_transaction(identifier="docs_example.bids", schema=sch
     txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
 ```
 
+## Replace a table
+
+Use `replace_table_transaction` to replace an existing table's definition and data in one atomic commit:
+
+```python
+with catalog.replace_table_transaction(identifier="docs_example.bids", schema=df.schema) as txn:
+    txn.append(df)
+```
+
+The existing table remains visible until the transaction commits. The replacement can use an incompatible
+schema, such as changing a column from an integer to a string. Field IDs are reused by name, while new
+fields receive IDs above the table's last assigned field ID.
+
+The table UUID, historical schemas, snapshots, and other branches and tags are preserved. Replacement data
+starts a new snapshot lineage. Committing without appending data leaves an empty table with no current snapshot.
+
+By default, the replacement is unpartitioned and unsorted. Supply `partition_spec` and `sort_order` to set
+the new layout. Existing properties are retained and merged with `properties`, and the existing location is
+retained unless `location` is supplied. An exception inside the context manager leaves the published table unchanged.
+
+The table must already exist. Concurrent changes to the schema or layout can cause the commit to fail.
+Start a new replacement transaction to retry after such a conflict.
+
 ## Register a table
 
 To register a table using existing metadata:

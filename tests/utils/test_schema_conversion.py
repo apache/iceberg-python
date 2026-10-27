@@ -414,3 +414,12 @@ def test_iceberg_to_avro_manifest(avro_schema_manifest_entry: dict[str, Any]) ->
     iceberg_schema = AvroSchemaConversion().avro_to_iceberg(avro_schema_manifest_entry)
     avro_result = AvroSchemaConversion().iceberg_to_avro(iceberg_schema, schema_name="manifest_entry")
     assert avro_schema_manifest_entry == avro_result
+
+
+def test_optional_unknown_type_uses_avro_null() -> None:
+    converter = AvroSchemaConversion()
+    avro = converter.iceberg_to_avro(Schema(NestedField(1000, "removed_partition", UnknownType())))
+    assert isinstance(avro, dict)
+    assert avro["fields"][0]["type"] == "null"
+    restored = converter.avro_to_iceberg(avro)
+    assert restored.find_field("removed_partition").field_type == UnknownType()

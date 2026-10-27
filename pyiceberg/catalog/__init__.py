@@ -43,12 +43,13 @@ from pyiceberg.exceptions import (
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
     DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
     CommitTableResponse,
     CreateTableTransaction,
+    ReplaceTableTransaction,
     StagedTable,
     Table,
     TableProperties,
@@ -415,6 +416,31 @@ class Catalog(ABC):
         Returns:
             CreateTableTransaction: createTableTransaction instance.
         """
+
+    def replace_table_transaction(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> ReplaceTableTransaction:
+        """Replace an existing table atomically, preserving its UUID and history.
+
+        The replacement starts empty, with the supplied schema, partition spec, and
+        sort order. Properties are merged with existing properties. The location
+        defaults to the existing table location. Append data to the transaction
+        before committing to replace both the table definition and its contents.
+
+        Raises:
+            NoSuchTableError: If the table does not exist.
+        """
+        table = self.load_table(identifier)
+        iceberg_schema = self._convert_schema_if_needed(schema, table.metadata.format_version)
+        if not isinstance(schema, Schema):
+            iceberg_schema = assign_fresh_schema_ids(iceberg_schema)
+        return ReplaceTableTransaction(table, iceberg_schema, location, partition_spec, sort_order, properties)
 
     def create_table_if_not_exists(
         self,
