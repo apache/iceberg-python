@@ -786,8 +786,8 @@ def _update_table_metadata_log(base_metadata: TableMetadata, metadata_location: 
         ),  # type: ignore
     )
     previous_metadata_log = base_metadata.metadata_log
-    if len(base_metadata.metadata_log) >= max_metadata_log_entries:  # type: ignore
-        remove_index = len(base_metadata.metadata_log) - max_metadata_log_entries + 1  # type: ignore
+    if len(base_metadata.metadata_log) >= max_metadata_log_entries:  # type: ignore[operator]
+        remove_index = len(base_metadata.metadata_log) - max_metadata_log_entries + 1  # type: ignore[operator]
         previous_metadata_log = base_metadata.metadata_log[remove_index:]
     metadata_updates: dict[str, Any] = {
         "metadata_log": previous_metadata_log + [MetadataLogEntry(metadata_file=metadata_location, timestamp_ms=last_updated_ms)]

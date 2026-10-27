@@ -126,7 +126,7 @@ class S3V4RestSigner(S3RequestSigner):
         self._session = requests.Session()
 
     def __call__(self, request: "AWSRequest", operation_name: str | None = None, **_: Any) -> None:
-        signer_url = self.properties.get(S3_SIGNER_URI, self.properties[URI]).rstrip("/")  # type: ignore
+        signer_url = self.properties.get(S3_SIGNER_URI, self.properties[URI]).rstrip("/")  # type: ignore[union-attr]
         signer_endpoint = self.properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
         signer_headers: dict[str, str] = {}
@@ -299,7 +299,7 @@ def _adls(properties: Properties, hostname: str | None = None) -> AbstractFileSy
     if token := properties.get(ADLS_TOKEN):
         credential = StaticTokenCredential(token)
     else:
-        credential = properties.get(ADLS_CREDENTIAL)  # type: ignore
+        credential = properties.get(ADLS_CREDENTIAL)  # type: ignore[assignment]
 
     return AzureBlobFileSystem(
         connection_string=properties.get(ADLS_CONNECTION_STRING),

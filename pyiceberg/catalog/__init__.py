@@ -919,7 +919,7 @@ class Catalog(ABC):
 
             downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
             if isinstance(schema, pa.Schema):
-                schema: Schema = visit_pyarrow(  # type: ignore
+                schema: Schema = visit_pyarrow(  # type: ignore[no-redef]
                     schema,
                     _ConvertToIcebergWithoutIDs(
                         downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
@@ -1077,7 +1077,7 @@ class MetastoreCatalog(Catalog, ABC):
         Returns:
             StagedTable: the created staged table instance.
         """
-        schema: Schema = self._convert_schema_if_needed(  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(  # type: ignore[no-redef]
             schema,
             int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
         )

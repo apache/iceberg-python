@@ -43,7 +43,7 @@ try:
 
 except ImportError:
 
-    class ZStandardCodec(Codec):  # type: ignore
+    class ZStandardCodec(Codec):  # type: ignore[no-redef]
         @staticmethod
         def compress(data: bytes) -> tuple[bytes, int]:
             raise ImportError("Zstandard support not installed, please install using `pip install pyiceberg[zstandard]`")

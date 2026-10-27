@@ -429,8 +429,8 @@ class NestedField(IcebergType):
     field_type: SerializeAsAny[IcebergType] = Field(alias="type")
     required: bool = Field(default=False)
     doc: str | None = Field(default=None, repr=False)
-    initial_default: DefaultValue | None = Field(alias="initial-default", default=None, repr=True)  # type: ignore
-    write_default: DefaultValue | None = Field(alias="write-default", default=None, repr=True)  # type: ignore
+    initial_default: DefaultValue | None = Field(alias="initial-default", default=None, repr=True)  # type: ignore[type-arg]
+    write_default: DefaultValue | None = Field(alias="write-default", default=None, repr=True)  # type: ignore[type-arg]
 
     @field_validator("field_type", mode="before")
     def convert_field_type(cls, v: Any) -> IcebergType:

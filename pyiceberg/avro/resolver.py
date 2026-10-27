@@ -233,7 +233,7 @@ def resolve_writer(
     """
     if record_schema == file_schema:
         return construct_writer(file_schema)
-    return visit_with_partner(file_schema, record_schema, WriteSchemaResolver(), SchemaPartnerAccessor())  # type: ignore
+    return visit_with_partner(file_schema, record_schema, WriteSchemaResolver(), SchemaPartnerAccessor())  # type: ignore[misc]
 
 
 def resolve_reader(
@@ -253,7 +253,7 @@ def resolve_reader(
     Raises:
         NotImplementedError: If attempting to resolve an unrecognized object type.
     """
-    return visit_with_partner(file_schema, read_schema, ReadSchemaResolver(read_types, read_enums), SchemaPartnerAccessor())  # type: ignore
+    return visit_with_partner(file_schema, read_schema, ReadSchemaResolver(read_types, read_enums), SchemaPartnerAccessor())  # type: ignore[misc]
 
 
 class EnumReader(Reader):
