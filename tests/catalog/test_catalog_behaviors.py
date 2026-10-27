@@ -1046,6 +1046,9 @@ def test_namespace_exists(catalog: Catalog) -> None:
     assert not catalog.namespace_exists("db_")
     # make sure '%' is escaped in the query
     assert not catalog.namespace_exists("db%")
+    # namespaces are case-sensitive, also when matching a parent namespace
+    assert not catalog.namespace_exists("DB2")
+    assert not catalog.namespace_exists("db3.NS1")
 
 
 # Namespace properties
