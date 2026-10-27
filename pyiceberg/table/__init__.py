@@ -2482,6 +2482,7 @@ class DataScan(TableScan):
             location,
             identifier=self.table_identifier,
             existing_io=self.io,
+            plan_id=result.plan_id,
         )
         if plan_io is not None:
             self.io = plan_io

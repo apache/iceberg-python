@@ -561,10 +561,11 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
 class _RestCredentialSource(AuthManager):
     """Reconstruct authenticated catalog access lazily after serialization."""
 
-    def __init__(self, catalog: RestCatalog, identifier: Identifier) -> None:
+    def __init__(self, catalog: RestCatalog, identifier: Identifier, *, plan_id: str | None = None) -> None:
         self._name = catalog.name
         self._properties = dict(catalog.properties)
         self._identifier = identifier
+        self._plan_id = plan_id
         self._catalog: RestCatalog | None = catalog
         self._lock = threading.Lock()
 
@@ -575,18 +576,18 @@ class _RestCredentialSource(AuthManager):
             return self._catalog
 
     def __call__(self) -> LoadCredentialsResponse:
-        return self._get_catalog()._load_credentials(self._identifier)
+        return self._get_catalog()._load_credentials(self._identifier, plan_id=self._plan_id)
 
     def auth_header(self) -> str | None:
         """Return catalog authorization using the same authentication as credential refresh."""
         manager = self._get_catalog()._auth_manager
         return manager.auth_header() if manager is not None else None
 
-    def __getstate__(self) -> tuple[str, Properties, Identifier]:
-        return self._name, self._properties, self._identifier
+    def __getstate__(self) -> tuple[str, Properties, Identifier, str | None]:
+        return self._name, self._properties, self._identifier, self._plan_id
 
-    def __setstate__(self, state: tuple[str, Properties, Identifier]) -> None:
-        self._name, self._properties, self._identifier = state
+    def __setstate__(self, state: tuple[str, Properties, Identifier, str | None]) -> None:
+        self._name, self._properties, self._identifier, self._plan_id = state
         self._catalog = None
         self._lock = threading.Lock()
 
@@ -928,6 +929,7 @@ class RestCatalog(Catalog):
         *,
         identifier: Identifier | None = None,
         existing_io: FileIO | None = None,
+        plan_id: str | None = None,
     ) -> FileIO | None:
         """Build a scan-scoped FileIO from plan storage credentials.
 
@@ -955,7 +957,9 @@ class RestCatalog(Catalog):
         )
         io = self._load_file_io({**baseline, **credential_config}, resolve_location)
         if identifier is not None:
-            self._attach_credentials_provider_to_io(io, identifier, storage_credentials, base_properties=baseline)
+            self._attach_credentials_provider_to_io(
+                io, identifier, storage_credentials, base_properties=baseline, plan_id=plan_id
+            )
         return io
 
     def _create_legacy_oauth2_auth_manager(self, session: Session) -> AuthManager:
@@ -1225,6 +1229,7 @@ class RestCatalog(Catalog):
         storage_credentials: list[StorageCredential],
         *,
         base_properties: Properties | None = None,
+        plan_id: str | None = None,
     ) -> None:
         """Attach a CredentialsProvider to io if credential refresh is enabled and credentials were vended.
 
@@ -1233,7 +1238,7 @@ class RestCatalog(Catalog):
         """
         if storage_credentials and property_as_bool(self.properties, REFRESH_CREDENTIALS_ENABLED, False):
             self._check_endpoint(Capability.V1_LOAD_CREDENTIALS)
-            source = _RestCredentialSource(self, self.identifier_to_tuple(identifier))
+            source = _RestCredentialSource(self, self.identifier_to_tuple(identifier), plan_id=plan_id)
             io.properties[AUTH_MANAGER] = source
             baseline = {**(io.properties if base_properties is None else base_properties), AUTH_MANAGER: source}
             io.set_credentials_provider(CredentialsProvider(storage_credentials, refresh_fn=source), base_properties=baseline)
@@ -1513,11 +1518,14 @@ class RestCatalog(Catalog):
     def _load_credentials(
         self,
         identifier: str | Identifier,
+        *,
+        plan_id: str | None = None,
     ) -> LoadCredentialsResponse:
-        """Load raw vended storage credentials for a table."""
+        """Load raw vended storage credentials for a table, optionally scoped to a scan plan."""
         self._check_endpoint(Capability.V1_LOAD_CREDENTIALS)
         response = self._session.get(
             self.url(Endpoints.load_credentials, prefixed=True, **self._split_identifier_for_path(identifier)),
+            params={"planId": plan_id} if plan_id is not None else {},
         )
         try:
             response.raise_for_status()

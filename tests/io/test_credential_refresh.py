@@ -23,7 +23,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -384,8 +384,13 @@ def test_gcsfs_preserves_caller_owned_credentials_and_anonymous_mode(requests_mo
     assert requests_mock.call_count == 0
 
 
+@pytest.mark.parametrize("plan_id", [None, "Plan /?&=+#"])
 def test_scan_scoped_io_keeps_refresh_and_backend_configuration(
-    backend: _Backend, clock: _Clock, requests_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+    backend: _Backend,
+    clock: _Clock,
+    requests_mock: Mocker,
+    example_table_metadata_with_snapshot_v1: dict[str, Any],
+    plan_id: str | None,
 ) -> None:
     endpoint_key = "s3.endpoint" if backend.scheme == "s3" else "gcs.service.host"
     table = _load_table(
@@ -399,6 +404,7 @@ def test_scan_scoped_io_keeps_refresh_and_backend_configuration(
         TABLE_URI + "/plan",
         json={
             "status": "completed",
+            **({"plan-id": plan_id} if plan_id is not None else {}),
             "file-scan-tasks": [
                 {
                     "data-file": {
@@ -427,9 +433,15 @@ def test_scan_scoped_io_keeps_refresh_and_backend_configuration(
         TABLE_URI + "/credentials",
         json={"storage-credentials": [backend.credential(clock, "rotated").model_dump()]},
     )
-    with scan.io.new_input(tasks[0].file.file_path).open() as input_stream:
-        assert input_stream.read() == b"scan scoped access"
-    assert refresh.called
+    requests_before = requests_mock.call_count
+    restored = pickle.loads(pickle.dumps(scan.io))
+    assert requests_mock.call_count == requests_before
+    for io in (scan.io, restored):
+        with io.new_input(tasks[0].file.file_path).open() as input_stream:
+            assert input_stream.read() == b"scan scoped access"
+        assert refresh.last_request is not None
+        assert parse_qs(urlparse(refresh.last_request.url).query) == ({"planId": [plan_id]} if plan_id is not None else {})
+    assert refresh.call_count == 2
     kwargs = backend.storage.constructions[-1]
     if backend.implementation == ARROW_FILE_IO:
         expected = "http://storage.example" if backend.scheme == "s3" else "storage.example"
