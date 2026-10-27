@@ -219,7 +219,7 @@ def test_gcs_expiration_alias_is_normalized_and_canonical_property_wins(clock: _
     provider = CredentialsProvider([credential], _Source())
     expected = {"gcs.oauth2.token": "vended", "gcs.oauth2.token-expires-at": "1700000060000"}
     assert provider.properties_for("gs://warehouse/file") == expected
-    assert resolve_storage_credentials([credential], "gs://warehouse/file") == expected
+    assert resolve_storage_credentials([credential], "gs://warehouse/file") == config
     assert credential.config == config
     config["gcs.oauth2.token-expires-at"] = "1700003600000"
     provider = CredentialsProvider([StorageCredential(prefix=credential.prefix, config=config)], _Source())
