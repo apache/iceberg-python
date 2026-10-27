@@ -90,6 +90,8 @@ from pyiceberg.io import (
     ADLS_SAS_TOKEN,
     ADLS_TENANT_ID,
     AWS_ACCESS_KEY_ID,
+    AWS_ASSUME_ROLE_ARN,
+    AWS_ASSUME_ROLE_SESSION_NAME,
     AWS_REGION,
     AWS_ROLE_ARN,
     AWS_ROLE_SESSION_NAME,
@@ -485,10 +487,12 @@ class PyArrowFileIO(FileIO):
         if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
             client_kwargs["request_timeout"] = float(request_timeout)
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ASSUME_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
 
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+        if session_name := get_first_property_value(
+            self.properties, S3_ROLE_SESSION_NAME, AWS_ASSUME_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME
+        ):
             client_kwargs["session_name"] = session_name
 
         if s3_anonymous := self.properties.get(S3_ANONYMOUS):
@@ -533,10 +537,12 @@ class PyArrowFileIO(FileIO):
         if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
             client_kwargs["request_timeout"] = float(request_timeout)
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ASSUME_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
 
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+        if session_name := get_first_property_value(
+            self.properties, S3_ROLE_SESSION_NAME, AWS_ASSUME_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME
+        ):
             client_kwargs["session_name"] = session_name
 
         if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:

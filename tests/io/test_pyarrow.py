@@ -419,6 +419,23 @@ def test_pyarrow_s3_session_properties() -> None:
         )
 
 
+def test_pyarrow_s3_assume_role_properties_take_precedence_over_role_properties() -> None:
+    session_properties: Properties = {
+        "s3.region": "us-east-1",
+        "client.assume-role.arn": "arn:aws:iam::123456789012:role/assume-role",
+        "client.assume-role.session-name": "assume-role-session",
+        "client.role-arn": "arn:aws:iam::123456789012:role/role",
+        "client.role-session-name": "role-session",
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
+        PyArrowFileIO(properties=session_properties).new_input(location=f"s3://warehouse/{uuid.uuid4()}")
+
+        assert mock_s3fs.call_args.kwargs["role_arn"] == "arn:aws:iam::123456789012:role/assume-role"
+        assert mock_s3fs.call_args.kwargs["session_name"] == "assume-role-session"
+
+
 def test_pyarrow_s3_ssl_ca_cert_requires_supported_pyarrow_version() -> None:
     session_properties: Properties = {
         S3_SSL_CA_CERT: "/path/to/ca.pem",
