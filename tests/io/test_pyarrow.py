@@ -63,7 +63,9 @@ from pyiceberg.expressions import (
     BoundNotStartsWith,
     BoundReference,
     BoundStartsWith,
+    EqualTo,
     GreaterThan,
+    IsNull,
     Not,
     Or,
 )
@@ -106,7 +108,7 @@ from pyiceberg.table.deletion_vector import (
 from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
-from pyiceberg.transforms import HourTransform, IdentityTransform
+from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -1334,11 +1336,10 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     assert repr(result_table.schema) == "id: int32"
 
 
-def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+@pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])
+def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog, with_field_ids: bool) -> None:
     # Test by adding a non-partitioned data file to a partitioned table, verifying partition value
     # projection from manifest metadata.
-    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
-    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
 
     schema = Schema(
         NestedField(1, "other_field", StringType(), required=False), NestedField(2, "partition_id", IntegerType(), required=False)
@@ -1353,12 +1354,23 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         "default.test_projection_partition",
         schema=schema,
         partition_spec=partition_spec,
-        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+        properties={}
+        if with_field_ids
+        else {TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
     file_data = pa.array(["foo", "bar", "baz"], type=pa.string())
-    file_loc = f"{tmp_path}/test.parquet"
-    pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
+    file_table = pa.table([file_data], names=["other_field"])
+    if with_field_ids:
+        source_table = catalog.create_table(
+            "default.unpartitioned_source", schema=Schema(schema.fields[0]), location=f"{tmp_path}/source"
+        )
+        source_table.append(file_table)
+        file_loc = next(iter(source_table.scan().plan_files())).file.file_path
+        assert pq.read_schema(file_loc).field("other_field").metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"1"
+    else:
+        file_loc = f"{tmp_path}/test.parquet"
+        pq.write_table(file_table, file_loc)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=pq.read_metadata(file_loc),
@@ -1403,13 +1415,21 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
     # Test that row filter does not return any rows for a non-existing partition value
     assert len(table.scan(row_filter="partition_id = -1").to_arrow()) == 0
 
+    assert table.scan(row_filter="partition_id = 1", selected_fields=("other_field",)).to_arrow() == pa.table(
+        {"other_field": ["foo", "bar", "baz"]}
+    )
+    assert table.scan(
+        row_filter="partition_id = 1 AND other_field = 'bar'", selected_fields=("other_field",)
+    ).to_arrow() == pa.table({"other_field": ["bar"]})
+    assert table.scan(row_filter="partition_id = 1 AND other_field = 'bar'", selected_fields=("other_field",)).count() == 1
+
 
 @pytest.mark.parametrize(
-    "partition_field_type, arrow_partition_type, partition_value",
+    "partition_field_type, arrow_partition_type, partition_value, row_filter",
     [
-        (IntegerType(), pa.int32(), 0),
-        (StringType(), pa.large_string(), ""),
-        (IntegerType(), pa.int32(), None),
+        (IntegerType(), pa.int32(), 0, "partition_col = 0"),
+        (StringType(), pa.large_string(), "", "partition_col = ''"),
+        (IntegerType(), pa.int32(), None, "partition_col IS NULL"),
     ],
 )
 def test_identity_transform_column_projection_with_falsy_value(
@@ -1418,6 +1438,7 @@ def test_identity_transform_column_projection_with_falsy_value(
     partition_field_type: PrimitiveType,
     arrow_partition_type: pa.DataType,
     partition_value: Any,
+    row_filter: str,
 ) -> None:
     """Partition value projection must preserve falsy values (0, "") and still render None as null."""
     schema = Schema(
@@ -1471,13 +1492,51 @@ def test_identity_transform_column_projection_with_falsy_value(
         },
         schema=expected_schema,
     )
+    assert table.scan(row_filter=row_filter, selected_fields=("other_field",)).to_arrow() == pa.table(
+        {"other_field": ["foo", "bar"]}
+    )
 
 
-def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+def test_identity_transform_null_partition_value_takes_precedence_over_initial_default(tmpdir: str) -> None:
+    """A null identity partition value must project as null, not as the field's initial-default."""
+    table_schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False),
+        NestedField(2, "partition_col", IntegerType(), required=False, initial_default=7),
+    )
+    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_col"))
+    table_metadata = TableMetadataV3(
+        location=str(tmpdir), last_column_id=2, schemas=[table_schema], partition_specs=[partition_spec], next_row_id=0
+    )
+
+    arrow_schema = pa.schema([pa.field("other_field", pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    file_path = _write_table_to_file(
+        f"{tmpdir}/null_partition.parquet", arrow_schema, pa.table({"other_field": ["foo", "bar"]}, schema=arrow_schema)
+    )
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(None),
+        record_count=2,
+        file_size_in_bytes=os.path.getsize(file_path),
+        spec_id=partition_spec.spec_id,
+    )
+
+    def scan(projected_schema: Schema, row_filter: BooleanExpression) -> pa.Table:
+        return ArrowScan(table_metadata, PyArrowFileIO(), projected_schema, row_filter).to_table([FileScanTask(data_file)])
+
+    assert scan(table_schema, AlwaysTrue()).to_pydict() == {"other_field": ["foo", "bar"], "partition_col": [None, None]}
+
+    # Filters on the partition column see null whether or not the column is projected
+    for projected_schema in (table_schema, Schema(table_schema.fields[0])):
+        assert scan(projected_schema, IsNull("partition_col"))["other_field"].to_pylist() == ["foo", "bar"]
+        assert scan(projected_schema, EqualTo("partition_col", 7)).num_rows == 0
+
+
+@pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])
+def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog, with_field_ids: bool) -> None:
     # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value
     # projection from manifest metadata.
-    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
-    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
     schema = Schema(
         NestedField(1, "field_1", StringType(), required=False),
         NestedField(2, "field_2", IntegerType(), required=False),
@@ -1494,12 +1553,23 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
         "default.test_projection_partitions",
         schema=schema,
         partition_spec=partition_spec,
-        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+        properties={}
+        if with_field_ids
+        else {TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
     file_data = pa.array(["foo"], type=pa.string())
-    file_loc = f"{tmp_path}/test.parquet"
-    pq.write_table(pa.table([file_data], names=["field_1"]), file_loc)
+    file_table = pa.table([file_data], names=["field_1"])
+    if with_field_ids:
+        source_table = catalog.create_table(
+            "default.unpartitioned_source", schema=Schema(schema.fields[0]), location=f"{tmp_path}/source"
+        )
+        source_table.append(file_table)
+        file_loc = next(iter(source_table.scan().plan_files())).file.file_path
+        assert pq.read_schema(file_loc).field("field_1").metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"1"
+    else:
+        file_loc = f"{tmp_path}/test.parquet"
+        pq.write_table(file_table, file_loc)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=pq.read_metadata(file_loc),
@@ -1535,6 +1605,12 @@ field_3: int32
 field_1: [["foo"]]
 field_2: [[2]]
 field_3: [[3]]"""
+    )
+    assert table.scan(row_filter="field_2 = 2 AND field_3 = 3", selected_fields=("field_1",)).to_arrow() == pa.table(
+        {"field_1": ["foo"]}
+    )
+    assert table.scan(row_filter="field_2 = 2 AND field_3 = 3", selected_fields=("field_1", "field_2")).to_arrow() == pa.table(
+        {"field_1": ["foo"], "field_2": pa.array([2], type=pa.int32())}
     )
 
 
@@ -3192,6 +3268,83 @@ def test_determine_partitions_identity_nan() -> None:
         repr(p.partition_key.partition[0]): sorted(p.arrow_table_partition["id"].to_pylist()) for p in partitions
     }
     assert rows_by_partition == {"1.0": [1], "nan": [2, 4], "None": [3]}
+
+
+@pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(4), TruncateTransform(1)])
+def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) -> None:
+    schema = Schema(
+        NestedField(id=1, name="region", field_type=StringType(), required=False),
+        NestedField(id=2, name="payload", field_type=BinaryType(), required=False),
+        NestedField(
+            id=3,
+            name="info",
+            field_type=StructType(
+                NestedField(id=4, name="tags", field_type=ListType(5, StringType(), element_required=False), required=False),
+                NestedField(id=6, name="attrs", field_type=MapType(7, StringType(), 8, BinaryType()), required=False),
+            ),
+            required=False,
+        ),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=transform, name="region_part"))
+    arrow_schema = pa.schema(
+        [
+            pa.field("region", pa.string_view()),
+            pa.field("payload", pa.binary_view()),
+            pa.field(
+                "info",
+                pa.struct(
+                    [
+                        pa.field("tags", pa.list_(pa.string_view())),
+                        pa.field("attrs", pa.map_(pa.string_view(), pa.binary_view())),
+                    ]
+                ),
+            ),
+        ]
+    )
+    rows = [
+        {"region": "us", "payload": b"a", "info": {"tags": ["x"], "attrs": [("k", b"v")]}},
+        {"region": "eu", "payload": None, "info": None},
+        {"region": "us", "payload": b"b", "info": {"tags": None, "attrs": None}},
+        {"region": None, "payload": b"c", "info": {"tags": ["y", None], "attrs": []}},
+    ]
+    arrow_table = pa.Table.from_pylist(rows, schema=arrow_schema)
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    assert {p.partition_key.partition[0] for p in partitions} == {
+        transform.transform(StringType())(region) for region in ("us", "eu", None)
+    }
+    written = pa.concat_tables([p.arrow_table_partition for p in partitions])
+    assert sorted(written.to_pylist(), key=str) == sorted(rows, key=str)
+
+
+def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="region", field_type=StringType(), required=False),
+        NestedField(id=3, name="payload", field_type=BinaryType(), required=False),
+        NestedField(id=4, name="category", field_type=StringType(), required=False),
+        NestedField(id=5, name="labels", field_type=ListType(6, StringType(), element_required=False), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="region"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_view_types", schema=schema, partition_spec=spec)
+
+    categories = pa.array(["a", "b", None], type=pa.string_view()).dictionary_encode()
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "region": pa.array(["us", "eu", "us"], type=pa.string_view()),
+            "payload": pa.array([b"a", None, b"c"], type=pa.binary_view()),
+            # Polars exports Categorical as dictionary<string_view> and List(Categorical) as large_list<dictionary<string_view>>
+            "category": categories,
+            "labels": pa.LargeListArray.from_arrays([0, 1, 1, 3], categories),
+        }
+    )
+    table.append(arrow_table)
+
+    assert len(table.inspect.partitions()) == 2
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
 
 
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:

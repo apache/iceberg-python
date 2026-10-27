@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import itertools
 import logging
-import os
 import random
 import time
 import uuid
@@ -863,7 +862,6 @@ class Transaction:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
@@ -874,26 +872,25 @@ class Transaction:
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
-            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+        To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
-                Example Use Cases:
-                    Case 1: Both Parameters = True (Full Upsert)
-                    Existing row found → Update it
-                    New row found → Insert it
+            Example Use Cases:
+                Case 1: Both Parameters = True (Full Upsert)
+                Existing row found → Update it
+                New row found → Insert it
 
-                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
-                    Existing row found → Do nothing (no updates)
-                    New row found → Insert it
+                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                Existing row found → Do nothing (no updates)
+                New row found → Insert it
 
-                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
-                    Existing row found → Update it
-                    New row found → Do nothing (no inserts)
+                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                Existing row found → Update it
+                New row found → Do nothing (no inserts)
 
-                    Case 4: Both Parameters = False (No Merge Effect)
-                    Existing row found → Do nothing
-                    New row found → Do nothing
-                    (Function effectively does nothing)
-
+                Case 4: Both Parameters = False (No Merge Effect)
+                Existing row found → Do nothing
+                New row found → Do nothing
+                (Function effectively does nothing)
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
@@ -1668,7 +1665,6 @@ class Table:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
@@ -1679,26 +1675,25 @@ class Table:
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
-            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+        To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
-                Example Use Cases:
-                    Case 1: Both Parameters = True (Full Upsert)
-                    Existing row found → Update it
-                    New row found → Insert it
+            Example Use Cases:
+                Case 1: Both Parameters = True (Full Upsert)
+                Existing row found → Update it
+                New row found → Insert it
 
-                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
-                    Existing row found → Do nothing (no updates)
-                    New row found → Insert it
+                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                Existing row found → Do nothing (no updates)
+                New row found → Insert it
 
-                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
-                    Existing row found → Update it
-                    New row found → Do nothing (no inserts)
+                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                Existing row found → Update it
+                New row found → Do nothing (no inserts)
 
-                    Case 4: Both Parameters = False (No Merge Effect)
-                    Existing row found → Do nothing
-                    New row found → Do nothing
-                    (Function effectively does nothing)
-
+                Case 4: Both Parameters = False (No Merge Effect)
+                Existing row found → Do nothing
+                New row found → Do nothing
+                (Function effectively does nothing)
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
@@ -1904,15 +1899,19 @@ class Table:
 
         return bd.read_iceberg_table(self)
 
-    def to_polars(self) -> pl.LazyFrame:
+    def to_polars(self, **kwargs: Any) -> pl.LazyFrame:
         """Lazily read from this Apache Iceberg table.
 
+        Args:
+            **kwargs: Additional keyword arguments to forward to :func:`polars.scan_iceberg`
+                (e.g. ``storage_options``, ``snapshot_id``, ``reader_override``).
+
         Returns:
-            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table
+            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table.
         """
         import polars as pl
 
-        return pl.scan_iceberg(self)
+        return pl.scan_iceberg(self, **kwargs)
 
     def __datafusion_table_provider__(self, session: Any | None = None) -> IcebergDataFusionTable:
         """Return the DataFusion table provider PyCapsule interface.
@@ -1970,7 +1969,9 @@ class StaticTable(Table):
 
     @classmethod
     def _metadata_location_from_version_hint(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> str:
-        version_hint_location = os.path.join(metadata_location, "metadata", "version-hint.text")
+        # Using os.path.join here would produce "\" separators on Windows, breaking URI locations
+        metadata_dir = f"{metadata_location.rstrip('/')}/metadata"
+        version_hint_location = f"{metadata_dir}/version-hint.text"
         io = load_file_io(properties=properties, location=version_hint_location)
         file = io.new_input(version_hint_location)
 
@@ -1978,11 +1979,11 @@ class StaticTable(Table):
             content = stream.read().decode("utf-8")
 
         if content.endswith(".metadata.json"):
-            return os.path.join(metadata_location, "metadata", content)
+            return f"{metadata_dir}/{content}"
         elif content.isnumeric():
-            return os.path.join(metadata_location, "metadata", f"v{content}.metadata.json")
+            return f"{metadata_dir}/v{content}.metadata.json"
         else:
-            return os.path.join(metadata_location, "metadata", f"{content}.metadata.json")
+            return f"{metadata_dir}/{content}.metadata.json"
 
     @classmethod
     def from_metadata(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> StaticTable:

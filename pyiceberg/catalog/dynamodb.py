@@ -584,6 +584,10 @@ class DynamoDbCatalog(MetastoreCatalog):
     def load_view(self, identifier: str | Identifier) -> View:
         raise NotImplementedError
 
+    @override
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        raise NotImplementedError
+
     def _get_iceberg_table_item(self, database_name: str, table_name: str) -> dict[str, Any]:
         try:
             return self._get_dynamo_item(identifier=f"{database_name}.{table_name}", namespace=database_name)

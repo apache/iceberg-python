@@ -145,6 +145,7 @@ class ConsoleOutput(Output):
 
         output_table = self._table
         output_table.add_row("View format version", str(metadata.format_version))
+        output_table.add_row("Metadata location", view.metadata_location)
         output_table.add_row("View UUID", str(metadata.view_uuid))
         output_table.add_row("Location", metadata.location)
         output_table.add_row("Current version", str(metadata.current_version_id))

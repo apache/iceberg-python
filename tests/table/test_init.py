@@ -18,10 +18,11 @@
 import json
 import uuid
 from copy import copy
+from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog
@@ -37,6 +38,7 @@ from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.serializers import ToOutputFile
 from pyiceberg.table import (
     CommitTableRequest,
     StagedTable,
@@ -44,7 +46,7 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
-from pyiceberg.table.metadata import TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata import EncryptedKey, TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -61,6 +63,7 @@ from pyiceberg.table.sorting import (
 )
 from pyiceberg.table.statistics import BlobMetadata, PartitionStatisticsFile, StatisticsFile
 from pyiceberg.table.update import (
+    AddEncryptionKeyUpdate,
     AddPartitionSpecUpdate,
     AddSnapshotUpdate,
     AddSortOrderUpdate,
@@ -72,6 +75,7 @@ from pyiceberg.table.update import (
     AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
+    RemoveEncryptionKeyUpdate,
     RemovePartitionSpecsUpdate,
     RemovePartitionStatisticsUpdate,
     RemovePropertiesUpdate,
@@ -84,6 +88,7 @@ from pyiceberg.table.update import (
     SetPropertiesUpdate,
     SetSnapshotRefUpdate,
     SetStatisticsUpdate,
+    TableUpdate,
     _apply_table_update,
     _TableMetadataUpdateContext,
     update_table_metadata,
@@ -612,6 +617,26 @@ def test_static_table_version_hint_same_as_table(
     ]:
         static_table = StaticTable.from_metadata(table_location)
         assert isinstance(static_table, Table)
+        assert static_table.metadata == table_v2.metadata
+
+
+def test_static_table_version_hint_uri_location(table_v2: Table, tmp_path: Path) -> None:
+    # Fails on Windows if the locations are built with os.path.join
+    table_root = f"file://{tmp_path}"
+    file_io = load_file_io(location=table_root)
+
+    for version_hint_content, metadata_file in [
+        ("v3.metadata.json", "v3.metadata.json"),
+        ("3", "v3.metadata.json"),
+        ("some-uuid", "some-uuid.metadata.json"),
+    ]:
+        metadata_location = f"{table_root}/metadata/{metadata_file}"
+        ToOutputFile.table_metadata(table_v2.metadata, file_io.new_output(metadata_location), overwrite=True)
+        with file_io.new_output(f"{table_root}/metadata/version-hint.text").create(overwrite=True) as f:
+            f.write(version_hint_content.encode("utf-8"))
+
+        static_table = StaticTable.from_metadata(table_root)
+        assert static_table.metadata_location == metadata_location
         assert static_table.metadata == table_v2.metadata
 
 
@@ -1454,6 +1479,30 @@ def test_last_assigned_partition_id(table_v2: Table) -> None:
         AssertLastAssignedPartitionId(last_assigned_partition_id=1).validate(base_metadata)
 
 
+@pytest.mark.parametrize("table", [lf("table_v2"), lf("table_v3")])
+def test_update_spec_reuses_removed_partition_field_id(table: Table) -> None:
+    txn = table.transaction()
+    txn.update_spec().remove_field("x").add_field("y", BucketTransform(16), "y_bucket").commit()
+    txn.update_spec().add_identity("x").commit()
+
+    assert txn.table_metadata.spec().fields == (
+        PartitionField(source_id=2, field_id=1001, transform=BucketTransform(16), name="y_bucket"),
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+    )
+    assert txn.table_metadata.last_partition_id == 1001
+
+
+@pytest.mark.parametrize("table", [lf("table_v2"), lf("table_v3")])
+def test_update_spec_remove_and_add_same_field_reuses_id(table: Table) -> None:
+    txn = table.transaction()
+    txn.update_spec().remove_field("x").add_identity("x").commit()
+
+    assert txn.table_metadata.spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+    )
+    assert txn.table_metadata.last_partition_id == 1000
+
+
 def test_assert_default_spec_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertDefaultSpecId(default_spec_id=base_metadata.default_spec_id).validate(base_metadata)
@@ -1929,6 +1978,75 @@ def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_wi
         )
 
 
+def test_add_encryption_key_update(table_v3: Table) -> None:
+    kek = EncryptedKey(key_id="kek", encrypted_key_metadata=b"wrapped-kek", encrypted_by_id="master", properties={"a": "b"})
+    manifest_list_key = EncryptedKey(key_id="manifest-list-key", encrypted_key_metadata=b"wrapped-dek", encrypted_by_id="kek")
+
+    new_metadata = update_table_metadata(
+        table_v3.metadata,
+        (AddEncryptionKeyUpdate(encryption_key=kek), AddEncryptionKeyUpdate(encryption_key=manifest_list_key)),
+    )
+
+    assert new_metadata.encryption_keys == [kek, manifest_list_key]
+
+
+def test_add_encryption_key_update_with_existing_key_id(table_v3: Table) -> None:
+    key = EncryptedKey(key_id="kek", encrypted_key_metadata=b"wrapped-kek")
+    base_metadata = update_table_metadata(table_v3.metadata, (AddEncryptionKeyUpdate(encryption_key=key),))
+
+    context = _TableMetadataUpdateContext()
+    duplicate = EncryptedKey(key_id="kek", encrypted_key_metadata=b"other")
+    new_metadata = _apply_table_update(AddEncryptionKeyUpdate(encryption_key=duplicate), base_metadata, context)
+
+    assert new_metadata.encryption_keys == [key]
+    assert not context.has_changes()
+
+
+def test_remove_encryption_key_update(table_v3: Table) -> None:
+    first = EncryptedKey(key_id="first", encrypted_key_metadata=b"first")
+    second = EncryptedKey(key_id="second", encrypted_key_metadata=b"second")
+    base_metadata = update_table_metadata(
+        table_v3.metadata, (AddEncryptionKeyUpdate(encryption_key=first), AddEncryptionKeyUpdate(encryption_key=second))
+    )
+
+    new_metadata = update_table_metadata(base_metadata, (RemoveEncryptionKeyUpdate(key_id="first"),))
+
+    assert new_metadata.encryption_keys == [second]
+
+
+def test_remove_encryption_key_update_with_missing_key_id(table_v3: Table) -> None:
+    context = _TableMetadataUpdateContext()
+    new_metadata = _apply_table_update(RemoveEncryptionKeyUpdate(key_id="missing"), table_v3.metadata, context)
+
+    assert new_metadata == table_v3.metadata
+    assert not context.has_changes()
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        AddEncryptionKeyUpdate(encryption_key=EncryptedKey(key_id="a", encrypted_key_metadata=b"key")),
+        RemoveEncryptionKeyUpdate(key_id="a"),
+    ],
+)
+def test_encryption_key_updates_require_v3(table_v2: Table, update: TableUpdate) -> None:
+    with pytest.raises(ValueError, match="Encryption keys are not supported in format version 2"):
+        update_table_metadata(table_v2.metadata, (update,))
+
+
+def test_serialize_encryption_key_updates() -> None:
+    add = AddEncryptionKeyUpdate(encryption_key=EncryptedKey(key_id="a", encrypted_key_metadata=b"key", encrypted_by_id="b"))
+    remove = RemoveEncryptionKeyUpdate(key_id="a")
+
+    assert json.loads(add.model_dump_json()) == {
+        "action": "add-encryption-key",
+        "encryption-key": {"key-id": "a", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "b", "properties": {}},
+    }
+    assert json.loads(remove.model_dump_json()) == {"action": "remove-encryption-key", "key-id": "a"}
+    assert TypeAdapter(TableUpdate).validate_json(add.model_dump_json()) == add
+    assert TypeAdapter(TableUpdate).validate_json(remove.model_dump_json()) == remove
+
+
 def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:
     new_snapshot = Snapshot(
         snapshot_id=25,
@@ -1964,6 +2082,30 @@ def test_add_snapshot_update_fails_with_smaller_first_row_id(table_v3: Table) ->
         match="Cannot add a snapshot with first row id smaller than the table's next-row-id",
     ):
         update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+@pytest.mark.parametrize("table", [lf("table_v2"), lf("table_v3")])
+def test_add_snapshot_update_fails_with_stale_sequence_number(table: Table) -> None:
+    last_sequence_number = table.metadata.last_sequence_number
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=3055729675574597004,
+        sequence_number=last_sequence_number,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=1,
+        first_row_id=2,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            f"Cannot add snapshot with sequence number {last_sequence_number} "
+            f"older than last sequence number {last_sequence_number}"
+        ),
+    ):
+        update_table_metadata(table.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
 
 
 def test_add_snapshot_update_updates_next_row_id(table_v3: Table) -> None:
@@ -2067,3 +2209,29 @@ def test_static_table_forwards_location_to_table_file_io(metadata_location: str,
 
     assert seen_locations, "expected at least one load_file_io call"
     assert all(loc is not None for loc in seen_locations), f"load_file_io called without a location: {seen_locations}"
+
+
+def test_table_to_polars_forwards_kwargs(table_v2: Table, monkeypatch: pytest.MonkeyPatch) -> None:
+    import polars as pl
+
+    recorded_calls: list[tuple[Any, dict[str, Any]]] = []
+
+    def mock_scan_iceberg(source: Any, **kwargs: Any) -> Any:
+        recorded_calls.append((source, kwargs))
+        return "mock_lazy_frame"
+
+    monkeypatch.setattr(pl, "scan_iceberg", mock_scan_iceberg)
+
+    # Test without kwargs
+    res1 = table_v2.to_polars()
+    assert res1 == "mock_lazy_frame"
+    assert recorded_calls[0] == (table_v2, {})
+
+    # Test with kwargs
+    storage_options = {"s3": {"endpoint": "https://s3.custom.endpoint"}}
+    res2 = table_v2.to_polars(storage_options=storage_options, snapshot_id=12345, reader_override="native")
+    assert res2 == "mock_lazy_frame"
+    assert recorded_calls[1] == (
+        table_v2,
+        {"storage_options": storage_options, "snapshot_id": 12345, "reader_override": "native"},
+    )
