@@ -451,7 +451,9 @@ Refreshed credentials take precedence over baseline configuration without retain
 
 Refresh occurs on demand, starting up to five minutes before expiration. For shorter lifetimes, the margin is bounded to half
 the remaining lifetime when credentials are received, so a fresh short-lived token is reused between refreshes.
-Concurrent accesses share a successful refresh. Catalog errors propagate, and missing, incomplete, or already-expired refresh results are rejected.
+Concurrent accesses share a successful refresh. Missing, incomplete, or already-expired refresh results are rejected.
+If refresh fails while the existing credentials remain valid, the client logs a warning, reuses them, and retries on a later access.
+Once the existing credentials expire, refresh failures propagate to the caller.
 
 Refresh applies to metadata, manifests, data and delete files, staged writes, and scan-scoped credentials.
 Retained file handles resolve current credentials when opened or created again. An already-open native stream keeps its original credentials;

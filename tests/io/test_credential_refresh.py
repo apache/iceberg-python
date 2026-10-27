@@ -247,6 +247,33 @@ def test_existing_handles_read_write_and_delete_across_rotation(backend: _Backen
     assert len(backend.storage.constructions) == 2
 
 
+def test_retained_input_reads_through_a_failed_early_refresh(
+    backend: _Backend, clock: _Clock, requests_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    table = _load_table(
+        backend, requests_mock, example_table_metadata_with_snapshot_v1, [backend.credential(clock, lifetime=600)]
+    )
+    output = table.io.new_output(backend.location)
+    with output.create() as stream:
+        stream.write(b"still readable")
+    input_file = output.to_input_file()
+    refresh = requests_mock.get(TABLE_URI + "/credentials", status_code=503)
+
+    clock.now += 300
+    with input_file.open() as stream:
+        assert stream.read() == b"still readable"
+    assert refresh.call_count == 1
+
+    clock.now += 60
+    backend.storage.token = "rotated"
+    requests_mock.get(
+        TABLE_URI + "/credentials",
+        json={"storage-credentials": [backend.credential(clock, "rotated").model_dump()]},
+    )
+    with input_file.open() as stream:
+        assert stream.read() == b"still readable"
+
+
 def test_catalog_credentials_do_not_leak_outside_matching_prefix(
     backend: _Backend, clock: _Clock, requests_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
 ) -> None:
