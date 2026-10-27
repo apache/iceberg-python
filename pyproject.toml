@@ -276,7 +276,8 @@ implicit_reexport = false
 ignore_missing_imports = true
 
 [tool.ty.src]
-exclude = ["vendor/"]
+# Start with the package only; tests/ is 400 of the 851 initial diagnostics.
+exclude = ["vendor/", "tests/"]
 
 [tool.ty.environment]
 # The vendored Hive Metastore client is packaged from vendor/, so it must stay importable
