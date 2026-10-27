@@ -288,5 +288,9 @@ extra-paths = ["vendor"]
 # mkdocs_gen_files are only installed with the docs dependency group
 allowed-unresolved-imports = ["pyiceberg_core.datafusion", "griffe", "mkdocs_gen_files"]
 
+[tool.ty.rules]
+# mypy runs with disallow_any_generics; ty silences this rule by default.
+missing-type-argument = "error"
+
 [tool.coverage.run]
 source = ['pyiceberg/']
