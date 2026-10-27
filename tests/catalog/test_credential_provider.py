@@ -171,19 +171,69 @@ def test_each_prefix_has_its_own_refresh_deadline(clock: _Clock) -> None:
     assert source.calls == 1
 
 
-def test_failed_refresh_preserves_credentials_for_a_later_retry(clock: _Clock) -> None:
-    initial = _credential(clock)
-    rotated = _credential(clock, token="rotated", lifetime=3600)
-    source = _Source(ServiceUnavailableError("catalog unavailable"), _response(rotated))
-    provider = CredentialsProvider([initial], source)
-    clock.now += 30
-    with pytest.raises(ServiceUnavailableError, match="catalog unavailable"):
-        provider.properties_for("s3://warehouse/file")
-    assert provider.properties_for("s3://warehouse/file") == rotated.config
+def test_failed_refresh_reuses_valid_credentials_until_a_later_retry(clock: _Clock, caplog: pytest.LogCaptureFixture) -> None:
+    for scheme in ("s3", "gs"):
+        initial = _credential(clock, scheme, lifetime=600)
+        rotated = _credential(clock, scheme, token="rotated", lifetime=3600)
+        source = _Source(ServiceUnavailableError("opaque-secret"), _response(rotated))
+        provider = CredentialsProvider([initial], source)
+        location = f"{scheme}://warehouse/file"
+
+        clock.now += 300
+        for _ in range(10):
+            assert provider.properties_for(location) == initial.config
+        assert source.calls == 1
+        assert "ServiceUnavailableError" in caplog.text
+        assert "opaque-secret" not in caplog.text
+
+        clock.now += 60
+        assert provider.properties_for(location) == rotated.config
+        assert source.calls == 2
+
+
+def test_failed_refresh_retries_and_raises_at_credential_expiration(clock: _Clock) -> None:
+    for scheme in ("s3", "gs"):
+        initial = _credential(clock, scheme, lifetime=2)
+        source = _Source(ServiceUnavailableError("catalog unavailable"), ServiceUnavailableError("still unavailable"))
+        provider = CredentialsProvider([initial], source)
+        location = f"{scheme}://warehouse/file"
+
+        clock.now += 1
+        assert provider.properties_for(location) == initial.config
+        clock.now += 1
+        with pytest.raises(ServiceUnavailableError, match="still unavailable"):
+            provider.properties_for(location)
+        assert source.calls == 2
+
+
+def test_credentials_expiring_during_failed_refresh_are_not_reused(clock: _Clock) -> None:
+    for scheme in ("s3", "gs"):
+        initial = _credential(clock, scheme, lifetime=2)
+
+        def fetch() -> LoadCredentialsResponse:
+            clock.now += 1
+            raise ServiceUnavailableError("catalog unavailable")
+
+        provider = CredentialsProvider([initial], fetch)
+        clock.now += 1
+        with pytest.raises(ServiceUnavailableError, match="catalog unavailable"):
+            provider.properties_for(f"{scheme}://warehouse/file")
+
+
+def test_failed_refresh_does_not_delay_another_prefix(clock: _Clock) -> None:
+    initial = [_credential(clock, scheme, lifetime=600) for scheme in ("s3", "gs")]
+    rotated = [_credential(clock, scheme, token="rotated", lifetime=3600) for scheme in ("s3", "gs")]
+    source = _Source(ServiceUnavailableError("catalog unavailable"), _response(*rotated))
+    provider = CredentialsProvider(initial, source)
+
+    clock.now += 300
+    assert provider.properties_for("s3://warehouse/file") == initial[0].config
+    assert provider.properties_for("gs://warehouse/file") == rotated[1].config
+    assert provider.properties_for("s3://warehouse/file") == rotated[0].config
     assert source.calls == 2
 
 
-def test_invalid_refresh_is_not_published(clock: _Clock) -> None:
+def test_invalid_early_refresh_is_not_published(clock: _Clock, caplog: pytest.LogCaptureFixture) -> None:
     initial = _credential(clock)
     valid = _credential(clock, token="valid", lifetime=3600)
     invalid_responses = [
@@ -197,12 +247,24 @@ def test_invalid_refresh_is_not_published(clock: _Clock) -> None:
         source = _Source(invalid, _response(valid))
         provider = CredentialsProvider([initial], source)
         clock.now += 30
-        with pytest.raises(ValueError) as error:
-            provider.properties_for("s3://warehouse/file")
-        assert "opaque-secret" not in str(error.value)
+        assert provider.properties_for("s3://warehouse/file") == initial.config
+        assert "opaque-secret" not in caplog.text
+        clock.now += 30
         assert provider.properties_for("s3://warehouse/file") == valid.config
         assert source.calls == 2
-        clock.now -= 30
+        clock.now -= 60
+
+
+def test_invalid_refresh_raises_after_credential_expiration(clock: _Clock) -> None:
+    for scheme, expiration_key in (("s3", "s3.session-token-expires-at-ms"), ("gs", "gcs.oauth2.token-expires-at")):
+        initial = _credential(clock, scheme, lifetime=0)
+        invalid = _credential(clock, scheme, token="invalid")
+        invalid.config[expiration_key] = "opaque-secret"
+        provider = CredentialsProvider([initial], _Source(_response(invalid)))
+
+        with pytest.raises(ValueError, match="Invalid expiration property") as error:
+            provider.properties_for(f"{scheme}://warehouse/file")
+        assert "opaque-secret" not in str(error.value)
 
 
 def test_refreshable_credentials_require_complete_cloud_properties(clock: _Clock) -> None:

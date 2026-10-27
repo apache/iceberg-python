@@ -16,9 +16,10 @@
 # under the License.
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from time import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -37,8 +38,11 @@ from pyiceberg.typedef import Properties
 if TYPE_CHECKING:
     from pyiceberg.catalog.rest import LoadCredentialsResponse
 
+logger = logging.getLogger(__name__)
+
 REFRESH_CREDENTIALS_ENABLED = "client.refresh-credentials-enabled"
 _REFRESH_MARGIN_MS = 300_000
+_REFRESH_RETRY_DELAY_MS = 30_000
 
 
 @dataclass(frozen=True)
@@ -163,16 +167,29 @@ class CredentialsProvider:
                 if match is None:
                     raise ValueError("No vended credentials for the requested location after refresh")
                 if match.refresh_at_ms is not None and time() * 1000 >= match.refresh_at_ms:
-                    response = self._refresh_fn()
-                    now_ms = int(time() * 1000)
-                    states = _credential_states(response.storage_credentials, now_ms)
-                    refreshed = _matching_state(states, location)
-                    if refreshed is None:
-                        raise ValueError("Credential refresh returned no matching storage credentials")
-                    if refreshed.expiration_ms is None:
-                        raise ValueError("Refreshed storage credentials have no expiration")
-                    if refreshed.expiration_ms <= now_ms:
-                        raise ValueError("Refreshed storage credentials have already expired")
-                    self._states = states
-                    match = refreshed
+                    try:
+                        response = self._refresh_fn()
+                        now_ms = int(time() * 1000)
+                        states = _credential_states(response.storage_credentials, now_ms)
+                        refreshed = _matching_state(states, location)
+                        if refreshed is None:
+                            raise ValueError("Credential refresh returned no matching storage credentials")
+                        if refreshed.expiration_ms is None:
+                            raise ValueError("Refreshed storage credentials have no expiration")
+                        if refreshed.expiration_ms <= now_ms:
+                            raise ValueError("Refreshed storage credentials have already expired")
+                    except Exception as exc:
+                        now_ms = int(time() * 1000)
+                        if match.expiration_ms is None or now_ms >= match.expiration_ms:
+                            raise
+                        retry_at_ms = min(now_ms + _REFRESH_RETRY_DELAY_MS, match.expiration_ms)
+                        self._states = tuple(
+                            replace(state, refresh_at_ms=retry_at_ms) if state is match else state for state in self._states
+                        )
+                        logger.warning(
+                            "Credential refresh failed (%s); reusing unexpired storage credentials", type(exc).__name__
+                        )
+                    else:
+                        self._states = states
+                        match = refreshed
         return dict(match.config)
