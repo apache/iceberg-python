@@ -14,7 +14,7 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest import mock
 
 import boto3
@@ -872,7 +872,7 @@ def test_glue_assume_role_credentials_are_refreshed_before_expiry() -> None:
         **{"client.role-arn": "arn:aws:iam::123456789012:role/my-glue-role", "client.region": "us-east-1"},
     )
     credentials = catalog.glue._request_signer._credentials
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with mock.patch.object(
         AssumeRoleCredentialFetcher,

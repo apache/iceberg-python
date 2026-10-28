@@ -25,7 +25,7 @@ import uuid
 import warnings
 import zlib
 from collections.abc import Iterator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import MagicMock, patch
@@ -3510,7 +3510,7 @@ def test__to_requested_schema_timestamp_to_timestamptz_projection() -> None:
                     datetime(2025, 8, 14, 12, 0, 0),
                     datetime(2025, 8, 14, 13, 0, 0),
                 ],
-                type=pa.timestamp("us", tz=timezone.utc),
+                type=pa.timestamp("us", tz=UTC),
             )
         ],
         names=["ts_field"],
@@ -3527,8 +3527,8 @@ def test__to_requested_schema_timestamptz_to_timestamp_projection() -> None:
         [
             pa.array(
                 [
-                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc),
-                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=timezone.utc),
+                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=UTC),
+                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=UTC),
                 ],
                 type=pa.timestamp("us", tz="UTC"),
             )
@@ -3572,8 +3572,8 @@ def test__to_requested_schema_timestamptz_to_timestamp_write_rejects() -> None:
         [
             pa.array(
                 [
-                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc),
-                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=timezone.utc),
+                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=UTC),
+                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=UTC),
                 ],
                 type=pa.timestamp("us", tz="UTC"),
             )
@@ -3599,7 +3599,7 @@ def test_write_file_rejects_timestamptz_to_timestamp(tmp_path: Path) -> None:
     table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
     task_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
 
-    arrow_data = pa.table({"ts_field": [datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc)]})
+    arrow_data = pa.table({"ts_field": [datetime(2025, 8, 14, 12, 0, 0, tzinfo=UTC)]})
 
     table_metadata = TableMetadataV2(
         location=f"file://{tmp_path}",

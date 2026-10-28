@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import re
-from datetime import datetime, time, timezone, tzinfo
+from datetime import UTC, datetime, time, tzinfo
 
 import pytest
 import pytz
@@ -69,7 +69,7 @@ timezones = [
 
 def test_datetime_to_millis() -> None:
     dt = datetime(2023, 7, 10, 10, 10, 10, 123456)
-    expected = int(dt.replace(tzinfo=timezone.utc).timestamp() * 1_000)
+    expected = int(dt.replace(tzinfo=UTC).timestamp() * 1_000)
     datetime_millis = datetime_to_millis(dt)
     assert datetime_millis == expected
 
