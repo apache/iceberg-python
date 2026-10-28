@@ -522,6 +522,24 @@ def test_namespace_exists_on_v0_schema(warehouse: Path) -> None:
     assert not catalog.namespace_exists("missing")
 
 
+def test_namespace_exists_is_case_sensitive(warehouse: Path) -> None:
+    """namespace_exists must not match a namespace that differs only in case."""
+    catalog = SqlCatalog(
+        "test",
+        uri=f"sqlite:///{warehouse.as_posix()}/test-ns-exists-case",
+        warehouse=f"file://{warehouse}",
+    )
+    catalog.create_tables()
+    catalog.create_namespace("sales.eu")
+    assert catalog.namespace_exists("sales")
+    assert catalog.namespace_exists("sales.eu")
+    assert not catalog.namespace_exists("SALES")
+    assert not catalog.namespace_exists("SALES.eu")
+    catalog.create_namespace("SALES")
+    assert catalog.namespace_exists("SALES")
+    catalog.destroy_tables()
+
+
 def test_create_and_load_table_on_v0_schema(warehouse: Path) -> None:
     """create_table and load_table should work on V0 schema without iceberg_type column."""
     catalog = _make_v0_catalog(f"sqlite:///{warehouse.as_posix()}/test-v0-create", warehouse)
