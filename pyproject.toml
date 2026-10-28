@@ -248,6 +248,8 @@ markers = [
 # Turns a warning into an error
 filterwarnings = [
   "error",
+  # Ignore Python version deprecation, end-of-life and unsupported warnings from google.api_core while we still support 3.11
+  "ignore:You are using a (non-supported )?Python version:FutureWarning:google.api_core",
   # Python 3.13 sqlite3 module ResourceWarnings for unclosed database connections
   "ignore:unclosed database in <sqlite3.Connection object*:ResourceWarning",
   # Ignore Ray subprocess cleanup warnings
