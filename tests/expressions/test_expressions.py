@@ -20,9 +20,9 @@ import copy
 import pickle
 import uuid
 from decimal import Decimal
+from typing import assert_type
 
 import pytest
-from typing_extensions import assert_type
 
 from pyiceberg.expressions import (
     AlwaysFalse,

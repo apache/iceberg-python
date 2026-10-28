@@ -19,13 +19,12 @@ name = "pyiceberg"
 version = "0.12.0"
 description = "Apache Iceberg is an open table format for huge analytic datasets"
 authors = [{ name = "Apache Software Foundation", email = "dev@iceberg.apache.org" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 classifiers = [
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -249,7 +248,7 @@ markers = [
 # Turns a warning into an error
 filterwarnings = [
   "error",
-  # Ignore Python version deprecation, end-of-life and unsupported warnings from google.api_core while we still support 3.10
+  # Ignore Python version deprecation, end-of-life and unsupported warnings from google.api_core while we still support 3.11
   "ignore:You are using a (non-supported )?Python version:FutureWarning:google.api_core",
   # Python 3.13 sqlite3 module ResourceWarnings for unclosed database connections
   "ignore:unclosed database in <sqlite3.Connection object*:ResourceWarning",
