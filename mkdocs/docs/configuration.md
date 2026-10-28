@@ -581,6 +581,8 @@ auth:
 
 ##### AWS Glue
 
+See [Accessing Amazon S3 tables using the AWS Glue Iceberg REST endpoint](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-integrating-glue-endpoint.html) for detailed documentation.
+
 ```yaml
 catalog:
   s3_tables_catalog:
