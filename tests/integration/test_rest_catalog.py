@@ -148,6 +148,20 @@ def test_commit_transactions_appends_to_tables_atomically(catalog: RestCatalog, 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_catalog_transaction_appends_to_tables_atomically(catalog: RestCatalog, database_name: str) -> None:
+    rows, (orders, items) = _create_tables_for_multi_table_commit(catalog, database_name)
+
+    with catalog.transaction() as tx:
+        tx.table(orders).append(rows)
+        tx.table(items).append(rows)
+        assert orders.current_snapshot() is None
+
+    for table in (orders, items):
+        assert table.scan().to_arrow().num_rows == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
 def test_commit_transactions_applies_nothing_on_conflict(catalog: RestCatalog, database_name: str) -> None:
     rows, (orders, items) = _create_tables_for_multi_table_commit(catalog, database_name)
     orders_tx = orders.transaction()

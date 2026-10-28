@@ -3759,6 +3759,64 @@ def test_commit_transactions_sends_one_request(
     assert orders_tx._updates == () and items_tx._updates == ()
 
 
+def test_catalog_transaction_commits_on_exit(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    catalog, (orders, items) = _load_tables_for_multi_table_commit(rest_mock, example_table_metadata_with_snapshot_v1_rest_json)
+    commit = rest_mock.post(f"{TEST_URI}v1/transactions/commit", status_code=204, request_headers=TEST_HEADERS)
+
+    # A block that staged nothing sends no request.
+    with catalog.transaction() as tx:
+        tx.table(orders)
+    assert commit.call_count == 0
+
+    with catalog.transaction() as tx:
+        tx.table(orders).set_properties(owner="sales")
+        tx.table(items).set_properties(owner="sales")
+        tx.table(orders).set_properties(team="orders")
+        assert tx.table(orders) is tx.table(orders)
+        assert commit.call_count == 0
+
+    assert commit.call_count == 1
+    assert [(change["identifier"]["name"], change["updates"]) for change in commit.last_request.json()["table-changes"]] == [
+        (
+            "orders",
+            [
+                {"action": "set-properties", "updates": {"owner": "sales"}},
+                {"action": "set-properties", "updates": {"team": "orders"}},
+            ],
+        ),
+        ("items", [{"action": "set-properties", "updates": {"owner": "sales"}}]),
+    ]
+
+
+def test_catalog_transaction_commits_nothing_on_exception(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    catalog, (orders, items) = _load_tables_for_multi_table_commit(rest_mock, example_table_metadata_with_snapshot_v1_rest_json)
+    commit = rest_mock.post(f"{TEST_URI}v1/transactions/commit", status_code=204, request_headers=TEST_HEADERS)
+
+    def stage_then_fail() -> None:
+        with catalog.transaction() as tx:
+            tx.table(orders).set_properties(owner="sales")
+            tx.table(items).set_properties(owner="sales")
+            raise RuntimeError("stop")
+
+    with pytest.raises(RuntimeError, match="stop"):
+        stage_then_fail()
+    assert not commit.called
+
+
+def test_catalog_transaction_rejects_a_table_of_another_catalog(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    _, (orders,) = _load_tables_for_multi_table_commit(rest_mock, example_table_metadata_with_snapshot_v1_rest_json, ("orders",))
+    other_catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    with pytest.raises(ValueError, match="belongs to a different catalog"):
+        other_catalog.transaction().table(orders)
+
+
 def test_commit_transactions_with_prefix(
     requests_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
 ) -> None:

@@ -1337,6 +1337,65 @@ class CreateTableTransaction(Transaction):
         return self._table
 
 
+class MultiTableTransaction:
+    """Stage changes to several tables of a catalog and commit them atomically.
+
+    Use it as a context manager: the changes are committed with ``Catalog.commit_transactions``
+    when the block exits without an exception, and nothing is committed otherwise.
+    """
+
+    _catalog: Catalog
+    _transactions: dict[Identifier, Transaction]
+
+    def __init__(self, catalog: Catalog):
+        """Open a transaction over several tables of a catalog.
+
+        Args:
+            catalog: The catalog that holds the tables.
+        """
+        self._catalog = catalog
+        self._transactions = {}
+
+    def __enter__(self) -> MultiTableTransaction:
+        """Start a transaction to update several tables."""
+        return self
+
+    def __exit__(self, exctype: type[BaseException] | None, excinst: BaseException | None, exctb: TracebackType | None) -> None:
+        """Commit the staged changes if no exceptions have been raised."""
+        if exctype is None and excinst is None and exctb is None:
+            self.commit_transaction()
+
+    def table(self, table: Table) -> Transaction:
+        """Return the transaction that stages the changes to a table.
+
+        The same transaction is returned each time for the same table. Don't commit it or use it
+        as a context manager on its own: its changes are committed with the other tables.
+
+        Args:
+            table: The table to change.
+
+        Returns:
+            The transaction for the table.
+        """
+        if table.catalog is not self._catalog:
+            raise ValueError(f"Table {table.name()} belongs to a different catalog")
+        if (transaction := self._transactions.get(table.name())) is None:
+            transaction = self._transactions[table.name()] = table.transaction()
+        return transaction
+
+    def commit_transaction(self) -> None:
+        """Commit the changes of every table atomically.
+
+        Raises:
+            NotImplementedError: If the catalog doesn't support multi-table commits.
+            CommitFailedException: A requirement wasn't met, or a concurrent commit conflicted.
+            CommitStateUnknownException: The catalog failed with an internal error; the commit may
+                or may not have been applied.
+        """
+        if self._transactions:
+            self._catalog.commit_transactions(*self._transactions.values())
+
+
 class Namespace(IcebergRootModel[list[str]]):
     """Reference to one or more levels of a namespace."""
 

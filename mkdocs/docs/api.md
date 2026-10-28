@@ -1411,8 +1411,19 @@ New snapshot summaries automatically include `engine-name` (`pyiceberg`) and `en
 ## Multi-table commits
 
 With the REST catalog, changes to several tables can be committed atomically: either every table
-is updated, or none of them is. Stage the changes in one transaction per table, then pass the
-transactions to `commit_transactions`:
+is updated, or none of them is. Open a transaction on the catalog and stage the changes of each
+table through `tx.table(...)`. The changes are committed together when the block exits, and nothing
+is committed if it raises:
+
+```python
+with catalog.transaction() as tx:
+    tx.table(orders).append(new_orders)
+    tx.table(items).append(new_items)
+```
+
+Don't commit the per-table transactions, or use them as context managers, on their own: that would
+commit that table alone. Without the context manager, stage one transaction per table and pass them
+to `commit_transactions`:
 
 ```python
 orders_tx = orders.transaction()

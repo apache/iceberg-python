@@ -49,6 +49,7 @@ from pyiceberg.table import (
     DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
     CommitTableResponse,
     CreateTableTransaction,
+    MultiTableTransaction,
     StagedTable,
     Table,
     TableProperties,
@@ -619,6 +620,15 @@ class Catalog(ABC):
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
             CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
+
+    def transaction(self) -> MultiTableTransaction:
+        """Create a transaction to stage changes to several tables and commit them atomically.
+
+        Returns:
+            The transaction object. Used as a context manager, it commits with
+            ``commit_transactions`` when the block exits without an exception.
+        """
+        return MultiTableTransaction(self)
 
     def commit_transactions(self, *transactions: Transaction) -> None:
         """Commit the changes of several table transactions atomically.
