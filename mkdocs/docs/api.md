@@ -203,10 +203,7 @@ starts a new snapshot lineage. Committing without appending data leaves an empty
 
 By default, the replacement is unpartitioned and unsorted. Supply `partition_spec` and `sort_order` to set
 the new layout. Existing properties are retained and merged with `properties`, and the existing location is
-retained unless `location` is supplied. An exception inside the context manager leaves the published table unchanged.
-
-The table must already exist. Concurrent changes to the schema or layout can cause the commit to fail.
-Start a new replacement transaction to retry after such a conflict.
+retained unless `location` is supplied.
 
 ## Register a table
 
