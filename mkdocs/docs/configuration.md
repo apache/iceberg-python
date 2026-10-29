@@ -484,6 +484,8 @@ Legacy OAuth2 Properties will be removed in PyIceberg 1.0 in place of pluggable 
 | rest.signing-region | us-east-1                        | The region to use when SigV4 signing a request                                                     |
 | rest.signing-name   | execute-api                      | The service signing name to use when SigV4 signing a request                                       |
 
+The `rest.client.connection-timeout-ms` and `rest.client.socket-timeout-ms` timeouts also apply to SigV4-signed requests. SigV4 retries are controlled by `rest.sigv4.max-retries`, not `rest.client.max-retries`.
+
 ##### Pluggable Authentication via AuthManager
 
 The RESTCatalog supports pluggable authentication via the `auth` configuration block. This allows you to specify which how the access token will be fetched and managed for use with the HTTP requests to the RESTCatalog server. The authentication method is selected by setting the `auth.type` property, and additional configuration can be provided as needed for each method.
