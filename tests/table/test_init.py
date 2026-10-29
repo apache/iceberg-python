@@ -1898,6 +1898,38 @@ def test_remove_statistics_update(table_v2_with_statistics: Table) -> None:
         )
 
 
+def test_update_statistics_set_then_remove_keeps_both_updates(table_v2_with_statistics: Table) -> None:
+    current_snapshot_id = 3055729675574597004
+    previous_snapshot_id = 3051729675574597004
+
+    statistics_file = StatisticsFile(
+        snapshot_id=current_snapshot_id,
+        statistics_path="s3://bucket/warehouse/new-stats.puffin",
+        file_size_in_bytes=124,
+        file_footer_size_in_bytes=27,
+        blob_metadata=[
+            BlobMetadata(
+                type="apache-datasketches-theta-v1",
+                snapshot_id=current_snapshot_id,
+                sequence_number=2,
+                fields=[1],
+            )
+        ],
+    )
+
+    # The fixture already has statistics for both snapshots
+    assert {stats.snapshot_id for stats in table_v2_with_statistics.metadata.statistics} == {
+        current_snapshot_id,
+        previous_snapshot_id,
+    }
+
+    transaction = table_v2_with_statistics.transaction()
+    transaction.update_statistics().set_statistics(statistics_file).remove_statistics(previous_snapshot_id).commit()
+
+    # set_statistics replaces the current snapshot's statistics, remove_statistics drops the previous one
+    assert transaction.table_metadata.statistics == [statistics_file]
+
+
 def test_set_partition_statistics_update(table_v2_with_statistics: Table) -> None:
     snapshot_id = table_v2_with_statistics.metadata.current_snapshot_id
 
