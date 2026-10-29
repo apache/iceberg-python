@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -573,30 +574,33 @@ class SqlCatalog(MetastoreCatalog):
 
         with Session(self.engine) as session:
             stmt = (
-                select(IcebergTables)
+                select(IcebergTables.table_namespace)
                 .where(
                     IcebergTables.catalog_name == self.name,
                     (IcebergTables.table_namespace == namespace)
                     | (IcebergTables.table_namespace.like(namespace_starts_with, escape="!")),
                 )
-                .limit(1)
+                .distinct()
             )
-            result = session.execute(stmt).all()
-            if result:
+            if self._contains_namespace(session.scalars(stmt), namespace):
                 return True
             stmt = (
-                select(IcebergNamespaceProperties)
+                select(IcebergNamespaceProperties.namespace)
                 .where(
                     IcebergNamespaceProperties.catalog_name == self.name,
                     (IcebergNamespaceProperties.namespace == namespace)
                     | (IcebergNamespaceProperties.namespace.like(namespace_starts_with, escape="!")),
                 )
-                .limit(1)
+                .distinct()
             )
-            result = session.execute(stmt).all()
-            if result:
+            if self._contains_namespace(session.scalars(stmt), namespace):
                 return True
         return False
+
+    @staticmethod
+    def _contains_namespace(candidates: Iterable[str], namespace: str) -> bool:
+        # LIKE is case-insensitive on some backends (e.g. SQLite), so re-check the prefix match
+        return any(candidate == namespace or candidate.startswith(f"{namespace}.") for candidate in candidates)
 
     @override
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
