@@ -280,6 +280,11 @@ def test_import_file_io() -> None:
     assert isinstance(_import_file_io(ARROW_FILE_IO, {}), PyArrowFileIO)
 
 
+def test_import_file_io_wrong_type() -> None:
+    with pytest.raises(ValueError, match="py-io-impl should be a subclass of FileIO"):
+        _import_file_io("pyiceberg.table.locations.SimpleLocationProvider", {})
+
+
 def test_import_file_io_does_not_exist(caplog: Any) -> None:
     import logging
 
