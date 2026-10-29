@@ -16,6 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 import importlib
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -26,6 +27,8 @@ import pytest
 import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.avro.file import DEFAULT_SYNC_INTERVAL, AvroFile, AvroOutputFile
+from pyiceberg.encryption.manager import EncryptionManager
+from pyiceberg.encryption.stream import _encrypt_ags1
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
@@ -52,6 +55,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import IntegerType, ListType, LongType, NestedField, StructType
+from tests.encryption.memory_kms import MemoryKeyManagementClient
 
 
 @pytest.fixture(autouse=True)
@@ -504,6 +508,44 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
     assert entry.file_sequence_number == 3
     assert entry.snapshot_id == 8744736658442914487
     assert entry.status == ManifestEntryStatus.ADDED
+
+
+def test_read_encrypted_manifest_list(generated_manifest_file_file_v2: str, tmp_path: Path) -> None:
+    io = load_file_io()
+    kms = MemoryKeyManagementClient()
+    kms.add_master_key("master-1")
+    encryption_manager = EncryptionManager(kms, "master-1")
+
+    key_metadata = encryption_manager.generate_key_metadata()
+    encrypted = _encrypt_ags1(Path(generated_manifest_file_file_v2).read_bytes(), key_metadata)
+    manifest_list = tmp_path / "manifest-list.avro"
+    manifest_list.write_bytes(encrypted)
+    key_id = encryption_manager.encrypt_manifest_list_key_metadata(replace(key_metadata, file_length=len(encrypted)))
+
+    plaintext = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        timestamp_ms=1602638573590,
+        manifest_list=generated_manifest_file_file_v2,
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+    snapshot = plaintext.model_copy(update={"manifest_list": str(manifest_list), "key_id": key_id})
+
+    assert snapshot.manifests(io, encryption_manager) == plaintext.manifests(io)
+
+
+def test_read_encrypted_manifest_list_without_encryption_manager(generated_manifest_file_file_v2: str) -> None:
+    snapshot = Snapshot(
+        snapshot_id=25,
+        timestamp_ms=1602638573590,
+        manifest_list=generated_manifest_file_file_v2,
+        summary=Summary(Operation.APPEND),
+        key_id="key",
+    )
+
+    with pytest.raises(ValueError, match="Snapshot 25 is encrypted, but no encryption manager was provided"):
+        snapshot.manifests(load_file_io())
 
 
 def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:

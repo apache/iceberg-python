@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from cachetools import LRUCache
 from pydantic import Field
 
+from pyiceberg.encryption.kms import KeyManagementClient
 from pyiceberg.exceptions import CommitFailedException, ValidationException
 from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
@@ -126,6 +127,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.catalog import Catalog
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
+    from pyiceberg.encryption.manager import EncryptionManager
     from pyiceberg.table.update.snapshot import _SnapshotProducer
 
 logger = logging.getLogger(__name__)
@@ -1345,6 +1347,7 @@ class Table:
         io: FileIO,
         catalog: Catalog,
         config: dict[str, str] = EMPTY_DICT,
+        kms_client: KeyManagementClient | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
@@ -1352,6 +1355,18 @@ class Table:
         self.io = io
         self.catalog = catalog
         self.config = config
+        self._kms_client = kms_client
+
+    @property
+    def encryption_manager(self) -> EncryptionManager | None:
+        """The table's encryption manager, or None if the table is not encrypted.
+
+        Raises:
+            ValueError: If the table is encrypted but no key management client was provided.
+        """
+        from pyiceberg.encryption.manager import EncryptionManager
+
+        return EncryptionManager.from_table_metadata(self._kms_client, self.metadata)
 
     def transaction(self) -> Transaction:
         """Create a new transaction object to first stage the changes, and then commit them to the catalog.
@@ -1451,6 +1466,7 @@ class Table:
             catalog=self.catalog,
             table_identifier=self._identifier,
             table_config=self.config,
+            encryption_manager=self.encryption_manager,
         )
 
     def incremental_append_scan(
@@ -1506,6 +1522,7 @@ class Table:
             to_snapshot_id=to_snapshot_id_inclusive,
             options=options,
             limit=limit,
+            encryption_manager=self.encryption_manager,
         )
 
     @property
@@ -2073,6 +2090,7 @@ class BaseScan(ABC):
     case_sensitive: bool
     options: Properties
     limit: int | None
+    encryption_manager: EncryptionManager | None
 
     def __init__(
         self,
@@ -2083,6 +2101,7 @@ class BaseScan(ABC):
         case_sensitive: bool = True,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        encryption_manager: EncryptionManager | None = None,
     ):
         self.table_metadata = table_metadata
         self.io = io
@@ -2091,6 +2110,7 @@ class BaseScan(ABC):
         self.case_sensitive = case_sensitive
         self.options = options
         self.limit = limit
+        self.encryption_manager = encryption_manager
 
     @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]: ...
@@ -2190,6 +2210,7 @@ class TableScan(BaseScan):
         catalog: Catalog | None = None,
         table_identifier: Identifier | None = None,
         table_config: Properties = EMPTY_DICT,
+        encryption_manager: EncryptionManager | None = None,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2199,6 +2220,7 @@ class TableScan(BaseScan):
             case_sensitive=case_sensitive,
             options=options,
             limit=limit,
+            encryption_manager=encryption_manager,
         )
         self.snapshot_id = snapshot_id
         self.catalog = catalog
@@ -2454,7 +2476,7 @@ class DataScan(TableScan):
         if not snapshot:
             return iter([])
 
-        return self._manifest_planner.plan_manifest_entries(snapshot.manifests(self.io))
+        return self._manifest_planner.plan_manifest_entries(snapshot.manifests(self.io, self.encryption_manager))
 
     def _should_use_server_side_planning(self) -> bool:
         """Check if server-side scan planning should be used for this scan."""
@@ -2491,7 +2513,7 @@ class DataScan(TableScan):
         snapshot = self.snapshot()
         if not snapshot:
             return []
-        return self._manifest_planner.plan_files(snapshot.manifests(self.io))
+        return self._manifest_planner.plan_files(snapshot.manifests(self.io, self.encryption_manager))
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files by filtering on the PartitionSpecs.
@@ -2607,6 +2629,8 @@ class IncrementalAppendScan(BaseScan):
             An integer representing the number of rows to
             return in the scan result. If None, fetches all
             matching rows.
+        encryption_manager:
+            Decrypts the manifest lists of encrypted snapshots.
     """
 
     from_snapshot_id: int | None
@@ -2625,6 +2649,7 @@ class IncrementalAppendScan(BaseScan):
         to_snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        encryption_manager: EncryptionManager | None = None,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2634,6 +2659,7 @@ class IncrementalAppendScan(BaseScan):
             case_sensitive=case_sensitive,
             options=options,
             limit=limit,
+            encryption_manager=encryption_manager,
         )
         self.from_snapshot_id = from_snapshot_id
         self.from_snapshot_inclusive = from_snapshot_inclusive
@@ -2683,7 +2709,7 @@ class IncrementalAppendScan(BaseScan):
             {
                 manifest_file
                 for snapshot in append_snapshots
-                for manifest_file in snapshot.manifests(self.io)
+                for manifest_file in snapshot.manifests(self.io, self.encryption_manager)
                 if manifest_file.content == ManifestContent.DATA and manifest_file.added_snapshot_id in append_snapshot_ids
             }
         )
@@ -2696,8 +2722,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:
