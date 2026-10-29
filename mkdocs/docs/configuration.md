@@ -827,6 +827,7 @@ catalog:
 | hive.hive2-compatible        | true    | Set to `true` when using a Hive 2.x metastore |
 | hive.kerberos-authentication | true    | Using authentication via Kerberos    |
 | hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
+| hive.kerberos-service-host   | hive-host | Kerberos service host (default URI host) |
 | ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
 
 Hive 3 and newer need no extra configuration. When using a Hive 2.x metastore, set the compatibility flag:
@@ -887,6 +888,8 @@ catalog:
 | glue.access-key-id     | admin                                  | Configure the static access key id used to access the Glue Catalog              |
 | glue.secret-access-key | password                               | Configure the static secret access key used to access the Glue Catalog          |
 | glue.session-token     | AQoDYXdzEJr...                         | Configure the static session token used to access the Glue Catalog              |
+| glue.role-arn          | arn:aws:...                            | AWS Role ARN. If provided, temporary credentials will be fetched by assuming this role before accessing the Glue Catalog |
+| glue.role-session-name | session                                | An optional identifier for the assumed role session used to access the Glue Catalog |
 | glue.max-retries       | 10                                     | Configure the maximum number of retries for the Glue service calls              |
 | glue.retry-mode        | standard                               | Configure the retry mode for the Glue service. Default to standard.             |
 
@@ -945,6 +948,8 @@ catalog:
 | dynamodb.access-key-id     | admin          | Configure the static access key id used to access the DynamoDB Catalog     |
 | dynamodb.secret-access-key | password       | Configure the static secret access key used to access the DynamoDB Catalog |
 | dynamodb.session-token     | AQoDYXdzEJr... | Configure the static session token used to access the DynamoDB Catalog     |
+| dynamodb.role-arn          | arn:aws:...    | AWS Role ARN. If provided, temporary credentials will be fetched by assuming this role before accessing the DynamoDB Catalog |
+| dynamodb.role-session-name | session        | An optional identifier for the assumed role session used to access the DynamoDB Catalog |
 
 <!-- markdown-link-check-enable-->
 
@@ -989,8 +994,10 @@ configures the AWS credentials for both Glue Catalog and S3 FileIO.
 | client.secret-access-key | password       | Configure the static secret access key used to access both the Glue/DynamoDB Catalog and the S3 FileIO                                 |
 | client.session-token     | AQoDYXdzEJr... | Configure the static session token used to access both the Glue/DynamoDB Catalog and the S3 FileIO                                     |
 | client.profile-name      | default        | Configure the AWS profile used to access both the Glue/DynamoDB Catalog and the S3 FileIO (only supported by `FsspecFileIO` currently) |
-| client.role-session-name | session        | An optional identifier for the assumed role session.                                                                                   |
-| client.role-arn          | arn:aws:...    | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.           |
+| client.assume-role.arn          | arn:aws:...    | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role before accessing both the Glue/DynamoDB Catalog and the S3 FileIO. |
+| client.assume-role.session-name | session        | An optional identifier for the assumed role session used to access both the Glue/DynamoDB Catalog and the S3 FileIO. |
+| client.role-arn                 | arn:aws:...    | Same as `client.assume-role.arn`, used when that key is not set. |
+| client.role-session-name        | session        | Same as `client.assume-role.session-name`, used when that key is not set. |
 
 <!-- prettier-ignore-start -->
 
