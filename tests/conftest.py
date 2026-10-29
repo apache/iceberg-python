@@ -31,7 +31,7 @@ import string
 import time
 import uuid
 from collections.abc import Generator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from random import choice, randint
 from tempfile import TemporaryDirectory
@@ -2783,9 +2783,9 @@ TEST_DATA_WITH_NULL = {
     # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
     "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
     "timestamptz": [
-        datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+        datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
         None,
-        datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
     ],
     "date": [date(2023, 1, 1), None, date(2023, 3, 1)],
     # Not supported by Spark
@@ -2849,9 +2849,9 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             # Spark does not support time fields
             "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "date": [date(2023, 1, 1), None, date(2023, 3, 1)],
             # Not supported by Spark
@@ -2903,11 +2903,11 @@ def arrow_table_date_timestamps() -> "pa.Table":
                 None,
             ],
             "timestamptz": [
-                datetime(2023, 12, 31, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 1, 31, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 2, 1, 6, 0, 0, tzinfo=timezone.utc),
+                datetime(2023, 12, 31, 0, 0, 0, tzinfo=UTC),
+                datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC),
+                datetime(2024, 1, 31, 0, 0, 0, tzinfo=UTC),
+                datetime(2024, 2, 1, 0, 0, 0, tzinfo=UTC),
+                datetime(2024, 2, 1, 6, 0, 0, tzinfo=UTC),
                 None,
             ],
         },
@@ -2963,21 +2963,21 @@ def arrow_table_with_all_timestamp_precisions(arrow_table_schema_with_all_timest
         {
             "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz_s": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz_ms": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz_us": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamp_ns": [
                 pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6),
@@ -2985,14 +2985,14 @@ def arrow_table_with_all_timestamp_precisions(arrow_table_schema_with_all_timest
                 pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7),
             ],
             "timestamptz_ns": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamptz_us_etc_utc": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamptz_ns_z": [
                 pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6, tz="UTC"),
@@ -3000,9 +3000,9 @@ def arrow_table_with_all_timestamp_precisions(arrow_table_schema_with_all_timest
                 pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7, tz="UTC"),
             ],
             "timestamptz_s_0000": [
-                datetime(2023, 1, 1, 19, 25, 1, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 1, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 1, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 1, tzinfo=UTC),
             ],
         }
     )

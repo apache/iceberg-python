@@ -90,6 +90,8 @@ from pyiceberg.io import (
     ADLS_SAS_TOKEN,
     ADLS_TENANT_ID,
     AWS_ACCESS_KEY_ID,
+    AWS_ASSUME_ROLE_ARN,
+    AWS_ASSUME_ROLE_SESSION_NAME,
     AWS_REGION,
     AWS_ROLE_ARN,
     AWS_ROLE_SESSION_NAME,
@@ -485,10 +487,12 @@ class PyArrowFileIO(FileIO):
         if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
             client_kwargs["request_timeout"] = float(request_timeout)
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ASSUME_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
 
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+        if session_name := get_first_property_value(
+            self.properties, S3_ROLE_SESSION_NAME, AWS_ASSUME_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME
+        ):
             client_kwargs["session_name"] = session_name
 
         if s3_anonymous := self.properties.get(S3_ANONYMOUS):
@@ -533,10 +537,12 @@ class PyArrowFileIO(FileIO):
         if request_timeout := self.properties.get(S3_REQUEST_TIMEOUT):
             client_kwargs["request_timeout"] = float(request_timeout)
 
-        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ROLE_ARN):
+        if role_arn := get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ASSUME_ROLE_ARN, AWS_ROLE_ARN):
             client_kwargs["role_arn"] = role_arn
 
-        if session_name := get_first_property_value(self.properties, S3_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME):
+        if session_name := get_first_property_value(
+            self.properties, S3_ROLE_SESSION_NAME, AWS_ASSUME_ROLE_SESSION_NAME, AWS_ROLE_SESSION_NAME
+        ):
             client_kwargs["session_name"] = session_name
 
         if self.properties.get(S3_FORCE_VIRTUAL_ADDRESSING) is not None:
@@ -1607,6 +1613,51 @@ class _ConvertToSmallTypes(PyArrowSchemaVisitor[IcebergType | pa.Schema]):
         return primitive
 
 
+class _ConvertViewTypes(PyArrowSchemaVisitor[pa.Schema | pa.DataType]):
+    """Replace string_view and binary_view, including nested occurrences, with large_string and large_binary.
+
+    Everything else is kept as is: list flavour, field names, nullability, metadata and dictionary encoding.
+    """
+
+    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
+        return pa.schema(struct_result, metadata=schema.metadata)
+
+    def struct(self, struct: pa.StructType, field_results: builtins.list[pa.Field]) -> pa.StructType:
+        return pa.struct(field_results)
+
+    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:
+        return field.with_type(_keep_dictionary(field.type, field_result))
+
+    def list(self, list_type: pa.ListType | pa.LargeListType | pa.FixedSizeListType, element_result: pa.DataType) -> pa.DataType:
+        value_field = list_type.value_field.with_type(_keep_dictionary(list_type.value_type, element_result))
+        if isinstance(list_type, pa.FixedSizeListType):
+            return pa.list_(value_field, list_type.list_size)
+        elif isinstance(list_type, pa.LargeListType):
+            return pa.large_list(value_field)
+        return pa.list_(value_field)
+
+    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
+        return pa.map_(
+            map_type.key_field.with_type(_keep_dictionary(map_type.key_type, key_result)),
+            map_type.item_field.with_type(_keep_dictionary(map_type.item_type, value_result)),
+            keys_sorted=map_type.keys_sorted,
+        )
+
+    def primitive(self, primitive: pa.DataType) -> pa.DataType:
+        if pa.types.is_string_view(primitive):
+            return pa.large_string()
+        elif pa.types.is_binary_view(primitive):
+            return pa.large_binary()
+        return primitive
+
+
+def _keep_dictionary(original: pa.DataType, result: pa.DataType) -> pa.DataType:
+    """Re-apply dictionary encoding that visit_pyarrow strips before visiting the value type."""
+    if isinstance(original, pa.DictionaryType):
+        return pa.dictionary(original.index_type, result, ordered=original.ordered)
+    return result
+
+
 class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
     """
     Converts PyArrowSchema to Iceberg Schema with all -1 ids.
@@ -1624,26 +1675,24 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
 
 def _get_column_projection_values(
     file: DataFile,
-    projected_schema: Schema,
+    projected_field_ids: set[int],
     table_schema: Schema,
     partition_spec: PartitionSpec | None,
     file_project_field_ids: set[int],
 ) -> dict[int, Any]:
-    """Apply Column Projection rules to File Schema."""
-    project_schema_diff = projected_schema.field_ids.difference(file_project_field_ids)
-    if len(project_schema_diff) == 0 or partition_spec is None:
+    """Return identity partition values for projected field IDs missing from the data file."""
+    missing_field_ids = projected_field_ids.difference(file_project_field_ids)
+    if len(missing_field_ids) == 0 or partition_spec is None:
         return EMPTY_DICT
 
     partition_schema = partition_spec.partition_type(table_schema)
     accessors = build_position_accessors(partition_schema)
 
     projected_missing_fields = {}
-    for field_id in project_schema_diff:
+    for field_id in missing_field_ids:
         for partition_field in partition_spec.fields_by_source_id(field_id):
             if isinstance(partition_field.transform, IdentityTransform):
-                partition_value = accessors[partition_field.field_id].get(file.partition)
-                if partition_value is not None:
-                    projected_missing_fields[field_id] = partition_value
+                projected_missing_fields[field_id] = accessors[partition_field.field_id].get(file.partition)
 
     return projected_missing_fields
 
@@ -1683,7 +1732,7 @@ def _task_to_record_batches(
 
         # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
         projected_missing_fields = _get_column_projection_values(
-            task.file, projected_schema, table_schema, partition_spec, file_schema.field_ids
+            task.file, projected_field_ids, table_schema, partition_spec, file_schema.field_ids
         )
 
         pyarrow_filter = None
@@ -2085,8 +2134,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             elif field.optional or field.initial_default is not None:
                 # When an optional field is added, or when a required field with a non-null initial default is added
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
-                projected_value = self._projected_missing_fields.get(field.field_id)
-                if projected_value is not None:
+                if field.field_id in self._projected_missing_fields:
+                    projected_value = self._projected_missing_fields[field.field_id]
                     field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
                 elif field.initial_default is None:
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
@@ -2994,7 +3043,7 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
     if compression_codec == ICEBERG_UNCOMPRESSED_CODEC:
         compression_codec = PYARROW_UNCOMPRESSED_CODEC
 
-    return {
+    kwargs: dict[str, Any] = {
         "compression": compression_codec,
         "compression_level": compression_level,
         "data_page_size": property_as_int(
@@ -3007,12 +3056,17 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
             property_name=TableProperties.PARQUET_DICT_SIZE_BYTES,
             default=TableProperties.PARQUET_DICT_SIZE_BYTES_DEFAULT,
         ),
-        "write_batch_size": property_as_int(
+    }
+    # pyarrow added max_rows_per_page, the per-page row limit, in 23.0.0.
+    if tuple(map(int, pa.__version__.split(".")[:2])) >= (23, 0):
+        kwargs["max_rows_per_page"] = property_as_int(
             properties=table_properties,
             property_name=TableProperties.PARQUET_PAGE_ROW_LIMIT,
             default=TableProperties.PARQUET_PAGE_ROW_LIMIT_DEFAULT,
-        ),
-    }
+        )
+    elif TableProperties.PARQUET_PAGE_ROW_LIMIT in table_properties:
+        warnings.warn(f"{TableProperties.PARQUET_PAGE_ROW_LIMIT} requires pyarrow >= 23.0.0", stacklevel=2)
+    return kwargs
 
 
 def _dataframe_to_data_files(
@@ -3119,6 +3173,11 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     - Then we produce a set of partitions by filtering on each of the combinations
     - We combine the chunks to create a copy to avoid GIL congestion on the original table
     """
+    # PyArrow has no group by, filter or take kernels for view types, so replace them with their large counterparts
+    arrow_schema = visit_pyarrow(arrow_table.schema, _ConvertViewTypes())
+    if arrow_schema != arrow_table.schema:
+        arrow_table = arrow_table.cast(arrow_schema)
+
     # Assign unique names to columns where the partition transform has been applied
     # to avoid conflicts
     partition_fields = [f"_partition_{field.name}" for field in spec.fields]

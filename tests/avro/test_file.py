@@ -51,7 +51,9 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -453,6 +455,31 @@ def test_all_primitive_types(is_required: bool) -> None:
     for idx, field in enumerate(all_primitives_schema.as_struct()):
         assert record[idx] == avro_entry[idx], f"Invalid {field}"
         assert record[idx] == avro_entry_read_with_fastavro[idx], f"Invalid {field} read with fastavro"
+
+
+def test_timestamp_nanos_round_trip() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="ts_ns", field_type=TimestampNanoType(), required=True),
+        NestedField(field_id=2, name="tstz_ns", field_type=TimestamptzNanoType(), required=False),
+        schema_id=1,
+    )
+    records = [
+        Record(1677629965123456789, 1677629965123456789),
+        Record(-1, None),
+    ]
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/timestamp_nanos.avro"
+        with avro.AvroOutputFile[Record](PyArrowFileIO().new_output(tmp_avro_file), schema, "timestamp_nanos") as out:
+            out.write_block(records)
+
+        with avro.AvroFile[Record](
+            PyArrowFileIO().new_input(tmp_avro_file),
+            schema,
+            {-1: Record},
+        ) as avro_reader:
+            assert avro_reader.schema == schema
+            assert list(avro_reader) == records
 
 
 def manifest_entry(index: int) -> ManifestEntry:
