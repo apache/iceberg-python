@@ -1242,6 +1242,8 @@ with table.update_schema() as update:
     update.rename_column(("details", "confirmed_by"), "processed_by")
 ```
 
+Within the same `update_schema()`, other operations still refer to a renamed column by its original name, for example `update.move_first("retries")` after the rename above.
+
 ### Move column
 
 Move order of fields:
