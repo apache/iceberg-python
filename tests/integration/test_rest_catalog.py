@@ -17,6 +17,7 @@
 # pylint:disable=redefined-outer-name
 
 import time
+from unittest import mock
 
 import pytest
 from pytest_lazy_fixtures import lf
@@ -67,6 +68,28 @@ def test_create_namespace_if_already_existing(catalog: RestCatalog) -> None:
     catalog.create_namespace_if_not_exists(TEST_NAMESPACE_IDENTIFIER)
 
     assert catalog.namespace_exists(TEST_NAMESPACE_IDENTIFIER)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_load_table_reuses_cached_table_on_not_modified(
+    catalog: RestCatalog, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    identifier = (database_name, table_name)
+    catalog.create_namespace_if_not_exists(database_name)
+    catalog.create_table(identifier, table_schema_nested)
+    statuses: list[int] = []
+
+    # The fixture predates apache/iceberg#17598, so its unquoted ETags get a `--gzip` suffix that Jetty never strips.
+    with (
+        mock.patch.dict(catalog._session.headers, {"Accept-Encoding": "identity"}),
+        mock.patch.object(catalog._session, "hooks", {"response": [lambda r, **_: statuses.append(r.status_code)]}),
+    ):
+        loaded = catalog.load_table(identifier)
+        reloaded = catalog.load_table(identifier)
+
+    assert statuses == [200, 304]
+    assert reloaded.metadata_location == loaded.metadata_location
 
 
 @pytest.mark.integration
