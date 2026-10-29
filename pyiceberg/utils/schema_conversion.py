@@ -540,7 +540,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         result = {
             "name": sanitized_name,
             FIELD_ID_PROP: field.field_id,
-            "type": field_result if field.required else ["null", field_result],
+            "type": field_result if field.required or field_result == "null" else ["null", field_result],
         }
 
         if original_name != sanitized_name:

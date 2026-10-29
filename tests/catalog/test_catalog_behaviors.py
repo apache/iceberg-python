@@ -1409,3 +1409,273 @@ def test_record_batch_reader_schema_mismatch_writes_no_files(catalog: Catalog) -
     # _append_snapshot_producer opens.
     assert tbl.metadata.current_snapshot() is None
     assert len(tbl.scan().to_arrow()) == 0
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_replace_table_transaction(catalog: Catalog, format_version: int) -> None:
+    catalog.create_namespace("replace_test")
+    original = pa.table({"id": [1, 2], "old": ["a", "b"]})
+    table = catalog.create_table("replace_test.tbl", original.schema, properties={"format-version": str(format_version)})
+    table.append(original)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    table.manage_snapshots().create_tag(snapshot.snapshot_id, "before_replace").commit()
+    original_metadata = table.metadata
+    replacement = pa.table({"id": ["new"], "added": [True]})
+
+    with catalog.replace_table_transaction("replace_test.tbl", replacement.schema, properties={"owner": "new-owner"}) as tx:
+        tx.append(replacement)
+        published = catalog.load_table("replace_test.tbl")
+        assert published.metadata == original_metadata
+        assert published.scan().to_arrow().to_pylist() == original.to_pylist()
+
+    replaced = catalog.load_table("replace_test.tbl")
+    assert replaced.scan().to_arrow().to_pylist() == replacement.to_pylist()
+    assert replaced.metadata.table_uuid == original_metadata.table_uuid
+    assert replaced.location() == table.location()
+    assert replaced.metadata.format_version == format_version
+    assert replaced.properties["owner"] == "new-owner"
+    assert replaced.schema().find_field("id").field_id == table.schema().find_field("id").field_id
+    assert replaced.schema().find_field("added").field_id > original_metadata.last_column_id
+    assert replaced.metadata.snapshot_by_id(snapshot.snapshot_id) == snapshot
+    assert replaced.scan(snapshot_id=snapshot.snapshot_id).to_arrow().to_pylist() == original.to_pylist()
+    assert replaced.metadata.refs["before_replace"].snapshot_id == snapshot.snapshot_id
+    current_snapshot = replaced.current_snapshot()
+    assert current_snapshot is not None
+    assert current_snapshot.parent_snapshot_id is None
+    assert len(replaced.snapshots()) == 2
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_replace_table_transaction_empty_and_abort(catalog: Catalog, format_version: int) -> None:
+    catalog.create_namespace("replace_test")
+    data = pa.table({"id": [1]})
+    table = catalog.create_table("replace_test.tbl", data.schema, properties={"format-version": str(format_version)})
+    table.append(data)
+    original_metadata = table.metadata
+    with pytest.raises(ValueError, match="abort replacement"):
+        with catalog.replace_table_transaction("replace_test.tbl", data.schema) as tx:
+            tx.append(pa.table({"id": [2]}))
+            if tx.table_metadata.current_snapshot() is not None:
+                raise ValueError("abort replacement")
+    assert catalog.load_table("replace_test.tbl").metadata == original_metadata
+
+    with catalog.replace_table_transaction("replace_test.tbl", Schema(NestedField(8, "empty", StringType()))):
+        pass
+    replaced = catalog.load_table("replace_test.tbl")
+    assert replaced.scan().to_arrow().num_rows == 0
+    assert replaced.current_snapshot() is None
+    assert replaced.metadata.table_uuid == original_metadata.table_uuid
+    assert replaced.snapshots() == original_metadata.snapshots
+    assert replaced.schema().find_field("empty").field_type == StringType()
+
+
+def test_replace_table_transaction_missing(catalog: Catalog) -> None:
+    with pytest.raises(NoSuchTableError):
+        catalog.replace_table_transaction("missing.tbl", Schema())
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_replace_table_transaction_reuses_metadata(catalog: Catalog, format_version: int) -> None:
+    catalog.create_namespace("replace_test")
+    schema = Schema(NestedField(10, "id", LongType()), NestedField(20, "value", StringType()))
+    spec = PartitionSpec(PartitionField(10, 1000, IdentityTransform(), "id"))
+    order = SortOrder(SortField(source_id=20, transform=IdentityTransform(), direction=SortDirection.DESC))
+    table = catalog.create_table(
+        "replace_test.tbl",
+        schema,
+        partition_spec=spec,
+        sort_order=order,
+        properties={"format-version": str(format_version), "owner": "old", "keep": "yes"},
+    )
+    metadata = table.metadata
+    for _ in range(2):
+        with catalog.replace_table_transaction(
+            "replace_test.tbl", schema, partition_spec=spec, sort_order=order, properties={"owner": "new"}
+        ):
+            pass
+    replaced = catalog.load_table("replace_test.tbl")
+    assert replaced.metadata.schemas == metadata.schemas
+    assert replaced.metadata.partition_specs == metadata.partition_specs
+    assert replaced.metadata.sort_orders == metadata.sort_orders
+    assert replaced.properties == {"owner": "new", "keep": "yes"}
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_replace_table_transaction_partition_evolution(catalog: Catalog, format_version: int) -> None:
+    from pyiceberg.transforms import BucketTransform, VoidTransform
+
+    catalog.create_namespace("replace_test")
+    schema = Schema(NestedField(10, "id", LongType()), NestedField(20, "value", StringType()))
+    table = catalog.create_table(
+        "replace_test.tbl",
+        schema,
+        partition_spec=PartitionSpec(PartitionField(10, 1000, IdentityTransform(), "id")),
+        sort_order=SortOrder(SortField(source_id=20, transform=IdentityTransform())),
+        properties={"format-version": str(format_version)},
+    )
+    original_partition_id = table.spec().fields[0].field_id
+    spec = PartitionSpec(PartitionField(20, 1000, BucketTransform(8), "bucket"))
+    data = pa.table({"id": [1], "value": ["replacement"]})
+    with catalog.replace_table_transaction("replace_test.tbl", schema, partition_spec=spec) as tx:
+        tx.append(data)
+    replaced = catalog.load_table("replace_test.tbl")
+    assert replaced.scan().to_arrow().to_pylist() == data.to_pylist()
+    assert replaced.sort_order().is_unsorted
+    assert replaced.sort_order().order_id == 0
+    assert replaced.spec().fields[-1].source_id == replaced.schema().find_field("value").field_id
+    assert replaced.spec().fields[-1].field_id > original_partition_id
+    if format_version == 1:
+        assert isinstance(replaced.spec().fields[0].transform, VoidTransform)
+    else:
+        assert len(replaced.spec().fields) == 1
+
+    with catalog.replace_table_transaction("replace_test.tbl", schema):
+        pass
+    reset = catalog.load_table("replace_test.tbl")
+    assert reset.sort_order().is_unsorted
+    assert all(isinstance(field.transform, VoidTransform) for field in reset.spec().fields)
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_replace_table_transaction_partition_field_reused(catalog: Catalog, format_version: int) -> None:
+    catalog.create_namespace("replace_test")
+    schema = Schema(NestedField(10, "id", LongType()))
+    table = catalog.create_table(
+        "replace_test.tbl",
+        schema,
+        partition_spec=PartitionSpec(PartitionField(10, 1000, IdentityTransform(), "id")),
+        properties={"format-version": str(format_version)},
+    )
+    old = table.spec().fields[0]
+    with catalog.replace_table_transaction(
+        "replace_test.tbl", schema, partition_spec=PartitionSpec(PartitionField(10, 1007, IdentityTransform(), "renamed"))
+    ):
+        pass
+    field = catalog.load_table("replace_test.tbl").spec().fields[0]
+    assert field.field_id == old.field_id
+    assert field.source_id == old.source_id
+    assert field.name == "renamed"
+
+
+def test_replace_table_transaction_recreated_table(catalog: Catalog) -> None:
+    catalog.create_namespace("replace_test")
+    data = pa.table({"id": [1]})
+    catalog.create_table("replace_test.tbl", data.schema, properties={"commit.retry.num-retries": "0"})
+    tx = catalog.replace_table_transaction("replace_test.tbl", data.schema)
+    tx.append(data)
+    catalog.drop_table("replace_test.tbl")
+    recreated = catalog.create_table("replace_test.tbl", data.schema)
+    with pytest.raises(CommitFailedException, match="UUID"):
+        tx.commit_transaction()
+    assert catalog.load_table("replace_test.tbl").metadata == recreated.metadata
+
+
+def test_replace_table_transaction_concurrent_append(catalog: Catalog) -> None:
+    catalog.create_namespace("replace_test")
+    data = pa.table({"id": [1]})
+    table = catalog.create_table("replace_test.tbl", data.schema, properties={"commit.retry.min-wait-ms": "0"})
+    table.append(data)
+    tx = catalog.replace_table_transaction("replace_test.tbl", data.schema)
+    tx.append(pa.table({"id": [3]}))
+    table.append(pa.table({"id": [2]}))
+    tx.commit_transaction()
+    replaced = catalog.load_table("replace_test.tbl")
+    assert replaced.scan().to_arrow().to_pylist() == [{"id": 3}]
+    assert len(replaced.snapshots()) == 3
+    assert replaced.metadata.last_sequence_number == 3
+    current_snapshot = replaced.current_snapshot()
+    assert current_snapshot is not None
+    assert current_snapshot.parent_snapshot_id is None
+
+
+def test_replace_table_transaction_concurrent_schema_change(catalog: Catalog) -> None:
+    catalog.create_namespace("replace_test")
+    table = catalog.create_table("replace_test.tbl", Schema(NestedField(1, "id", LongType())))
+    tx = catalog.replace_table_transaction("replace_test.tbl", Schema(NestedField(1, "replacement", StringType())))
+    table.update_schema().add_column("concurrent", LongType()).commit()
+    with pytest.raises(CommitFailedException):
+        tx.commit_transaction()
+    assert catalog.load_table("replace_test.tbl").schema() == table.schema()
+
+
+def test_replace_table_transaction_new_location_and_format(catalog: Catalog, tmp_path: Path) -> None:
+    catalog.create_namespace("replace_test")
+    table = catalog.create_table("replace_test.tbl", Schema(), properties={"format-version": "1"})
+    properties = {"format-version": "2", "owner": "replacement"}
+    location = f"file://{tmp_path}/replacement"
+    with catalog.replace_table_transaction("replace_test.tbl", Schema(), location=location + "/", properties=properties):
+        pass
+    replaced = catalog.load_table("replace_test.tbl")
+    assert replaced.location() == location
+    assert replaced.metadata.format_version == 2
+    assert replaced.properties == {"owner": "replacement"}
+    assert properties == {"format-version": "2", "owner": "replacement"}
+    assert replaced.metadata.table_uuid == table.metadata.table_uuid
+    with pytest.raises(ValueError, match="Cannot downgrade"):
+        catalog.replace_table_transaction("replace_test.tbl", Schema(), properties={"format-version": "1"}).commit_transaction()
+    assert catalog.load_table("replace_test.tbl").metadata == replaced.metadata
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_replace_table_transaction_drops_partition_source(catalog: Catalog, format_version: int) -> None:
+    catalog.create_namespace("replace_test")
+    catalog.create_table(
+        "replace_test.tbl",
+        Schema(NestedField(1, "old", LongType())),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "old")),
+        properties={"format-version": str(format_version)},
+    )
+    data = pa.table({"new": ["replacement"]})
+    with catalog.replace_table_transaction("replace_test.tbl", data.schema) as tx:
+        tx.append(data)
+    assert catalog.load_table("replace_test.tbl").scan().to_arrow().to_pylist() == data.to_pylist()
+
+
+def test_replace_table_transaction_reuses_historical_schema(catalog: Catalog) -> None:
+    catalog.create_namespace("replace_test")
+    original_schema = Schema(NestedField(1, "id", LongType()))
+    original = catalog.create_table("replace_test.tbl", original_schema)
+    with catalog.replace_table_transaction("replace_test.tbl", Schema(NestedField(10, "id", StringType()))):
+        pass
+    with catalog.replace_table_transaction("replace_test.tbl", original_schema):
+        pass
+    table = catalog.load_table("replace_test.tbl")
+    assert len(table.metadata.schemas) == 2
+    assert table.metadata.current_schema_id == original.metadata.current_schema_id
+
+
+def test_replace_table_transaction_preserves_field_id_high_water_mark(catalog: Catalog) -> None:
+    catalog.create_namespace("replace_test")
+    table = catalog.create_table(
+        "replace_test.tbl", Schema(NestedField(1, "id", LongType()), NestedField(2, "removed", LongType()))
+    )
+    removed_id = table.schema().find_field("removed").field_id
+    table.update_schema().delete_column("removed").commit()
+    with catalog.replace_table_transaction("replace_test.tbl", Schema(NestedField(9, "new", StringType()))) as tx:
+        with tx.update_schema() as update:
+            update.add_column("extra", LongType())
+        tx.append(pa.table({"new": ["replacement"], "extra": [42]}))
+    replaced = catalog.load_table("replace_test.tbl")
+    assert replaced.schema().find_field("new").field_id > removed_id
+    assert replaced.schema().find_field("extra").field_id > replaced.schema().find_field("new").field_id
+    assert replaced.scan().to_arrow().to_pylist() == [{"new": "replacement", "extra": 42}]
+
+
+def test_replace_table_transaction_invalid_layout(catalog: Catalog) -> None:
+    from pyiceberg.exceptions import ValidationError
+    from pyiceberg.transforms import DayTransform
+    from pyiceberg.types import TimestampNanoType
+
+    catalog.create_namespace("replace_test")
+    schema = Schema(NestedField(1, "id", LongType()))
+    table = catalog.create_table("replace_test.tbl", schema)
+    with pytest.raises(ValidationError, match="Invalid source field"):
+        catalog.replace_table_transaction(
+            "replace_test.tbl", schema, partition_spec=PartitionSpec(PartitionField(1, 1000, DayTransform(), "day"))
+        )
+    with pytest.raises(ValidationError, match="Invalid source field"):
+        catalog.replace_table_transaction("replace_test.tbl", schema, sort_order=SortOrder(SortField(1, DayTransform())))
+    with pytest.raises(ValueError, match="only supported in 3 or higher"):
+        catalog.replace_table_transaction("replace_test.tbl", Schema(NestedField(1, "ts", TimestampNanoType())))
+    assert catalog.load_table("replace_test.tbl").metadata == table.metadata
