@@ -784,6 +784,10 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
         if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
             for manifest_file in snapshot.manifests(io=self._io):
+                # Manifest only records files deleted by an earlier snapshot, so it is dropped
+                if not manifest_file.has_added_files() and not manifest_file.has_existing_files():
+                    continue
+
                 # Manifest does not contain rows that match the files to delete partitions
                 if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
                     existing_files.append(manifest_file)
