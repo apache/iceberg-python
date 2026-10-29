@@ -209,6 +209,22 @@ def test_create_v1_table(catalog: Catalog, table_schema_nested: Schema, test_tab
     catalog.drop_table(test_table_identifier)
 
 
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_create_table_rejects_encryption_properties_before_v3(
+    catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier, format_version: int
+) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+
+    with pytest.raises(ValueError, match=rf"Invalid properties for v{format_version}: \['encryption.key-id'\]"):
+        catalog.create_table(
+            test_table_identifier,
+            table_schema_nested,
+            properties={"format-version": str(format_version), "encryption.key-id": "key"},
+        )
+
+    assert not catalog.table_exists(test_table_identifier)
+
+
 def test_create_table_custom_sort_order(catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(test_table_identifier)
     catalog.create_namespace(namespace)
