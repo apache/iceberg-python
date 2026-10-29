@@ -17,12 +17,14 @@
 # pylint:disable=redefined-outer-name
 
 import time
+from typing import Any
 
+import pyarrow as pa
 import pytest
 from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog.rest import RestCatalog
-from pyiceberg.exceptions import NoSuchViewError
+from pyiceberg.exceptions import CommitFailedException, NoSuchViewError
 from pyiceberg.schema import Schema
 from pyiceberg.view.metadata import SQLViewRepresentation, ViewVersion
 
@@ -111,3 +113,93 @@ def test_load_view_with_table_ident(
     assert catalog.table_exists(table_identifier)
     with pytest.raises(NoSuchViewError):
         catalog.load_view(table_identifier)
+
+
+def _create_tables_for_multi_table_commit(catalog: RestCatalog, database_name: str) -> tuple[pa.Table, list[Any]]:
+    if not catalog.namespace_exists(database_name):
+        catalog.create_namespace(database_name)
+    rows = pa.table({"id": pa.array([1, 2, 3], type=pa.int64()), "name": pa.array(["a", "b", "c"], type=pa.string())})
+    tables = []
+    for name in ("orders", "items"):
+        identifier = (database_name, name)
+        if catalog.table_exists(identifier):
+            catalog.drop_table(identifier)
+        tables.append(catalog.create_table(identifier, schema=rows.schema))
+    return rows, tables
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_commit_transactions_appends_to_tables_atomically(catalog: RestCatalog, database_name: str) -> None:
+    rows, (orders, items) = _create_tables_for_multi_table_commit(catalog, database_name)
+
+    orders_tx = orders.transaction()
+    orders_tx.append(rows)
+    items_tx = items.transaction()
+    items_tx.append(rows)
+    items_tx.set_properties(owner="sales")
+    catalog.commit_transactions(orders_tx, items_tx)
+
+    for table in (orders, items):
+        assert table.current_snapshot() is not None
+        assert table.scan().to_arrow().num_rows == 3
+    assert items.properties["owner"] == "sales"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_catalog_transaction_appends_to_tables_atomically(catalog: RestCatalog, database_name: str) -> None:
+    rows, (orders, items) = _create_tables_for_multi_table_commit(catalog, database_name)
+
+    with catalog.transaction() as tx:
+        tx.table(orders).append(rows)
+        tx.table(items).append(rows)
+        assert orders.current_snapshot() is None
+
+    for table in (orders, items):
+        assert table.scan().to_arrow().num_rows == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_commit_transactions_applies_nothing_on_conflict(catalog: RestCatalog, database_name: str) -> None:
+    rows, (orders, items) = _create_tables_for_multi_table_commit(catalog, database_name)
+    orders_tx = orders.transaction()
+    orders_tx.append(rows)
+    items_tx = items.transaction()
+    items_tx.append(rows)
+
+    # Another writer commits to orders after the transactions were staged.
+    catalog.load_table(orders.name()).append(rows)
+
+    with pytest.raises(CommitFailedException):
+        catalog.commit_transactions(orders_tx, items_tx)
+
+    assert catalog.load_table(orders.name()).scan().to_arrow().num_rows == 3
+    assert catalog.load_table(items.name()).current_snapshot() is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+@pytest.mark.parametrize("concurrent_write", [False, True])
+@pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
+def test_commit_transactions_validates_a_delete_that_matched_nothing(
+    catalog: RestCatalog, database_name: str, concurrent_write: bool
+) -> None:
+    rows, (orders, items) = _create_tables_for_multi_table_commit(catalog, database_name)
+    orders.append(rows)
+    orders_tx = orders.transaction()
+    orders_tx.delete("id = 100")
+    items_tx = items.transaction()
+    items_tx.append(rows)
+    assert not orders_tx._updates
+
+    if concurrent_write:
+        # Another writer commits to orders after the delete was planned.
+        catalog.load_table(orders.name()).append(rows)
+        with pytest.raises(CommitFailedException):
+            catalog.commit_transactions(orders_tx, items_tx)
+        assert catalog.load_table(items.name()).current_snapshot() is None
+    else:
+        catalog.commit_transactions(orders_tx, items_tx)
+        assert catalog.load_table(items.name()).scan().to_arrow().num_rows == 3

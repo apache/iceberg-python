@@ -49,9 +49,11 @@ from pyiceberg.table import (
     DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
     CommitTableResponse,
     CreateTableTransaction,
+    MultiTableTransaction,
     StagedTable,
     Table,
     TableProperties,
+    Transaction,
 )
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata, TableMetadataV1, new_table_metadata
@@ -618,6 +620,32 @@ class Catalog(ABC):
             CommitFailedException: Requirement not met, or a conflict with a concurrent commit.
             CommitStateUnknownException: Failed due to an internal exception on the side of the catalog.
         """
+
+    def transaction(self) -> MultiTableTransaction:
+        """Create a transaction to stage changes to several tables and commit them atomically.
+
+        Returns:
+            The transaction object. Used as a context manager, it commits with
+            ``commit_transactions`` when the block exits without an exception.
+        """
+        return MultiTableTransaction(self)
+
+    def commit_transactions(self, *transactions: Transaction) -> None:
+        """Commit the changes of several table transactions atomically.
+
+        Either the changes of every transaction are applied, or none of them. Each table is
+        refreshed after a successful commit.
+
+        Args:
+            transactions: The transactions to commit, at most one per table.
+
+        Raises:
+            NotImplementedError: If the catalog doesn't support multi-table commits.
+            CommitFailedException: A requirement wasn't met, or a concurrent commit conflicted.
+            CommitStateUnknownException: The catalog failed with an internal error; the commit may
+                or may not have been applied.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support multi-table commits")
 
     @abstractmethod
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
