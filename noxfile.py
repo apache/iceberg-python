@@ -21,7 +21,6 @@ import os
 import shutil
 import sys
 from collections.abc import Iterator
-from enum import StrEnum
 from pathlib import Path
 
 import nox
@@ -40,30 +39,17 @@ SOURCE = ("pyiceberg", "tests", "dev", "mkdocs", "noxfile.py", "setup.py")
 NOTEBOOKS = ("notebooks", "tests/notebooks")
 SKIP_DIRS = (".git", ".nox", ".venv", "build", "dist", "vendor")
 COMPOSE = ("docker", "compose", "-f", "dev/docker-compose-integration.yml")
+CI = "CI" in os.environ
+COVERAGE = os.environ.get("COVERAGE") == "1"
+COVERAGE_FAIL_UNDER = os.environ.get("COVERAGE_FAIL_UNDER", "85")
+KEEP_COMPOSE = os.environ.get("KEEP_COMPOSE") == "1"
+COVERAGE_ARGS = ["-m", "coverage", "run", "--parallel-mode", "--source=pyiceberg"] if COVERAGE else []
+
 
 # The sdist has no .gitignore, and release verification loads this file from an unpacked sdist.
 IGNORE = GitIgnoreSpec.from_lines(
     Path(".gitignore").read_text(encoding="utf-8").splitlines() if Path(".gitignore").exists() else []
 )
-
-
-class Env(StrEnum):
-    """Environment variables that change how the sessions run."""
-
-    CI = "CI"
-    COVERAGE = "COVERAGE"
-    COVERAGE_FAIL_UNDER = "COVERAGE_FAIL_UNDER"
-    GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT = "GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT"
-    KEEP_COMPOSE = "KEEP_COMPOSE"
-    UV_PROJECT_ENVIRONMENT = "UV_PROJECT_ENVIRONMENT"
-
-
-# The environment is fixed for the whole run, so the switches are read once at import
-CI = Env.CI in os.environ
-COVERAGE = os.environ.get(Env.COVERAGE) == "1"
-COVERAGE_FAIL_UNDER = os.environ.get(Env.COVERAGE_FAIL_UNDER, "85")
-KEEP_COMPOSE = os.environ.get(Env.KEEP_COMPOSE) == "1"
-COVERAGE_ARGS = ["-m", "coverage", "run", "--parallel-mode", "--source=pyiceberg"] if COVERAGE else []
 
 
 def _ignored(path: Path) -> bool:
@@ -285,7 +271,7 @@ def tests(session: nox.Session) -> None:
     sync = ["uv", "sync", "--locked", "--all-extras", *_unsupported_extras()]
     if not compiled:
         sync += ["--reinstall-package", "pyiceberg"]
-    session.run_install(*sync, env={Env.UV_PROJECT_ENVIRONMENT: str(session.env_dir)})
+    session.run_install(*sync, env={"UV_PROJECT_ENVIRONMENT": str(session.env_dir)})
     extra = [] if session.posargs else ["-v", "-x"]
     session.run(
         "python", *COVERAGE_ARGS, "-m", "pytest", "tests/", "-m", "unit", "--ignore=tests/integration", *extra, *_posargs(session)
@@ -342,7 +328,7 @@ def gcs(session: nox.Session) -> None:
     session.run("sh", "./dev/run-gcs-server.sh", external=True)
     # gcsfs 2026.6.0 sends HNS/Zonal bucket detection to endpoint_url, which fake-gcs-server
     # does not support; leaving it on makes the GCS sanity tests take close to an hour.
-    _pytest(session, "tests/", "-m", "gcs", "-v", "-x", env={Env.GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT: "false"})
+    _pytest(session, "tests/", "-m", "gcs", "-v", "-x", env={"GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT": "false"})
 
 
 @nox.session(name="test-notebook", tags=["test"], default=False, venv_backend="none")
