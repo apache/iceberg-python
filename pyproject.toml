@@ -322,3 +322,12 @@ source = ['pyiceberg/']
 
 [tool.coverage.report]
 fail_under = 85
+
+[tool.rumdl]
+# MD013 is off because line length is not enforced here. MD057 checks that relative links
+# resolve, but the reference/ pages are generated at build time and are not in the tree.
+disable = ["MD013", "MD057"]
+
+[tool.rumdl.MD007]
+indent = 4
+style = "fixed"
