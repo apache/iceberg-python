@@ -23,6 +23,11 @@
 
 set -euo pipefail
 
+if ! command -v just > /dev/null 2>&1; then
+  echo "just is required to verify a release candidate. Install it with: uv tool install rust-just"
+  exit 1
+fi
+
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 <version>"
   echo " e.g.: $0 0.6.1rc3"
@@ -82,8 +87,8 @@ verify_license_documentation() {
 
 test_source_distribution() {
   echo "--- Installing and running the tests, this spins up Docker containers"
-  make install
-  make test-coverage
+  just install
+  just test-coverage
 }
 
 echo "Verifying pyiceberg-${PYICEBERG_VERSION} in ${PYICEBERG_VERIFICATION_DIR}"

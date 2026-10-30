@@ -189,8 +189,8 @@ complex_filter = And(age_range, status_filter)
 ## Common Pitfalls
 
 1. **Null Handling**: Be careful when using `IsNull` and `NotNull` predicates with required fields. The expression DSL will automatically optimize these cases:
-   - `IsNull` (and `IsNaN` for doubles/floats) on a required field will always return `False`
-   - `NotNull` (and `NotNaN` for doubles/floats) on a required field will always return `True`
+    - `IsNull` (and `IsNaN` for doubles/floats) on a required field will always return `False`
+    - `NotNull` (and `NotNaN` for doubles/floats) on a required field will always return `True`
 
 2. **String Comparisons**: When using string predicates like `StartsWith`, ensure that the field type is a string type.
 
