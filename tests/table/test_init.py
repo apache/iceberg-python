@@ -314,6 +314,17 @@ def test_table_scan_missing_snapshot_zero(table_v2: Table) -> None:
     assert table_v2.scan(snapshot_id=0).snapshot() is None
 
 
+def test_table_scan_plan_files_missing_snapshot(table_v2: Table) -> None:
+    # table_v2 has no snapshot with id 0, so planning raises the same error as projection() and to_arrow()
+    scan = table_v2.scan(snapshot_id=0)
+
+    with pytest.raises(ValueError, match="Snapshot not found: 0"):
+        scan.plan_files()
+
+    with pytest.raises(ValueError, match="Snapshot not found: 0"):
+        scan.count()
+
+
 @pytest.mark.parametrize("snapshot_id", [0, 3051729675574597004])
 def test_table_scan_ref_cannot_override_snapshot(table_v2: Table, snapshot_id: int) -> None:
     with pytest.raises(ValueError, match=f"Cannot override ref, already set snapshot id={snapshot_id}"):
