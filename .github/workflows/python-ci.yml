@@ -47,8 +47,6 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Check uv.lock is up to date
       run: uv lock --check
-    - name: Install
-      run: uv run nox -s install
     - name: Run linters
       run: uv run nox
     # The Python version matrix lives in noxfile.py, so nox runs every supported
@@ -72,8 +70,6 @@ jobs:
       uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
-    - name: Install
-      run: uv run nox -s install
     - name: Run unit tests
       run: uv run nox -s tests -p 3.12
 
