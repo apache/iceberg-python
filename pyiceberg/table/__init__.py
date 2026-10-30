@@ -634,9 +634,13 @@ class Transaction:
         )
 
         partitions_to_overwrite = {data_file.partition for data_file in data_files}
-        partitions_fields = [
-            self.table_metadata.schema().find_field(field.source_id).name for field in self.table_metadata.spec().fields
-        ]
+        schema = self.table_metadata.schema()
+        partitions_fields = []
+        for field in self.table_metadata.spec().fields:
+            column_name = schema.find_column_name(field.source_id)
+            if column_name is None:
+                raise ValueError(f"Could not find column name for field ID: {field.source_id}")
+            partitions_fields.append(column_name)
         delete_filter = self._build_partition_predicate(
             partition_records=partitions_to_overwrite, partition_fields=partitions_fields
         )

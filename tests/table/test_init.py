@@ -2190,6 +2190,30 @@ def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> Non
     assert table.scan().to_arrow().num_rows == 0
 
 
+def test_dynamic_partition_overwrite_by_nested_source_column(catalog: Catalog) -> None:
+    """Overwrite partitions by the nested source column s.x, not the top-level column x with the same name."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "x", LongType(), required=False),
+        NestedField(2, "s", StructType(NestedField(3, "x", LongType(), required=False)), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="s_x"))
+    table = catalog.create_table("default.nested_partition_overwrite", schema=schema, partition_spec=spec)
+
+    def to_arrow(*rows: tuple[int, int]) -> pa.Table:
+        return pa.Table.from_pylist([{"x": x, "s": {"x": s_x}} for x, s_x in rows], schema=schema.as_arrow())
+
+    # Rows are (x, s.x): one row in partition s.x = 5 and one in s.x = 1
+    table.append(to_arrow((1, 5), (5, 1)))
+    table.dynamic_partition_overwrite(to_arrow((9, 5)))
+
+    # Only partition s.x = 5 is replaced, so (1, 5) becomes (9, 5) and (5, 1) is kept
+    result = sorted((row["x"], row["s"]["x"]) for row in table.scan().to_arrow().to_pylist())
+    assert result == [(5, 1), (9, 5)]
+
+
 def test_static_table_forwards_location_to_table_file_io(metadata_location: str, monkeypatch: pytest.MonkeyPatch) -> None:
     seen_locations: list[str | None] = []
     real_load_file_io = load_file_io
