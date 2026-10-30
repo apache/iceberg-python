@@ -1335,12 +1335,116 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     _updates: tuple[TableUpdate, ...]
     _requirements: tuple[TableRequirement, ...]
     _snapshot_ids_to_expire: set[int]
+    _clean_expired_files: bool
 
     def __init__(self, transaction: Transaction) -> None:
         super().__init__(transaction)
+        self._clean_expired_files = False
         self._updates = ()
         self._requirements = ()
         self._snapshot_ids_to_expire = set()
+
+    def clean_expired_files(self, enabled: bool = True) -> ExpireSnapshots:
+        """Delete the files that only the expired snapshots referenced, after the expiration commits.
+
+        Deletes the data files, delete files, manifests and manifest lists that no snapshot left in the table
+        references as a live file, and the statistics and partition statistics files of the expired snapshots
+        unless the table metadata after the commit still references them. Requires an autocommit transaction.
+        `commit()` raises a `ValueError` and expires nothing if `gc.enabled` is false in the latest table metadata,
+        or if a branch or tag there points at a snapshot selected for expiration. If the cleanup fails, a warning
+        is logged and the expiration stays committed. The "Deleting files of expired snapshots" section of the
+        API docs has the details.
+
+        Args:
+            enabled: Whether to delete the files. Defaults to True.
+
+        Returns:
+            This for method chaining.
+        """
+        self._clean_expired_files = enabled
+        return self
+
+    def commit(self) -> None:
+        """Commit the expiration, then delete the files the expired snapshots were the last to reference."""
+        if not self._clean_expired_files:
+            super().commit()
+            return
+
+        from pyiceberg.table import TableProperties
+
+        if not self._transaction._autocommit:
+            raise ValueError("Cleaning expired files requires an autocommit transaction")
+        table = self._transaction._table
+        latest_metadata = table.catalog.load_table(table.name()).metadata
+        if not property_as_bool(latest_metadata.properties, TableProperties.GC_ENABLED, TableProperties.GC_ENABLED_DEFAULT):
+            raise ValueError(f"Cannot clean expired files when {TableProperties.GC_ENABLED} is false")
+        if referenced := sorted({ref.snapshot_id for ref in latest_metadata.refs.values()} & self._snapshot_ids_to_expire):
+            raise ValueError(
+                f"Cannot expire snapshots that a branch or tag references in the latest table metadata: {referenced}"
+            )
+
+        updates, requirements = self._commit()
+        metadata_before_commit = self._transaction.table_metadata
+        expired_snapshots = [
+            snapshot for snapshot in metadata_before_commit.snapshots if snapshot.snapshot_id in self._snapshot_ids_to_expire
+        ]
+        statistics_to_expire = {
+            statistics.statistics_path
+            for statistics in itertools.chain(metadata_before_commit.statistics, metadata_before_commit.partition_statistics)
+            if statistics.snapshot_id in self._snapshot_ids_to_expire
+        }
+        self._transaction._stage(updates, requirements)
+        # Fail the commit if another writer moves or drops a branch or tag other than main after the reload above.
+        # Added directly because _stage validates against the metadata this table object loaded before that reload.
+        self._transaction._requirements += tuple(
+            AssertRefSnapshotId(ref=name, snapshot_id=ref.snapshot_id)
+            for name, ref in latest_metadata.refs.items()
+            if name != MAIN_BRANCH
+        )
+        self._transaction.commit_transaction()
+
+        if not expired_snapshots:
+            return
+        metadata_after_commit = self._transaction._table.metadata
+        statistics_retained = {
+            statistics.statistics_path
+            for statistics in itertools.chain(metadata_after_commit.statistics, metadata_after_commit.partition_statistics)
+        }
+        try:
+            self._delete_expired_files(expired_snapshots, statistics_to_expire - statistics_retained)
+        except Exception:
+            logger.warning("Failed to clean up expired snapshot files", exc_info=True)
+
+    def _delete_expired_files(self, expired_snapshots: list[Snapshot], statistics_to_delete: set[str]) -> None:
+        from pyiceberg.catalog import DATA_FILE, MANIFEST, MANIFEST_LIST, STATISTICS, delete_files
+
+        table = self._transaction._table
+        io = table.io
+        executor = ExecutorFactory.get_or_create()
+        retained_snapshots = table.snapshots()
+
+        def _manifests(snapshots: list[Snapshot]) -> set[ManifestFile]:
+            return set(itertools.chain.from_iterable(executor.map(lambda snapshot: snapshot.manifests(io), snapshots)))
+
+        def _file_paths(manifest: ManifestFile, discard_deleted: bool) -> set[str]:
+            return {entry.data_file.file_path for entry in manifest.fetch_manifest_entry(io, discard_deleted=discard_deleted)}
+
+        retained_manifests = _manifests(retained_snapshots)
+        manifests_to_delete = _manifests(expired_snapshots) - retained_manifests
+        # Similar to Iceberg Java's ReachableFileCleanup: only manifests that are going away can hold files that just
+        # became unreferenced, and a file stays if any live entry of a retained manifest still points at it. Unlike
+        # Java, deleted entries of those manifests are candidates too, and any read failure aborts the whole cleanup.
+        files_to_delete: set[str] = set().union(
+            *executor.map(lambda manifest: _file_paths(manifest, discard_deleted=False), manifests_to_delete)
+        )
+        if files_to_delete:
+            for live_paths in executor.map(lambda manifest: _file_paths(manifest, discard_deleted=True), retained_manifests):
+                files_to_delete -= live_paths
+
+        delete_files(io, files_to_delete, DATA_FILE)
+        delete_files(io, {manifest.manifest_path for manifest in manifests_to_delete}, MANIFEST)
+        delete_files(io, {snapshot.manifest_list for snapshot in expired_snapshots}, MANIFEST_LIST)
+        delete_files(io, statistics_to_delete, STATISTICS)
 
     def _commit(self) -> UpdatesAndRequirements:
         """
