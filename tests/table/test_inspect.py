@@ -15,21 +15,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import os
 from pathlib import PosixPath
 from typing import Any
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.conversions import to_bytes
-from pyiceberg.manifest import DataFile, DataFileContent
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable, _readable_bound
 from pyiceberg.table.snapshots import Snapshot
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import NestedField, StringType
+from pyiceberg.types import LongType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -74,6 +76,36 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
     files_metrics = tbl.inspect.files().to_pydict()["readable_metrics"][0]["s"]
     assert files_metrics["lower_bound"] is None
     assert files_metrics["upper_bound"] is None
+
+
+def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMemoryCatalog, tmp_path: PosixPath) -> None:
+    # column_sizes and the other metric maps are optional in a data file; DuckDB, for one,
+    # writes data files without column_sizes.
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    tbl = catalog.create_table("default.no_metrics", schema)
+    file_path = f"{tmp_path.absolute().as_posix()}/a.parquet"
+    pq.write_table(pa.table({"x": [1]}), file_path)
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=1,
+        file_size_in_bytes=os.path.getsize(file_path),
+    )
+    with tbl.transaction() as tx:
+        with tx.update_snapshot().fast_append() as fast_append:
+            fast_append.append_data_file(data_file)
+
+    entries = tbl.inspect.entries().to_pylist()
+    assert len(entries) == 1
+    for metric in ("column_sizes", "value_counts", "null_value_counts", "nan_value_counts"):
+        assert entries[0]["data_file"][metric] == []
+    assert entries[0]["readable_metrics"]["x"]["column_size"] is None
+
+    files = tbl.inspect.files().to_pylist()
+    assert len(files) == 1
+    assert files[0]["column_sizes"] is None
 
 
 @pytest.mark.parametrize("newest_first", [False, True])
