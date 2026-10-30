@@ -46,7 +46,7 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 
 ### Style & Typing
 
-- Formatting and linting are enforced by `ruff` via `prek` (pre-commit): line length **130**, double-quoted strings, isort with `pyiceberg`/`tests` as first-party. Run `make lint` — ruff autofixes most issues.
+- Formatting and linting are enforced by `ruff` and `mypy`, driven by `nox` sessions defined in `noxfile.py`: line length **130**, double-quoted strings, isort with `pyiceberg`/`tests` as first-party. Run `just fix` then `just check` — ruff autofixes most issues.
 - Full type annotations are required (`mypy` runs in strict mode: `disallow_untyped_defs`, `no_implicit_optional`, `warn_unused_ignores`). Avoid Any types.
 - Docstrings follow the project's pydocstyle config; one-line summaries on public functions. No personal pronouns in comments.
 - Use domain-specific exceptions from pyiceberg/exceptions.py for Iceberg-specific error conditions. For invalid arguments/values, ValueError is acceptable. Don't raise bare Exception.
@@ -76,15 +76,17 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 
 ## Commands
 
-- **Install / set up dev env:** `make install` (installs `uv`, syncs all extras, builds Cython, installs pre-commit hooks)
-- **Run unit tests:** `make test`
-- **Run a subset:** `make test PYTEST_ARGS="-v -k <pattern>"`
-- **Integration tests (Spark/Docker):** `make test-integration` (rebuild with `make test-integration-rebuild`)
-- **Cloud storage suites:** `make test-s3` / `make test-adls` / `make test-gcs`
-- **Lint & format:** `make lint`
-- **Docs preview / build:** `make docs-serve` / `make docs-build`
-- **Clean build artifacts:** `make clean`
-- **Use a specific Python:** prefix with `PYTHON=3.12`, e.g. `PYTHON=3.12 make install`
+- **Install / set up dev env:** `just install` (installs `uv`, syncs all extras, builds Cython)
+- **Run unit tests:** `just test`
+- **Run a subset:** `just test -v -k <pattern>`
+- **Integration tests (Spark/Docker):** `just test-integration` (rebuild with `just test-integration-rebuild`)
+- **Cloud storage suites:** `just test-s3` / `just test-adls` / `just test-gcs`
+- **Every CI gate (format, lint, types, hygiene):** `just check`
+- **Autofix format and lint:** `just fix`
+- **Docs preview / build:** `just docs-serve` / `just docs-build`
+- **Clean build artifacts:** `just clean`
+- **Use a specific Python:** pass nox's `--force-python`, e.g. `just install --force-python 3.12`
+- **Run one nox session:** `uv run nox -s <session>`, list them with `uv run nox --list`
 
 ## PR & Commit Conventions
 
@@ -93,7 +95,7 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - Keep the first version of a PR minimal; defer optimizations and edge cases to follow-ups.
 - Commit messages explain the *what* and *why*, not line-by-line implementation. Be as succinct as possible.
 - The Apache License header is required on every new source file (enforced by `./dev/check-license`).
-- Run `make lint` and `make test` before pushing; CI runs both plus the lockfile check.
+- Run `just check` and `just test` before pushing; CI runs both plus the lockfile check.
 
 ## GitHub Write Approval
 

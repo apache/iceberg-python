@@ -103,14 +103,45 @@ geoarrow = ["geoarrow-pyarrow>=0.2.0"]
 encryption = ["cryptography>=42.0.0"]
 
 [dependency-groups]
+# Imported by noxfile.py itself, so every session that type-checks it needs them.
+noxfile = [
+    "nox>=2026.10.20",
+    "identify==2.6.20",
+    "pathspec>=1.1.1",
+]
+# Run as commands inside nox sessions, so each session installs only what it runs.
+lint = [
+    "ruff==0.14.3",
+    "codespell==2.4.1",
+    "nbqa==1.9.1",
+    "rumdl==0.3.2",
+    "pre-commit-hooks==6.0.0",
+]
+types = [
+    "mypy==1.18.2",
+    "types-cachetools==7.0.0.20260713",
+    "types-pytest-lazy-fixture==0.6.3.20260518",
+    "types-pytz==2026.5.0.20261006",
+    "types-requests==2.33.0.20261006",
+]
+ty = [
+    "ty==0.0.84",
+]
+coverage = [
+    "coverage[toml]>=7.4.2",
+]
 dev = [
+    {include-group = "noxfile"},
+    {include-group = "lint"},
+    {include-group = "types"},
+    {include-group = "ty"},
+    {include-group = "coverage"},
     "pytest==9.1.1",
     "pytest-checkdocs==2.14.0",
     "setuptools>=83.0.0",
-    "prek>=0.2.1",
+    # imported by noxfile.py, so they must be present wherever nox runs
     "pytest-lazy-fixtures==1.4.1",
     "fastavro==1.12.2",
-    "coverage[toml]>=7.4.2",
     "requests-mock==1.12.1",
     "moto[server]>=5.0.2",
     "typing-extensions==4.16.0",
@@ -128,7 +159,6 @@ dev = [
     "papermill>=2.6.0",
     "nbformat>=5.10.0",
     "ipykernel>=6.29.0",
-    "ty==0.0.84",
 ]
 # for mkdocs
 docs = [
@@ -150,6 +180,7 @@ notebook = [
 ]
 
 [tool.uv]
+required-version = ">=0.13.4"
 default-groups = [
     "dev",
 ]
@@ -265,6 +296,7 @@ filterwarnings = [
 mypy_path = "python"
 no_implicit_optional = true
 namespace_packages = false
+scripts_are_modules = true
 warn_redundant_casts = true
 warn_unreachable = true
 warn_unused_ignores = true
@@ -287,3 +319,9 @@ allowed-unresolved-imports = ["pyiceberg_core.datafusion", "griffe", "mkdocs_gen
 
 [tool.coverage.run]
 source = ['pyiceberg/']
+
+[tool.coverage.report]
+fail_under = 85
+
+[tool.codespell]
+ignore-words-list = "BoundIn,fo,MoR,NotIn,notIn,oT"
