@@ -930,6 +930,9 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
                 else AlwaysFalse()
             )
 
+        return self._visit_present_column(predicate, file_column_name)
+
+    def _visit_present_column(self, predicate: BoundPredicate, file_column_name: str) -> BooleanExpression:
         if isinstance(predicate, BoundUnaryPredicate):
             return predicate.as_unbound(file_column_name)
         elif isinstance(predicate, BoundLiteralPredicate):
@@ -940,10 +943,27 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             raise ValueError(f"Unsupported predicate: {predicate}")
 
 
+class _MissingColumnResolver(_ColumnNameTranslator):
+    """Resolves predicates on columns missing from the file, keeping the other predicates bound to the table schema.
+
+    Literals stay in the table's types, so they are not narrowed to the types of an older file after type promotion.
+    """
+
+    def _visit_present_column(self, predicate: BoundPredicate, file_column_name: str) -> BooleanExpression:
+        return predicate
+
+
 def translate_column_names(
     expr: BooleanExpression, file_schema: Schema, case_sensitive: bool = True, projected_field_values: dict[int, Any] = EMPTY_DICT
 ) -> BooleanExpression:
     return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_field_values))
+
+
+def resolve_missing_columns(
+    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool = True, projected_field_values: dict[int, Any] = EMPTY_DICT
+) -> BooleanExpression:
+    """Replace predicates on columns missing from the file with constants, leaving the others bound to the table schema."""
+    return visit(expr, _MissingColumnResolver(file_schema, case_sensitive, projected_field_values))
 
 
 class _ExpressionFieldIDs(BooleanExpressionVisitor[set[int]]):

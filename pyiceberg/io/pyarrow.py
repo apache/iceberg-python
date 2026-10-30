@@ -75,7 +75,7 @@ from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
     bind,
     extract_field_ids,
-    translate_column_names,
+    resolve_missing_columns,
 )
 from pyiceberg.expressions.visitors import visit as boolean_expression_visit
 from pyiceberg.io import (
@@ -1737,11 +1737,12 @@ def _task_to_record_batches(
 
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
-            translated_row_filter = translate_column_names(
+            # The filter stays bound to the table schema so literals keep the table's types, which may be
+            # wider than the file's after type promotion. Arrow compares the mixed types.
+            file_row_filter = resolve_missing_columns(
                 bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
             )
-            bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
-            pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
+            pyarrow_filter = expression_to_pyarrow(file_row_filter, file_schema)
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
