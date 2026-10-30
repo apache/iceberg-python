@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import itertools
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from pyiceberg.conversions import from_bytes
@@ -135,7 +135,7 @@ class InspectTable:
 
             snapshots.append(
                 {
-                    "committed_at": datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0, tz=timezone.utc),
+                    "committed_at": datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0, tz=UTC),
                     "snapshot_id": snapshot.snapshot_id,
                     "parent_id": snapshot.parent_snapshot_id,
                     "operation": str(operation),
@@ -709,7 +709,7 @@ class InspectTable:
 
             history.append(
                 {
-                    "made_current_at": datetime.fromtimestamp(snapshot_entry.timestamp_ms / 1000.0, tz=timezone.utc),
+                    "made_current_at": datetime.fromtimestamp(snapshot_entry.timestamp_ms / 1000.0, tz=UTC),
                     "snapshot_id": snapshot_entry.snapshot_id,
                     "parent_id": snapshot.parent_snapshot_id if snapshot else None,
                     "is_current_ancestor": snapshot_entry.snapshot_id in ancestors_ids,

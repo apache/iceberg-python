@@ -19,11 +19,13 @@
 from __future__ import annotations
 
 import io
+import os
 from dataclasses import dataclass, field
 
 from pyiceberg.avro.decoder import new_decoder
 from pyiceberg.avro.encoder import BinaryEncoder
 from pyiceberg.avro.resolver import construct_reader, construct_writer
+from pyiceberg.encryption.ciphers import AesKeySize, SecureKey
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import BinaryType, LongType, NestedField
@@ -31,6 +33,8 @@ from pyiceberg.types import BinaryType, LongType, NestedField
 KEY_METADATA_V1 = 1
 
 AES_KEY_LENGTHS = (16, 24, 32)
+
+AAD_PREFIX_LENGTH = 16
 
 KEY_METADATA_SCHEMA_V1 = Schema(
     NestedField(field_id=0, name="encryption_key", field_type=BinaryType(), required=True),
@@ -57,6 +61,11 @@ class StandardKeyMetadata:
             raise ValueError(
                 f"Invalid encryption key in key metadata: expected one of {AES_KEY_LENGTHS} bytes, got {len(self.encryption_key)}"
             )
+
+    @classmethod
+    def generate(cls, key_size: AesKeySize = AesKeySize.BITS_128) -> StandardKeyMetadata:
+        """Generate key metadata for a new file, with a random key of `key_size` and a random AAD prefix."""
+        return cls(encryption_key=SecureKey.generate(key_size).key, aad_prefix=os.urandom(AAD_PREFIX_LENGTH))
 
     @classmethod
     def from_bytes(cls, data: bytes) -> StandardKeyMetadata:

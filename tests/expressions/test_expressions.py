@@ -20,9 +20,9 @@ import copy
 import pickle
 import uuid
 from decimal import Decimal
+from typing import assert_type
 
 import pytest
-from typing_extensions import assert_type
 
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -293,6 +293,20 @@ def test_empty_bind_in(table_schema_simple: Schema) -> None:
 def test_empty_bind_not_in(table_schema_simple: Schema) -> None:
     bound = BoundNotIn(BoundReference(table_schema_simple.find_field(1), table_schema_simple.accessor_for_field(1)), set())
     assert bound == AlwaysTrue()
+
+
+@pytest.mark.parametrize(
+    "expression, match",
+    [
+        (StartsWith("bar", "2147483648"), "AboveMax"),
+        (NotStartsWith("bar", "2147483648"), "AboveMax"),
+        (StartsWith("bar", "-2147483649"), "BelowMin"),
+        (NotStartsWith("bar", "-2147483649"), "BelowMin"),
+    ],
+)
+def test_bind_starts_with_out_of_range_literal(table_schema_simple: Schema, expression: BooleanExpression, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        expression.bind(table_schema_simple)
 
 
 def test_bind_not_in_equal_term(table_schema_simple: Schema) -> None:

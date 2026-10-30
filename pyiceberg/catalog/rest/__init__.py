@@ -20,7 +20,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Mapping
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -113,7 +113,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class HttpMethod(str, Enum):
+class HttpMethod(StrEnum):
     GET = "GET"
     HEAD = "HEAD"
     POST = "POST"
@@ -176,6 +176,7 @@ class Endpoints:
     register_view: str = "namespaces/{namespace}/register-view"
     drop_view: str = "namespaces/{namespace}/views/{view}"
     view_exists: str = "namespaces/{namespace}/views/{view}"
+    rename_view: str = "views/rename"
     plan_table_scan: str = "namespaces/{namespace}/tables/{table}/plan"
     # Use plan_id (underscore) for str.format; Capability paths use {plan-id} to match the REST spec.
     fetch_planning_result: str = "namespaces/{namespace}/tables/{table}/plan/{plan_id}"
@@ -211,6 +212,7 @@ class Capability:
     V1_CREATE_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.create_view}")
     V1_REGISTER_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.register_view}")
     V1_DELETE_VIEW = Endpoint(http_method=HttpMethod.DELETE, path=f"{API_PREFIX}/{Endpoints.drop_view}")
+    V1_RENAME_VIEW = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.rename_view}")
     V1_SUBMIT_TABLE_SCAN_PLAN = Endpoint(http_method=HttpMethod.POST, path=f"{API_PREFIX}/{Endpoints.plan_table_scan}")
     # Spec advertises {plan-id}; must match ConfigResponse endpoint strings from servers.
     V1_FETCH_TABLE_SCAN_PLAN = Endpoint(
@@ -248,6 +250,7 @@ VIEW_ENDPOINTS: frozenset[Endpoint] = frozenset(
         Capability.V1_LOAD_VIEW,
         Capability.V1_CREATE_VIEW,
         Capability.V1_DELETE_VIEW,
+        Capability.V1_RENAME_VIEW,
     )
 )
 
@@ -361,7 +364,7 @@ class LoadCredentialsResponse(IcebergBaseModel):
 
 
 class ViewResponse(IcebergBaseModel):
-    metadata_location: str | None = Field(alias="metadata-location", default=None)
+    metadata_location: str = Field(..., alias="metadata-location")
     metadata: ViewMetadata
     config: Properties = Field(default_factory=dict)
 
@@ -1187,6 +1190,7 @@ class RestCatalog(Catalog):
             identifier=identifier_tuple,
             metadata=view_response.metadata,
             config=view_response.config,
+            metadata_location=view_response.metadata_location,
         )
 
     def _refresh_token(self) -> None:
@@ -1311,7 +1315,7 @@ class RestCatalog(Catalog):
             location = location.rstrip("/")
 
         request = CreateViewRequest(
-            name=namespace_and_view["view"],
+            name=self._identifier_to_validated_tuple(identifier)[-1],
             location=location,
             view_schema=fresh_schema,
             view_version=view_version,
@@ -1825,15 +1829,14 @@ class RestCatalog(Catalog):
     def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
         self._check_endpoint(Capability.V1_REGISTER_VIEW)
         namespace_and_view = self._split_identifier_for_path(identifier, IdentifierKind.VIEW)
-        namespace = namespace_and_view["namespace"]
-        view = namespace_and_view["view"]
+        identifier_tuple = self._identifier_to_validated_tuple(identifier)
         if self.table_exists(identifier):
-            raise TableAlreadyExistsError(f"Table {namespace}.{view} already exists")
+            raise TableAlreadyExistsError(f"Table {'.'.join(identifier_tuple)} already exists")
 
-        request = RegisterViewRequest(name=view, metadata_location=metadata_location)
+        request = RegisterViewRequest(name=identifier_tuple[-1], metadata_location=metadata_location)
         serialized_json = request.model_dump_json().encode(UTF8)
         response = self._session.post(
-            self.url(Endpoints.register_view, namespace=namespace),
+            self.url(Endpoints.register_view, namespace=namespace_and_view["namespace"]),
             data=serialized_json,
         )
         try:
@@ -1855,6 +1858,29 @@ class RestCatalog(Catalog):
             response.raise_for_status()
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchViewError})
+
+    @retry(**_RETRY_ARGS)
+    @override
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        self._check_endpoint(Capability.V1_RENAME_VIEW)
+        source = self._split_identifier_for_json(from_identifier)
+        destination = self._split_identifier_for_json(to_identifier)
+
+        # Ensure that namespaces exist on source and destination.
+        source_namespace = source["namespace"]
+        if not self.namespace_exists(source_namespace):
+            raise NoSuchNamespaceError(f"Source namespace does not exist: {source_namespace}")
+
+        destination_namespace = destination["namespace"]
+        if not self.namespace_exists(destination_namespace):
+            raise NoSuchNamespaceError(f"Destination namespace does not exist: {destination_namespace}")
+
+        payload = {"source": source, "destination": destination}
+        response = self._session.post(self.url(Endpoints.rename_view), json=payload)
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            _handle_non_200_response(exc, {404: NoSuchViewError, 409: ViewAlreadyExistsError})
 
     def close(self) -> None:
         """Close the catalog and release Session connection adapters.
