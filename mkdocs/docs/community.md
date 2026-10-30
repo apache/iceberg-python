@@ -48,14 +48,14 @@ encourage engagement and contributions, the community is not a venue for marketi
 Any vendor who wants to participate in the Apache Iceberg community Slack workspace should create a dedicated vendor channel
 for their organization prefixed by `vendor-`.
 
-This space can be used to discuss features and integration with Iceberg related to the vendor offering.  This space should not
-be used to promote competing vendor products/services or disparage other vendor offerings.  Discussion should be focused on
+This space can be used to discuss features and integration with Iceberg related to the vendor offering. This space should not
+be used to promote competing vendor products/services or disparage other vendor offerings. Discussion should be focused on
 questions asked by the community and not to expand/introduce/redirect users to alternate offerings.
 
 ### Marketing / Solicitation / Recruiting
 
 The Apache Iceberg community is a space for everyone to operate free of influence. The development lists, Slack workspace,
-and GitHub should not be used to market products or services.  Solicitation or overt promotion should not be performed in common
+and GitHub should not be used to market products or services. Solicitation or overt promotion should not be performed in common
 channels or through direct messages.
 
 Recruitment of community members should not be conducted through direct messages or community channels, but opportunities
