@@ -237,6 +237,17 @@ def codespell(session: nox.Session) -> None:
 
 
 @nox.session(tags=["check"], allow_parallel=True)
+def pyproject(session: nox.Session) -> None:
+    """Validate pyproject.toml against its schema from SchemaStore.
+
+    taplo reads the schema from .taplo.toml, which is the only config file it looks for; it
+    does not read [tool.taplo] from pyproject.toml.
+    """
+    session.install("--group", "lint")
+    session.run("taplo", "lint", "pyproject.toml")
+
+
+@nox.session(tags=["check"], allow_parallel=True)
 def markdownlint(session: nox.Session) -> None:
     """Lint Markdown with rumdl, which reads the existing .markdownlint.yaml.
 

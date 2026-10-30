@@ -116,6 +116,7 @@ lint = [
     "nbqa==1.9.1",
     "rumdl==0.3.2",
     "pre-commit-hooks==6.0.0",
+    "taplo==0.9.3",
 ]
 types = [
     "mypy==1.18.2",
