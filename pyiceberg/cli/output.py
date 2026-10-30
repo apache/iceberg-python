@@ -145,6 +145,7 @@ class ConsoleOutput(Output):
 
         output_table = self._table
         output_table.add_row("View format version", str(metadata.format_version))
+        output_table.add_row("Metadata location", view.metadata_location)
         output_table.add_row("View UUID", str(metadata.view_uuid))
         output_table.add_row("Location", metadata.location)
         output_table.add_row("Current version", str(metadata.current_version_id))
@@ -271,10 +272,4 @@ class JsonOutput(Output):
         self._out({"version": version})
 
     def describe_refs(self, refs: list[tuple[str, SnapshotRefType, dict[str, str]]]) -> None:
-        self._out(
-            [
-                {"name": name, "type": type, detail_key: detail_val}
-                for name, type, detail in refs
-                for detail_key, detail_val in detail.items()
-            ]
-        )
+        self._out([{"name": name, "type": ref_type, **detail} for name, ref_type, detail in refs])

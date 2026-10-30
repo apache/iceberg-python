@@ -15,16 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
+import json
 import logging
 import os
+import struct
 import sys
 import tempfile
 import uuid
 import warnings
+import zlib
 from collections.abc import Iterator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -36,7 +39,9 @@ import pyarrow.parquet as pq
 import pytest
 from packaging import version
 from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3FileSystem
+from pyroaring import BitMap
 
+from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTDeleteFile, RESTFileScanTask, RESTPositionDeleteFile
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -58,12 +63,14 @@ from pyiceberg.expressions import (
     BoundNotStartsWith,
     BoundReference,
     BoundStartsWith,
+    EqualTo,
     GreaterThan,
+    IsNull,
     Not,
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import S3_RETRY_STRATEGY_IMPL, InputStream, OutputStream, load_file_io
+from pyiceberg.io import ADLS_ACCOUNT_NAME, S3_RETRY_STRATEGY_IMPL, S3_SSL_CA_CERT, InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PYARROW_PARQUET_FIELD_ID_KEY,
@@ -75,6 +82,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToArrowSchema,
     _determine_partitions,
     _primitive_to_physical,
+    _read_all_delete_files,
     _read_deletes,
     _task_to_record_batches,
     _to_requested_schema,
@@ -87,13 +95,20 @@ from pyiceberg.io.pyarrow import (
     schema_to_pyarrow,
     write_file,
 )
-from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
 from pyiceberg.table import FileScanTask, TableProperties, WriteTask
-from pyiceberg.table.metadata import TableMetadataV2
+from pyiceberg.table.delete_file_index import DeleteFileIndex
+from pyiceberg.table.deletion_vector import (
+    _DV_BLOB_MAGIC_NUMBER,
+    PROPERTY_REFERENCED_DATA_FILE,
+    deletion_vectors_from_puffin_file,
+)
+from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
 from pyiceberg.table.name_mapping import create_mapping_from_schema
-from pyiceberg.transforms import HourTransform, IdentityTransform
+from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
+from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -382,6 +397,7 @@ def test_pyarrow_s3_session_properties() -> None:
         "s3.secret-access-key": "password",
         "s3.region": "us-east-1",
         "s3.session-token": "s3.session-token",
+        S3_SSL_CA_CERT: "/path/to/ca.pem",
         **UNIFIED_AWS_SESSION_PROPERTIES,
     }
 
@@ -399,7 +415,41 @@ def test_pyarrow_s3_session_properties() -> None:
             secret_key="password",
             region="us-east-1",
             session_token="s3.session-token",
+            tls_ca_file_path="/path/to/ca.pem",
         )
+
+
+def test_pyarrow_s3_assume_role_properties_take_precedence_over_role_properties() -> None:
+    session_properties: Properties = {
+        "s3.region": "us-east-1",
+        "client.assume-role.arn": "arn:aws:iam::123456789012:role/assume-role",
+        "client.assume-role.session-name": "assume-role-session",
+        "client.role-arn": "arn:aws:iam::123456789012:role/role",
+        "client.role-session-name": "role-session",
+    }
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3fs, patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver:
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
+        PyArrowFileIO(properties=session_properties).new_input(location=f"s3://warehouse/{uuid.uuid4()}")
+
+        assert mock_s3fs.call_args.kwargs["role_arn"] == "arn:aws:iam::123456789012:role/assume-role"
+        assert mock_s3fs.call_args.kwargs["session_name"] == "assume-role-session"
+
+
+def test_pyarrow_s3_ssl_ca_cert_requires_supported_pyarrow_version() -> None:
+    session_properties: Properties = {
+        S3_SSL_CA_CERT: "/path/to/ca.pem",
+    }
+
+    with (
+        patch("pyiceberg.io.pyarrow.pa.__version__", "20.0.0"),
+        patch("pyarrow.fs.S3FileSystem"),
+        patch("pyarrow.fs.resolve_s3_region") as mock_s3_region_resolver,
+    ):
+        mock_s3_region_resolver.side_effect = OSError("S3 bucket is not found")
+
+        with pytest.raises(ImportError, match="pyarrow version >= 21.0.0 required"):
+            PyArrowFileIO(properties=session_properties).new_input(location=f"s3://warehouse/{uuid.uuid4()}")
 
 
 def test_pyarrow_s3_session_properties_with_anonymous() -> None:
@@ -1303,11 +1353,10 @@ def test_projection_concat_files(schema_int: Schema, file_int: str) -> None:
     assert repr(result_table.schema) == "id: int32"
 
 
-def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+@pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])
+def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCatalog, with_field_ids: bool) -> None:
     # Test by adding a non-partitioned data file to a partitioned table, verifying partition value
     # projection from manifest metadata.
-    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
-    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
 
     schema = Schema(
         NestedField(1, "other_field", StringType(), required=False), NestedField(2, "partition_id", IntegerType(), required=False)
@@ -1322,12 +1371,23 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
         "default.test_projection_partition",
         schema=schema,
         partition_spec=partition_spec,
-        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+        properties={}
+        if with_field_ids
+        else {TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
     file_data = pa.array(["foo", "bar", "baz"], type=pa.string())
-    file_loc = f"{tmp_path}/test.parquet"
-    pq.write_table(pa.table([file_data], names=["other_field"]), file_loc)
+    file_table = pa.table([file_data], names=["other_field"])
+    if with_field_ids:
+        source_table = catalog.create_table(
+            "default.unpartitioned_source", schema=Schema(schema.fields[0]), location=f"{tmp_path}/source"
+        )
+        source_table.append(file_table)
+        file_loc = next(iter(source_table.scan().plan_files())).file.file_path
+        assert pq.read_schema(file_loc).field("other_field").metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"1"
+    else:
+        file_loc = f"{tmp_path}/test.parquet"
+        pq.write_table(file_table, file_loc)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=pq.read_metadata(file_loc),
@@ -1372,13 +1432,21 @@ def test_identity_transform_column_projection(tmp_path: str, catalog: InMemoryCa
     # Test that row filter does not return any rows for a non-existing partition value
     assert len(table.scan(row_filter="partition_id = -1").to_arrow()) == 0
 
+    assert table.scan(row_filter="partition_id = 1", selected_fields=("other_field",)).to_arrow() == pa.table(
+        {"other_field": ["foo", "bar", "baz"]}
+    )
+    assert table.scan(
+        row_filter="partition_id = 1 AND other_field = 'bar'", selected_fields=("other_field",)
+    ).to_arrow() == pa.table({"other_field": ["bar"]})
+    assert table.scan(row_filter="partition_id = 1 AND other_field = 'bar'", selected_fields=("other_field",)).count() == 1
+
 
 @pytest.mark.parametrize(
-    "partition_field_type, arrow_partition_type, partition_value",
+    "partition_field_type, arrow_partition_type, partition_value, row_filter",
     [
-        (IntegerType(), pa.int32(), 0),
-        (StringType(), pa.large_string(), ""),
-        (IntegerType(), pa.int32(), None),
+        (IntegerType(), pa.int32(), 0, "partition_col = 0"),
+        (StringType(), pa.large_string(), "", "partition_col = ''"),
+        (IntegerType(), pa.int32(), None, "partition_col IS NULL"),
     ],
 )
 def test_identity_transform_column_projection_with_falsy_value(
@@ -1387,6 +1455,7 @@ def test_identity_transform_column_projection_with_falsy_value(
     partition_field_type: PrimitiveType,
     arrow_partition_type: pa.DataType,
     partition_value: Any,
+    row_filter: str,
 ) -> None:
     """Partition value projection must preserve falsy values (0, "") and still render None as null."""
     schema = Schema(
@@ -1440,13 +1509,51 @@ def test_identity_transform_column_projection_with_falsy_value(
         },
         schema=expected_schema,
     )
+    assert table.scan(row_filter=row_filter, selected_fields=("other_field",)).to_arrow() == pa.table(
+        {"other_field": ["foo", "bar"]}
+    )
 
 
-def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog) -> None:
+def test_identity_transform_null_partition_value_takes_precedence_over_initial_default(tmpdir: str) -> None:
+    """A null identity partition value must project as null, not as the field's initial-default."""
+    table_schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False),
+        NestedField(2, "partition_col", IntegerType(), required=False, initial_default=7),
+    )
+    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_col"))
+    table_metadata = TableMetadataV3(
+        location=str(tmpdir), last_column_id=2, schemas=[table_schema], partition_specs=[partition_spec], next_row_id=0
+    )
+
+    arrow_schema = pa.schema([pa.field("other_field", pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    file_path = _write_table_to_file(
+        f"{tmpdir}/null_partition.parquet", arrow_schema, pa.table({"other_field": ["foo", "bar"]}, schema=arrow_schema)
+    )
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(None),
+        record_count=2,
+        file_size_in_bytes=os.path.getsize(file_path),
+        spec_id=partition_spec.spec_id,
+    )
+
+    def scan(projected_schema: Schema, row_filter: BooleanExpression) -> pa.Table:
+        return ArrowScan(table_metadata, PyArrowFileIO(), projected_schema, row_filter).to_table([FileScanTask(data_file)])
+
+    assert scan(table_schema, AlwaysTrue()).to_pydict() == {"other_field": ["foo", "bar"], "partition_col": [None, None]}
+
+    # Filters on the partition column see null whether or not the column is projected
+    for projected_schema in (table_schema, Schema(table_schema.fields[0])):
+        assert scan(projected_schema, IsNull("partition_col"))["other_field"].to_pylist() == ["foo", "bar"]
+        assert scan(projected_schema, EqualTo("partition_col", 7)).num_rows == 0
+
+
+@pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])
+def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog, with_field_ids: bool) -> None:
     # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value
     # projection from manifest metadata.
-    # TODO: Update to use a data file created by writing data to an unpartitioned table once add_files supports field IDs.
-    # (context: https://github.com/apache/iceberg-python/pull/1443#discussion_r1901374875)
     schema = Schema(
         NestedField(1, "field_1", StringType(), required=False),
         NestedField(2, "field_2", IntegerType(), required=False),
@@ -1463,12 +1570,23 @@ def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryC
         "default.test_projection_partitions",
         schema=schema,
         partition_spec=partition_spec,
-        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+        properties={}
+        if with_field_ids
+        else {TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
     )
 
     file_data = pa.array(["foo"], type=pa.string())
-    file_loc = f"{tmp_path}/test.parquet"
-    pq.write_table(pa.table([file_data], names=["field_1"]), file_loc)
+    file_table = pa.table([file_data], names=["field_1"])
+    if with_field_ids:
+        source_table = catalog.create_table(
+            "default.unpartitioned_source", schema=Schema(schema.fields[0]), location=f"{tmp_path}/source"
+        )
+        source_table.append(file_table)
+        file_loc = next(iter(source_table.scan().plan_files())).file.file_path
+        assert pq.read_schema(file_loc).field("field_1").metadata[PYARROW_PARQUET_FIELD_ID_KEY] == b"1"
+    else:
+        file_loc = f"{tmp_path}/test.parquet"
+        pq.write_table(file_table, file_loc)
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=pq.read_metadata(file_loc),
@@ -1504,6 +1622,12 @@ field_3: int32
 field_1: [["foo"]]
 field_2: [[2]]
 field_3: [[3]]"""
+    )
+    assert table.scan(row_filter="field_2 = 2 AND field_3 = 3", selected_fields=("field_1",)).to_arrow() == pa.table(
+        {"field_1": ["foo"]}
+    )
+    assert table.scan(row_filter="field_2 = 2 AND field_3 = 3", selected_fields=("field_1", "field_2")).to_arrow() == pa.table(
+        {"field_1": ["foo"], "field_2": pa.array([2], type=pa.int32())}
     )
 
 
@@ -1820,6 +1944,319 @@ def test_read_deletes(deletes_file: str, request: pytest.FixtureRequest) -> None
     expected_file_path = list(deletes.keys())[0]
     assert set(deletes.keys()) == {expected_file_path}
     assert list(deletes.values())[0] == pa.chunked_array([[1, 3, 5]])
+
+
+def _deletion_vector_bitmap_payload(values: list[int] | None = None) -> bytes:
+    return (1).to_bytes(8, byteorder="little") + (0).to_bytes(4, byteorder="little") + BitMap(values or [1, 3, 5]).serialize()
+
+
+def _deletion_vector_blob(bitmap_payload: bytes) -> bytes:
+    bitmap_data = struct.pack("<I", _DV_BLOB_MAGIC_NUMBER) + bitmap_payload
+    return struct.pack(">I", len(bitmap_data)) + bitmap_data + struct.pack(">I", zlib.crc32(bitmap_data) & 0xFFFFFFFF)
+
+
+def _deletion_vector_puffin_payload(referenced_data_file: str) -> bytes:
+    dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload())
+    footer_payload = json.dumps(
+        {
+            "blobs": [
+                {
+                    "type": "deletion-vector-v1",
+                    "fields": [2147483546],
+                    "snapshot-id": 1,
+                    "sequence-number": 1,
+                    "offset": len(MAGIC_BYTES) + 4,
+                    "length": len(dv_blob),
+                    "properties": {PROPERTY_REFERENCED_DATA_FILE: referenced_data_file},
+                }
+            ],
+            "properties": {},
+        }
+    ).encode()
+
+    return (
+        MAGIC_BYTES
+        + b"\x00\x00\x00\x00"
+        + dv_blob
+        + footer_payload
+        + len(footer_payload).to_bytes(4, byteorder="little")
+        + b"\x00\x00\x00\x00"
+        + MAGIC_BYTES
+    )
+
+
+def test_deletion_vectors_from_puffin_file(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    puffin_payload = _deletion_vector_puffin_payload(referenced_data_file)
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(puffin_payload)
+
+    with open(delete_file_path, "rb") as f:
+        deletion_vectors = deletion_vectors_from_puffin_file(PuffinFile(f.read()))
+
+    assert {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors} == {
+        referenced_data_file: pa.chunked_array([[1, 3, 5]])
+    }
+
+
+def test_read_deletes_from_whole_puffin_file(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(_deletion_vector_puffin_payload(referenced_data_file))
+
+    deletes = _read_deletes(
+        PyArrowFileIO(),
+        DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.POSITION_DELETES,
+            file_path=delete_file_path,
+            file_format=FileFormat.PUFFIN,
+            record_count=3,
+        ),
+    )
+
+    assert deletes == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+
+@pytest.mark.parametrize(
+    ("missing_field", "error"),
+    [
+        ("content_offset", "content offset is missing"),
+        ("content_size_in_bytes", "content size is missing"),
+        ("referenced_data_file", "referenced data file is missing"),
+    ],
+)
+def test_read_deletes_rejects_partial_content_reference(tmp_path: Path, missing_field: str, error: str) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+    puffin_payload = _deletion_vector_puffin_payload(referenced_data_file)
+    blob = PuffinFile(puffin_payload).footer.blobs[0]
+
+    with open(delete_file_path, "wb") as f:
+        f.write(puffin_payload)
+
+    dv = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_file_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=3,
+        content_offset=blob.offset if missing_field != "content_offset" else None,
+        content_size_in_bytes=blob.length if missing_field != "content_size_in_bytes" else None,
+        referenced_data_file=referenced_data_file if missing_field != "referenced_data_file" else None,
+    )
+
+    with pytest.raises(ValueError, match=error):
+        _read_deletes(PyArrowFileIO(), dv)
+
+
+def test_read_deletion_vector_blob_from_content_range(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload())
+    prefix = b"\x01not-a-puffin-file"
+    delete_file_path = f"{tmp_path}/deletes.bin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(prefix + dv_blob + b"trailing-bytes")
+
+    deletes = _read_deletes(
+        PyArrowFileIO(),
+        DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.POSITION_DELETES,
+            file_path=delete_file_path,
+            file_format=FileFormat.PUFFIN,
+            record_count=3,
+            referenced_data_file=referenced_data_file,
+            content_offset=len(prefix),
+            content_size_in_bytes=len(dv_blob),
+        ),
+    )
+
+    assert deletes == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+
+def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tmp_path: Path) -> None:
+    referenced_data_files = [f"{tmp_path}/data-{index}.parquet" for index in range(2)]
+    first_dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload([1, 3]))
+    second_dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload([5]))
+    delete_file_path = f"{tmp_path}/deletes.bin"
+
+    with open(delete_file_path, "wb") as f:
+        f.write(first_dv_blob + second_dv_blob)
+
+    first_dv = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_file_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=2,
+        referenced_data_file=referenced_data_files[0],
+        content_offset=0,
+        content_size_in_bytes=len(first_dv_blob),
+    )
+    second_dv = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_file_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=1,
+        referenced_data_file=referenced_data_files[1],
+        content_offset=len(first_dv_blob),
+        content_size_in_bytes=len(second_dv_blob),
+    )
+    data_files = [
+        DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=referenced_data_file,
+            file_format=FileFormat.PARQUET,
+            record_count=10,
+            file_size_in_bytes=100,
+        )
+        for referenced_data_file in referenced_data_files
+    ]
+
+    deletes = _read_all_delete_files(
+        PyArrowFileIO(),
+        [
+            FileScanTask(data_file=data_file, delete_files={dv})
+            for data_file, dv in zip(data_files, [first_dv, second_dv], strict=True)
+        ],
+    )
+
+    assert deletes == {
+        referenced_data_files[0]: [pa.chunked_array([[1, 3]])],
+        referenced_data_files[1]: [pa.chunked_array([[5]])],
+    }
+
+
+@pytest.mark.parametrize("selected_indices", [(0, 1, 2, 3, 4, 5), (0, 3, 5)])
+@pytest.mark.parametrize("planning_mode", ["local", "rest"])
+def test_read_all_delete_files_from_external_packed_deletion_vectors(
+    tmp_path: Path, selected_indices: tuple[int, ...], planning_mode: Literal["local", "rest"]
+) -> None:
+    """Apply selected DV ranges from an externally generated .bin file to their data files."""
+    fixture_path = Path(__file__).parents[1] / "table" / "deletion_vector" / "v1" / "packed-deletion-vectors.bin"
+    # (content_offset, content_size_in_bytes, expected deleted row positions)
+    # Ranges copied from the fixture's V3 manifest; each DV references a different ten-row data file.
+    content_ranges = [
+        (1, 46, [1, 4, 7]),
+        (47, 48, [0, 3, 6, 9]),
+        (95, 42, [0]),
+        (137, 50, [1, 3, 5, 7, 9]),
+        (187, 52, [0, 2, 4, 6, 8, 9]),
+        (239, 44, [0, 2]),
+    ]
+    schema = Schema(NestedField(1, "id", LongType(), required=True))
+    data_files: list[DataFile] = []
+    delete_files: list[DataFile] = []
+    expected_deletes: dict[str, list[pa.ChunkedArray]] = {}
+    expected_rows: list[int] = []
+    for index, (content_offset, content_size_in_bytes, expected_positions) in enumerate(content_ranges):
+        data_path = tmp_path / f"data-{index}.parquet"
+        referenced_data_file = str(data_path)
+        rows = list(range(index * 10, (index + 1) * 10))
+        pq.write_table(pa.table({"id": rows}, schema=schema_to_pyarrow(schema)), data_path)
+        dv = DataFile.from_args(
+            _table_format_version=3,
+            content=DataFileContent.POSITION_DELETES,
+            file_path=str(fixture_path),
+            file_format=FileFormat.PUFFIN,
+            partition=Record(),
+            record_count=len(expected_positions),
+            file_size_in_bytes=fixture_path.stat().st_size,
+            content_offset=content_offset,
+            content_size_in_bytes=content_size_in_bytes,
+            referenced_data_file=referenced_data_file,
+        )
+        dv.spec_id = 0
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=referenced_data_file,
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=10,
+            file_size_in_bytes=data_path.stat().st_size,
+            first_row_id=index * 10,
+        )
+        data_file.spec_id = 0
+        data_files.append(data_file)
+        delete_files.append(dv)
+        if index in selected_indices:
+            expected_deletes[referenced_data_file] = [pa.chunked_array([expected_positions])]
+            expected_rows.extend(row for position, row in enumerate(rows) if position not in expected_positions)
+
+    if planning_mode == "local":
+        delete_index = DeleteFileIndex()
+        for dv in delete_files:
+            delete_index.add_delete_file(
+                ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, sequence_number=2, data_file=dv)
+            )
+        tasks = [
+            FileScanTask(data_file=data_files[index], delete_files=delete_index.for_data_file(1, data_files[index]))
+            for index in selected_indices
+        ]
+    else:
+        rest_deletes: list[RESTDeleteFile] = [
+            RESTPositionDeleteFile(
+                spec_id=0,
+                file_path=dv.file_path,
+                file_format=dv.file_format,
+                file_size_in_bytes=dv.file_size_in_bytes,
+                record_count=dv.record_count,
+                content_offset=dv.content_offset,
+                content_size_in_bytes=dv.content_size_in_bytes,
+            )
+            for dv in delete_files
+        ]
+        tasks = [
+            FileScanTask.from_rest_response(
+                RESTFileScanTask(
+                    data_file=RESTDataFile(
+                        spec_id=0,
+                        file_path=data_files[index].file_path,
+                        file_format=FileFormat.PARQUET,
+                        file_size_in_bytes=data_files[index].file_size_in_bytes,
+                        record_count=10,
+                    ),
+                    delete_file_references=[index, index],
+                ),
+                rest_deletes,
+            )
+            for index in selected_indices
+        ]
+
+    for task, index in zip(tasks, selected_indices, strict=True):
+        assert isinstance(task.delete_files, set)
+        assert len(task.delete_files) == 1
+        dv = next(iter(task.delete_files))
+        assert dv.referenced_data_file == task.file.file_path
+        assert (dv.content_offset, dv.content_size_in_bytes) == content_ranges[index][:2]
+
+    # Repeated tasks must not cause a DV to be loaded more than once.
+    deletes = _read_all_delete_files(PyArrowFileIO(), iter(tasks + tasks[::-1]))
+
+    assert deletes == expected_deletes
+
+    result = ArrowScan(
+        table_metadata=TableMetadataV3(
+            location=str(tmp_path),
+            last_column_id=1,
+            schemas=[schema],
+            current_schema_id=schema.schema_id,
+            partition_specs=[PartitionSpec()],
+            next_row_id=60,
+        ),
+        io=PyArrowFileIO(),
+        projected_schema=schema,
+        row_filter=AlwaysTrue(),
+    ).to_table(tasks)
+
+    assert sorted(result.column("id").to_pylist()) == expected_rows
 
 
 def test_delete(deletes_file: str, request: pytest.FixtureRequest, table_schema_simple: Schema) -> None:
@@ -2830,6 +3267,103 @@ def test_partition_for_deep_nested_field() -> None:
     assert partition_values == {"data-1", "data-2"}
 
 
+def test_determine_partitions_identity_nan() -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"))
+    arrow_table = pa.Table.from_pydict(
+        {"id": [1, 2, 3, 4], "value": [1.0, float("nan"), None, float("nan")]},
+        schema=schema.as_arrow(),
+    )
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    # NaN never compares equal to itself, so its rows must be selected with is_nan
+    rows_by_partition = {
+        repr(p.partition_key.partition[0]): sorted(p.arrow_table_partition["id"].to_pylist()) for p in partitions
+    }
+    assert rows_by_partition == {"1.0": [1], "nan": [2, 4], "None": [3]}
+
+
+@pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(4), TruncateTransform(1)])
+def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) -> None:
+    schema = Schema(
+        NestedField(id=1, name="region", field_type=StringType(), required=False),
+        NestedField(id=2, name="payload", field_type=BinaryType(), required=False),
+        NestedField(
+            id=3,
+            name="info",
+            field_type=StructType(
+                NestedField(id=4, name="tags", field_type=ListType(5, StringType(), element_required=False), required=False),
+                NestedField(id=6, name="attrs", field_type=MapType(7, StringType(), 8, BinaryType()), required=False),
+            ),
+            required=False,
+        ),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=transform, name="region_part"))
+    arrow_schema = pa.schema(
+        [
+            pa.field("region", pa.string_view()),
+            pa.field("payload", pa.binary_view()),
+            pa.field(
+                "info",
+                pa.struct(
+                    [
+                        pa.field("tags", pa.list_(pa.string_view())),
+                        pa.field("attrs", pa.map_(pa.string_view(), pa.binary_view())),
+                    ]
+                ),
+            ),
+        ]
+    )
+    rows = [
+        {"region": "us", "payload": b"a", "info": {"tags": ["x"], "attrs": [("k", b"v")]}},
+        {"region": "eu", "payload": None, "info": None},
+        {"region": "us", "payload": b"b", "info": {"tags": None, "attrs": None}},
+        {"region": None, "payload": b"c", "info": {"tags": ["y", None], "attrs": []}},
+    ]
+    arrow_table = pa.Table.from_pylist(rows, schema=arrow_schema)
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    assert {p.partition_key.partition[0] for p in partitions} == {
+        transform.transform(StringType())(region) for region in ("us", "eu", None)
+    }
+    written = pa.concat_tables([p.arrow_table_partition for p in partitions])
+    assert sorted(written.to_pylist(), key=str) == sorted(rows, key=str)
+
+
+def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="region", field_type=StringType(), required=False),
+        NestedField(id=3, name="payload", field_type=BinaryType(), required=False),
+        NestedField(id=4, name="category", field_type=StringType(), required=False),
+        NestedField(id=5, name="labels", field_type=ListType(6, StringType(), element_required=False), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="region"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_view_types", schema=schema, partition_spec=spec)
+
+    categories = pa.array(["a", "b", None], type=pa.string_view()).dictionary_encode()
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "region": pa.array(["us", "eu", "us"], type=pa.string_view()),
+            "payload": pa.array([b"a", None, b"c"], type=pa.binary_view()),
+            # Polars exports Categorical as dictionary<string_view> and List(Categorical) as large_list<dictionary<string_view>>
+            "category": categories,
+            "labels": pa.LargeListArray.from_arrays([0, 1, 1, 3], categories),
+        }
+    )
+    table.append(arrow_table)
+
+    assert len(table.inspect.partitions()) == 2
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+
+
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="foo", field_type=StringType(), required=True),
@@ -2976,7 +3510,7 @@ def test__to_requested_schema_timestamp_to_timestamptz_projection() -> None:
                     datetime(2025, 8, 14, 12, 0, 0),
                     datetime(2025, 8, 14, 13, 0, 0),
                 ],
-                type=pa.timestamp("us", tz=timezone.utc),
+                type=pa.timestamp("us", tz=UTC),
             )
         ],
         names=["ts_field"],
@@ -2993,8 +3527,8 @@ def test__to_requested_schema_timestamptz_to_timestamp_projection() -> None:
         [
             pa.array(
                 [
-                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc),
-                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=timezone.utc),
+                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=UTC),
+                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=UTC),
                 ],
                 type=pa.timestamp("us", tz="UTC"),
             )
@@ -3038,8 +3572,8 @@ def test__to_requested_schema_timestamptz_to_timestamp_write_rejects() -> None:
         [
             pa.array(
                 [
-                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc),
-                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=timezone.utc),
+                    datetime(2025, 8, 14, 12, 0, 0, tzinfo=UTC),
+                    datetime(2025, 8, 14, 13, 0, 0, tzinfo=UTC),
                 ],
                 type=pa.timestamp("us", tz="UTC"),
             )
@@ -3065,7 +3599,7 @@ def test_write_file_rejects_timestamptz_to_timestamp(tmp_path: Path) -> None:
     table_schema = Schema(NestedField(1, "ts_field", TimestampType(), required=False))
     task_schema = Schema(NestedField(1, "ts_field", TimestamptzType(), required=False))
 
-    arrow_data = pa.table({"ts_field": [datetime(2025, 8, 14, 12, 0, 0, tzinfo=timezone.utc)]})
+    arrow_data = pa.table({"ts_field": [datetime(2025, 8, 14, 12, 0, 0, tzinfo=UTC)]})
 
     table_metadata = TableMetadataV2(
         location=f"file://{tmp_path}",
@@ -3173,6 +3707,48 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
 
 
+def test__to_requested_schema_null_map_of_structs() -> None:
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_map_with_struct",
+            MapType(
+                11,
+                StringType(),
+                12,
+                StructType(NestedField(121, "source", StringType(), required=False)),
+                value_required=False,
+            ),
+            required=False,
+        ),
+        NestedField(2, "col_map", MapType(21, StringType(), 22, IntegerType(), value_required=False), required=False),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("col_map_with_struct", pa.map_(pa.string(), pa.struct([pa.field("source", pa.string())]))),
+            pa.field("col_map", pa.map_(pa.string(), pa.int32())),
+        ]
+    )
+    batch = pa.RecordBatch.from_arrays(
+        [
+            pa.array(
+                [[("a", {"source": "x"})], [], None, [("b", {"source": "y"}), ("c", None)]], type=arrow_schema.field(0).type
+            ),
+            pa.array([[("a", 1)], [], None, [("b", 2), ("c", None)]], type=arrow_schema.field(1).type),
+        ],
+        schema=arrow_schema,
+    )
+
+    result = _to_requested_schema(requested_schema, requested_schema, batch)
+    assert result.column(0).to_pylist() == [[("a", {"source": "x"})], [], None, [("b", {"source": "y"}), ("c", None)]]
+    assert result.column(1).to_pylist() == [[("a", 1)], [], None, [("b", 2), ("c", None)]]
+
+    # A sliced batch has to keep the nulls as well
+    result = _to_requested_schema(requested_schema, requested_schema, batch.slice(1, 3))
+    assert result.column(0).to_pylist() == [[], None, [("b", {"source": "y"}), ("c", None)]]
+    assert result.column(1).to_pylist() == [[], None, [("b", 2), ("c", None)]]
+
+
 @pytest.mark.parametrize(
     "arrow_type,iceberg_type,expected_arrow_type",
     [
@@ -3232,6 +3808,46 @@ def test__to_requested_schema_float_promotion(
 
     assert result.schema[0].type == expected_arrow_type
     assert result.column(0).to_pylist() == [1.5, 2.25, 3.0, None]
+
+
+@skip_if_pyarrow_too_old
+@pytest.mark.parametrize("scheme", ["abfs", "abfss", "wasb", "wasbs"])
+def test_adls_account_name_from_location(scheme: str) -> None:
+    """The account in an account qualified location is used when the property is not set."""
+    with patch("pyarrow.fs.AzureFileSystem") as mock_azure_fs:
+        PyArrowFileIO().fs_by_scheme(scheme, "mycontainer@myaccount.dfs.core.windows.net")
+
+    assert mock_azure_fs.call_args.kwargs["account_name"] == "myaccount"
+
+
+@skip_if_pyarrow_too_old
+def test_adls_account_name_property_wins_over_location() -> None:
+    """An explicit adls.account-name is not overridden by the account in the location."""
+    with patch("pyarrow.fs.AzureFileSystem") as mock_azure_fs:
+        PyArrowFileIO({ADLS_ACCOUNT_NAME: "configured"}).fs_by_scheme("abfss", "mycontainer@myaccount.dfs.core.windows.net")
+
+    assert mock_azure_fs.call_args.kwargs["account_name"] == "configured"
+
+
+@skip_if_pyarrow_too_old
+def test_adls_no_account_name_from_container_only_location() -> None:
+    """A container only netloc carries no account, so nothing should be inferred from it."""
+    with patch("pyarrow.fs.AzureFileSystem") as mock_azure_fs:
+        PyArrowFileIO().fs_by_scheme("abfss", "warehouse")
+
+    assert "account_name" not in mock_azure_fs.call_args.kwargs
+
+
+@skip_if_pyarrow_too_old
+def test_adls_account_name_per_location() -> None:
+    """Two accounts served by one FileIO must each get their own filesystem."""
+    file_io = PyArrowFileIO()
+
+    with patch("pyarrow.fs.AzureFileSystem") as mock_azure_fs:
+        file_io.fs_by_scheme("abfss", "data@accountone.dfs.core.windows.net")
+        file_io.fs_by_scheme("abfss", "data@accounttwo.dfs.core.windows.net")
+
+    assert [call.kwargs["account_name"] for call in mock_azure_fs.call_args_list] == ["accountone", "accounttwo"]
 
 
 def test_pyarrow_file_io_fs_by_scheme_cache() -> None:

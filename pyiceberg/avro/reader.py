@@ -380,13 +380,12 @@ class StructReader(Reader):
         return self._hash
 
 
-@dataclass(frozen=False, init=False)
+@dataclass(frozen=False, init=False, slots=True)
 class ListReader(Reader):
-    __slots__ = ("element", "_is_int_list", "_hash")
     element: Reader
 
     def __init__(self, element: Reader) -> None:
-        super().__init__()
+        super(ListReader, self).__init__()
         self.element = element
         self._hash = hash(self.element)
         self._is_int_list = isinstance(self.element, IntegerReader)
@@ -418,14 +417,13 @@ class ListReader(Reader):
 EMPTY_DICT: dict[Any, Any] = {}
 
 
-@dataclass(frozen=False, init=False)
+@dataclass(frozen=False, init=False, slots=True)
 class MapReader(Reader):
-    __slots__ = ("key", "value", "_is_int_int", "_is_int_bytes", "_key_reader", "_value_reader", "_hash")
     key: Reader
     value: Reader
 
     def __init__(self, key: Reader, value: Reader) -> None:
-        super().__init__()
+        super(MapReader, self).__init__()
         self.key = key
         self.value = value
         if isinstance(self.key, IntegerReader):
