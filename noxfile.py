@@ -41,9 +41,10 @@ SKIP_DIRS = (".git", ".nox", ".venv", "build", "dist", "vendor")
 COMPOSE = ("docker", "compose", "-f", "dev/docker-compose-integration.yml")
 CI = "CI" in os.environ
 COVERAGE = os.environ.get("COVERAGE") == "1"
-COVERAGE_FAIL_UNDER = os.environ.get("COVERAGE_FAIL_UNDER", "85")
+COVERAGE_FAIL_UNDER = os.environ.get("COVERAGE_FAIL_UNDER")
 KEEP_COMPOSE = os.environ.get("KEEP_COMPOSE") == "1"
-COVERAGE_ARGS = ["-m", "coverage", "run", "--parallel-mode", "--source=pyiceberg"] if COVERAGE else []
+COVERAGE_ARGS = ["-m", "coverage", "run", "--parallel-mode"] if COVERAGE else []
+FAIL_UNDER_ARGS = [f"--fail-under={COVERAGE_FAIL_UNDER}"] if COVERAGE_FAIL_UNDER else []
 
 
 # The sdist has no .gitignore, and release verification loads this file from an unpacked sdist.
@@ -282,11 +283,10 @@ def tests(session: nox.Session) -> None:
 def coverage(session: nox.Session) -> None:
     """Combine coverage data and enforce the coverage threshold."""
     session.install("--group", "coverage")
-    fail_under = COVERAGE_FAIL_UNDER
     session.run("coverage", "combine")
-    session.run("coverage", "report", "-m", f"--fail-under={fail_under}")
-    session.run("coverage", "html")
-    session.run("coverage", "xml")
+    session.run("coverage", "report", "-m", *FAIL_UNDER_ARGS)
+    session.run("coverage", "html", *FAIL_UNDER_ARGS)
+    session.run("coverage", "xml", *FAIL_UNDER_ARGS)
 
 
 @nox.session(tags=["test"], default=False, venv_backend="none")

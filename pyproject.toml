@@ -318,3 +318,6 @@ allowed-unresolved-imports = ["pyiceberg_core.datafusion", "griffe", "mkdocs_gen
 
 [tool.coverage.run]
 source = ['pyiceberg/']
+
+[tool.coverage.report]
+fail_under = 85
