@@ -79,8 +79,7 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
 
 
 def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMemoryCatalog, tmp_path: PosixPath) -> None:
-    # column_sizes and the other metric maps are optional in a data file; DuckDB, for one,
-    # writes data files without column_sizes.
+    # column_sizes and the other metric maps are optional in a data file
     schema = Schema(NestedField(1, "x", LongType(), required=False))
     tbl = catalog.create_table("default.no_metrics", schema)
     file_path = f"{tmp_path.absolute().as_posix()}/a.parquet"
