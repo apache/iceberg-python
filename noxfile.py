@@ -41,7 +41,10 @@ NOTEBOOKS = ("notebooks", "tests/notebooks")
 SKIP_DIRS = (".git", ".nox", ".venv", "build", "dist", "vendor")
 COMPOSE = ("docker", "compose", "-f", "dev/docker-compose-integration.yml")
 
-IGNORE = GitIgnoreSpec.from_lines(Path(".gitignore").read_text(encoding="utf-8").splitlines())
+# The sdist has no .gitignore, and release verification loads this file from an unpacked sdist.
+IGNORE = GitIgnoreSpec.from_lines(
+    Path(".gitignore").read_text(encoding="utf-8").splitlines() if Path(".gitignore").exists() else []
+)
 
 
 class Env(StrEnum):
