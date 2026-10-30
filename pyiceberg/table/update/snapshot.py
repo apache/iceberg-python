@@ -108,7 +108,8 @@ class CommitWindow:
     """Tracks the commit range to validate against during retry.
 
     base: The snapshot when the operation began (exclusive lower bound, fixed across retries).
-    head: The branch HEAD snapshot after metadata refresh (inclusive upper bound).
+    head: The branch HEAD snapshot after metadata refresh, or the current snapshot if the branch does not exist
+          (inclusive upper bound).
     """
 
     base: Snapshot | None
@@ -117,7 +118,7 @@ class CommitWindow:
     @classmethod
     def resolve(cls, metadata: TableMetadata, base_id: int | None, branch: str | None) -> CommitWindow:
         """Resolve a CommitWindow from metadata, starting snapshot ID, and target branch."""
-        head = metadata.snapshot_by_name(branch)
+        head = metadata.snapshot_by_name(branch) or metadata.current_snapshot()
         base = metadata.snapshot_by_id(base_id) if base_id is not None else None
         if base_id is not None and base is None:
             raise ValidationException(f"Cannot find starting snapshot {base_id}")
@@ -197,8 +198,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         return branch
 
     def _current_branch_head_id(self) -> int | None:
-        """Return the snapshot id at the head of the target branch, or None if the branch has no snapshot."""
-        snapshot = self._transaction.table_metadata.snapshot_by_name(self._target_branch)
+        """Return the snapshot id at the head of the target branch, or the current snapshot id if the branch does not exist."""
+        table_metadata = self._transaction.table_metadata
+        snapshot = table_metadata.snapshot_by_name(self._target_branch) or table_metadata.current_snapshot()
         return snapshot.snapshot_id if snapshot else None
 
     def append_data_file(self, data_file: DataFile) -> _SnapshotProducer[U]:
@@ -782,7 +784,9 @@ class _OverwriteFiles(_SnapshotProducer["_OverwriteFiles"]):
         existing_files = []
 
         manifest_evaluators: dict[int, Callable[[ManifestFile], bool]] = KeyDefaultDict(self._build_manifest_evaluator)
-        if snapshot := self._transaction.table_metadata.snapshot_by_name(name=self._target_branch):
+        if self._parent_snapshot_id is not None and (
+            snapshot := self._transaction.table_metadata.snapshot_by_id(self._parent_snapshot_id)
+        ):
             for manifest_file in snapshot.manifests(io=self._io):
                 # Manifest does not contain rows that match the files to delete partitions
                 if not manifest_evaluators[manifest_file.partition_spec_id](manifest_file):
@@ -922,7 +926,11 @@ class UpdateSnapshot:
         return _OverwriteFiles(
             commit_uuid=commit_uuid,
             operation=Operation.OVERWRITE
-            if self._transaction.table_metadata.snapshot_by_name(name=self._branch) is not None
+            if (
+                self._transaction.table_metadata.snapshot_by_name(name=self._branch)
+                or self._transaction.table_metadata.current_snapshot()
+            )
+            is not None
             else Operation.APPEND,
             transaction=self._transaction,
             io=self._io,
