@@ -129,6 +129,7 @@ dev = [
     "nbformat>=5.10.0",
     "ipykernel>=6.29.0",
     "ty==0.0.84",
+    "mypy==1.18.2",
 ]
 # for mkdocs
 docs = [
@@ -262,6 +263,7 @@ filterwarnings = [
 ]
 
 [tool.mypy]
+exclude = ["^vendor/"]
 mypy_path = "python"
 no_implicit_optional = true
 namespace_packages = false
@@ -274,7 +276,8 @@ implicit_reexport = false
 ignore_missing_imports = true
 
 [tool.ty.src]
-exclude = ["vendor/"]
+# Start with the package only; tests/ is 400 of the 851 initial diagnostics.
+exclude = ["vendor/", "tests/"]
 
 [tool.ty.environment]
 # The vendored Hive Metastore client is packaged from vendor/, so it must stay importable
@@ -284,6 +287,10 @@ extra-paths = ["vendor"]
 # pyiceberg_core.datafusion is registered at runtime by its compiled extension; griffe and
 # mkdocs_gen_files are only installed with the docs dependency group
 allowed-unresolved-imports = ["pyiceberg_core.datafusion", "griffe", "mkdocs_gen_files"]
+
+[tool.ty.rules]
+# mypy runs with disallow_any_generics; ty silences this rule by default.
+missing-type-argument = "error"
 
 [tool.coverage.run]
 source = ['pyiceberg/']

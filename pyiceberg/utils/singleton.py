@@ -28,7 +28,9 @@ return it.
 More information on metaclasses: https://docs.python.org/3/reference/datamodel.html#metaclasses
 """
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
+
+from typing_extensions import Self
 
 
 def _convert_to_hashable_type(element: Any) -> Any:
@@ -39,16 +41,21 @@ def _convert_to_hashable_type(element: Any) -> Any:
     return element
 
 
-class Singleton:
-    _instances: ClassVar[dict] = {}  # type: ignore
+# (class, positional args, hashable kwargs) is the cache key for instances
+_InstanceKey = tuple[type["Singleton"], tuple[Any, ...], Any]
 
-    def __new__(cls, *args, **kwargs):  # type: ignore
-        key = (cls, tuple(args), _convert_to_hashable_type(kwargs))
+
+class Singleton:
+    _instances: ClassVar[dict[_InstanceKey, "Singleton"]] = {}
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        key: _InstanceKey = (cls, tuple(args), _convert_to_hashable_type(kwargs))
         if key not in cls._instances:
             cls._instances[key] = super().__new__(cls)
-        return cls._instances[key]
+        # the key contains cls, so the cached instance is always of the calling class
+        return cast(Self, cls._instances[key])
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> Any:
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
         """
         Prevent deep copy operations for singletons.
 

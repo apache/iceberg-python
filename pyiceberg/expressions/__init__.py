@@ -711,7 +711,7 @@ class SetPredicate(UnboundPredicate, ABC):
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
         literal_set = self.literals
-        return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore
+        return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore[misc]
 
     def __str__(self) -> str:
         """Return the string representation of the SetPredicate class."""
@@ -926,7 +926,7 @@ class LiteralPredicate(UnboundPredicate, ABC):
             else:
                 raise ValueError(f"Cannot bind {type(self).__name__} with BelowMin literal")
 
-        return self.as_bound(bound_term, lit)  # type: ignore
+        return self.as_bound(bound_term, lit)  # type: ignore[misc]
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the LiteralPredicate class."""

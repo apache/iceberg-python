@@ -24,7 +24,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from pyiceberg.exceptions import ResolveError, ValidationError
-from pyiceberg.expressions import literal  # type: ignore
+from pyiceberg.expressions import literal  # type: ignore[attr-defined]
 from pyiceberg.schema import (
     PartnerAccessor,
     Schema,
@@ -155,7 +155,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             Catalog._convert_schema_if_needed(new_schema, format_version=format_version),
             -1,
             _UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
-            # type: ignore
+            # type: ignore[misc]
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
         return self
@@ -231,7 +231,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             except ValueError as e:
                 raise ValueError(f"Invalid default value: {e}") from e
         else:
-            initial_default = default_value  # type: ignore
+            initial_default = default_value  # type: ignore[assignment]
 
         if (required and initial_default is None) and not self._allow_incompatible_changes:
             # Table format version 1 and 2 cannot add required column because there is no initial value

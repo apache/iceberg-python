@@ -114,7 +114,7 @@ class SortField(IcebergBaseModel):
         return data
 
     source_id: int = Field(alias="source-id")
-    transform: Annotated[  # type: ignore
+    transform: Annotated[  # type: ignore[type-arg]
         Transform,
         BeforeValidator(parse_transform),
         PlainSerializer(lambda c: str(c), return_type=str),  # pylint: disable=W0108

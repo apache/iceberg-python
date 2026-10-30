@@ -670,7 +670,7 @@ def visit_with_partner(
 @visit_with_partner.register(Schema)
 def _(schema: Schema, partner: P, visitor: SchemaWithPartnerVisitor[P, T], accessor: PartnerAccessor[P]) -> T:
     struct_partner = accessor.schema_partner(partner)
-    return visitor.schema(schema, partner, visit_with_partner(schema.as_struct(), struct_partner, visitor, accessor))  # type: ignore
+    return visitor.schema(schema, partner, visit_with_partner(schema.as_struct(), struct_partner, visitor, accessor))  # type: ignore[misc]
 
 
 @visit_with_partner.register(StructType)
@@ -680,7 +680,7 @@ def _(struct: StructType, partner: P, visitor: SchemaWithPartnerVisitor[P, T], a
         field_partner = accessor.field_partner(partner, field.field_id, field.name)
         visitor.before_field(field, field_partner)
         try:
-            field_result = visit_with_partner(field.field_type, field_partner, visitor, accessor)  # type: ignore
+            field_result = visit_with_partner(field.field_type, field_partner, visitor, accessor)  # type: ignore[misc]
             field_results.append(visitor.field(field, field_partner, field_result))
         finally:
             visitor.after_field(field, field_partner)
@@ -693,7 +693,7 @@ def _(list_type: ListType, partner: P, visitor: SchemaWithPartnerVisitor[P, T], 
     element_partner = accessor.list_element_partner(partner)
     visitor.before_list_element(list_type.element_field, element_partner)
     try:
-        element_result = visit_with_partner(list_type.element_type, element_partner, visitor, accessor)  # type: ignore
+        element_result = visit_with_partner(list_type.element_type, element_partner, visitor, accessor)  # type: ignore[misc]
     finally:
         visitor.after_list_element(list_type.element_field, element_partner)
 
@@ -705,14 +705,14 @@ def _(map_type: MapType, partner: P, visitor: SchemaWithPartnerVisitor[P, T], ac
     key_partner = accessor.map_key_partner(partner)
     visitor.before_map_key(map_type.key_field, key_partner)
     try:
-        key_result = visit_with_partner(map_type.key_type, key_partner, visitor, accessor)  # type: ignore
+        key_result = visit_with_partner(map_type.key_type, key_partner, visitor, accessor)  # type: ignore[misc]
     finally:
         visitor.after_map_key(map_type.key_field, key_partner)
 
     value_partner = accessor.map_value_partner(partner)
     visitor.before_map_value(map_type.value_field, value_partner)
     try:
-        value_result = visit_with_partner(map_type.value_type, value_partner, visitor, accessor)  # type: ignore
+        value_result = visit_with_partner(map_type.value_type, value_partner, visitor, accessor)  # type: ignore[misc]
     finally:
         visitor.after_map_value(map_type.value_field, value_partner)
     return visitor.map(map_type, partner, key_result, value_result)
