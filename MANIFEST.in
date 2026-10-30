@@ -25,7 +25,9 @@ exclude pyiceberg/avro/decoder_fast.c
 recursive-include tests *
 
 # Include development files
-include Makefile
+include .gitignore
+include justfile
+include noxfile.py
 include uv.lock
 recursive-include dev *
 

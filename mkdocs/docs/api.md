@@ -235,7 +235,7 @@ static_table = StaticTable.from_metadata(
 )
 ```
 
-The static-table does not allow for write operations. If your table metadata directory contains a `version-hint.text` file, you can just specify  the table root path, and the latest `metadata.json` file will be resolved automatically:
+The static-table does not allow for write operations. If your table metadata directory contains a `version-hint.text` file, you can just specify the table root path, and the latest `metadata.json` file will be resolved automatically:
 
 ```python
 from pyiceberg.table import StaticTable

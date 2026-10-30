@@ -48,9 +48,9 @@ jobs:
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
-      run: make install
+      run: uvx --from rust-just just install
     - name: Run integration tests with coverage
-      run: COVERAGE=1 make test-integration
+      run: COVERAGE=1 uvx --from rust-just just test-integration
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-integration.yml logs
@@ -78,9 +78,9 @@ jobs:
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
-      run: make install
+      run: uvx --from rust-just just install
     - name: Run s3 integration tests with coverage
-      run: COVERAGE=1 make test-s3
+      run: COVERAGE=1 uvx --from rust-just just test-s3
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
@@ -108,9 +108,9 @@ jobs:
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
-      run: make install
+      run: uvx --from rust-just just install
     - name: Run adls integration tests with coverage
-      run: COVERAGE=1 make test-adls
+      run: COVERAGE=1 uvx --from rust-just just test-adls
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-azurite.yml logs
@@ -138,9 +138,9 @@ jobs:
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Install
-      run: make install
+      run: uvx --from rust-just just install
     - name: Run gcs integration tests with coverage
-      run: COVERAGE=1 make test-gcs
+      run: COVERAGE=1 uvx --from rust-just just test-gcs
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-gcs-server.yml logs
@@ -173,7 +173,7 @@ jobs:
         pattern: coverage-*
         merge-multiple: true
     - name: Generate coverage report (75%) # Coverage threshold should only increase over time — never decrease it!
-      run: COVERAGE_FAIL_UNDER=75 make coverage-report
+      run: COVERAGE_FAIL_UNDER=75 uvx --from rust-just just coverage-report
 
   python-integration-required:
     if: ${{ always() }}
