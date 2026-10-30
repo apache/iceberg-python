@@ -229,7 +229,7 @@ def test_partition_type_missing_source_field(table_schema_simple: Schema) -> Non
         (DateType(), datetime.date(1925, 5, 22)),
         (TimeType(), datetime.time(19, 25, 00)),
         (TimestampType(), datetime.datetime(2022, 5, 1, 22, 1, 1)),
-        (TimestamptzType(), datetime.datetime(2022, 5, 1, 22, 1, 1, tzinfo=datetime.timezone.utc)),
+        (TimestamptzType(), datetime.datetime(2022, 5, 1, 22, 1, 1, tzinfo=datetime.UTC)),
         (StringType(), "abc"),
         (UUIDType(), UUID("12345678-1234-5678-1234-567812345678").bytes),
         (FixedType(5), 'b"\x8e\xd1\x87\x01"'),

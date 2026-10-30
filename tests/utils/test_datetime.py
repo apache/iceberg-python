@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import re
-from datetime import datetime, time, timezone, tzinfo
+from datetime import UTC, datetime, time, tzinfo
 
 import pytest
 import pytz
@@ -28,6 +28,7 @@ from pyiceberg.utils.datetime import (
     nanos_to_micros,
     time_str_to_nanos,
     time_to_nanos,
+    timestamp_to_micros,
     timestamp_to_nanos,
     timestamptz_to_micros,
     timestamptz_to_nanos,
@@ -68,7 +69,7 @@ timezones = [
 
 def test_datetime_to_millis() -> None:
     dt = datetime(2023, 7, 10, 10, 10, 10, 123456)
-    expected = int(dt.replace(tzinfo=timezone.utc).timestamp() * 1_000)
+    expected = int(dt.replace(tzinfo=UTC).timestamp() * 1_000)
     datetime_millis = datetime_to_millis(dt)
     assert datetime_millis == expected
 
@@ -151,12 +152,52 @@ def test_timestamptz_to_nanos(timestamp: str, nanos: int) -> None:
     assert nanos == timestamptz_to_nanos(timestamp)
 
 
+def test_timestamptz_to_nanos_missing_zone_offset() -> None:
+    with pytest.raises(ValueError, match="Missing zone offset: 2025-02-23T20:21:44.375612001"):
+        timestamptz_to_nanos("2025-02-23T20:21:44.375612001")
+
+
+def test_timestamptz_to_nanos_invalid_timestamp() -> None:
+    with pytest.raises(ValueError, match=re.escape("Invalid timestamp with zone: invalid (must be ISO-8601)")):
+        timestamptz_to_nanos("invalid")
+
+
 @pytest.mark.parametrize(
     "timestamp, micros",
     [
+        ("1970-01-01T00:00:00", 0),
+        ("2025-02-23T20:21:44.375612", 1740342104375612),
+        ("2025-02-23T20:21:44.3756127", 1740342104375612),
+        ("2025-02-23T20:21:44.37561278", 1740342104375612),
+        ("2025-02-23T20:21:44.375612001", 1740342104375612),
+    ],
+)
+def test_timestamp_to_micros(timestamp: str, micros: int) -> None:
+    assert micros == timestamp_to_micros(timestamp)
+
+
+def test_timestamp_to_micros_unexpected_zone_offset() -> None:
+    with pytest.raises(ValueError, match="Zone offset provided, but not expected: 2025-02-23T16:21:44.375612001-04:00"):
+        timestamp_to_micros("2025-02-23T16:21:44.375612001-04:00")
+
+
+def test_timestamp_to_micros_invalid_timestamp() -> None:
+    with pytest.raises(ValueError, match=re.escape("Invalid timestamp without zone: invalid (must be ISO-8601)")):
+        timestamp_to_micros("invalid")
+
+
+@pytest.mark.parametrize(
+    "timestamp, micros",
+    [
+        ("1970-01-01T00:00:00+00:00", 0),
         ("2025-02-23T16:21:44.375612-04:00", 1740342104375612),
+        ("2025-02-23T16:21:44.3756127-04:00", 1740342104375612),
+        ("2025-02-23T16:21:44.37561278-04:00", 1740342104375612),
+        ("2025-02-23T16:21:44.375612001-04:00", 1740342104375612),
+        ("2025-02-23T16:21:44-04:00:00", 1740342104000000),
         ("2025-02-23T20:21:44.375612+00:00", 1740342104375612),
         ("2025-02-23T20:21:44.375612Z", 1740342104375612),
+        ("2025-02-23T20:21:44.375612001Z", 1740342104375612),
         ("1970-01-01T00:00:00Z", 0),
         ("1970-01-01T00:00:00z", 0),
         ("2025-02-23T20:21Z", 1740342060000000),
@@ -167,14 +208,14 @@ def test_timestamptz_to_micros(timestamp: str, micros: int) -> None:
     assert micros == timestamptz_to_micros(timestamp)
 
 
-def test_timestamptz_to_nanos_missing_zone_offset() -> None:
+def test_timestamptz_to_micros_missing_zone_offset() -> None:
     with pytest.raises(ValueError, match="Missing zone offset: 2025-02-23T20:21:44.375612001"):
-        timestamptz_to_nanos("2025-02-23T20:21:44.375612001")
+        timestamptz_to_micros("2025-02-23T20:21:44.375612001")
 
 
-def test_timestamptz_to_nanos_invalid_timestamp() -> None:
+def test_timestamptz_to_micros_invalid_timestamp() -> None:
     with pytest.raises(ValueError, match=re.escape("Invalid timestamp with zone: invalid (must be ISO-8601)")):
-        timestamptz_to_nanos("invalid")
+        timestamptz_to_micros("invalid")
 
 
 @pytest.mark.parametrize("nanos, micros", [(1510871468000001001, 1510871468000001), (-1510871468000001001, -1510871468000002)])

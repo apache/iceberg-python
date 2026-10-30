@@ -28,11 +28,11 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   integration-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,7 +42,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -62,7 +62,7 @@ jobs:
         include-hidden-files: true
 
   integration-test-s3:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,7 +72,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -92,7 +92,7 @@ jobs:
         include-hidden-files: true
 
   integration-test-adls:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -102,7 +102,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -122,7 +122,7 @@ jobs:
         include-hidden-files: true
 
   integration-test-gcs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,7 +132,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     - name: Install system dependencies
@@ -152,7 +152,7 @@ jobs:
         include-hidden-files: true
 
   integration-coverage-report:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     needs: [integration-test, integration-test-s3, integration-test-adls, integration-test-gcs]
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -162,7 +162,7 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install UV
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
     - name: Install dependencies
@@ -178,7 +178,7 @@ jobs:
   python-integration-required:
     if: ${{ always() }}
     needs: [integration-test, integration-test-s3, integration-test-adls, integration-test-gcs, integration-coverage-report]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
     - name: Verify Python integration jobs succeeded
       env:

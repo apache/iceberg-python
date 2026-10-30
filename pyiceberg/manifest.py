@@ -21,7 +21,7 @@ import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 from copy import copy
-from enum import Enum
+from enum import Enum, StrEnum
 from types import TracebackType
 from typing import (
     Any,
@@ -111,7 +111,7 @@ class ManifestEntryStatus(int, Enum):
         return f"ManifestEntryStatus.{self.name}"
 
 
-class FileFormat(str, Enum):
+class FileFormat(StrEnum):
     AVRO = "AVRO"
     PARQUET = "PARQUET"
     ORC = "ORC"
