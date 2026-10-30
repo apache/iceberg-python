@@ -238,9 +238,9 @@ def codespell(session: nox.Session) -> None:
 
 @nox.session(tags=["check"], allow_parallel=True)
 def pyproject(session: nox.Session) -> None:
-    """Format pyproject.toml with taplo."""
+    """Check that pyproject.toml is formatted, leaving the rewrite to the contributor."""
     session.install("--group", "lint")
-    session.run("taplo", "format", *(["--check"] if _check_only(session) else []), "pyproject.toml")
+    session.run("taplo", "format", "--check", "pyproject.toml")
 
 
 @nox.session(tags=["check"], allow_parallel=True)
