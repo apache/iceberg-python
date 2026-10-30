@@ -39,7 +39,6 @@ SOURCE = ("pyiceberg", "tests", "dev", "mkdocs", "noxfile.py", "setup.py")
 NOTEBOOKS = ("notebooks", "tests/notebooks")
 SKIP_DIRS = (".git", ".nox", ".venv", "build", "dist", "vendor")
 COMPOSE = ("docker", "compose", "-f", "dev/docker-compose-integration.yml")
-PYPROJECT_SCHEMA = "https://json.schemastore.org/pyproject.json"
 CI = "CI" in os.environ
 COVERAGE = os.environ.get("COVERAGE") == "1"
 COVERAGE_FAIL_UNDER = os.environ.get("COVERAGE_FAIL_UNDER")
@@ -239,13 +238,9 @@ def codespell(session: nox.Session) -> None:
 
 @nox.session(tags=["check"], allow_parallel=True)
 def pyproject(session: nox.Session) -> None:
-    """Validate pyproject.toml against its schema from SchemaStore.
-
-    taplo cannot read [tool.taplo] from pyproject.toml (tamasfe/taplo#603), so the schema URL is
-    passed here rather than kept in a config file.
-    """
+    """Format pyproject.toml with taplo."""
     session.install("--group", "lint")
-    session.run("taplo", "lint", "--schema", PYPROJECT_SCHEMA, "pyproject.toml")
+    session.run("taplo", "format", *(["--check"] if _check_only(session) else []), "pyproject.toml")
 
 
 @nox.session(tags=["check"], allow_parallel=True)
