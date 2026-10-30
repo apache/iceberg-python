@@ -622,6 +622,34 @@ def test_concurrent_commit_table(catalog: Catalog, table_schema_nested: Schema, 
             update.add_column(path="c", field_type=IntegerType())
 
 
+def test_concurrent_add_column_after_add_and_drop(
+    catalog: Catalog, table_schema_simple: Schema, random_table_identifier: Identifier
+) -> None:
+    namespace = Catalog.namespace_from(random_table_identifier)
+    catalog.create_namespace(namespace)
+    table_a = catalog.create_table(random_table_identifier, table_schema_simple)
+    table_b = catalog.load_table(random_table_identifier)
+
+    with table_a.update_schema() as update:
+        update.add_column(path="b", field_type=IntegerType())
+    with table_a.update_schema() as update:
+        update.delete_column("b")
+
+    # Dropping b makes schema 0 current again, so only the last assigned field id shows the change:
+    # table_b loaded it as 3 (foo, bar, baz), adding b raised it to 4
+    with pytest.raises(
+        CommitFailedException, match="Requirement failed: last assigned field id has changed: expected 3, found 4"
+    ):
+        with table_b.update_schema() as update:
+            update.add_column(path="c", field_type=IntegerType())
+
+    # After refresh the last assigned field id is 4 (b), so c gets 5
+    table_b.refresh()
+    with table_b.update_schema() as update:
+        update.add_column(path="c", field_type=IntegerType())
+    assert table_b.schema().find_field("c").field_id == 5
+
+
 def test_delete_metadata_multiple(catalog: Catalog, table_schema_nested: Schema, random_table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(random_table_identifier)
     catalog.create_namespace(namespace)
