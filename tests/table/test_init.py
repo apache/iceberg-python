@@ -1186,6 +1186,46 @@ def test_update_remove_snapshots_doesnt_exist(table_v2: Table) -> None:
         update_table_metadata(table_v2.metadata, (update,))
 
 
+@pytest.mark.parametrize("table", [lf("table_v1"), lf("table_v2"), lf("table_v3")])
+def test_remove_snapshots_retains_contiguous_history(table: Table) -> None:
+    snapshots = [
+        Snapshot(snapshot_id=snapshot_id, timestamp_ms=snapshot_id, manifest_list=f"file:///manifest-{snapshot_id}.avro")
+        for snapshot_id in (10, 20, 30, 40)
+    ]
+    cases: list[tuple[str, list[int], list[int], list[int]]] = [
+        ("middle", [10, 20, 30, 40], [20], [30, 40]),
+        ("prefix", [10, 20, 30, 40], [10], [20, 30, 40]),
+        ("separated-gaps", [10, 20, 30, 40], [10, 30], [40]),
+        ("adjacent-gaps", [10, 20, 30, 40], [20, 30], [40]),
+        ("repeated-expired-snapshot", [10, 20, 30, 20, 40], [20], [40]),
+        ("rollback-to-retained-snapshot", [10, 20, 10, 30, 40], [20], [10, 30, 40]),
+        ("no-expiration", [10, 20, 30, 40], [], [10, 20, 30, 40]),
+        ("snapshot-outside-main-history", [10, 30, 40], [20], [10, 30, 40]),
+        ("empty-history", [], [20], []),
+        ("last-entry", [10, 20, 30, 40], [40], []),
+    ]
+    for case, history_ids, expired_ids, expected_ids in cases:
+        history = [
+            SnapshotLogEntry(snapshot_id=snapshot_id, timestamp_ms=100 + index) for index, snapshot_id in enumerate(history_ids)
+        ]
+        original = table.metadata.model_copy(
+            update={
+                "snapshots": snapshots,
+                "snapshot_log": history,
+                "current_snapshot_id": 40,
+                "refs": {"main": SnapshotRef(snapshot_id=40, snapshot_ref_type="branch")},
+            }
+        )
+        updated = update_table_metadata(original, (RemoveSnapshotsUpdate(snapshot_ids=expired_ids),), enforce_validation=True)
+
+        assert [entry.snapshot_id for entry in updated.snapshot_log] == expected_ids, case
+        expected_history = history[-len(expected_ids) :] if expected_ids else []
+        assert updated.snapshot_log == expected_history, case
+        assert {snapshot.snapshot_id for snapshot in updated.snapshots} == {10, 20, 30, 40} - set(expired_ids), case
+        assert original.snapshot_log == history, case
+        assert [entry.snapshot_id for entry in original.snapshot_log] == history_ids, case
+
+
 def test_update_remove_snapshots_remove_current_snapshot_id(table_v2: Table) -> None:
     update = RemoveSnapshotsUpdate(snapshot_ids=[3055729675574597004])
     new_metadata = update_table_metadata(table_v2.metadata, (update,))
