@@ -794,7 +794,7 @@ class Transaction:
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
 
             file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
-            if branch is not None:
+            if branch in self.table_metadata.refs:
                 file_scan = file_scan.use_ref(branch)
             files = file_scan.plan_files()
 
