@@ -219,7 +219,7 @@ def typecheck_mypy(session: nox.Session) -> None:
     """
     session.install("--group", "types")
     files = [str(path) for path in _tracked(".py", ".pyi")]
-    session.run("mypy", "--config-file=pyproject.toml", "--scripts-are-modules", *files, *_posargs(session))
+    session.run("mypy", *files, *_posargs(session))
 
 
 @nox.session(name="typecheck-ty", tags=["experimental"], allow_parallel=True, default=False)

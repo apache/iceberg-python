@@ -296,6 +296,7 @@ filterwarnings = [
 mypy_path = "python"
 no_implicit_optional = true
 namespace_packages = false
+scripts_are_modules = true
 warn_redundant_casts = true
 warn_unreachable = true
 warn_unused_ignores = true
@@ -321,3 +322,6 @@ source = ['pyiceberg/']
 
 [tool.coverage.report]
 fail_under = 85
+
+[tool.codespell]
+ignore-words-list = "BoundIn,fo,MoR,NotIn,notIn,oT"
