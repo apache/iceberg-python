@@ -30,7 +30,6 @@ build/
 dist/
 sdist/
 .coverage
-.coverage.*
 coverage.xml
 .pytest_cache/
 
