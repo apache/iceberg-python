@@ -33,20 +33,12 @@ concurrency:
 jobs:
   lint-and-unit-test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    strategy:
-      max-parallel: 15
-      fail-fast: true
-      matrix:
-        python: ['3.11', '3.12', '3.13', '3.14']
+    timeout-minutes: 25
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-      with:
-        python-version: ${{ matrix.python }}
     - name: Install UV
       uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
@@ -54,41 +46,32 @@ jobs:
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
     - name: Check uv.lock is up to date
-      if: matrix.python == '3.11'
       run: uv lock --check
-    - name: Install
-      run: make install
     - name: Run linters
-      if: matrix.python == '3.11'
-      run: make lint
+      run: uv run nox
+    # The Python version matrix lives in noxfile.py, so nox runs every supported
+    # version here instead of a job matrix. --parallel runs them concurrently.
     - name: Run unit tests with coverage
-      run: COVERAGE=1 make test
+      env:
+        COVERAGE: "1"
+      run: uv run nox -s tests -j auto
     - name: Generate coverage report (85%) # Coverage threshold should only increase over time — never decrease it!
-      run: COVERAGE_FAIL_UNDER=85 make coverage-report
+      run: uv run nox -s coverage
 
   windows-unit-test:
     runs-on: windows-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: true
-      matrix:
-        python: ['3.12']
+    timeout-minutes: 20
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-      with:
-        python-version: ${{ matrix.python }}
     - name: Install UV
       uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
-    - name: Install
-      run: uv sync --all-extras --no-extra hive-kerberos
     - name: Run unit tests
-      run: uv run python -m pytest tests/ -m unit --ignore=tests/integration -v -x
+      run: uv run nox -s tests -p 3.12
 
   cibw-dev-env-smoke-test:
     runs-on: ubuntu-slim

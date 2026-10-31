@@ -115,13 +115,13 @@ This section explains how to run the tests of the source distribution.
 First step is to install the package:
 
 ```sh
-make install
+just install
 ```
 
 To run the full test coverage, with both unit tests and integration tests:
 
 ```sh
-make test-coverage
+just test-coverage
 ```
 
 This will spin up Docker containers to facilitate running test coverage.

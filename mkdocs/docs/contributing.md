@@ -36,12 +36,22 @@ The PyIceberg Project is hosted on GitHub at <https://github.com/apache/iceberg-
 
 For development, [uv](https://docs.astral.sh/uv/) is used for dependency management and packaging. uv is a Python package installer and resolver, written in Rust, that serves as a drop-in replacement for pip, and virtualenv.
 
+### Prerequisites
+
+The development tasks are defined in `justfile`, so `just` must be installed before you run any of the commands below. Install it with uv:
+
+```bash
+uv tool install rust-just
+```
+
+On macOS, `brew install just` also works. On a machine with Cargo, `cargo install just` works. Refer to the [just installation guide](https://github.com/casey/just#installation) for the other package managers.
+
 ### Getting Started
 
 Install uv and set up the development environment:
 
 ```bash
-make install
+just install
 ```
 
 This will install uv if needed, create a virtual environment in `.venv`, and install all dependencies.
@@ -49,23 +59,24 @@ This will install uv if needed, create a virtual environment in `.venv`, and ins
 If you only want to just install uv:
 
 ```bash
-make install-uv
+just install-uv
 ```
 
 ### Python Version Selection
 
-You can specify which Python version to use when creating your virtual environment:
+`just test` runs the unit suite on every supported Python version, in parallel. To develop against one interpreter, create the environment with it:
 
 ```bash
-PYTHON=3.12 make install # Create environment with Python 3.12
-make test # Run tests against Python 3.12
+just install --force-python 3.12 # Create the development environment with Python 3.12
 ```
+
+To run the suite on one version only, name the generated session: `uv run nox -s tests-3.12`.
 
 > **Tip:** `uv python list` shows available interpreters. `uv python install 3.12` can install one if needed.
 
 ### IDE Setup
 
-After running `make install`, configure your IDE to use the Python interpreter at `.venv/bin/python`.
+After running `just install`, configure your IDE to use the Python interpreter at `.venv/bin/python`.
 
 **To set up IDEA with uv:**
 
@@ -94,8 +105,8 @@ For full control over your environment, you can use uv commands directly. See th
 
 `uv.lock` is a cross-platform lockfile that contains the exact versions of all project dependencies. See the [uv.lock documentation](https://docs.astral.sh/uv/guides/projects/#uvlock) for more details.
 
-**Automatic lock file management:**
-When you commit changes to `pyproject.toml` or dependencies, the [`uv-pre-commit`](https://github.com/astral-sh/uv-pre-commit) pre-commit hook will automatically update `uv.lock` if needed. If the lockfile changes, your commit will be stopped and you will be prompted to add the updated `uv.lock` to your commit.
+**Keeping it in sync:**
+After editing `pyproject.toml` or any dependency, regenerate the lockfile with `uv lock` and commit it alongside the change. CI runs `uv lock --check` (also available as `just lock-check`) and fails when the two disagree.
 
 **Manual update:**
 If you want to update the lockfile yourself (for example, after editing `pyproject.toml`), run:
@@ -125,24 +136,26 @@ pip install "git+https://github.com/apache/iceberg-python.git#egg=pyiceberg[pyar
 
 ## Linting
 
-`prek` is used for autoformatting and linting:
+`ruff`, `nbqa`, `codespell` and `mypy` are driven by [nox](https://nox.thea.codes) through the recipes in the `justfile`. Every tool is pinned in `pyproject.toml` and `uv.lock`, so there is nothing to keep in sync by hand:
 
 ```bash
-make lint
+just format # ruff format over Python and notebooks
+just lint # ruff and nbqa, fixing what they can
+just typecheck-mypy # mypy
+just hygiene # whitespace, final newlines, YAML and Python syntax
+just check # everything CI gates on, without writing
 ```
 
-`prek` will automatically fix the violations such as import orders, formatting etc. Pylint errors you need to fix yourself.
+`just fix` applies the automatic fixes (import order, formatting, whitespace) in place. Errors that ruff cannot fix need to be fixed by hand.
 
-In addition to manually running `make lint`, you can install the pre-commit hooks in your local repo with `prek install`. By doing this, linting is run automatically every time you make a commit.
-
-You can bump the integrations to the latest version using `prek auto-update`. This will check if there is a newer version of `{ruff,mypy,...}` and update the yaml.
+There are no git hooks. Run `just check` before pushing; CI runs the same sessions. Run `just --list` for the full set of recipes.
 
 ## Cleaning
 
 Removal of old cached files generated during the Cython build process:
 
 ```bash
-make clean
+just clean
 ```
 
 Helps prevent build failures and unexpected behavior by removing outdated files, ensuring that only up-to-date sources are used & the build environment is always clean.
@@ -152,50 +165,50 @@ Helps prevent build failures and unexpected behavior by removing outdated files,
 For Python, `pytest` is used a testing framework in combination with `coverage` to enforce 90%+ code coverage.
 
 ```bash
-make test
+just test
 ```
 
 By default, S3 and ADLS tests are ignored because that require RustFS and azurite to be running.
 To run the S3 suite:
 
 ```bash
-make test-s3
+just test-s3
 ```
 
 To run the ADLS suite:
 
 ```bash
-make test-adls
+just test-adls
 ```
 
-To pass additional arguments to pytest, you can use `PYTEST_ARGS`.
+To pass additional arguments to pytest, add them after the recipe name; they are forwarded to pytest.
 
 ### Run pytest in verbose mode
 
 ```sh
-make test PYTEST_ARGS="-v"
+just test -v
 ```
 
 ### Run pytest with pdb enabled
 
 ```sh
-make test PYTEST_ARGS="--pdb"
+just test --pdb
 ```
 
-To see all available pytest arguments, run `make test PYTEST_ARGS="--help"`.
+To see all available pytest arguments, run `just test --help`.
 
 ### Integration tests
 
 PyIceberg has integration tests with Apache Spark. Spark will create a new database and provision some tables that PyIceberg can query against.
 
 ```sh
-make test-integration
+just test-integration
 ```
 
 This will restart the containers, to get to a clean state, and then run the PyTest suite. In case something changed in the Dockerfile or the provision script, you can run:
 
 ```sh
-make test-integration-rebuild
+just test-integration-rebuild
 ```
 
 To rebuild the containers from scratch.
@@ -230,26 +243,26 @@ export PYICEBERG_CATALOG__TEST_CATALOG__SECRET_ACCESS_KEY=password
 
 ## Notebooks for Experimentation
 
-PyIceberg provides Jupyter notebooks for quick experimentation and learning. Two Make commands are available depending on your needs:
+PyIceberg provides Jupyter notebooks for quick experimentation and learning. Two recipes are available depending on your needs:
 
-### PyIceberg Examples (`make notebook`)
+### PyIceberg Examples (`just notebook`)
 
 For basic PyIceberg experimentation without additional infrastructure:
 
 ```bash
-make notebook
+just notebook
 ```
 
 This will install notebook dependencies and launch Jupyter Lab in the `notebooks/` directory.
 
 **PyIceberg Example Notebook** (`notebooks/pyiceberg_example.ipynb`) is based on the [Getting Started with PyIceberg](https://py.iceberg.apache.org/#getting-started-with-pyiceberg) page. It demonstrates basic PyIceberg operations like creating catalogs, schemas, and querying tables without requiring any external services.
 
-### Spark Integration Examples (`make notebook-infra`)
+### Spark Integration Examples (`just notebook-infra`)
 
 For working with PyIceberg alongside Spark, use the infrastructure-enabled notebook environment:
 
 ```bash
-make notebook-infra
+just notebook-infra
 ```
 
 This command spins up the full integration test infrastructure via Docker Compose, including:
@@ -261,7 +274,7 @@ This command spins up the full integration test infrastructure via Docker Compos
 
 **Spark Example Notebook** (`notebooks/spark_integration_example.ipynb`) is based on the [Spark Getting Started](https://iceberg.apache.org/docs/nightly/spark-getting-started/) guide. This notebook demonstrates how to work with PyIceberg alongside Spark, leveraging the Docker-based testing setup for a complete local development environment.
 
-After running `make notebook-infra`, open `spark_integration_example.ipynb` in the Jupyter Lab interface to explore Spark integration capabilities.
+After running `just notebook-infra`, open `spark_integration_example.ipynb` in the Jupyter Lab interface to explore Spark integration capabilities.
 
 ## Code standards
 
