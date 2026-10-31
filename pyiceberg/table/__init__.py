@@ -629,7 +629,7 @@ class Transaction:
         append_snapshot_commit_uuid = uuid.uuid4()
         data_files: list[DataFile] = list(
             _dataframe_to_data_files(
-                table_metadata=self._table.metadata, write_uuid=append_snapshot_commit_uuid, df=df, io=self._table.io
+                table_metadata=self.table_metadata, write_uuid=append_snapshot_commit_uuid, df=df, io=self._table.io
             )
         )
 
