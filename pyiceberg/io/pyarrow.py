@@ -69,7 +69,7 @@ from typing_extensions import override
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.exceptions import ResolveError
-from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, BooleanExpression, BoundIsNaN, BoundTerm, Or
 from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
@@ -1125,25 +1125,24 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression, schema: Schema
     """Complementary filter conversion function of expression_to_pyarrow.
 
     Could not use expression_to_pyarrow(Not(expr)) to achieve this complementary effect because
-    ~ in pyarrow.compute.Expression does not handle null.
+    ~ in pyarrow.compute.Expression does not handle null: where expr evaluates to null, Not(expr) is null too
+    and the row is dropped. Only the rows where expr is true are deleted, so null is read as false.
     """
     collector = _NullNaNUnmentionedTermsCollector()
     collector.collect(expr)
 
     # Convert the set of terms to a sorted list so that layout of the expression to build is deterministic.
-    null_unmentioned_bound_terms: list[BoundTerm] = sorted(
-        collector.null_unmentioned_bound_terms, key=lambda term: term.ref().field.name
-    )
     nan_unmentioned_bound_terms: list[BoundTerm] = sorted(
         collector.nan_unmentioned_bound_terms, key=lambda term: term.ref().field.name
     )
 
-    preserve_expr: BooleanExpression = Not(expr)
-    for term in null_unmentioned_bound_terms:
-        preserve_expr = Or(preserve_expr, BoundIsNull(term=term))
+    preserve_expr = ~pc.coalesce(expression_to_pyarrow(expr, schema), pc.scalar(False))
+    nan_expr: BooleanExpression = AlwaysFalse()
     for term in nan_unmentioned_bound_terms:
-        preserve_expr = Or(preserve_expr, BoundIsNaN(term=term))
-    return expression_to_pyarrow(preserve_expr, schema)
+        nan_expr = Or(nan_expr, BoundIsNaN(term=term))
+    if nan_expr == AlwaysFalse():
+        return preserve_expr
+    return preserve_expr | expression_to_pyarrow(nan_expr, schema)
 
 
 @lru_cache
