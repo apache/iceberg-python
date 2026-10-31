@@ -1295,6 +1295,31 @@ def test_overwrite_record_batch_reader(catalog: Catalog) -> None:
     assert len(tbl.scan().to_arrow()) == total_rows
 
 
+def test_delete_and_overwrite_filter_with_null(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    pa_table = pa.table({"x": [1, 2, 3], "p": [1, 2, 2], "v": [None, None, "c"]})
+    filters = [
+        # A null v makes the second branch null for x=2, which matches neither branch
+        "(p == 1 AND v IS NULL) OR (p == 2 AND v == 'c')",
+        # A null v leaves the filter true for x=1
+        "p == 1 OR v == 'c'",
+        "v != 'c'",
+        "NOT (v == 'c')",
+    ]
+    for i, row_filter in enumerate(filters):
+        tbl = catalog.create_table(identifier=f"default.delete_filter_with_null_{i}_{catalog.name}", schema=pa_table.schema)
+        tbl.append(pa_table)
+        matched = set(tbl.scan(row_filter=row_filter).to_arrow()["x"].to_pylist())
+        expected = sorted({1, 2, 3} - matched)
+
+        tbl.delete(row_filter)
+        assert sorted(tbl.scan().to_arrow()["x"].to_pylist()) == expected, row_filter
+
+        tbl.overwrite(pa_table, overwrite_filter="x > 0")
+        tbl.overwrite(pa_table.slice(0, 0), overwrite_filter=row_filter)
+        assert sorted(tbl.scan().to_arrow()["x"].to_pylist()) == expected, row_filter
+
+
 def test_append_record_batch_reader_to_partitioned_table_raises(catalog: Catalog) -> None:
     catalog.create_namespace("default")
     identifier = f"default.append_record_batch_reader_partitioned_{catalog.name}"
