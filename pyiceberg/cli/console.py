@@ -41,7 +41,7 @@ from pyiceberg.view import View
 def catch_exception() -> Callable:  # type: ignore
     def decorator(func: Callable) -> Callable:  # type: ignore
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any):  # type: ignore
+        def wrapper(*args: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -324,7 +324,7 @@ def table(ctx: Context, identifier: str, purge: bool) -> None:  # noqa: F811
     output.text(f"Dropped table: {identifier}{purge_message}")
 
 
-@drop.command()  # type: ignore
+@drop.command()  # type: ignore[no-redef]
 @click.argument("identifier")
 @click.pass_context
 @catch_exception()
@@ -422,7 +422,7 @@ def set() -> None:
     """Set a property on tables/namespaces."""
 
 
-@set.command()  # type: ignore
+@set.command()  # type: ignore[no-redef]
 @click.argument("identifier")
 @click.argument("property_name")
 @click.argument("property_value")
@@ -436,7 +436,7 @@ def namespace(ctx: Context, identifier: str, property_name: str, property_value:
     output.text(f"Updated {property_name} on {identifier}")
 
 
-@set.command()  # type: ignore
+@set.command()  # type: ignore[no-redef]
 @click.argument("identifier")
 @click.argument("property_name")
 @click.argument("property_value")
@@ -458,7 +458,7 @@ def remove() -> None:
     """Remove a property from tables/namespaces."""
 
 
-@remove.command()  # type: ignore
+@remove.command()  # type: ignore[no-redef]
 @click.argument("identifier")
 @click.argument("property_name")
 @click.pass_context
@@ -475,7 +475,7 @@ def namespace(ctx: Context, identifier: str, property_name: str) -> None:  # noq
         raise NoSuchPropertyException(f"Property {property_name} does not exist on {identifier}")
 
 
-@remove.command()  # type: ignore
+@remove.command()  # type: ignore[no-redef]
 @click.argument("identifier")
 @click.argument("property_name")
 @click.pass_context

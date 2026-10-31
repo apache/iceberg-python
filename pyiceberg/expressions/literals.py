@@ -87,7 +87,7 @@ class Literal(IcebergRootModel[L], Generic[L], ABC):  # type: ignore
 
     root: L = Field()
 
-    def __init__(self, value: L, value_type: type[L], /, **data):  # type: ignore
+    def __init__(self, value: L, value_type: type[L], /, **data):  # type: ignore[no-untyped-def]
         if value is None:
             raise TypeError("Invalid literal value: None")
 

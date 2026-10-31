@@ -131,7 +131,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
-        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(schema)  # type: ignore[no-redef]
 
         dataset_name, table_name = self.identifier_to_database_and_table(identifier)
 

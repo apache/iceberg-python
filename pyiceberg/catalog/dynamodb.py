@@ -204,7 +204,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
-        schema: Schema = self._convert_schema_if_needed(  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(  # type: ignore[no-redef]
             schema,
             int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
         )

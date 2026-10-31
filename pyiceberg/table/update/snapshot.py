@@ -740,12 +740,12 @@ class _MergeAppendFiles(_FastAppendFiles):
             table_properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
-        )  # type: ignore
+        )  # type: ignore[assignment]
         self._min_count_to_merge = property_as_int(
             table_properties,
             TableProperties.MANIFEST_MIN_MERGE_COUNT,
             TableProperties.MANIFEST_MIN_MERGE_COUNT_DEFAULT,
-        )  # type: ignore
+        )  # type: ignore[assignment]
         self._merge_enabled = property_as_bool(
             table_properties,
             TableProperties.MANIFEST_MERGE_ENABLED,

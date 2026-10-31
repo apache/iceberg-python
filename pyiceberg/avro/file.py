@@ -96,7 +96,7 @@ class AvroFileHeader(Record):
         if codec_name not in KNOWN_CODECS:
             raise ValueError(f"Unsupported codec: {codec_name}")
 
-        return KNOWN_CODECS[codec_name]  # type: ignore
+        return KNOWN_CODECS[codec_name]  # type: ignore[index]
 
     def get_schema(self) -> Schema:
         if _SCHEMA_KEY in self.meta:
@@ -308,7 +308,7 @@ class AvroOutputFile(Generic[D]):
         if codec_name not in KNOWN_CODECS:
             raise ValueError(f"Unsupported codec: {codec_name}")
 
-        return KNOWN_CODECS[codec_name]  # type: ignore
+        return KNOWN_CODECS[codec_name]  # type: ignore[index]
 
     def write_block(self, objects: list[D]) -> None:
         for obj in objects:

@@ -59,7 +59,7 @@ try:
 
 except ImportError:
 
-    class SnappyCodec(Codec):  # type: ignore
+    class SnappyCodec(Codec):  # type: ignore[no-redef]
         @staticmethod
         def compress(data: bytes) -> tuple[bytes, int]:
             raise ImportError("Snappy support not installed, please install using `pip install pyiceberg[snappy]`")
