@@ -1409,3 +1409,37 @@ def test_record_batch_reader_schema_mismatch_writes_no_files(catalog: Catalog) -
     # _append_snapshot_producer opens.
     assert tbl.metadata.current_snapshot() is None
     assert len(tbl.scan().to_arrow()) == 0
+
+
+def test_append_to_missing_branch_starts_from_main(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.append_to_missing_branch_{catalog.name}"
+    tbl = catalog.create_table(identifier=identifier, schema=pa.schema([("x", pa.int64())]))
+    tbl.append(pa.table({"x": [1, 2]}))
+    main_snapshot_id = tbl.metadata.current_snapshot_id
+
+    tbl.append(pa.table({"x": [3]}), branch="b")
+
+    # Like Java's SnapshotUtil.latestSnapshot, a branch that does not exist starts from the current snapshot of main
+    branch_snapshot = tbl.snapshot_by_name("b")
+    assert branch_snapshot is not None
+    assert branch_snapshot.parent_snapshot_id == main_snapshot_id
+    assert sorted(tbl.scan().use_ref("b").to_arrow()["x"].to_pylist()) == [1, 2, 3]
+
+
+def test_delete_on_missing_branch_starts_from_main(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.delete_on_missing_branch_{catalog.name}"
+    tbl = catalog.create_table(identifier=identifier, schema=pa.schema([("x", pa.int64())]))
+    tbl.append(pa.table({"x": [1, 2]}))
+    tbl.append(pa.table({"x": [5]}))
+
+    # x == 1 matches only part of the file [1, 2], so that file is rewritten to [2] and the file [5] is kept
+    tbl.delete("x == 1", branch="b")
+
+    branch_snapshot = tbl.snapshot_by_name("b")
+    assert branch_snapshot is not None
+    assert sorted(tbl.scan().use_ref("b").to_arrow()["x"].to_pylist()) == [2, 5]
+    # The rewrite removes a data file of main, so it is an overwrite and not an append
+    assert branch_snapshot.summary is not None
+    assert branch_snapshot.summary.operation == Operation.OVERWRITE
