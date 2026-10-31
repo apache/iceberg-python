@@ -2235,3 +2235,58 @@ def test_table_to_polars_forwards_kwargs(table_v2: Table, monkeypatch: pytest.Mo
         table_v2,
         {"storage_options": storage_options, "snapshot_id": 12345, "reader_override": "native"},
     )
+
+
+def test_dynamic_partition_overwrite_after_update_spec_in_transaction(catalog: Catalog) -> None:
+    """Partition the new files with the spec staged in the transaction, not the committed one."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "a", LongType(), required=False),
+        NestedField(2, "b", LongType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="a"))
+    table = catalog.create_table("default.overwrite_staged_spec", schema=schema, partition_spec=spec)
+
+    def to_arrow(*rows: tuple[int, int]) -> pa.Table:
+        return pa.Table.from_pylist([{"a": a, "b": b} for a, b in rows], schema=schema.as_arrow())
+
+    table.append(to_arrow((1, 9), (2, 1), (3, 2)))
+
+    with table.transaction() as tx:
+        with tx.update_spec() as update:
+            update.remove_field("a")
+            update.add_identity("b")
+        tx.dynamic_partition_overwrite(to_arrow((1, 2)))
+
+    # Only partition b = 2 is replaced, so (3, 2) becomes (1, 2) and the other rows survive
+    assert sorted((row["a"], row["b"]) for row in table.scan().to_arrow().to_pylist()) == [(1, 2), (1, 9), (2, 1)]
+    assert [(row["a"], row["b"]) for row in table.scan(row_filter="b == 2").to_arrow().to_pylist()] == [(1, 2)]
+
+
+def test_dynamic_partition_overwrite_after_add_column_in_transaction(catalog: Catalog) -> None:
+    """Partition the new files by a column added earlier in the same transaction."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "a", LongType(), required=False),
+        NestedField(2, "b", LongType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="a"))
+    table = catalog.create_table("default.overwrite_staged_column", schema=schema, partition_spec=spec)
+    table.append(pa.Table.from_pylist([{"a": 1, "b": 9}, {"a": 2, "b": 1}], schema=schema.as_arrow()))
+
+    with table.transaction() as tx:
+        with tx.update_schema() as update:
+            update.add_column("w", LongType())
+        with tx.update_spec() as update:
+            update.add_identity("w")
+        tx.dynamic_partition_overwrite(
+            pa.Table.from_pylist([{"a": 1, "b": 2, "w": 7}], schema=tx.table_metadata.schema().as_arrow())
+        )
+
+    result = sorted((row["a"], row["b"], row["w"]) for row in table.scan().to_arrow().to_pylist())
+    assert result == [(1, 2, 7), (1, 9, None), (2, 1, None)]
+    assert [row["a"] for row in table.scan(row_filter="w == 7").to_arrow().to_pylist()] == [1]
