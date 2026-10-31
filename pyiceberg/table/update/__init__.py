@@ -269,10 +269,12 @@ TableUpdate = Annotated[
 class _TableMetadataUpdateContext:
     _updates: list[TableUpdate]
     last_added_sort_order_id: int | None
+    reassigned_sort_order_ids: dict[int, int]
 
     def __init__(self) -> None:
         self._updates = []
         self.last_added_sort_order_id = None
+        self.reassigned_sort_order_ids = {}
 
     def add_update(self, update: TableUpdate) -> None:
         self._updates.append(update)
@@ -589,12 +591,16 @@ def _(update: AddSortOrderUpdate, base_metadata: TableMetadata, context: _TableM
     # Reuse the id of an existing sort order with the same fields
     for sort in base_metadata.sort_orders:
         if sort.fields == new_sort_order.fields:
+            if sort.order_id != new_sort_order.order_id:
+                # The staged id was assigned against stale metadata; point later updates at the existing order
+                context.reassigned_sort_order_ids[new_sort_order.order_id] = sort.order_id
             context.last_added_sort_order_id = sort.order_id
             return base_metadata
 
     # The id can be taken when the update was built against stale metadata
     if base_metadata.sort_order_by_id(new_sort_order.order_id) is not None:
         new_order_id = max(sort.order_id for sort in base_metadata.sort_orders) + 1
+        context.reassigned_sort_order_ids[new_sort_order.order_id] = new_order_id
         new_sort_order = new_sort_order.model_copy(update={"order_id": new_order_id})
 
     context.add_update(AddSortOrderUpdate(sort_order=new_sort_order))
@@ -617,6 +623,9 @@ def _(
         if context.last_added_sort_order_id is None:
             raise ValueError("Cannot set current sort order to the last added one when no sort order has been added")
         new_sort_order_id = context.last_added_sort_order_id
+    else:
+        # Follow ids reassigned while applying this commit, when the update was built against stale metadata
+        new_sort_order_id = context.reassigned_sort_order_ids.get(new_sort_order_id, new_sort_order_id)
 
     if new_sort_order_id == base_metadata.default_sort_order_id:
         return base_metadata

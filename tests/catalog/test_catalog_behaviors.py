@@ -695,6 +695,35 @@ def test_update_sort_order_multiple_in_transaction(
     assert metadata.default_sort_order_id == 1
 
 
+def test_stale_transaction_keeps_reassigned_sort_order_as_default(
+    catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    table_a = catalog.create_table(test_table_identifier, table_schema_nested)
+    table_b = catalog.load_table(test_table_identifier)
+
+    with table_a.update_sort_order() as update:
+        update.asc("foo", IdentityTransform())
+    with table_a.update_sort_order():
+        pass  # Reset to unsorted
+
+    # Stale handle stages bar (id 1), baz (id 2), then bar again, which it sends as an explicit SetDefault(1)
+    with table_b.transaction() as transaction:
+        with transaction.update_sort_order() as update:
+            update.asc("bar", IdentityTransform())
+        with transaction.update_sort_order() as update:
+            update.asc("baz", IdentityTransform())
+        with transaction.update_sort_order() as update:
+            update.asc("bar", IdentityTransform())
+
+    # bar and baz are reassigned to 2 and 3, so the default must follow bar rather than foo's id 1
+    metadata = catalog.load_table(test_table_identifier).metadata
+    assert [sort_order.order_id for sort_order in metadata.sort_orders] == [0, 1, 2, 3]
+    assert metadata.default_sort_order_id == 2
+    assert metadata.sort_order().fields[0].source_id == 2
+
+
 def test_delete_metadata_multiple(catalog: Catalog, table_schema_nested: Schema, random_table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(random_table_identifier)
     catalog.create_namespace(namespace)
