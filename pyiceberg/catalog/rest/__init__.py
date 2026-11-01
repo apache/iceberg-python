@@ -73,6 +73,8 @@ from pyiceberg.io import (
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
+    S3_REMOTE_SIGNING_ENABLED,
+    S3_SIGNER,
     FileIO,
     load_file_io,
 )
@@ -648,6 +650,10 @@ class RestCatalog(Catalog):
         table_properties: Properties = EMPTY_DICT,
     ) -> FileIO:
         merged_properties = {**table_properties, **self.properties, **properties}
+        # s3.remote-signing-enabled=false in the catalog config opts out of remote signing,
+        # even when the server config or vended credentials set a signer.
+        if not property_as_bool(self.properties, S3_REMOTE_SIGNING_ENABLED, True):
+            merged_properties.pop(S3_SIGNER, None)
         if self._auth_manager:
             merged_properties[AUTH_MANAGER] = self._auth_manager
         return load_file_io(merged_properties, location)
