@@ -19,6 +19,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from pytest_mock import MockerFixture
 
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
@@ -134,6 +135,62 @@ def test_rebuild_snapshot_updates_preserves_non_snapshot_updates(catalog: Catalo
     refreshed = catalog.load_table("default.rebuild_test")
     assert refreshed.metadata.properties.get("test_key") == "test_value"
     assert len(refreshed.scan().to_arrow()) == 2
+
+
+def test_schema_evolution_and_append_survive_commit_retry(catalog: Catalog, mocker: MockerFixture) -> None:
+    """Keep schema changes and all rows when an append needs a commit retry."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.schema_retry",
+        schema=Schema(
+            NestedField(1, "id", LongType(), required=False),
+            NestedField(2, "name", StringType(), required=False),
+        ),
+    )
+    table.append(pa.table({"id": [1], "name": ["seed"]}))
+    writer_a = catalog.load_table(table.name())
+    writer_b = catalog.load_table(table.name())
+
+    # Writer A adds a column and a row in the same transaction.
+    transaction = writer_a.transaction()
+    with transaction.update_schema() as update:
+        update.add_column("category", StringType(), required=False)
+    staged_schema = transaction.table_metadata.schema()
+    category_id = staged_schema.find_field("category").field_id
+    transaction.append(pa.table({"id": [2], "name": ["A"], "category": ["alpha"]}))
+
+    # Writer B commits first, so Writer A must retry.
+    writer_b.append(pa.table({"id": [3], "name": ["B"]}))
+    b_snapshot = writer_b.current_snapshot()
+    assert b_snapshot is not None
+
+    rebuild = mocker.spy(type(transaction), "_rebuild_snapshot_updates")
+    transaction.commit_transaction()
+    rebuild.assert_called_once_with(transaction)
+
+    refreshed = catalog.load_table(table.name())
+    assert refreshed.schema() == staged_schema
+    assert refreshed.metadata.current_schema_id == staged_schema.schema_id
+    assert refreshed.schema().find_field("category").field_id == category_id
+    assert len(refreshed.metadata.schemas) == 2
+
+    expected_rows = [
+        {"id": 1, "name": "seed", "category": None},
+        {"id": 2, "name": "A", "category": "alpha"},
+        {"id": 3, "name": "B", "category": None},
+    ]
+    assert refreshed.scan().to_arrow().sort_by("id").to_pylist() == expected_rows
+
+    snapshot = refreshed.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.parent_snapshot_id == b_snapshot.snapshot_id
+    assert snapshot.schema_id == staged_schema.schema_id
+    assert len(refreshed.metadata.snapshots) == 3
+
+    assert writer_a.metadata == refreshed.metadata
+    assert writer_a.scan().to_arrow().sort_by("id").to_pylist() == expected_rows
 
 
 def test_refresh_for_retry_resets_producer_state(catalog: Catalog) -> None:
