@@ -636,6 +636,28 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
 TableMetadata = Annotated[TableMetadataV1 | TableMetadataV2 | TableMetadataV3, Field(discriminator="format_version")]
 
 
+def _check_properties_format_version_compatibility(properties: Properties, format_version: int) -> None:
+    """Check that the table properties are compatible for the given table format version.
+
+    Args:
+      properties: The table properties to check.
+      format_version: The Iceberg table format version.
+
+    Raises:
+      ValueError: If the properties are not compatible for the format version.
+    """
+    from pyiceberg.table import TableProperties
+
+    if format_version >= 3:
+        return
+
+    encryption_properties = sorted(
+        {TableProperties.ENCRYPTION_KEY_ID, TableProperties.ENCRYPTION_DATA_KEY_LENGTH} & properties.keys()
+    )
+    if encryption_properties:
+        raise ValueError(f"Invalid properties for v{format_version}: {encryption_properties}")
+
+
 def new_table_metadata(
     schema: Schema,
     partition_spec: PartitionSpec,
@@ -650,6 +672,7 @@ def new_table_metadata(
     format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
 
     schema.check_format_version_compatibility(format_version)
+    _check_properties_format_version_compatibility(properties, format_version)
 
     fresh_schema = assign_fresh_schema_ids(schema)
     fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, schema, fresh_schema)
