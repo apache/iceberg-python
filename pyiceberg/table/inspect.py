@@ -403,7 +403,7 @@ class InspectTable:
             io=self.tbl.io,
             row_filter=row_filter,
             case_sensitive=case_sensitive,
-            snapshot_id=snapshot.snapshot_id,
+            snapshot_id=snapshot_id,
         )
 
         partitions_map: dict[tuple[str, Any], Any] = {}
