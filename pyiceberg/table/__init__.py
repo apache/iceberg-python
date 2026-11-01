@@ -228,6 +228,9 @@ class TableProperties:
     METADATA_DELETE_AFTER_COMMIT_ENABLED = "write.metadata.delete-after-commit.enabled"
     METADATA_DELETE_AFTER_COMMIT_ENABLED_DEFAULT = False
 
+    GC_ENABLED = "gc.enabled"
+    GC_ENABLED_DEFAULT = True
+
     MAX_SNAPSHOT_AGE_MS = "history.expire.max-snapshot-age-ms"
     MAX_SNAPSHOT_AGE_MS_DEFAULT = 5 * 24 * 60 * 60 * 1000  # 5 days
 
