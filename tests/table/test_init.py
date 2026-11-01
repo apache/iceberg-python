@@ -1437,6 +1437,16 @@ def test_assert_ref_snapshot_id(table_v2: Table) -> None:
     assert AssertRefSnapshotId(ref="main").model_dump_json() == expected_json
 
 
+def test_stage_keeps_ref_requirement_per_ref(table_v2: Table) -> None:
+    tx = table_v2.transaction()
+    main = AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=3055729675574597004)
+    test = AssertRefSnapshotId(ref="test", snapshot_id=3051729675574597004)
+
+    tx._stage((), (main, test, main, test))
+
+    assert tx._requirements == (main, test)
+
+
 def test_assert_last_assigned_field_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertLastAssignedFieldId(last_assigned_field_id=base_metadata.last_column_id).validate(base_metadata)
