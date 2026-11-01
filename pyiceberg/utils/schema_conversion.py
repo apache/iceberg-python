@@ -82,7 +82,15 @@ LOGICAL_FIELD_TYPE_MAPPING: dict[tuple[str, str], PrimitiveType] = {
 AvroType = str | Any
 
 
+# Avro types that have a name and can be referred to by it later in the schema
+AVRO_NAMED_TYPES = frozenset({"record", "enum", "fixed"})
+
+
 class AvroSchemaConversion:
+    def __init__(self) -> None:
+        # Named types defined so far, so that a later reference by name resolves to them
+        self._named_types: dict[str, IcebergType] = {}
+
     def avro_to_iceberg(self, avro_schema: dict[str, Any]) -> Schema:
         """Convert an Apache Avro into an Apache Iceberg schema equivalent.
 
@@ -128,6 +136,7 @@ class AvroSchemaConversion:
         Returns:
             Equivalent Iceberg schema.
         """
+        self._named_types = {}
         return Schema(*[self._convert_field(field) for field in avro_schema["fields"]], schema_id=1)
 
     def iceberg_to_avro(self, schema: Schema, schema_name: str | None = None) -> AvroType:
@@ -198,26 +207,33 @@ class AvroSchemaConversion:
         """
         if isinstance(avro_type, str) and avro_type in PRIMITIVE_FIELD_TYPE_MAPPING:
             return PRIMITIVE_FIELD_TYPE_MAPPING[avro_type]
+        elif isinstance(avro_type, str) and avro_type in self._named_types:
+            # A reference to a named type defined earlier, e.g. "decimal_10_2"
+            return self._named_types[avro_type]
         elif isinstance(avro_type, dict):
             if "logicalType" in avro_type:
-                return self._convert_logical_type(avro_type)
+                iceberg_type = self._convert_logical_type(avro_type)
             else:
                 # Resolve potential nested types
                 while "type" in avro_type and isinstance(avro_type["type"], dict):
                     avro_type = avro_type["type"]
                 type_identifier = avro_type["type"]
                 if type_identifier == "record":
-                    return self._convert_record_type(avro_type)
+                    iceberg_type = self._convert_record_type(avro_type)
                 elif type_identifier == "array":
-                    return self._convert_array_type(avro_type)
+                    iceberg_type = self._convert_array_type(avro_type)
                 elif type_identifier == "map":
-                    return self._convert_map_type(avro_type)
+                    iceberg_type = self._convert_map_type(avro_type)
                 elif type_identifier == "fixed":
-                    return self._convert_fixed_type(avro_type)
+                    iceberg_type = self._convert_fixed_type(avro_type)
                 elif isinstance(type_identifier, str) and type_identifier in PRIMITIVE_FIELD_TYPE_MAPPING:
-                    return PRIMITIVE_FIELD_TYPE_MAPPING[type_identifier]
+                    iceberg_type = PRIMITIVE_FIELD_TYPE_MAPPING[type_identifier]
                 else:
                     raise TypeError(f"Type not recognized: {avro_type}")
+            if avro_type.get("type") in AVRO_NAMED_TYPES and isinstance(name := avro_type.get("name"), str):
+                # A repeated definition of the same name is accepted, as older writers produced it
+                self._named_types[name] = iceberg_type
+            return iceberg_type
         else:
             raise TypeError(f"Type not recognized: {avro_type}")
 
@@ -512,6 +528,16 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         """
         self.schema_name = schema_name
 
+    @staticmethod
+    def _name_fixed(result: AvroType, field_id: int) -> None:
+        """Add the field-id to the name of a fixed type.
+
+        Avro allows only one definition per name, and a decimal, uuid or fixed type can be used by more
+        than one field. Field-ids are unique, so the names stay unique, the same way records are named.
+        """
+        if isinstance(result, dict) and result.get("type") == "fixed":
+            result["name"] = f"{result['name']}_{field_id}"
+
     def schema(self, schema: Schema, struct_result: AvroType) -> AvroType:
         if isinstance(struct_result, dict) and self.schema_name is not None:
             struct_result["name"] = self.schema_name
@@ -533,6 +559,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         # Sets the schema name
         if isinstance(field_result, dict) and field_result.get("type") == "record":
             field_result["name"] = f"r{field.field_id}"
+        self._name_fixed(field_result, field.field_id)
 
         original_name = field.name
         sanitized_name = make_compatible_name(original_name)
@@ -560,9 +587,12 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
         # Sets the schema name in case of a record
         if isinstance(element_result, dict) and element_result.get("type") == "record":
             element_result["name"] = f"r{self.last_list_field_id}"
+        self._name_fixed(element_result, self.last_list_field_id)
         return {"type": "array", "element-id": self.last_list_field_id, "items": element_result}
 
     def map(self, map_type: MapType, key_result: AvroType, value_result: AvroType) -> AvroType:
+        self._name_fixed(key_result, self.last_map_key_field_id)
+        self._name_fixed(value_result, self.last_map_value_field_id)
         if isinstance(key_result, StringType):
             # Avro Maps does not support other keys than a String,
             return {
