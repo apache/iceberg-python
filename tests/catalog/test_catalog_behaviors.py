@@ -48,7 +48,16 @@ from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrd
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
-from pyiceberg.types import BooleanType, DoubleType, IntegerType, LongType, NestedField, StringType
+from pyiceberg.types import (
+    BooleanType,
+    DoubleType,
+    IntegerType,
+    LongType,
+    NestedField,
+    StringType,
+    TimestampNanoType,
+    UnknownType,
+)
 
 
 # Name parsing tests
@@ -1320,6 +1329,38 @@ def test_append_invalid_input_type_raises(catalog: Catalog) -> None:
     tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema)
     with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader"):
         tbl.append("not an arrow object")
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_update_schema_rejects_v3_only_types(catalog: Catalog, format_version: int) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.reject_v3_types_v{format_version}_{catalog.name}"
+    tbl = catalog.create_table(
+        identifier=identifier,
+        schema=Schema(NestedField(1, "id", LongType(), required=False)),
+        properties={"format-version": str(format_version)},
+    )
+
+    with pytest.raises(ValueError, match="timestamp_ns is only supported in 3 or higher"):
+        tbl.update_schema().add_column("ts", TimestampNanoType()).commit()
+    with pytest.raises(ValueError, match="unknown is only supported in 3 or higher"):
+        tbl.update_schema().add_column("u", UnknownType()).commit()
+
+    assert catalog.load_table(identifier).schema() == Schema(NestedField(1, "id", LongType(), required=False))
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_update_schema_rejects_initial_default_before_v3(catalog: Catalog, format_version: int) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.reject_initial_default_v{format_version}_{catalog.name}"
+    tbl = catalog.create_table(
+        identifier=identifier,
+        schema=Schema(NestedField(1, "id", LongType(), required=False)),
+        properties={"format-version": str(format_version)},
+    )
+
+    with pytest.raises(ValueError, match="Non-null initial-default for d is only supported in 3 or higher"):
+        tbl.update_schema().add_column("d", IntegerType(), default_value=5).commit()
 
 
 def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
