@@ -848,6 +848,28 @@ def test_write_and_evolve(catalog: Catalog, format_version: int) -> None:
         txn.delete("foo = 'a'")
 
 
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_delete_after_dropping_old_partition_source_column(catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.delete_after_dropping_old_partition_source_v{format_version}"
+    catalog.create_namespace_if_not_exists("default")
+
+    pa_table = pa.Table.from_pydict({"id": [1, 2], "category": ["a", "b"]})
+    tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)})
+    with tbl.update_spec() as spec_update:
+        spec_update.add_identity("category")
+    tbl.append(pa_table)
+
+    with tbl.update_spec() as spec_update:
+        spec_update.remove_field("category")
+    with tbl.update_schema() as schema_update:
+        schema_update.delete_column("category")
+
+    # Rewrites the manifest of the old spec, whose partition source column is gone
+    tbl.delete("id == 1")
+
+    assert catalog.load_table(identifier).scan().to_arrow()["id"].to_pylist() == [2]
+
+
 # Merge manifests
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_merge_manifests_local_file_system(catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
