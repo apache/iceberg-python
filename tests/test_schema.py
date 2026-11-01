@@ -1844,3 +1844,18 @@ def test_check_schema_compatible_optional_map_field_present() -> None:
     )
     # Should not raise - schemas match
     _check_schema_compatible(requested_schema, provided_schema)
+
+
+def test_move_renamed_column_by_new_name_points_to_original_name(table_v2: Table) -> None:
+    update = UpdateSchema(transaction=Transaction(table_v2)).rename_column("y", "y2")
+
+    with pytest.raises(ValueError, match=r"Cannot move missing column: y2 \(renamed from y in this update, refer to it as y\)"):
+        update.move_first("y2")
+    with pytest.raises(ValueError, match=r"before missing column: y2 \(renamed from y in this update, refer to it as y\)"):
+        update.move_before("x", "y2")
+    with pytest.raises(ValueError, match=r"after missing column: y2 \(renamed from y in this update, refer to it as y\)"):
+        update.move_after("x", "y2")
+    with pytest.raises(ValueError, match=r"^Cannot move missing column: unknown$"):
+        update.move_first("unknown")
+
+    assert [field.name for field in update.move_first("y")._apply().fields] == ["y2", "x", "z"]
