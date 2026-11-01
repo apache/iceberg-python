@@ -1609,16 +1609,16 @@ wheels = [
 
 [[package]]
 name = "geoarrow-pyarrow"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "geoarrow-c" },
     { name = "geoarrow-types" },
     { name = "pyarrow" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/e0/ff8430e5e1049e310c35f335cf7e14682bfeafeb773f48c5a7425359a4ba/geoarrow_pyarrow-0.2.0.tar.gz", hash = "sha256:5c981f5cae26fa6cdfb6f9b83fb490d36bf0fe6f6fa360c4c8983e0a8a457926", size = 33488, upload-time = "2025-05-27T03:51:45.071Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d0/cc/3e68442f995188beae12ccd3849f92a23df60829f0456e63f2a0ed1a8b47/geoarrow_pyarrow-0.3.0.tar.gz", hash = "sha256:8d01902ba83015e7b7286c884c6ee2126d006fdfa8f70bd1c104bf924ef94aa1", size = 34799, upload-time = "2026-09-28T03:21:06.848Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/d2/f47453e6aefb69acdde7af8b0efb3fe28c82e7c37650b0ce1ad61ab847e5/geoarrow_pyarrow-0.2.0-py3-none-any.whl", hash = "sha256:dcc1d4684e11771c3f59ba18e71fa7cc6d7cb8fd01db7bdc73ffb88c66cd0446", size = 25600, upload-time = "2025-05-27T03:51:44.113Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/aa/ad595ff8a2130a70175321e9e67f6a1bab02e4f90356a2e4f1053577359a/geoarrow_pyarrow-0.3.0-py3-none-any.whl", hash = "sha256:accfcaafb5b2914bd2df14e605ea75dc803b6ead5e7308a013fba502392af198", size = 26158, upload-time = "2026-09-28T03:21:05.547Z" },
 ]
 
 [[package]]
