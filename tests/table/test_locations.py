@@ -60,6 +60,14 @@ def test_custom_location_provider() -> None:
     assert provider.new_data_location("my_file") == "custom_location_provider/my_file"
 
 
+def test_custom_location_provider_wrong_type() -> None:
+    with pytest.raises(ValueError, match="write.py-location-provider.impl should be a subclass of LocationProvider"):
+        load_location_provider(
+            table_location="table_location",
+            table_properties={"write.py-location-provider.impl": "pyiceberg.io.FileIO"},
+        )
+
+
 def test_custom_location_provider_single_path() -> None:
     with pytest.raises(ValueError, match=r"write\.py-location-provider\.impl should be full path"):
         load_location_provider(table_location="table_location", table_properties={"write.py-location-provider.impl": "not_found"})

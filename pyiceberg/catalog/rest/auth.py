@@ -383,6 +383,8 @@ class AuthManagerFactory:
                 manager_cls = getattr(module, class_name)
             except Exception as err:
                 raise ValueError(f"Could not load AuthManager class for '{class_or_name}'") from err
+            if not isinstance(manager_cls, type) or not issubclass(manager_cls, AuthManager):
+                raise ValueError(f"auth.impl should be a subclass of AuthManager, got: {class_or_name}")
 
         return manager_cls(**config)
 
