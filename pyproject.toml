@@ -259,6 +259,8 @@ filterwarnings = [
   "ignore:As the c extension couldn't be imported:RuntimeWarning:google_crc32c",
   # Ignore Spark pandas conversion warning under pandas 3.0
   "ignore:The copy keyword is deprecated and will be removed in a future version.*",
+  # Ignore pyarrow's use of Series.values on tz-aware data under pandas 3.1
+  "ignore:Series.values returning an ndarray that drops timezone information.*",
 ]
 
 [tool.mypy]
