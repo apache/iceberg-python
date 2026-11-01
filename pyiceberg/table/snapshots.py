@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 import warnings
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
@@ -289,9 +290,17 @@ class Snapshot(IcebergBaseModel):
         filtered_fields = [field for field in fields if field is not None]
         return f"Snapshot({', '.join(filtered_fields)})"
 
-    def manifests(self, io: FileIO) -> list[ManifestFile]:
-        """Return the manifests for the given snapshot."""
-        return list(_manifests(io, self.manifest_list))
+    def manifests(self, io: FileIO, table_uuid: uuid.UUID | None = None) -> list[ManifestFile]:
+        """Return the manifests for the given snapshot.
+
+        Args:
+            io: FileIO instance for reading the manifest list.
+            table_uuid: UUID of the table this snapshot belongs to, used to scope
+                the process-wide manifest cache so that two tables can never
+                share a cached entry. When omitted the manifests are returned
+                uncached.
+        """
+        return list(_manifests(io, self.manifest_list, table_uuid))
 
 
 class MetadataLogEntry(IcebergBaseModel):
