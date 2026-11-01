@@ -2826,16 +2826,16 @@ wheels = [
 
 [[package]]
 name = "mkdocs-autorefs"
-version = "1.4.4"
+version = "1.4.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown" },
     { name = "markupsafe" },
     { name = "mkdocs" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/52/c0/f641843de3f612a6b48253f39244165acff36657a91cc903633d456ae1ac/mkdocs_autorefs-1.4.4.tar.gz", hash = "sha256:d54a284f27a7346b9c38f1f852177940c222da508e66edc816a0fa55fc6da197", size = 56588, upload-time = "2026-02-10T15:23:55.105Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/e0/1e8ed4e8dabdcba8cba5dbf4b8ce49bb3b51e750177155247abb5345d48a/mkdocs_autorefs-1.4.5.tar.gz", hash = "sha256:856f75b327b7717923ce06267094650689a510a748c48657f5333965950c2788", size = 59736, upload-time = "2026-10-22T15:03:55.402Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/28/de/a3e710469772c6a89595fc52816da05c1e164b4c866a89e3cb82fb1b67c5/mkdocs_autorefs-1.4.4-py3-none-any.whl", hash = "sha256:834ef5408d827071ad1bc69e0f39704fa34c7fc05bc8e1c72b227dfdc5c76089", size = 25530, upload-time = "2026-02-10T15:23:53.817Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/cf/3dfc07ec910553bfb1e5c9009c1854bd9d2efa7f3dda03f007a77db0e63a/mkdocs_autorefs-1.4.5-py3-none-any.whl", hash = "sha256:68ee484e0800f3ba50cda1bc4a94293adbdfcc010243c322b3f5d66e15d06770", size = 29633, upload-time = "2026-10-22T15:03:54.091Z" },
 ]
 
 [[package]]
@@ -4719,7 +4719,7 @@ docs = [
     { name = "griffe", specifier = "==2.3.0" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "mkdocs", specifier = "==1.6.1" },
-    { name = "mkdocs-autorefs", specifier = "==1.4.4" },
+    { name = "mkdocs-autorefs", specifier = "==1.4.5" },
     { name = "mkdocs-gen-files", specifier = "==0.6.1" },
     { name = "mkdocs-literate-nav", specifier = "==0.6.3" },
     { name = "mkdocs-material", specifier = "==9.7.7" },
