@@ -544,11 +544,11 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
         for snapshot in base_metadata.snapshots
         if snapshot.snapshot_id not in update.snapshot_ids
     ]
-    expired_ids = set(update.snapshot_ids)
+    retained_snapshot_ids = {snapshot.snapshot_id for snapshot in snapshots}
     snapshot_log: list[SnapshotLogEntry] = []
     for entry in base_metadata.snapshot_log:
-        if entry.snapshot_id in expired_ids:
-            # Earlier entries would make time travel resolve across an expired gap.
+        if entry.snapshot_id not in retained_snapshot_ids:
+            # Earlier entries would make time travel resolve across a missing snapshot.
             snapshot_log.clear()
         else:
             snapshot_log.append(entry)

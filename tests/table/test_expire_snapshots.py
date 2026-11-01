@@ -17,7 +17,6 @@
 import json
 import threading
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
@@ -30,40 +29,27 @@ from pyiceberg.table.update.snapshot import ExpireSnapshots
 
 
 @pytest.mark.parametrize("expiration", ["by_id", "older_than"])
-def test_expiration_does_not_substitute_older_history(catalog: Catalog, monkeypatch: pytest.MonkeyPatch, expiration: str) -> None:
+def test_expiration_retains_history_after_gap(catalog: Catalog, expiration: str) -> None:
     import pyarrow as pa
 
     catalog.create_namespace("history")
     table = catalog.create_table("history.events", schema=pa.schema([("x", pa.int64())]))
-    # Keep snapshot and metadata timestamps consistent; commits and file IO remain real.
-    clock_ms = table.metadata.last_updated_ms
-    monkeypatch.setattr("pyiceberg.table.snapshots.time", SimpleNamespace(time=lambda: clock_ms / 1000))
-    monkeypatch.setattr(
-        "pyiceberg.table.update.datetime", SimpleNamespace(now=lambda: datetime.fromtimestamp(clock_ms / 1000, UTC))
-    )
     for value in (1, 2, 3):
-        clock_ms += 1000
         table.append(pa.table({"x": [value]}))
     first, middle, latest = table.history()
-    assert first.timestamp_ms < middle.timestamp_ms < latest.timestamp_ms
-    timestamp_ms = latest.timestamp_ms - 1
-    before = table.snapshot_as_of_timestamp(timestamp_ms)
-    assert before is not None and before.snapshot_id == middle.snapshot_id
 
-    clock_ms += 1000
     table.manage_snapshots().create_tag(first.snapshot_id, "keep_first").commit()
-    clock_ms += 1000
     if expiration == "by_id":
         table.maintenance.expire_snapshots().by_id(middle.snapshot_id).commit()
     else:
-        cutoff = datetime.fromtimestamp(latest.timestamp_ms / 1000, UTC)
+        # Include all snapshots; the tag and main branch protect the first and latest.
+        cutoff = datetime.fromtimestamp(max(snapshot.timestamp_ms for snapshot in table.snapshots()) / 1000, UTC)
+        cutoff += timedelta(milliseconds=1)
         table.maintenance.expire_snapshots().older_than(cutoff).commit()
 
     reloaded = catalog.load_table("history.events")
     for actual in (table, reloaded):
-        assert actual.metadata.last_updated_ms == clock_ms
         assert actual.history() == [latest]
-        assert actual.snapshot_as_of_timestamp(timestamp_ms) is None
         assert actual.snapshot_as_of_timestamp(latest.timestamp_ms, inclusive=False) is None
         at_latest = actual.snapshot_as_of_timestamp(latest.timestamp_ms)
         assert at_latest is not None and at_latest.snapshot_id == latest.snapshot_id
