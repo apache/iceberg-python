@@ -26,6 +26,7 @@ from pyiceberg.schema import (
     Accessor,
     Schema,
     _check_schema_compatible,
+    assign_fresh_schema_ids,
     build_position_accessors,
     index_by_id,
     index_by_name,
@@ -1844,3 +1845,52 @@ def test_check_schema_compatible_optional_map_field_present() -> None:
     )
     # Should not raise - schemas match
     _check_schema_compatible(requested_schema, provided_schema)
+
+
+def test_assign_fresh_schema_ids_reuses_nested_names() -> None:
+    from itertools import count
+
+    base = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "nested", StructType(NestedField(3, "kept", StringType()), NestedField(4, "removed", LongType()))),
+        NestedField(5, "items", ListType(6, StructType(NestedField(7, "value", LongType())))),
+        NestedField(8, "mapping", MapType(9, StringType(), 10, StructType(NestedField(11, "value", LongType())))),
+        identifier_field_ids=[1],
+    )
+    replacement = Schema(
+        NestedField(21, "id", StringType(), required=True, doc="replacement", initial_default="initial", write_default="write"),
+        NestedField(22, "nested", StructType(NestedField(23, "kept", LongType()), NestedField(24, "added", StringType()))),
+        NestedField(25, "items", ListType(26, StructType(NestedField(27, "value", StringType())))),
+        NestedField(28, "mapping", MapType(29, StringType(), 30, StructType(NestedField(31, "value", StringType())))),
+        identifier_field_ids=[21],
+    )
+    next_id = count(12)
+    actual = assign_fresh_schema_ids(replacement, lambda: next(next_id), base_schema=base)
+    assert actual.find_field("id").field_id == 1
+    assert actual.find_field("id").field_type == StringType()
+    assert actual.find_field("id").doc == "replacement"
+    assert actual.find_field("id").initial_default == "initial"
+    assert actual.find_field("id").write_default == "write"
+    assert actual.identifier_field_ids == [1]
+    assert actual.find_field("nested.kept").field_id == 3
+    assert actual.find_field("nested.added").field_id == 12
+    assert actual.find_field("items.element").field_id == 6
+    assert actual.find_field("items.element.value").field_id == 7
+    assert actual.find_field("mapping.key").field_id == 9
+    assert actual.find_field("mapping.value").field_id == 10
+    assert actual.find_field("mapping.value.value").field_id == 11
+    assert next(next_id) == 13
+    assert assign_fresh_schema_ids(replacement, base_schema=base) == actual
+
+
+def test_assign_fresh_schema_ids_without_base() -> None:
+    schema = Schema(
+        NestedField(9, "id", LongType(), required=True),
+        NestedField(12, "nested", StructType(NestedField(25, "value", StringType()))),
+        identifier_field_ids=[9],
+    )
+    actual = assign_fresh_schema_ids(schema)
+    assert actual.find_field("id").field_id == 1
+    assert actual.find_field("nested").field_id == 2
+    assert actual.find_field("nested.value").field_id == 3
+    assert actual.identifier_field_ids == [1]

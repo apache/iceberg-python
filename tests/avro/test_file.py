@@ -56,6 +56,7 @@ from pyiceberg.types import (
     TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 from pyiceberg.utils.schema_conversion import AvroSchemaConversion
@@ -571,3 +572,19 @@ def test_avro_output_file_tell_includes_buffered_records() -> None:
             out.write_block([manifest_entry(0)])
 
             assert out.tell() > after_header
+
+
+@pytest.mark.parametrize("with_record_schema", [False, True])
+def test_write_optional_unknown_field(with_record_schema: bool) -> None:
+    schema = Schema(NestedField(1, "removed_partition", UnknownType()), NestedField(2, "value", LongType()))
+    with TemporaryDirectory() as tmpdir:
+        path = tmpdir + "/null.avro"
+        with avro.AvroOutputFile[Record](
+            output_file=PyArrowFileIO().new_output(path),
+            file_schema=schema,
+            record_schema=schema if with_record_schema else None,
+            schema_name="null_field",
+        ) as out:
+            out.write_block([Record(None, 42)])
+        with open(path, "rb") as source:
+            assert list(reader(source)) == [{"removed_partition": None, "value": 42}]
