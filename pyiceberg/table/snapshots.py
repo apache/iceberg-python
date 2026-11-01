@@ -32,6 +32,7 @@ from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 
 if TYPE_CHECKING:
+    from pyiceberg.encryption.manager import EncryptionManager
     from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.typedef import IcebergBaseModel
 
@@ -289,9 +290,21 @@ class Snapshot(IcebergBaseModel):
         filtered_fields = [field for field in fields if field is not None]
         return f"Snapshot({', '.join(filtered_fields)})"
 
-    def manifests(self, io: FileIO) -> list[ManifestFile]:
-        """Return the manifests for the given snapshot."""
-        return list(_manifests(io, self.manifest_list))
+    def manifests(self, io: FileIO, encryption_manager: EncryptionManager | None = None) -> list[ManifestFile]:
+        """Return the manifests for the given snapshot.
+
+        Args:
+            io: Reads the manifest list.
+            encryption_manager: Decrypts the manifest list, required when the snapshot has a `key-id`.
+        """
+        if self.key_id is None:
+            return list(_manifests(io, self.manifest_list))
+
+        if encryption_manager is None:
+            raise ValueError(f"Snapshot {self.snapshot_id} is encrypted, but no encryption manager was provided")
+
+        key_metadata = encryption_manager.decrypt_manifest_list_key_metadata(self.key_id)
+        return list(_manifests(io, self.manifest_list, key_metadata))
 
 
 class MetadataLogEntry(IcebergBaseModel):

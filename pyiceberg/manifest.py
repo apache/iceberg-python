@@ -34,6 +34,8 @@ from pydantic_core import to_json
 from pyiceberg.avro.codecs import AVRO_CODEC_KEY, AvroCompressionCodec
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.conversions import to_bytes
+from pyiceberg.encryption.io import EncryptedInputFile
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
@@ -998,7 +1000,7 @@ def clear_manifest_cache() -> None:
     _manifest_cache.clear()
 
 
-def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
+def _manifests(io: FileIO, manifest_list: str, key_metadata: StandardKeyMetadata | None = None) -> tuple[ManifestFile, ...]:
     """Read manifests from a manifest list, reusing cached ManifestFile objects.
 
     Caches individual ManifestFile objects by manifest_path. This is memory-efficient
@@ -1018,11 +1020,14 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     Args:
         io: FileIO instance for reading the manifest list.
         manifest_list: Path to the manifest list file.
+        key_metadata: Decrypts the manifest list, if it is encrypted.
 
     Returns:
         A tuple of ManifestFile objects.
     """
     file = io.new_input(manifest_list)
+    if key_metadata is not None:
+        file = EncryptedInputFile(file, key_metadata)
     manifest_files = list(read_manifest_list(file))
 
     return tuple(_manifest_cache.get_or_cache(manifest_file) for manifest_file in manifest_files)
