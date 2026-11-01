@@ -471,9 +471,9 @@ def test_pyarrow_batches_not_nan_count(catalog: Catalog) -> None:
 def test_duckdb_nan(catalog: Catalog) -> None:
     table_test_null_nan_rewritten = catalog.load_table("default.test_null_nan_rewritten")
     con = table_test_null_nan_rewritten.scan().to_duckdb("table_test_null_nan")
-    result = con.query("SELECT idx, col_numeric FROM table_test_null_nan WHERE isnan(col_numeric)").fetchone()
-    assert result[0] == 1
-    assert math.isnan(result[1])
+    result = con.query("SELECT idx, col_numeric FROM table_test_null_nan WHERE isnan(col_numeric)").limit(1).fetchall()
+    assert result[0][0] == 1
+    assert math.isnan(result[0][1])
 
 
 @pytest.mark.integration
