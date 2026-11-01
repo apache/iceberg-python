@@ -1186,6 +1186,149 @@ def test_update_remove_snapshots_doesnt_exist(table_v2: Table) -> None:
         update_table_metadata(table_v2.metadata, (update,))
 
 
+@pytest.fixture(params=[lf("table_v1"), lf("table_v2"), lf("table_v3")])
+def table_with_snapshot_history(request: pytest.FixtureRequest) -> Table:
+    table: Table = copy(request.param)
+    snapshots = [
+        Snapshot(snapshot_id=snapshot_id, timestamp_ms=snapshot_id * 1000, manifest_list=f"file:///manifest-{snapshot_id}.avro")
+        for snapshot_id in range(1, 5)
+    ]
+    table.metadata = table.metadata.model_copy(
+        update={
+            "snapshots": snapshots,
+            "snapshot_log": [
+                SnapshotLogEntry(snapshot_id=snapshot.snapshot_id, timestamp_ms=snapshot.timestamp_ms) for snapshot in snapshots
+            ],
+            "current_snapshot_id": snapshots[-1].snapshot_id,
+            "refs": {"main": SnapshotRef(snapshot_id=snapshots[-1].snapshot_id, snapshot_ref_type="branch")},
+        }
+    )
+    return table
+
+
+def _remove_snapshots_from_history(table: Table, *expired: SnapshotLogEntry) -> Table:
+    original = table.metadata.model_copy(deep=True)
+    expired_ids = [entry.snapshot_id for entry in expired]
+    updated = copy(table)
+    updated.metadata = update_table_metadata(
+        table.metadata, (RemoveSnapshotsUpdate(snapshot_ids=expired_ids),), enforce_validation=True
+    )
+    assert {snapshot.snapshot_id for snapshot in updated.snapshots()} == {
+        snapshot.snapshot_id for snapshot in original.snapshots
+    } - set(expired_ids)
+    assert table.metadata == original
+    return updated
+
+
+def test_remove_snapshots_drops_history_before_middle_gap(table_with_snapshot_history: Table) -> None:
+    table = table_with_snapshot_history
+    first, middle, later, latest = table.history()
+    assert table.snapshot_as_of_timestamp(middle.timestamp_ms) == table.snapshot_by_id(middle.snapshot_id)
+
+    updated = _remove_snapshots_from_history(table, middle)
+
+    assert updated.history() == [later, latest]
+    assert updated.snapshot_as_of_timestamp(middle.timestamp_ms) is None
+    assert updated.snapshot_as_of_timestamp(later.timestamp_ms, inclusive=False) is None
+    assert updated.snapshot_as_of_timestamp(later.timestamp_ms) == updated.snapshot_by_id(later.snapshot_id)
+    assert updated.snapshot_by_id(first.snapshot_id) is not None
+
+
+def test_remove_snapshots_drops_history_prefix(table_with_snapshot_history: Table) -> None:
+    first, second, third, latest = table_with_snapshot_history.history()
+    updated = _remove_snapshots_from_history(table_with_snapshot_history, first)
+    assert updated.history() == [second, third, latest]
+
+
+def test_remove_snapshots_drops_history_before_last_separated_gap(table_with_snapshot_history: Table) -> None:
+    first, _, third, latest = table_with_snapshot_history.history()
+    updated = _remove_snapshots_from_history(table_with_snapshot_history, first, third)
+    assert updated.history() == [latest]
+
+
+def test_remove_snapshots_drops_history_before_adjacent_gaps(table_with_snapshot_history: Table) -> None:
+    _, second, third, latest = table_with_snapshot_history.history()
+    updated = _remove_snapshots_from_history(table_with_snapshot_history, second, third)
+    assert updated.history() == [latest]
+
+
+def test_remove_snapshots_drops_history_before_repeated_expired_snapshot(table_with_snapshot_history: Table) -> None:
+    table = table_with_snapshot_history
+    first, expired, later, latest = table.history()
+    rollback = expired.model_copy(update={"timestamp_ms": later.timestamp_ms + 1})
+    table.metadata = table.metadata.model_copy(update={"snapshot_log": [first, expired, later, rollback, latest]})
+
+    updated = _remove_snapshots_from_history(table, expired)
+
+    assert updated.history() == [latest]
+
+
+def test_remove_snapshots_retains_rollback_after_gap(table_with_snapshot_history: Table) -> None:
+    table = table_with_snapshot_history
+    first, expired, later, latest = table.history()
+    rollback = first.model_copy(update={"timestamp_ms": expired.timestamp_ms + 1})
+    table.metadata = table.metadata.model_copy(update={"snapshot_log": [first, expired, rollback, later, latest]})
+
+    updated = _remove_snapshots_from_history(table, expired)
+
+    assert updated.history() == [rollback, later, latest]
+
+
+def test_remove_snapshots_without_expiration_preserves_history(table_with_snapshot_history: Table) -> None:
+    updated = _remove_snapshots_from_history(table_with_snapshot_history)
+    assert updated.history() == table_with_snapshot_history.history()
+
+
+def test_remove_snapshots_outside_main_history_preserves_history(table_with_snapshot_history: Table) -> None:
+    table = table_with_snapshot_history
+    first, outside_history, later, latest = table.history()
+    table.metadata = table.metadata.model_copy(update={"snapshot_log": [first, later, latest]})
+
+    updated = _remove_snapshots_from_history(table, outside_history)
+
+    assert updated.history() == table.history()
+
+
+def test_remove_snapshots_preserves_empty_history(table_with_snapshot_history: Table) -> None:
+    table = table_with_snapshot_history
+    _, expired, _, _ = table.history()
+    table.metadata = table.metadata.model_copy(update={"snapshot_log": []})
+
+    updated = _remove_snapshots_from_history(table, expired)
+
+    assert updated.history() == []
+
+
+def test_remove_snapshots_clears_history_when_last_entry_expires(table_with_snapshot_history: Table) -> None:
+    latest = table_with_snapshot_history.history()[-1]
+    updated = _remove_snapshots_from_history(table_with_snapshot_history, latest)
+    assert updated.history() == []
+
+
+def test_remove_snapshots_drops_history_before_already_missing_snapshot(table_with_snapshot_history: Table) -> None:
+    table = table_with_snapshot_history
+    _, expired, missing, latest = table.history()
+    table.metadata = table.metadata.model_copy(
+        update={"snapshots": [snapshot for snapshot in table.snapshots() if snapshot.snapshot_id != missing.snapshot_id]}
+    )
+
+    updated = _remove_snapshots_from_history(table, expired)
+
+    assert updated.history() == [latest]
+
+
+def test_remove_snapshots_cleans_missing_history_without_expiration(table_with_snapshot_history: Table) -> None:
+    table = table_with_snapshot_history
+    _, missing, later, latest = table.history()
+    table.metadata = table.metadata.model_copy(
+        update={"snapshots": [snapshot for snapshot in table.snapshots() if snapshot.snapshot_id != missing.snapshot_id]}
+    )
+
+    updated = _remove_snapshots_from_history(table)
+
+    assert updated.history() == [later, latest]
+
+
 def test_update_remove_snapshots_remove_current_snapshot_id(table_v2: Table) -> None:
     update = RemoveSnapshotsUpdate(snapshot_ids=[3055729675574597004])
     new_metadata = update_table_metadata(table_v2.metadata, (update,))
