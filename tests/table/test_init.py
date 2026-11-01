@@ -559,6 +559,26 @@ def test_incremental_append_scan_admits_expired_from_snapshot(example_table_meta
     assert scan._validate_and_resolve_snapshots() == (expired_snapshot_id, remaining_snapshot_id)
 
 
+def test_incremental_append_scan_from_snapshot_expired_by_maintenance(catalog: Catalog) -> None:
+    # Same as the test above, but the snapshot is removed by `expire_snapshots`, which must keep
+    # the parent id of the remaining child so that the expired `from` is still accepted.
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.expired_from_snapshot", schema=pa.schema([("n", pa.int64())]))
+    appended_snapshot_ids: list[int] = []
+    for n in (10, 20, 30):
+        table.append(pa.table({"n": [n]}))
+        appended_snapshot_ids.append(table.current_snapshot().snapshot_id)  # type: ignore[union-attr]
+
+    table.maintenance.expire_snapshots().by_id(appended_snapshot_ids[0]).commit()
+
+    assert table.snapshot_by_id(appended_snapshot_ids[0]) is None
+    # Only the rows appended after the expired `from` snapshot, i.e. by the second and third appends.
+    result = table.incremental_append_scan(from_snapshot_id_exclusive=appended_snapshot_ids[0]).to_arrow()
+    assert sorted(result["n"].to_pylist()) == [20, 30]
+
+
 def test_incremental_append_scan_update_preserves_type(table_v2: Table) -> None:
     # `update()` lives on BaseScan and uses `type(self)(...)` to construct the copy;
     # verify the concrete type is preserved through both `update` and the fluent helpers.
@@ -1169,7 +1189,8 @@ def test_update_remove_snapshots(table_v2: Table) -> None:
     new_metadata = update_table_metadata(table_v2.metadata, (update,))
     assert len(new_metadata.snapshots) == 1
     assert new_metadata.snapshots[0].snapshot_id == KEEP_SNAPSHOT
-    assert new_metadata.snapshots[0].parent_snapshot_id is None
+    # REMOVE_SNAPSHOT is KEEP_SNAPSHOT's parent in the fixture; the parent id is kept even though it now dangles
+    assert new_metadata.snapshots[0].parent_snapshot_id == REMOVE_SNAPSHOT
     assert new_metadata.current_snapshot_id == KEEP_SNAPSHOT
     assert new_metadata.last_updated_ms > table_v2.metadata.last_updated_ms
     assert len(new_metadata.snapshot_log) == 1
