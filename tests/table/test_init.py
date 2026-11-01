@@ -1227,6 +1227,7 @@ def test_update_metadata_add_existing_sort_order(table_v2: Table) -> None:
         )
         assert new_metadata.sort_orders == table_v2.metadata.sort_orders
         assert new_metadata.default_sort_order_id == existing_sort_order.order_id
+        assert new_metadata.last_updated_ms == table_v2.metadata.last_updated_ms
 
 
 def test_update_metadata_add_sort_order_with_taken_id(table_v2: Table) -> None:
@@ -1243,6 +1244,27 @@ def test_update_metadata_add_sort_order_with_taken_id(table_v2: Table) -> None:
     assert new_metadata.sort_orders[-1].fields == new_sort_order.fields
     assert new_metadata.sort_orders[-1].order_id == existing_sort_order.order_id + 1
     assert new_metadata.default_sort_order_id == existing_sort_order.order_id + 1
+
+
+def test_update_metadata_add_existing_sort_order_reuses_its_own_id(table_v2: Table) -> None:
+    existing_sort_order = table_v2.sort_order()
+    newer_sort_order = SortOrder(SortField(source_id=1, transform=IdentityTransform()), order_id=existing_sort_order.order_id + 1)
+    metadata = update_table_metadata(
+        table_v2.metadata,
+        (AddSortOrderUpdate(sort_order=newer_sort_order), SetDefaultSortOrderUpdate(sort_order_id=-1)),
+    )
+
+    # A writer that read metadata before newer_sort_order was added picks its own next id, which newer_sort_order took.
+    # Reusing existing_sort_order has to resolve to its own id, which is no longer the highest one.
+    new_metadata = update_table_metadata(
+        metadata,
+        (
+            AddSortOrderUpdate(sort_order=SortOrder(*existing_sort_order.fields, order_id=newer_sort_order.order_id + 1)),
+            SetDefaultSortOrderUpdate(sort_order_id=-1),
+        ),
+    )
+    assert new_metadata.sort_orders == metadata.sort_orders
+    assert new_metadata.default_sort_order_id == existing_sort_order.order_id
 
 
 def test_update_metadata_update_sort_order_invalid(table_v2: Table) -> None:
