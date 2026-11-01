@@ -128,7 +128,7 @@ dev = [
     "papermill>=2.6.0",
     "nbformat>=5.10.0",
     "ipykernel>=6.29.0",
-    "ty==0.0.84",
+    "ty==0.0.91",
 ]
 # for mkdocs
 docs = [
