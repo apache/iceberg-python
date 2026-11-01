@@ -305,9 +305,14 @@ class Transaction:
 
         # For the requirements, it does not make sense to add a requirement more than once
         # For example, you cannot assert that the current schema has two different IDs
-        existing_requirements = {type(requirement) for requirement in self._requirements}
+        # Ref requirements are the exception: each ref needs its own assertion
+        def key(requirement: TableRequirement) -> tuple[type, str | None]:
+            return type(requirement), requirement.ref if isinstance(requirement, AssertRefSnapshotId) else None
+
+        existing_requirements = {key(requirement) for requirement in self._requirements}
         for new_requirement in requirements:
-            if type(new_requirement) not in existing_requirements:
+            if key(new_requirement) not in existing_requirements:
+                existing_requirements.add(key(new_requirement))
                 self._requirements = self._requirements + (new_requirement,)
 
         return self
