@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import zlib
 
-from pyiceberg.avro.codecs.codec import Codec
+from pyiceberg.avro.codecs.codec import MAX_DECOMPRESSED_BLOCK_SIZE, Codec
 
 
 class DeflateCodec(Codec):
@@ -33,4 +33,8 @@ class DeflateCodec(Codec):
     def decompress(data: bytes) -> bytes:
         # -15 is the log of the window size; negative indicates
         # "raw" (no zlib headers) decompression.  See zlib.h.
-        return zlib.decompress(data, -15)
+        decompressor = zlib.decompressobj(-15)
+        uncompressed = decompressor.decompress(data, MAX_DECOMPRESSED_BLOCK_SIZE)
+        if decompressor.unconsumed_tail:
+            raise ValueError(f"Decompressed block exceeds the maximum of {MAX_DECOMPRESSED_BLOCK_SIZE} bytes")
+        return uncompressed
