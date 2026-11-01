@@ -1100,7 +1100,7 @@ def test_add_required_column(catalog: Catalog) -> None:
         (BooleanType(), True, False),
         (IntegerType(), 123, 456),
         (LongType(), 123, 456),
-        (FloatType(), 19.25, 22.27),
+        (FloatType(), 19.25, 22.25),  # exact in float32, so it reads back unchanged
         (DoubleType(), 19.25, 22.27),
         (DecimalType(10, 2), Decimal("19.25"), Decimal("22.27")),
         (DecimalType(10, 2), Decimal("19.25"), Decimal("22.27")),

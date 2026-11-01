@@ -42,13 +42,13 @@ from pyiceberg.exceptions import (
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties
+from pyiceberg.table import Table, TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
-from pyiceberg.types import BooleanType, DoubleType, IntegerType, LongType, NestedField, StringType
+from pyiceberg.types import BooleanType, DoubleType, FloatType, IntegerType, LongType, NestedField, StringType
 
 
 # Name parsing tests
@@ -1409,3 +1409,40 @@ def test_record_batch_reader_schema_mismatch_writes_no_files(catalog: Catalog) -
     # _append_snapshot_producer opens.
     assert tbl.metadata.current_snapshot() is None
     assert len(tbl.scan().to_arrow()) == 0
+
+
+def _create_float_table(catalog: Catalog, name: str, partitioned: bool) -> Table:
+    catalog.create_namespace("default")
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", FloatType(), required=False),
+    )
+    partition_spec = (
+        PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"))
+        if partitioned
+        else UNPARTITIONED_PARTITION_SPEC
+    )
+    tbl = catalog.create_table(identifier=f"default.{name}_{catalog.name}", schema=iceberg_schema, partition_spec=partition_spec)
+    # 0.1 and 0.7 are not exact in float32, and they end up as the bounds of the data file (or as partition values)
+    tbl.append(pa.Table.from_pydict({"id": [1, 2, 3], "value": [0.1, 0.4, 0.7]}, schema=schema_to_pyarrow(iceberg_schema)))
+    return tbl
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_scan_float_column_by_value(catalog: Catalog, partitioned: bool) -> None:
+    tbl = _create_float_table(catalog, "scan_float_column", partitioned)
+
+    assert tbl.scan(row_filter="value = 0.1").to_arrow()["id"].to_pylist() == [1]
+    assert tbl.scan(row_filter="value <= 0.1").to_arrow()["id"].to_pylist() == [1]
+    assert tbl.scan(row_filter="value >= 0.7").to_arrow()["id"].to_pylist() == [3]
+    assert sorted(tbl.scan(row_filter="value in (0.1, 0.7)").to_arrow()["id"].to_pylist()) == [1, 3]
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+@pytest.mark.parametrize("delete_filter, remaining", [("value != 0.1", [1]), ("value = 0.1", [2, 3])])
+def test_delete_float_column_by_value(catalog: Catalog, partitioned: bool, delete_filter: str, remaining: list[int]) -> None:
+    tbl = _create_float_table(catalog, "delete_float_column", partitioned)
+
+    tbl.delete(delete_filter)
+
+    assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == remaining
