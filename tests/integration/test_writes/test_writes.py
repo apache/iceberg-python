@@ -2533,7 +2533,6 @@ def test_stage_only_overwrite_files(
     assert parent_snapshot_id == [None, first_snapshot, second_snapshot, second_snapshot, second_snapshot]
 
 
-@pytest.mark.skip("V3 writer support is not enabled.")
 @pytest.mark.integration
 def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Catalog) -> None:
     """Test writing to a v3 table and reading with Spark."""
@@ -2569,6 +2568,14 @@ def test_v3_write_and_read_row_lineage(spark: SparkSession, session_catalog: Cat
     assert tbl.metadata.next_row_id == initial_next_row_id + len(test_data), (
         "Expected next_row_id to be incremented by the number of added rows"
     )
+
+    tbl.append(test_data)
+    assert tbl.metadata.next_row_id == initial_next_row_id + 2 * len(test_data)
+
+    rows = spark.sql(f"SELECT _row_id, _last_updated_sequence_number FROM {identifier} ORDER BY _row_id").collect()
+    assert [(row._row_id, row._last_updated_sequence_number) for row in rows] == [
+        (initial_next_row_id + i, 1 + i // len(test_data)) for i in range(2 * len(test_data))
+    ]
 
 
 # RecordBatchReader streaming append/overwrite — see https://github.com/apache/iceberg-python/issues/2152
