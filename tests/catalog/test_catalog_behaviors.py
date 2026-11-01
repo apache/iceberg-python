@@ -1345,6 +1345,27 @@ def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
     assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
 
 
+def test_delete_keeps_nan_rows_that_do_not_match_the_filter(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.delete_keeps_nan_rows_{catalog.name}"
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema)
+    tbl.append(
+        pa.Table.from_pydict(
+            {"id": [1, 2], "value": [1.0, float("nan")]},
+            schema=schema_to_pyarrow(iceberg_schema),
+        )
+    )
+
+    # NaN < 5.0 is false, so the NaN row must survive and the file cannot be dropped as a whole
+    tbl.delete("value < 5.0")
+
+    assert tbl.scan().to_arrow()["id"].to_pylist() == [2]
+
+
 def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
     catalog.create_namespace("default")
     identifier = f"default.scan_integer_decimal_literal_{catalog.name}"
