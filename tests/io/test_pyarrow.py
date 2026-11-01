@@ -26,6 +26,7 @@ import warnings
 import zlib
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import MagicMock, patch
@@ -66,10 +67,13 @@ from pyiceberg.expressions import (
     EqualTo,
     GreaterThan,
     IsNull,
+    LessThan,
     Not,
+    NotEqualTo,
     Or,
 )
 from pyiceberg.expressions.literals import literal
+from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import ADLS_ACCOUNT_NAME, S3_RETRY_STRATEGY_IMPL, S3_SSL_CA_CERT, InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
@@ -98,7 +102,7 @@ from pyiceberg.io.pyarrow import (
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema, make_compatible_name, visit
-from pyiceberg.table import FileScanTask, TableProperties, WriteTask
+from pyiceberg.table import FileScanTask, Table, TableProperties, WriteTask
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.deletion_vector import (
     _DV_BLOB_MAGIC_NUMBER,
@@ -6102,3 +6106,260 @@ def test_dictionary_columns_produces_dict_encoded_output(tmpdir: str) -> None:
 
     # Values must be identical
     assert result_plain.column("label").to_pylist() == result_dict.column("label").to_pylist()
+
+
+def test_row_filter_on_files_written_before_type_promotion(catalog: InMemoryCatalog) -> None:
+    """Filters compare in the table's type, not the type of older data files (https://github.com/apache/iceberg-python/issues/4203)."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_filter_type_promotion",
+        schema=Schema(
+            NestedField(1, "id", IntegerType(), required=False),
+            NestedField(2, "f", FloatType(), required=False),
+            NestedField(3, "d", DecimalType(5, 2), required=False),
+        ),
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2], pa.int32()),
+                "f": pa.array([0.1, 2.5], pa.float32()),
+                "d": pa.array([Decimal("1.00"), Decimal("999.99")], pa.decimal128(5, 2)),
+            }
+        )
+    )
+
+    with table.update_schema() as update:
+        update.update_column("f", DoubleType())
+        update.update_column("d", DecimalType(12, 2))
+        update.update_column("id", LongType())
+    table = catalog.load_table("default.test_filter_type_promotion")
+
+    # The stored float32 0.1 is promoted to 0.10000000149011612, which is greater than and not equal to the double 0.1
+    for row_filter, expected in [
+        ("f > 0.1", [1, 2]),
+        ("f != 0.1", [1, 2]),
+        ("f = 0.1", []),
+        ("f < 0.1", []),
+        ("d < '1000.00'", [1, 2]),
+        ("d > '999.99'", []),
+        ("id < 3000000000", [1, 2]),
+    ]:
+        assert table.scan(row_filter=row_filter).to_arrow()["id"].to_pylist() == expected, row_filter
+
+
+def test_row_filter_after_type_promotion_with_evolved_schemas(catalog: InMemoryCatalog) -> None:
+    """Promoted-column filters hold for nested, renamed and added columns, mixed files, and nulls (issue 4203)."""
+    catalog.create_namespace("default")
+
+    def check(table: Table, cases: list[tuple[str, list[int]]]) -> None:
+        for row_filter, expected in cases:
+            ids = sorted(table.scan(row_filter=row_filter).to_arrow()["id"].to_pylist())
+            assert ids == expected, f"{table.name()}: {row_filter}"
+
+    # Nested field
+    struct_type = pa.struct([("x", pa.float32())])
+    table = catalog.create_table(
+        "default.promotion_nested",
+        schema=Schema(
+            NestedField(1, "id", LongType(), required=False),
+            NestedField(2, "s", StructType(NestedField(3, "x", FloatType(), required=False)), required=False),
+        ),
+    )
+    table.append(
+        pa.table(
+            {"id": pa.array([1, 2], pa.int64()), "s": pa.array([{"x": 0.1}, {"x": 2.5}], struct_type)},
+        )
+    )
+    with table.update_schema() as update:
+        update.update_column("s.x", DoubleType())
+    check(
+        catalog.load_table("default.promotion_nested"),
+        [("s.x > 0.1", [1, 2]), ("s.x != 0.1", [1, 2]), ("s.x = 0.1", []), ("s.x < 1.0", [1])],
+    )
+
+    float_data = pa.table({"id": pa.array([1, 2], pa.int64()), "f": pa.array([0.1, 2.5], pa.float32())})
+    float_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "f", FloatType(), required=False),
+    )
+
+    # Renamed column: the file keeps the old name
+    table = catalog.create_table("default.promotion_renamed", schema=float_schema)
+    table.append(float_data)
+    with table.update_schema() as update:
+        update.update_column("f", DoubleType())
+    with table.update_schema() as update:
+        update.rename_column("f", "g")
+    check(
+        catalog.load_table("default.promotion_renamed"),
+        [("g > 0.1", [1, 2]), ("g != 0.1", [1, 2]), ("g = 0.1", [])],
+    )
+
+    # Column added after the file was written, combined with the promoted column
+    table = catalog.create_table("default.promotion_added", schema=float_schema)
+    table.append(float_data)
+    with table.update_schema() as update:
+        update.update_column("f", DoubleType())
+        update.add_column("n", StringType())
+    check(
+        catalog.load_table("default.promotion_added"),
+        [
+            ("f > 0.1 AND n IS NULL", [1, 2]),
+            ("f > 0.1 AND n IS NOT NULL", []),
+            ("f > 0.1 OR n = 'a'", [1, 2]),
+            ("NOT (f > 0.1 AND n = 'a')", [1, 2]),
+            ("f = 0.1 OR n IS NULL", [1, 2]),
+            ("f < 1.0 AND n IS NULL", [1]),
+        ],
+    )
+
+    # Files written before and after the promotion in the same scan
+    table = catalog.create_table("default.promotion_mixed", schema=float_schema)
+    table.append(float_data)
+    with table.update_schema() as update:
+        update.update_column("f", DoubleType())
+    table = catalog.load_table("default.promotion_mixed")
+    table.append(pa.table({"id": pa.array([3, 4], pa.int64()), "f": pa.array([0.1, 2.5], pa.float64())}))
+    check(
+        table,
+        [("f > 0.1", [1, 2, 4]), ("f != 0.1", [1, 2, 4]), ("f = 0.1", [3]), ("f <= 0.1", [3])],
+    )
+
+    # Nulls in the promoted column
+    table = catalog.create_table("default.promotion_nulls", schema=float_schema)
+    table.append(pa.table({"id": pa.array([1, 2, 3], pa.int64()), "f": pa.array([0.1, None, 2.5], pa.float32())}))
+    with table.update_schema() as update:
+        update.update_column("f", DoubleType())
+    check(
+        catalog.load_table("default.promotion_nulls"),
+        [
+            ("f != 0.1", [1, 3]),
+            ("f > 0.1", [1, 3]),
+            ("f IS NULL", [2]),
+            ("f IS NOT NULL", [1, 3]),
+            ("NOT (f > 0.1)", []),
+            ("f NOT IN (2.5)", [1]),
+            ("f IS NULL OR f > 0.1", [1, 2, 3]),
+        ],
+    )
+
+
+def _scan_ids_with_promoted_float(
+    tmpdir: str,
+    table_schema: Schema,
+    row_filter: BooleanExpression,
+    partition_spec: PartitionSpec | None = None,
+    partition: Record | None = None,
+    positional_deletes: list[pa.ChunkedArray] | None = None,
+) -> list[int]:
+    """Scan a file written with a float32 `f` column through a table schema where `f` is a double."""
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+            pa.field("f", pa.float32(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "2"}),
+        ]
+    )
+    file_path = _write_table_to_file(
+        f"{tmpdir}/promoted_float.parquet",
+        arrow_schema,
+        pa.table({"id": [10, 20, 30, 40], "f": pa.array([0.1, 0.1, 2.5, 0.1], pa.float32())}, schema=arrow_schema),
+    )
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=partition if partition is not None else Record(),
+        record_count=4,
+        file_size_in_bytes=os.path.getsize(file_path),
+    )
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=bind(table_schema, row_filter, case_sensitive=True),
+        projected_schema=table_schema,
+        table_schema=table_schema,
+        projected_field_ids={field.field_id for field in table_schema.fields},
+        positional_deletes=positional_deletes,
+        case_sensitive=True,
+        partition_spec=partition_spec,
+    )
+    return sorted(id_ for batch in batches for id_ in batch.column("id").to_pylist())
+
+
+def test_row_filter_on_promoted_column_with_positional_deletes(tmpdir: str) -> None:
+    """Positional deletes are applied before the table-typed filter on a promoted column (issue 4203)."""
+    table_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "f", DoubleType(), required=False),
+    )
+    # File positions 0-3 hold ids 10, 20, 30, 40; position 1 (id 20) is deleted
+    positional_deletes = [pa.chunked_array([pa.array([1], type=pa.int64())])]
+
+    for row_filter, expected in [
+        (GreaterThan("f", 0.1), [10, 30, 40]),
+        (NotEqualTo("f", 0.1), [10, 30, 40]),
+        (EqualTo("f", 0.1), []),
+        (LessThan("f", 1.0), [10, 40]),
+    ]:
+        assert (
+            _scan_ids_with_promoted_float(tmpdir, table_schema, row_filter, positional_deletes=positional_deletes) == expected
+        ), row_filter
+
+
+def test_row_filter_on_promoted_column_with_projected_missing_column(tmpdir: str) -> None:
+    """Predicates on columns missing from the file resolve to constants next to table-typed predicates (issue 4203)."""
+    # Value of an identity-partitioned column that is not stored in the file
+    partitioned_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "f", DoubleType(), required=False),
+        NestedField(3, "p", IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(3, 1000, IdentityTransform(), "p"))
+    for row_filter, expected in [
+        (And(GreaterThan("f", 0.1), EqualTo("p", 5)), [10, 20, 30, 40]),
+        (And(GreaterThan("f", 1.0), EqualTo("p", 5)), [30]),
+        (And(GreaterThan("f", 0.1), EqualTo("p", 6)), []),
+        (Or(EqualTo("f", 0.1), EqualTo("p", 6)), []),
+        (Or(EqualTo("f", 0.1), EqualTo("p", 5)), [10, 20, 30, 40]),
+        (Or(GreaterThan("f", 1.0), EqualTo("p", 6)), [30]),
+    ]:
+        assert _scan_ids_with_promoted_float(tmpdir, partitioned_schema, row_filter, spec, Record(5)) == expected, row_filter
+
+    # initial-default of a column added after the file was written
+    default_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "f", DoubleType(), required=False),
+        NestedField(3, "d", IntegerType(), required=False, initial_default=7),
+    )
+    for row_filter, expected in [
+        (And(GreaterThan("f", 0.1), EqualTo("d", 7)), [10, 20, 30, 40]),
+        (And(GreaterThan("f", 1.0), EqualTo("d", 7)), [30]),
+        (And(GreaterThan("f", 0.1), EqualTo("d", 8)), []),
+        (Or(EqualTo("f", 0.1), EqualTo("d", 8)), []),
+        (Or(EqualTo("f", 0.1), EqualTo("d", 7)), [10, 20, 30, 40]),
+        (Or(GreaterThan("f", 1.0), EqualTo("d", 8)), [30]),
+    ]:
+        assert _scan_ids_with_promoted_float(tmpdir, default_schema, row_filter) == expected, row_filter
+
+
+def test_delete_matches_scan_after_type_promotion(catalog: InMemoryCatalog) -> None:
+    """`delete` removes exactly the rows a scan with the same filter returns after a type promotion (issue 4203)."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.promotion_delete",
+        schema=Schema(
+            NestedField(1, "id", LongType(), required=False),
+            NestedField(2, "f", FloatType(), required=False),
+        ),
+    )
+    table.append(pa.table({"id": pa.array([1, 2, 3], pa.int64()), "f": pa.array([0.1, 2.5, 0.0], pa.float32())}))
+    with table.update_schema() as update:
+        update.update_column("f", DoubleType())
+    table = catalog.load_table("default.promotion_delete")
+
+    matched = sorted(table.scan(row_filter="f > 0.1").to_arrow()["id"].to_pylist())
+    assert matched == [1, 2]
+
+    table.delete("f > 0.1")
+    assert table.scan().to_arrow()["id"].to_pylist() == [3]
