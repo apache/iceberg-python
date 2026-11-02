@@ -287,3 +287,6 @@ allowed-unresolved-imports = ["pyiceberg_core.datafusion", "griffe", "mkdocs_gen
 
 [tool.coverage.run]
 source = ['pyiceberg/']
+
+[tool.codespell]
+ignore-words-list = "BoundIn,fo,MoR,NotIn,notIn,oT"
