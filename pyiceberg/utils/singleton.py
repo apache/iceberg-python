@@ -28,9 +28,7 @@ return it.
 More information on metaclasses: https://docs.python.org/3/reference/datamodel.html#metaclasses
 """
 
-from typing import Any, ClassVar, cast
-
-from typing_extensions import Self
+from typing import Any, ClassVar, Self, cast
 
 
 def _convert_to_hashable_type(element: Any) -> Any:
