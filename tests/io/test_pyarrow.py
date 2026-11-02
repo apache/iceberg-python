@@ -1552,21 +1552,16 @@ def test_identity_transform_null_partition_value_takes_precedence_over_initial_d
 
 def test_identity_transform_column_projection_required_field(tmpdir: str) -> None:
     """A required identity partition column missing from the data file must project from the partition value."""
-    table_schema = Schema(
-        NestedField(1, "other_field", StringType(), required=False),
-        NestedField(2, "partition_col", IntegerType(), required=True),
-    )
-    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_col"))
-    table_metadata = TableMetadataV2(
-        location=str(tmpdir), last_column_id=2, format_version=2, schemas=[table_schema], partition_specs=[partition_spec]
-    )
-
     arrow_schema = pa.schema([pa.field("other_field", pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
     file_path = _write_table_to_file(
         f"{tmpdir}/required_partition.parquet", arrow_schema, pa.table({"other_field": ["foo", "bar"]}, schema=arrow_schema)
     )
+    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_col"))
 
-    def scan(partition_value: Any, row_filter: BooleanExpression) -> pa.Table:
+    def scan(table_schema: Schema, partition_value: Any, row_filter: BooleanExpression) -> pa.Table:
+        table_metadata = TableMetadataV3(
+            location=str(tmpdir), last_column_id=2, schemas=[table_schema], partition_specs=[partition_spec], next_row_id=0
+        )
         data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=file_path,
@@ -1578,15 +1573,74 @@ def test_identity_transform_column_projection_required_field(tmpdir: str) -> Non
         )
         return ArrowScan(table_metadata, PyArrowFileIO(), table_schema, row_filter).to_table([FileScanTask(data_file)])
 
-    result = scan(1, AlwaysTrue())
-    assert result.to_pydict() == {"other_field": ["foo", "bar"], "partition_col": [1, 1]}
-    assert not result.schema.field("partition_col").nullable
-    assert scan(1, EqualTo("partition_col", 1)).num_rows == 2
-    assert scan(1, EqualTo("partition_col", 2)).num_rows == 0
+    for initial_default in (None, 7):
+        table_schema = Schema(
+            NestedField(1, "other_field", StringType(), required=False),
+            NestedField(2, "partition_col", IntegerType(), required=True, initial_default=initial_default),
+        )
 
-    # A null partition value cannot fill a required column
-    with pytest.raises(ResolveError, match="Field is required, and could not be found in the file"):
-        scan(None, AlwaysTrue())
+        result = scan(table_schema, 1, AlwaysTrue())
+        assert result.to_pydict() == {"other_field": ["foo", "bar"], "partition_col": [1, 1]}
+        assert not result.schema.field("partition_col").nullable
+        assert scan(table_schema, 1, EqualTo("partition_col", 1)).num_rows == 2
+        assert scan(table_schema, 1, EqualTo("partition_col", 2)).num_rows == 0
+
+        # A null partition value cannot fill a required column, whether or not the field has an initial-default
+        with pytest.raises(ResolveError, match="Field is required, but its identity partition value is null"):
+            scan(table_schema, None, AlwaysTrue())
+
+
+def test_identity_transform_column_projection_required_field_under_null_parent(tmpdir: str) -> None:
+    """A null partition value fills a required nested column only where its optional parent struct is null."""
+    table_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(
+            2,
+            "location",
+            StructType(
+                NestedField(3, "city", StringType(), required=False),
+                NestedField(4, "region", StringType(), required=True),
+            ),
+            required=False,
+        ),
+    )
+    partition_spec = PartitionSpec(PartitionField(4, 1000, IdentityTransform(), "region"))
+    table_metadata = TableMetadataV2(
+        location=str(tmpdir), last_column_id=4, format_version=2, schemas=[table_schema], partition_specs=[partition_spec]
+    )
+
+    location_type = pa.struct([pa.field("city", pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "3"})])
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+            pa.field("location", location_type, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "2"}),
+        ]
+    )
+
+    def scan(locations: list[dict[str, str] | None], partition_value: Any) -> pa.Table:
+        file_path = _write_table_to_file(
+            f"{tmpdir}/nested_{sum(location is not None for location in locations)}_{partition_value}.parquet",
+            arrow_schema,
+            pa.table({"id": [1, 2], "location": pa.array(locations, type=location_type)}, schema=arrow_schema),
+        )
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=Record(partition_value),
+            record_count=2,
+            file_size_in_bytes=os.path.getsize(file_path),
+            spec_id=partition_spec.spec_id,
+        )
+        return ArrowScan(table_metadata, PyArrowFileIO(), table_schema, AlwaysTrue()).to_table([FileScanTask(data_file)])
+
+    assert scan([None, None], None).to_pydict() == {"id": [1, 2], "location": [None, None]}
+    assert scan([{"city": "Bern"}, None], "north").to_pydict() == {
+        "id": [1, 2],
+        "location": [{"city": "Bern", "region": "north"}, None],
+    }
+    with pytest.raises(ResolveError, match="Field is required, but its identity partition value is null"):
+        scan([{"city": "Bern"}, None], None)
 
 
 @pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])

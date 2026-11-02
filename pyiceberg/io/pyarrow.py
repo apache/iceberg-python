@@ -2131,18 +2131,20 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                 array = self._cast_if_needed(field, field_array)
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
-            elif (
-                field.optional
-                or field.initial_default is not None
-                or self._projected_missing_fields.get(field.field_id) is not None
-            ):
-                # When an optional field is added, when a required field with a non-null initial default is added,
-                # or when a required field is an identity partition column that is not stored in the data file
+            elif field.field_id in self._projected_missing_fields:
+                # An identity partition column that is not stored in the data file takes its value from the partition
+                projected_value = self._projected_missing_fields[field.field_id]
+                # A null can fill a required field only where its parent struct is null as well
+                parent_is_null = not isinstance(struct_array, pa.RecordBatch) and struct_array.null_count == len(struct_array)
+                if projected_value is None and field.required and not parent_is_null:
+                    raise ResolveError(f"Field is required, but its identity partition value is null: {field}")
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
-                if field.field_id in self._projected_missing_fields:
-                    projected_value = self._projected_missing_fields[field.field_id]
-                    field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
-                elif field.initial_default is None:
+                field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
+                fields.append(self._construct_field(field, arrow_type))
+            elif field.optional or field.initial_default is not None:
+                # When an optional field is added, or when a required field with a non-null initial default is added
+                arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
+                if field.initial_default is None:
                     field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
                 else:
                     field_arrays.append(pa.repeat(pa.scalar(field.initial_default, type=arrow_type), len(struct_array)))
