@@ -160,6 +160,8 @@ class S3V4RestSigner(S3RequestSigner):
             raise SignError(f"Failed to sign request {response.status_code}: {signer_body}") from e
 
         for key, value in response_json["headers"].items():
+            # Replace instead of append, so a header the request already has is not sent twice
+            del request.headers[key]
             request.headers.add_header(key, ", ".join(value))
 
         request.url = response_json["uri"]
