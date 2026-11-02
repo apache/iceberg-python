@@ -185,7 +185,7 @@ class UpdateMetrics:
         return properties
 
 
-class Summary(IcebergBaseModel, Mapping[str, str]):
+class Summary(IcebergBaseModel, Mapping[str, str]):  # ty: ignore[invalid-method-override]
     """A class that stores the summary information for a Snapshot.
 
     The snapshot summary’s operation field is used by some operations,
@@ -212,7 +212,7 @@ class Summary(IcebergBaseModel, Mapping[str, str]):
     def __setitem__(self, key: str, value: Any) -> None:
         """Set a key as it is a map."""
         if key.lower() == "operation":
-            self.operation = value
+            self.operation = value  # ty: ignore[invalid-assignment]
         else:
             self._additional_properties[key] = value
 

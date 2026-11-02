@@ -31,7 +31,7 @@ def deprecated(deprecated_in: str, removed_in: str, help_message: str | None = N
     def decorator(func: Callable):  # type: ignore
         @functools.wraps(func)
         def new_func(*args: Any, **kwargs: Any) -> Any:
-            message = f"Call to {func.__name__}, deprecated in {deprecated_in}, will be removed in {removed_in}.{help_message}"
+            message = f"Call to {func.__name__}, deprecated in {deprecated_in}, will be removed in {removed_in}.{help_message}"  # ty: ignore[unresolved-attribute]
 
             _deprecation_warning(message)
 

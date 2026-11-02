@@ -33,10 +33,10 @@ class CythonBinaryDecoder(BinaryDecoder):
     def read_int(self) -> int:
         pass
 
-    def read_ints(self, count: int) -> tuple[int, ...]:
+    def read_ints(self, count: int) -> tuple[int, ...]:  # ty: ignore[invalid-method-override]
         pass
 
-    def read_int_bytes_dict(self, count: int, dest: dict[int, bytes]) -> None:
+    def read_int_bytes_dict(self, count: int, dest: dict[int, bytes]) -> None:  # ty: ignore[invalid-method-override]
         pass
 
     def read_bytes(self) -> bytes:

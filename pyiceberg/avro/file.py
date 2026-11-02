@@ -257,7 +257,7 @@ class AvroOutputFile(Generic[D]):
             raise ValueError(f"Sync interval must be positive: {sync_interval}")
         self.sync_interval = sync_interval
         self._block = io.BytesIO()
-        self._block_encoder = BinaryEncoder(output_stream=self._block)
+        self._block_encoder = BinaryEncoder(output_stream=self._block)  # ty: ignore[invalid-argument-type]
         self._block_records = 0
 
     def __enter__(self) -> AvroOutputFile[D]:

@@ -488,7 +488,7 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
         self._timeout = timeout
         super().__init__(max_retries=max_retries)
 
-    def send(
+    def send(  # ty: ignore[invalid-method-override]
         self,
         request: PreparedRequest,
         stream: bool = False,
@@ -499,7 +499,7 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
     ) -> Response:
         if timeout is None:
             timeout = self._timeout
-        return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+        return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)  # ty: ignore[invalid-argument-type]
 
 
 def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapter | None:
@@ -678,7 +678,7 @@ class RestCatalog(Catalog):
             return False
         return self._effective_scan_planning_mode(table_config) == ScanPlanningMode.SERVER
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     def _plan_table_scan(self, identifier: str | Identifier, request: PlanTableScanRequest) -> PlanningResponse:
         """Submit a scan plan request to the REST server.
 
@@ -704,7 +704,7 @@ class RestCatalog(Catalog):
 
         return _PLANNING_RESPONSE_ADAPTER.validate_json(response.text)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     def _fetch_scan_tasks(self, identifier: str | Identifier, plan_task: str) -> ScanTasks:
         """Fetch additional scan tasks using a plan task token.
 
@@ -731,7 +731,7 @@ class RestCatalog(Catalog):
 
         return ScanTasks.model_validate_json(response.text)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     def _fetch_planning_result(self, identifier: str | Identifier, plan_id: str) -> PlanningResponse:
         """Fetch the result of an async scan plan by plan-id.
 
@@ -1045,12 +1045,12 @@ class RestCatalog(Catalog):
         config_response = ConfigResponse.model_validate_json(response.text)
 
         config = config_response.defaults
-        config.update(self.properties)
-        config.update(config_response.overrides)
-        self.properties = config
+        config.update(self.properties)  # ty: ignore[unresolved-attribute]
+        config.update(config_response.overrides)  # ty: ignore[no-matching-overload, unresolved-attribute]
+        self.properties = config  # ty: ignore[invalid-assignment]
 
         # Update URI based on overrides
-        self.uri = config[URI]
+        self.uri = config[URI]  # ty: ignore[not-subscriptable]
 
         # Determine supported endpoints
         endpoints = config_response.endpoints
@@ -1105,7 +1105,7 @@ class RestCatalog(Catalog):
             def __init__(self, **properties: str):
                 self._properties = properties
                 max_retries = property_as_int(self._properties, SIGV4_MAX_RETRIES, SIGV4_MAX_RETRIES_DEFAULT)
-                super().__init__(max_retries=max_retries)
+                super().__init__(max_retries=max_retries)  # ty: ignore[invalid-argument-type]
                 self._boto_session = boto3.Session(
                     profile_name=get_first_property_value(self._properties, AWS_PROFILE_NAME),
                     region_name=get_first_property_value(self._properties, AWS_REGION),
@@ -1197,7 +1197,7 @@ class RestCatalog(Catalog):
         # Reactive token refresh is atypical - we should proactively refresh tokens in a separate thread
         # instead of retrying on Auth Exceptions. Keeping refresh behavior for the LegacyOAuth2AuthManager
         # for backward compatibility
-        auth_manager = self._session.auth.auth_manager  # type: ignore[union-attr]
+        auth_manager = self._session.auth.auth_manager  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
         if isinstance(auth_manager, LegacyOAuth2AuthManager):
             auth_manager._refresh_token()
 
@@ -1252,7 +1252,7 @@ class RestCatalog(Catalog):
         return TableResponse.model_validate_json(response.text)
 
     @override
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     def create_table(
         self,
         identifier: str | Identifier,
@@ -1274,7 +1274,7 @@ class RestCatalog(Catalog):
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
     @override
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     def create_table_transaction(
         self,
         identifier: str | Identifier,
@@ -1297,7 +1297,7 @@ class RestCatalog(Catalog):
         return CreateTableTransaction(staged_table)
 
     @override
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     def create_view(
         self,
         identifier: str | Identifier,
@@ -1336,7 +1336,7 @@ class RestCatalog(Catalog):
         view_response = ViewResponse.model_validate_json(response.text)
         return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         """Register a new table using existing metadata.
@@ -1372,7 +1372,7 @@ class RestCatalog(Catalog):
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     def unregister_table(self, identifier: str | Identifier) -> tuple[str, TableMetadata]:
         """Unregister a table from the catalog without removing data or metadata files.
 
@@ -1398,7 +1398,7 @@ class RestCatalog(Catalog):
         result = UnregisterTableResult.model_validate_json(response.content)
         return (result.metadata_location, result.metadata)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def list_tables(self, namespace: str | Identifier) -> list[Identifier]:
         self._check_endpoint(Capability.V1_LIST_TABLES)
@@ -1434,7 +1434,7 @@ class RestCatalog(Catalog):
 
         return tables
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def load_table(self, identifier: str | Identifier) -> Table:
         self._check_endpoint(Capability.V1_LOAD_TABLE)
@@ -1456,7 +1456,7 @@ class RestCatalog(Catalog):
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     def _load_credentials(
         self,
         identifier: str | Identifier,
@@ -1482,7 +1482,7 @@ class RestCatalog(Catalog):
         credentials_response = self._load_credentials(identifier)
         return self._resolve_storage_credentials(credentials_response.storage_credentials, location)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def drop_table(self, identifier: str | Identifier, purge_requested: bool = False) -> None:
         self._check_endpoint(Capability.V1_DELETE_TABLE)
@@ -1495,12 +1495,12 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchTableError})
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def purge_table(self, identifier: str | Identifier) -> None:
         self.drop_table(identifier=identifier, purge_requested=True)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def rename_table(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> Table:
         self._check_endpoint(Capability.V1_RENAME_TABLE)
@@ -1537,7 +1537,7 @@ class RestCatalog(Catalog):
             )
         return table_request
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def list_views(self, namespace: str | Identifier) -> list[Identifier]:
         if Capability.V1_LIST_VIEWS not in self._supported_endpoints:
@@ -1575,7 +1575,7 @@ class RestCatalog(Catalog):
 
         return views
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def load_view(self, identifier: str | Identifier) -> View:
         self._check_endpoint(Capability.V1_LOAD_VIEW)
@@ -1590,7 +1590,7 @@ class RestCatalog(Catalog):
         view_response = ViewResponse.model_validate_json(response.text)
         return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def commit_table(
         self, table: Table, requirements: tuple[TableRequirement, ...], updates: tuple[TableUpdate, ...]
@@ -1638,7 +1638,7 @@ class RestCatalog(Catalog):
             )
         return CommitTableResponse.model_validate_json(response.text)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def create_namespace(self, namespace: str | Identifier, properties: Properties = EMPTY_DICT) -> None:
         self._check_endpoint(Capability.V1_CREATE_NAMESPACE)
@@ -1650,7 +1650,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             _handle_non_200_response(exc, {409: NamespaceAlreadyExistsError})
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def drop_namespace(self, namespace: str | Identifier) -> None:
         self._check_endpoint(Capability.V1_DELETE_NAMESPACE)
@@ -1662,7 +1662,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: NamespaceNotEmptyError})
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def list_namespaces(self, namespace: str | Identifier = ()) -> list[Identifier]:
         self._check_endpoint(Capability.V1_LIST_NAMESPACES)
@@ -1700,7 +1700,7 @@ class RestCatalog(Catalog):
 
         return namespaces
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         self._check_endpoint(Capability.V1_LOAD_NAMESPACE)
@@ -1714,7 +1714,7 @@ class RestCatalog(Catalog):
 
         return NamespaceResponse.model_validate_json(response.text).properties
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def update_namespace_properties(
         self, namespace: str | Identifier, removals: set[str] | None = None, updates: Properties = EMPTY_DICT
@@ -1735,7 +1735,7 @@ class RestCatalog(Catalog):
             missing=parsed_response.missing,
         )
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def namespace_exists(self, namespace: str | Identifier) -> bool:
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
@@ -1763,7 +1763,7 @@ class RestCatalog(Catalog):
 
         return False
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def table_exists(self, identifier: str | Identifier) -> bool:
         """Check if a table exists.
@@ -1798,7 +1798,7 @@ class RestCatalog(Catalog):
 
         return False
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def view_exists(self, identifier: str | Identifier) -> bool:
         """Check if a view exists.
@@ -1824,7 +1824,7 @@ class RestCatalog(Catalog):
 
         return False
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def register_view(self, identifier: str | Identifier, metadata_location: str) -> View:
         self._check_endpoint(Capability.V1_REGISTER_VIEW)
@@ -1847,7 +1847,7 @@ class RestCatalog(Catalog):
         view_response = ViewResponse.model_validate_json(response.text)
         return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def drop_view(self, identifier: str | Identifier) -> None:
         self._check_endpoint(Capability.V1_DELETE_VIEW)
@@ -1859,7 +1859,7 @@ class RestCatalog(Catalog):
         except HTTPError as exc:
             _handle_non_200_response(exc, {404: NoSuchViewError})
 
-    @retry(**_RETRY_ARGS)
+    @retry(**_RETRY_ARGS)  # ty: ignore[no-matching-overload]
     @override
     def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
         self._check_endpoint(Capability.V1_RENAME_VIEW)

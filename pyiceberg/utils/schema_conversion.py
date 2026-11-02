@@ -624,7 +624,7 @@ class ConvertSchemaToAvro(SchemaVisitorPerPrimitiveType[AvroType]):
     def visit_timestamp(self, timestamp_type: TimestampType) -> AvroType:
         return {"type": "long", "logicalType": "timestamp-micros", "adjust-to-utc": False}
 
-    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType) -> AvroType:
+    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType) -> AvroType:  # ty: ignore[invalid-method-override]
         return {"type": "long", "logicalType": "timestamp-nanos", "adjust-to-utc": False}
 
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> AvroType:

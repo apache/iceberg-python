@@ -323,7 +323,7 @@ def _(primitive_type: DecimalType, value: Decimal) -> bytes:
     return decimal_to_bytes(value)
 
 
-@to_bytes.register(UnknownType)
+@to_bytes.register(UnknownType)  # ty: ignore[invalid-argument-type]
 def _(_: UnknownType, value: Any) -> None:
     """Return None since the unknown type has no binary representation."""
     return None

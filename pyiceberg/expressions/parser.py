@@ -278,15 +278,15 @@ def _(result: ParseResults) -> BooleanExpression:
 
 
 def handle_not(result: ParseResults) -> Not:
-    return Not(result[0][0])
+    return Not(result[0][0])  # ty: ignore[invalid-return-type]
 
 
 def handle_and(result: ParseResults) -> And:
-    return And(*result[0])
+    return And(*result[0])  # ty: ignore[invalid-return-type]
 
 
 def handle_or(result: ParseResults) -> Or:
-    return Or(*result[0])
+    return Or(*result[0])  # ty: ignore[invalid-return-type]
 
 
 boolean_expression = infix_notation(

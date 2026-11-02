@@ -157,25 +157,25 @@ def literal(value: L) -> Literal[L]:
         LongLiteral(123)
     """
     if isinstance(value, float):
-        return DoubleLiteral(value)
+        return DoubleLiteral(value)  # ty: ignore[invalid-return-type]
     elif isinstance(value, bool):
-        return BooleanLiteral(value)
+        return BooleanLiteral(value)  # ty: ignore[invalid-return-type]
     elif isinstance(value, int):
         return LongLiteral(value)
     elif isinstance(value, str):
-        return StringLiteral(value)
+        return StringLiteral(value)  # ty: ignore[invalid-return-type]
     elif isinstance(value, UUID):
-        return UUIDLiteral(value.bytes)
+        return UUIDLiteral(value.bytes)  # ty: ignore[invalid-return-type]
     elif isinstance(value, bytes):
-        return BinaryLiteral(value)
+        return BinaryLiteral(value)  # ty: ignore[invalid-return-type]
     elif isinstance(value, Decimal):
-        return DecimalLiteral(value)
+        return DecimalLiteral(value)  # ty: ignore[invalid-return-type]
     elif isinstance(value, datetime):
-        return TimestampLiteral(datetime_to_micros(value))
+        return TimestampLiteral(datetime_to_micros(value))  # ty: ignore[invalid-return-type]
     elif isinstance(value, date):
         return DateLiteral(date_to_days(value))
     elif isinstance(value, time):
-        return TimeLiteral(time_to_micros(value))
+        return TimeLiteral(time_to_micros(value))  # ty: ignore[invalid-return-type]
     else:
         raise TypeError(f"Invalid literal value: {repr(value)}")
 
@@ -374,7 +374,7 @@ class LongLiteral(Literal[int]):
 class FloatLiteral(Literal[float]):
     def __init__(self, value: float) -> None:
         super().__init__(value, float)
-        self._value32 = struct.unpack("<f", struct.pack("<f", value))[0]
+        self._value32 = struct.unpack("<f", struct.pack("<f", value))[0]  # ty: ignore[invalid-assignment]
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the FloatLiteral class."""

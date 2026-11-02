@@ -67,7 +67,7 @@ NOOP_COMPRESSOR = NoopCompressor()
 
 class GzipCompressor(Compressor):
     def stream_decompressor(self, inp: InputStream) -> InputStream:
-        return gzip.open(inp)
+        return gzip.open(inp)  # ty: ignore[invalid-return-type]
 
     def bytes_compressor(self) -> Callable[[bytes], bytes]:
         return gzip.compress

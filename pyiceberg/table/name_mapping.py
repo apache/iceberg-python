@@ -39,7 +39,7 @@ from pyiceberg.types import IcebergType, ListType, MapType, NestedField, Primiti
 
 class MappedField(IcebergBaseModel):
     field_id: int | None = Field(alias="field-id", default=None)
-    names: list[str] = conlist(str)
+    names: list[str] = conlist(str)  # ty: ignore[invalid-assignment]
     fields: list[MappedField] = Field(default_factory=list)
 
     @field_validator("fields", mode="before")
@@ -81,7 +81,7 @@ class NameMapping(IcebergRootModel[list[MappedField]]):
         """Return the number of mappings."""
         return len(self.root)
 
-    def __iter__(self) -> Iterator[MappedField]:
+    def __iter__(self) -> Iterator[MappedField]:  # ty: ignore[invalid-method-override]
         """Iterate over the mapped fields."""
         return iter(self.root)
 
@@ -256,7 +256,7 @@ class NameMappingAccessor(PartnerAccessor[MappedField]):
     def schema_partner(self, partner: MappedField | None) -> MappedField | None:
         return partner
 
-    def field_partner(
+    def field_partner(  # ty: ignore[invalid-method-override]
         self, partner_struct: list[MappedField] | MappedField | None, _: int, field_name: str
     ) -> MappedField | None:
         if partner_struct is not None:
@@ -322,10 +322,10 @@ class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, Iceberg
     def after_map_value(self, value: NestedField, value_partner: P | None) -> None:
         self.current_path.pop()
 
-    def schema(self, schema: Schema, schema_partner: MappedField | None, struct_result: StructType) -> IcebergType:
-        return Schema(*struct_result.fields, schema_id=schema.schema_id)
+    def schema(self, schema: Schema, schema_partner: MappedField | None, struct_result: StructType) -> IcebergType:  # ty: ignore[invalid-method-override]
+        return Schema(*struct_result.fields, schema_id=schema.schema_id)  # ty: ignore[invalid-return-type]
 
-    def struct(
+    def struct(  # ty: ignore[invalid-method-override]
         self, struct: StructType, struct_partner: MappedField | None, field_results: builtins.list[NestedField]
     ) -> IcebergType:
         return StructType(*field_results)

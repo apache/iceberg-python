@@ -38,7 +38,7 @@ class SQLViewRepresentation(IcebergBaseModel):
     """The dialect of the SQL, e.g. `spark`, `trino`, `presto`."""
 
 
-class ViewRepresentation(IcebergBaseModel, RootModel):
+class ViewRepresentation(IcebergBaseModel, RootModel):  # ty: ignore[invalid-method-override, missing-type-argument]
     root: SQLViewRepresentation
 
 

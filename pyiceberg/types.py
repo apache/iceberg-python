@@ -261,7 +261,7 @@ class IcebergType(IcebergBaseModel):
         return 1
 
 
-class PrimitiveType(Singleton, IcebergRootModel[str], IcebergType):
+class PrimitiveType(Singleton, IcebergRootModel[str], IcebergType):  # ty: ignore[invalid-method-override]
     """Base class for all Iceberg Primitive Types."""
 
     root: Any = Field()
@@ -437,7 +437,7 @@ class NestedField(IcebergType):
         """Convert string values into IcebergType instances."""
         if isinstance(v, str):
             try:
-                return IcebergType.handle_primitive_type(v, None)
+                return IcebergType.handle_primitive_type(v, None)  # ty: ignore[call-non-callable]
             except ValueError as e:
                 raise ValueError(f"Unsupported field type: '{v}'") from e
         return v

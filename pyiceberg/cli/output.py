@@ -202,7 +202,7 @@ class ConsoleOutput(Output):
     def version(self, version: str) -> None:
         Console().print(version)
 
-    def describe_refs(self, ref_details: list[tuple[str, SnapshotRefType, dict[str, str]]]) -> None:
+    def describe_refs(self, ref_details: list[tuple[str, SnapshotRefType, dict[str, str]]]) -> None:  # ty: ignore[invalid-method-override]
         refs_table = RichTable(title="Snapshot Refs")
         refs_table.add_column("Ref")
         refs_table.add_column("Type")

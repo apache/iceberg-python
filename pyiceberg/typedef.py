@@ -137,14 +137,14 @@ class IcebergBaseModel(BaseModel):
             {field for field in self.__dict__ if field.startswith("_") and not field == "__root__"}, exclude or set()
         )
 
-    def model_dump(
+    def model_dump(  # ty: ignore[invalid-method-override]
         self, exclude_none: bool = True, exclude: set[str] | None = None, by_alias: bool = True, **kwargs: Any
     ) -> dict[str, Any]:
         return super().model_dump(
             exclude_none=exclude_none, exclude=self._exclude_private_properties(exclude), by_alias=by_alias, **kwargs
         )
 
-    def model_dump_json(
+    def model_dump_json(  # ty: ignore[invalid-method-override]
         self, exclude_none: bool = True, exclude: set[str] | None = None, by_alias: bool = True, **kwargs: Any
     ) -> str:
         return super().model_dump_json(

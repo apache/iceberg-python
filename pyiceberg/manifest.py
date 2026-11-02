@@ -732,13 +732,13 @@ class PartitionFieldStats:
                 self._min = value
                 self._max = value
             else:
-                self._max = max(self._max, value)
+                self._max = max(self._max, value)  # ty: ignore[invalid-argument-type]
                 self._min = min(self._min, value)
 
 
 def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partitions: list[Record]) -> list[PartitionFieldSummary]:
     types = [field.field_type for field in spec.partition_type(schema).fields]
-    field_stats = [PartitionFieldStats(field_type) for field_type in types]
+    field_stats = [PartitionFieldStats(field_type) for field_type in types]  # ty: ignore[invalid-argument-type]
     for partition_keys in partitions:
         for i, field_type in enumerate(types):
             if not isinstance(field_type, PrimitiveType):
@@ -811,7 +811,7 @@ POSITIONAL_DELETE_SCHEMA = Schema(
 class ManifestFile(Record):
     @classmethod
     def from_args(cls, _table_format_version: TableVersion = DEFAULT_READ_VERSION, **arguments: Any) -> ManifestFile:
-        return super()._bind(**arguments, struct=MANIFEST_LIST_FILE_SCHEMAS[_table_format_version])
+        return super()._bind(**arguments, struct=MANIFEST_LIST_FILE_SCHEMAS[_table_format_version])  # ty: ignore[invalid-argument-type]
 
     @property
     def manifest_path(self) -> str:

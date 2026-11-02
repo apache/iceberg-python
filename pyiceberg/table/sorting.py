@@ -115,7 +115,7 @@ class SortField(IcebergBaseModel):
 
     source_id: int = Field(alias="source-id")
     transform: Annotated[  # type: ignore[type-arg]
-        Transform,
+        Transform,  # ty: ignore[missing-type-argument]
         BeforeValidator(parse_transform),
         PlainSerializer(lambda c: str(c), return_type=str),  # pylint: disable=W0108
         WithJsonSchema({"type": "string"}, mode="serialization"),

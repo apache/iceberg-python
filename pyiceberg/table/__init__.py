@@ -1052,7 +1052,7 @@ class Transaction:
 
         if self.table_metadata.name_mapping() is None:
             self.set_properties(
-                **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
+                **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}  # ty: ignore[invalid-argument-type]
             )
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             data_files = _parquet_files_to_data_files(
@@ -1559,7 +1559,7 @@ class Table:
 
     @property
     def last_sequence_number(self) -> int:
-        return self.metadata.last_sequence_number
+        return self.metadata.last_sequence_number  # ty: ignore[unresolved-attribute]
 
     def current_snapshot(self) -> Snapshot | None:
         """Get the current snapshot for this table, or None if there is no current snapshot."""
@@ -2423,7 +2423,7 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
             batches = chain([first_batch], batches)
             target_schema = pa.schema(
                 [first_batch.schema.field(field.name) if field.name in dict_col_set else field for field in target_schema],
-                metadata=target_schema.metadata,
+                metadata=target_schema.metadata,  # ty: ignore[invalid-argument-type]
             )
 
     return pa.RecordBatchReader.from_batches(target_schema, batches).cast(target_schema)

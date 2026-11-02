@@ -278,7 +278,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Get the schema by schema_id."""
         return next((schema for schema in self.schemas if schema.schema_id == schema_id), None)
 
-    def schema(self) -> Schema:
+    def schema(self) -> Schema:  # ty: ignore[invalid-method-override]
         """Return the schema for this table."""
         return next(schema for schema in self.schemas if schema.schema_id == self.current_schema_id)
 
@@ -360,7 +360,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
         return None
 
     def next_sequence_number(self) -> int:
-        return self.last_sequence_number + 1 if self.format_version > 1 else INITIAL_SEQUENCE_NUMBER
+        return self.last_sequence_number + 1 if self.format_version > 1 else INITIAL_SEQUENCE_NUMBER  # ty: ignore[unresolved-attribute]
 
     def sort_order(self) -> SortOrder:
         """Get the current sort order for this table, or UNSORTED_SORT_ORDER if there is no sort order."""
@@ -379,7 +379,7 @@ class TableMetadataCommonFields(IcebergBaseModel):
     @field_serializer("snapshots")
     def serialize_snapshots(self, snapshots: list[Snapshot]) -> list[Snapshot]:
         # Snapshot field `sequence-number` should not be written for v1 metadata
-        if self.format_version == 1:
+        if self.format_version == 1:  # ty: ignore[unresolved-attribute]
             return [snapshot.model_copy(update={"sequence_number": None}) for snapshot in snapshots]
         return snapshots
 
@@ -420,7 +420,7 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
 
     @model_validator(mode="after")
     def construct_refs(self) -> TableMetadataV1:
-        return construct_refs(self)
+        return construct_refs(self)  # ty: ignore[invalid-return-type]
 
     @model_validator(mode="before")
     def set_v2_compatible_defaults(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -621,10 +621,10 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     encryption_keys: list[EncryptedKey] = Field(alias="encryption-keys", default_factory=list)
     """An optional list of encryption keys used for table encryption."""
 
-    @model_serializer(mode="wrap")
+    @model_serializer(mode="wrap")  # ty: ignore[invalid-argument-type]
     def serialize_model(self, handler: ModelWrapSerializerWithoutInfo) -> dict[str, Any]:
         """Set custom serializer to leave out `encryption-keys` when it is empty."""
-        serialized: dict[str, Any] = handler(self)
+        serialized: dict[str, Any] = handler(self)  # ty: ignore[missing-argument]
         if not self.encryption_keys:
             serialized.pop("encryption-keys", None)
         return serialized

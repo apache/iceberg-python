@@ -1211,7 +1211,7 @@ def index_by_name(schema_or_type: Schema | IcebergType) -> dict[str, int]:
     Returns:
         Dict[str, int]: An index of field names to field IDs.
     """
-    if len(schema_or_type.fields) > 0:
+    if len(schema_or_type.fields) > 0:  # ty: ignore[unresolved-attribute]
         indexer = _IndexByName()
         visit(schema_or_type, indexer)
         return indexer.by_name()
@@ -1330,7 +1330,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         self.old_id_to_new_id[current_id] = new_id
         return new_id
 
-    def schema(self, schema: Schema, struct_result: Callable[[], StructType]) -> Schema:
+    def schema(self, schema: Schema, struct_result: Callable[[], StructType]) -> Schema:  # ty: ignore[invalid-method-override]
         return Schema(
             *struct_result().fields,
             identifier_field_ids=[self.old_id_to_new_id[field_id] for field_id in schema.identifier_field_ids],
@@ -1468,7 +1468,7 @@ class _SanitizeColumnsVisitor(SchemaVisitor[IcebergType | None]):
         )
 
     def struct(self, struct: StructType, field_results: builtins.list[IcebergType | None]) -> IcebergType | None:
-        return StructType(*[field for field in field_results if field is not None])
+        return StructType(*[field for field in field_results if field is not None])  # ty: ignore[invalid-argument-type]
 
     def list(self, list_type: ListType, element_result: IcebergType | None) -> IcebergType | None:
         return ListType(element_id=list_type.element_id, element_type=element_result, element_required=list_type.element_required)
@@ -1615,7 +1615,7 @@ class _PruneColumnsVisitor(SchemaVisitor[IcebergType | None]):
         if projected_field is None:
             return StructType()
         else:
-            return projected_field
+            return projected_field  # ty: ignore[invalid-return-type]
 
     @staticmethod
     def _project_list(list_type: ListType, element_result: IcebergType) -> ListType:
