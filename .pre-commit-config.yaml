@@ -58,8 +58,6 @@ repos:
     hooks:
       - id: ty
         name: ty
-        # Bare-environment deltas. Hook args are also handed to `uv pip install` when the hook
-        # environment is built, so the flags live in the entry instead.
         entry: >-
           ty check
           -c 'rules.unresolved-import = "ignore"'
