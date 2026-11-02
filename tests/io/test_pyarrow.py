@@ -1550,6 +1550,45 @@ def test_identity_transform_null_partition_value_takes_precedence_over_initial_d
         assert scan(projected_schema, EqualTo("partition_col", 7)).num_rows == 0
 
 
+def test_identity_transform_column_projection_required_field(tmpdir: str) -> None:
+    """A required identity partition column missing from the data file must project from the partition value."""
+    table_schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False),
+        NestedField(2, "partition_col", IntegerType(), required=True),
+    )
+    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_col"))
+    table_metadata = TableMetadataV2(
+        location=str(tmpdir), last_column_id=2, format_version=2, schemas=[table_schema], partition_specs=[partition_spec]
+    )
+
+    arrow_schema = pa.schema([pa.field("other_field", pa.string(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    file_path = _write_table_to_file(
+        f"{tmpdir}/required_partition.parquet", arrow_schema, pa.table({"other_field": ["foo", "bar"]}, schema=arrow_schema)
+    )
+
+    def scan(partition_value: Any, row_filter: BooleanExpression) -> pa.Table:
+        data_file = DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=FileFormat.PARQUET,
+            partition=Record(partition_value),
+            record_count=2,
+            file_size_in_bytes=os.path.getsize(file_path),
+            spec_id=partition_spec.spec_id,
+        )
+        return ArrowScan(table_metadata, PyArrowFileIO(), table_schema, row_filter).to_table([FileScanTask(data_file)])
+
+    result = scan(1, AlwaysTrue())
+    assert result.to_pydict() == {"other_field": ["foo", "bar"], "partition_col": [1, 1]}
+    assert not result.schema.field("partition_col").nullable
+    assert scan(1, EqualTo("partition_col", 1)).num_rows == 2
+    assert scan(1, EqualTo("partition_col", 2)).num_rows == 0
+
+    # A null partition value cannot fill a required column
+    with pytest.raises(ResolveError, match="Field is required, and could not be found in the file"):
+        scan(None, AlwaysTrue())
+
+
 @pytest.mark.parametrize("with_field_ids", [False, True], ids=["name-mapping", "field-ids"])
 def test_identity_transform_columns_projection(tmp_path: str, catalog: InMemoryCatalog, with_field_ids: bool) -> None:
     # Test by adding a non-partitioned data file to a multi-partitioned table, verifying partition value

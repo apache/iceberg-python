@@ -2131,8 +2131,13 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                 array = self._cast_if_needed(field, field_array)
                 field_arrays.append(array)
                 fields.append(self._construct_field(field, array.type))
-            elif field.optional or field.initial_default is not None:
-                # When an optional field is added, or when a required field with a non-null initial default is added
+            elif (
+                field.optional
+                or field.initial_default is not None
+                or self._projected_missing_fields.get(field.field_id) is not None
+            ):
+                # When an optional field is added, when a required field with a non-null initial default is added,
+                # or when a required field is an identity partition column that is not stored in the data file
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
                 if field.field_id in self._projected_missing_fields:
                     projected_value = self._projected_missing_fields[field.field_id]
