@@ -1345,6 +1345,30 @@ def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
     assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
 
 
+def test_append_signed_zero_to_identity_partitioned_table(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.append_signed_zero_identity_partition_{catalog.name}"
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"),
+    )
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema, partition_spec=partition_spec)
+
+    tbl.append(
+        pa.Table.from_pydict(
+            {"id": [1, 2, 3], "value": [-0.0, 0.0, 1.0]},
+            schema=schema_to_pyarrow(iceberg_schema),
+        )
+    )
+
+    # Each row is written once, although -0.0 and 0.0 compare equal
+    assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 3]
+    assert sorted(tbl.scan(row_filter="value = 0").to_arrow()["id"].to_pylist()) == [1, 2]
+
+
 def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
     catalog.create_namespace("default")
     identifier = f"default.scan_integer_decimal_literal_{catalog.name}"

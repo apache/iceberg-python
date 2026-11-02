@@ -3218,6 +3218,11 @@ def _partition_value_filter(partition_field_name: str, value: Any) -> pc.Express
         return pc.field(partition_field_name).is_null()
     elif isinstance(value, float) and math.isnan(value):
         return pc.is_nan(pc.field(partition_field_name))
+    elif isinstance(value, float) and value == 0.0:
+        # -0.0 and 0.0 are separate partitions but compare equal, so also match the sign (1 / -0.0 is -inf)
+        negative_sign = pc.divide(pc.scalar(1.0), pc.field(partition_field_name)) < 0
+        same_sign = negative_sign if math.copysign(1.0, value) < 0 else ~negative_sign
+        return (pc.field(partition_field_name) == value) & same_sign
     return pc.field(partition_field_name) == value
 
 
