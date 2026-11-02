@@ -365,7 +365,9 @@ def test_expire_snapshots_concurrent_rollback_fails(tmp_path_factory: pytest.Tem
     cat.create_namespace("ns")
     t = cat.create_table("ns.t", schema=pa.schema([("x", pa.int64())]))
     t.append(pa.table({"x": [1]}))
-    s1 = t.current_snapshot().snapshot_id
+    current_snapshot = t.current_snapshot()
+    assert current_snapshot is not None
+    s1 = current_snapshot.snapshot_id
     t.append(pa.table({"x": [2]}))
 
     cat.load_table("ns.t").manage_snapshots().rollback_to_snapshot(s1).commit()
