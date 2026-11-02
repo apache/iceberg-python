@@ -61,6 +61,11 @@ jobs:
     - name: Run linters
       if: matrix.python == '3.11'
       run: make lint
+    - name: Type-check with ty
+      # Not the gate yet, so a failure reports without failing the job.
+      if: matrix.python == '3.11'
+      continue-on-error: true
+      run: uv run ty check
     - name: Run unit tests with coverage
       run: COVERAGE=1 make test
     - name: Generate coverage report (85%) # Coverage threshold should only increase over time — never decrease it!
