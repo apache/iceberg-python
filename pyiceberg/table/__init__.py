@@ -2490,6 +2490,8 @@ class DataScan(TableScan):
         """Plan files locally by reading manifests."""
         snapshot = self.snapshot()
         if not snapshot:
+            if self.snapshot_id is not None:
+                raise ValueError(f"Snapshot not found: {self.snapshot_id}")
             return []
         return self._manifest_planner.plan_files(snapshot.manifests(self.io))
 
