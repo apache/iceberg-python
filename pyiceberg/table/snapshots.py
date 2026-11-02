@@ -20,7 +20,7 @@ import time
 import warnings
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, PrivateAttr, model_serializer
@@ -87,7 +87,7 @@ class Operation(Enum):
         return f"Operation.{self.name}"
 
 
-class IsolationLevel(str, Enum):
+class IsolationLevel(StrEnum):
     """Transaction isolation level for concurrent write validation."""
 
     SERIALIZABLE = "serializable"

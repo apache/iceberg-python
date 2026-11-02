@@ -20,7 +20,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Mapping
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -113,7 +113,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class HttpMethod(str, Enum):
+class HttpMethod(StrEnum):
     GET = "GET"
     HEAD = "HEAD"
     POST = "POST"
