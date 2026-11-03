@@ -29,7 +29,7 @@ from pyiceberg.table.inspect import InspectTable, _readable_bound
 from pyiceberg.table.snapshots import Snapshot
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import NestedField, StringType
+from pyiceberg.types import LongType, NestedField, StringType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -74,6 +74,14 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
     files_metrics = tbl.inspect.files().to_pydict()["readable_metrics"][0]["s"]
     assert files_metrics["lower_bound"] is None
     assert files_metrics["upper_bound"] is None
+
+
+@pytest.mark.parametrize("method", ["files", "data_files", "delete_files", "all_files", "all_data_files", "all_delete_files"])
+def test_inspect_files_of_snapshot_without_manifests(catalog: InMemoryCatalog, method: str) -> None:
+    tbl = catalog.create_table("default.no_manifests", Schema(NestedField(1, "x", LongType(), required=False)))
+    tbl.append(pa.table({"x": pa.array([], pa.int64())}))
+
+    assert getattr(tbl.inspect, method)() == tbl.inspect._get_files_schema().empty_table()
 
 
 @pytest.mark.parametrize("newest_first", [False, True])
