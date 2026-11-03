@@ -42,11 +42,11 @@ from pyiceberg.exceptions import (
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties
+from pyiceberg.table import Table, TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import BucketTransform, IdentityTransform
 from pyiceberg.typedef import Identifier
 from pyiceberg.types import BooleanType, DoubleType, IntegerType, LongType, NestedField, StringType
 
@@ -1343,6 +1343,73 @@ def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
 
     assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 3, 4]
     assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
+
+
+def _table_with_null_partition(catalog: Catalog, name: str, partition_spec: PartitionSpec) -> Table:
+    schema = Schema(NestedField(1, "p", StringType(), required=False), NestedField(2, "f", DoubleType(), required=False))
+    catalog.create_namespace_if_not_exists("default")
+    tbl = catalog.create_table(identifier=f"default.{name}_{catalog.name}", schema=schema, partition_spec=partition_spec)
+    tbl.append(
+        pa.Table.from_pydict(
+            {
+                "p": ["a", "a", "b", "b", "c", "c", None, None, "b", "b"],
+                "f": [1.0, 1.0, 2.0, 2.0, float("nan"), float("nan"), 1.0, 1.0, None, None],
+            },
+            schema=schema_to_pyarrow(schema),
+        )
+    )
+    return tbl
+
+
+def test_count_matches_to_arrow_with_null_partition_values(catalog: Catalog) -> None:
+    identity = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="p"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="f"),
+    )
+    bucket = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=BucketTransform(4), name="p_bucket"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="f"),
+    )
+    evolved = _table_with_null_partition(
+        catalog,
+        "count_null_partition_evolved",
+        PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="p")),
+    )
+    # Files written under the old spec keep a NULL p partition value that the current spec no longer has
+    with evolved.update_spec() as update:
+        update.remove_field("p")
+    evolved.append(evolved.scan().to_arrow())
+    tables = [
+        _table_with_null_partition(catalog, "count_null_partition_identity", identity),
+        _table_with_null_partition(catalog, "count_null_partition_bucket", bucket),
+        evolved,
+    ]
+    row_filters = ["p != 'a'", "p not in ('a', 'c')", "not p = 'a'", "p not like 'a%'", "f is not nan", "p is null", "true"]
+    for tbl in tables:
+        for row_filter in row_filters:
+            scan = tbl.scan(row_filter=row_filter)
+            assert scan.count() == len(scan.to_arrow()), (tbl.name(), row_filter)
+
+
+def test_count_reads_null_partition_only_when_filter_compares_it(catalog: Catalog) -> None:
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="p"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="f"),
+    )
+    # Each row filter maps to (filter selecting files to delete, expected count), and count() must not read those files
+    cases = {
+        "true": ("true", 10),
+        "p is null": ("p is null", 2),
+        "p is not null or f = 1.0": ("p is null", 10),
+        "p != 'a'": ("p is not null", 6),
+        "f = 1.0": ("f = 1.0", 4),
+    }
+    for i, (row_filter, (metadata_only_filter, expected)) in enumerate(cases.items()):
+        tbl = _table_with_null_partition(catalog, f"count_metadata_only_{i}", partition_spec)
+        # Deleting those files makes any read of them fail
+        for task in tbl.scan(row_filter=metadata_only_filter).plan_files():
+            tbl.io.delete(task.file.file_path)
+        assert tbl.scan(row_filter=row_filter).count() == expected, row_filter
 
 
 def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
