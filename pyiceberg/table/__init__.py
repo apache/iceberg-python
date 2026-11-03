@@ -2580,14 +2580,11 @@ class DataScan(TableScan):
         tasks = self.plan_files()
         bound_filter = bind(self.table_metadata.schema(), self.row_filter, case_sensitive=self.case_sensitive)
         field_ids_outside_null_checks = visit(bound_filter, _FieldIDsOutsideNullChecks())
-        referenced_positions = (
-            {
-                spec_id: [pos for pos, field in enumerate(spec.fields) if field.source_id in field_ids_outside_null_checks]
-                for spec_id, spec in self.table_metadata.specs().items()
-            }
-            if field_ids_outside_null_checks
-            else {}
-        )
+        specs = self.table_metadata.specs() if field_ids_outside_null_checks else {}
+        referenced_positions = {
+            spec_id: [pos for pos, field in enumerate(spec.fields) if field.source_id in field_ids_outside_null_checks]
+            for spec_id, spec in specs.items()
+        }
 
         for task in tasks:
             # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
@@ -2600,7 +2597,8 @@ class DataScan(TableScan):
                 and (
                     not field_ids_outside_null_checks
                     or (
-                        task.file.spec_id in referenced_positions
+                        task.file.spec_id in specs
+                        and len(task.file.partition) == len(specs[task.file.spec_id].fields)
                         and all(task.file.partition[pos] is not None for pos in referenced_positions[task.file.spec_id])
                     )
                 )
