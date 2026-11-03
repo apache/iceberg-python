@@ -633,6 +633,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         # Check if it is different current schema ID
         if existing_schema_id != self._schema.schema_id:
+            new_schema.check_format_version_compatibility(self._transaction.table_metadata.format_version)
             requirements += (AssertCurrentSchemaId(current_schema_id=self._schema.schema_id),)
             if existing_schema_id is None:
                 updates += (

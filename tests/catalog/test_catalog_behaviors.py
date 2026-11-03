@@ -1350,6 +1350,22 @@ def test_update_schema_rejects_v3_only_types(catalog: Catalog, format_version: i
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
+def test_update_schema_commit_checks_format_version(catalog: Catalog, format_version: int) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.commit_checks_format_version_v{format_version}_{catalog.name}"
+    tbl = catalog.create_table(
+        identifier=identifier,
+        schema=Schema(NestedField(1, "id", LongType(), required=False)),
+        properties={"format-version": str(format_version)},
+    )
+
+    # The check runs while building the updates, before they reach the table metadata
+    update = tbl.update_schema().add_column("ts", TimestampNanoType())
+    with pytest.raises(ValueError, match="timestamp_ns is only supported in 3 or higher"):
+        update._commit()
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
 def test_update_schema_rejects_initial_default_before_v3(catalog: Catalog, format_version: int) -> None:
     catalog.create_namespace("default")
     identifier = f"default.reject_initial_default_v{format_version}_{catalog.name}"
