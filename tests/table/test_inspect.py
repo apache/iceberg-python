@@ -76,6 +76,14 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
     assert files_metrics["upper_bound"] is None
 
 
+@pytest.mark.parametrize("method", ["files", "data_files", "delete_files", "all_files", "all_data_files", "all_delete_files"])
+def test_inspect_files_of_snapshot_without_manifests(catalog: InMemoryCatalog, method: str) -> None:
+    tbl = catalog.create_table("default.no_manifests", Schema(NestedField(1, "x", LongType(), required=False)))
+    tbl.append(pa.table({"x": pa.array([], pa.int64())}))
+
+    assert getattr(tbl.inspect, method)() == tbl.inspect._get_files_schema().empty_table()
+
+
 @pytest.mark.parametrize("newest_first", [False, True])
 def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest_first: bool) -> None:
     # Manifest entries are visited in manifest order, which is not chronological, so the

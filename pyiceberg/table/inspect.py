@@ -887,6 +887,8 @@ class InspectTable:
                 snapshot.manifests(io, self.tbl.encryption_manager),
             )
         )
+        if not results:
+            return self._get_files_schema().empty_table()
         return pa.concat_tables(results)
 
     def files(self, snapshot_id: int | None = None) -> pa.Table:
@@ -967,15 +969,13 @@ class InspectTable:
         """
         import pyarrow as pa
 
-        snapshots = self.tbl.snapshots()
-        if not snapshots:
-            return pa.Table.from_pylist([], schema=self._get_files_schema())
-
         executor = ExecutorFactory.get_or_create()
         encryption_manager = self.tbl.encryption_manager
-        manifest_lists = executor.map(lambda snapshot: snapshot.manifests(self.tbl.io, encryption_manager), snapshots)
+        manifest_lists = executor.map(lambda snapshot: snapshot.manifests(self.tbl.io, encryption_manager), self.tbl.snapshots())
 
         unique_manifests = {(manifest.manifest_path, manifest) for manifest_list in manifest_lists for manifest in manifest_list}
+        if not unique_manifests:
+            return self._get_files_schema().empty_table()
 
         file_lists = executor.map(
             lambda args: self._get_files_from_manifest(*args), [(manifest, data_file_filter) for _, manifest in unique_manifests]
