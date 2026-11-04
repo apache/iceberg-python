@@ -977,13 +977,14 @@ class MetastoreCatalog(Catalog, ABC):
     @override
     def purge_table(self, identifier: str | Identifier) -> None:
         table = self.load_table(identifier)
+        encryption_manager = table.encryption_manager
         self.drop_table(identifier)
         io = load_file_io(self.properties, table.metadata_location)
         metadata = table.metadata
         manifest_lists_to_delete = set()
         manifests_to_delete: list[ManifestFile] = []
         for snapshot in metadata.snapshots:
-            manifests_to_delete += snapshot.manifests(io)
+            manifests_to_delete += snapshot.manifests(io, encryption_manager)
             manifest_lists_to_delete.add(snapshot.manifest_list)
 
         manifest_paths_to_delete = {manifest.manifest_path for manifest in manifests_to_delete}

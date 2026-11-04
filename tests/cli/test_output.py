@@ -14,3 +14,14 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+
+import pytest
+
+from pyiceberg.cli.output import ConsoleOutput
+from pyiceberg.table import Table
+
+
+def test_files_of_encrypted_table(table_v3_encrypted: Table, capsys: pytest.CaptureFixture[str]) -> None:
+    ConsoleOutput().files(table_v3_encrypted, history=True)
+
+    assert "Snapshot 1" in capsys.readouterr().out

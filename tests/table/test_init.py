@@ -2078,6 +2078,8 @@ def test_scan_encrypted_table(table_v3_encrypted: Table) -> None:
 def test_inspect_encrypted_table(table_v3_encrypted: Table) -> None:
     assert table_v3_encrypted.inspect.manifests().num_rows == 0
     assert table_v3_encrypted.inspect.all_manifests().num_rows == 0
+    assert table_v3_encrypted.inspect.entries().num_rows == 0
+    assert table_v3_encrypted.inspect.partitions().num_rows == 0
 
 
 def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:

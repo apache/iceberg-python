@@ -404,6 +404,7 @@ class InspectTable:
             row_filter=row_filter,
             case_sensitive=case_sensitive,
             snapshot_id=snapshot.snapshot_id,
+            encryption_manager=self.tbl.encryption_manager,
         )
 
         partitions_map: dict[tuple[str, Any], Any] = {}
