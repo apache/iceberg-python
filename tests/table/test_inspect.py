@@ -84,6 +84,15 @@ def test_inspect_files_of_snapshot_without_manifests(catalog: InMemoryCatalog, m
     assert getattr(tbl.inspect, method)() == tbl.inspect._get_files_schema().empty_table()
 
 
+def test_inspect_all_files_keeps_history_when_current_snapshot_has_no_manifests(catalog: InMemoryCatalog) -> None:
+    tbl = catalog.create_table("default.overwritten_with_empty", Schema(NestedField(1, "x", LongType(), required=False)))
+    tbl.append(pa.table({"x": pa.array([1], pa.int64())}))
+    tbl.overwrite(pa.table({"x": pa.array([], pa.int64())}))
+
+    assert tbl.inspect.files().num_rows == 0
+    assert tbl.inspect.all_files().num_rows == 1
+
+
 @pytest.mark.parametrize("newest_first", [False, True])
 def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest_first: bool) -> None:
     # Manifest entries are visited in manifest order, which is not chronological, so the
