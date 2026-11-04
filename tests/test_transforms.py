@@ -513,12 +513,22 @@ def test_truncate_method(type_var: PrimitiveType, value: Any, expected_human_str
     assert truncate_transform.satisfies_order_of(truncate_transform)
 
 
-def test_truncate_satisfies_order_of_different_widths() -> None:
-    assert TruncateTransform(3).satisfies_order_of(TruncateTransform(3))
-    assert TruncateTransform(5).satisfies_order_of(TruncateTransform(3))
-    assert not TruncateTransform(3).satisfies_order_of(TruncateTransform(5))
-    assert not TruncateTransform(3).satisfies_order_of(IdentityTransform())
-    assert not TruncateTransform(3).satisfies_order_of(BucketTransform(3))
+# Ported from TestSortOrder#testSatisfiesTruncateFieldOrder in the Java reference implementation:
+# https://github.com/apache/iceberg/blob/main/core/src/test/java/org/apache/iceberg/TestSortOrder.java
+@pytest.mark.parametrize(
+    "transform,other,expected",
+    [
+        (IdentityTransform(), TruncateTransform(2), True),
+        (TruncateTransform(2), IdentityTransform(), False),
+        (TruncateTransform(4), IdentityTransform(), False),
+        (TruncateTransform(4), TruncateTransform(2), True),
+        (TruncateTransform(2), TruncateTransform(4), False),
+        (TruncateTransform(2), TruncateTransform(2), True),
+        (TruncateTransform(3), BucketTransform(3), False),
+    ],
+)
+def test_truncate_satisfies_order_of(transform: Transform[Any, Any], other: Transform[Any, Any], expected: bool) -> None:
+    assert transform.satisfies_order_of(other) is expected
 
 
 def test_unknown_transform() -> None:
