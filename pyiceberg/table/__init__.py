@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import math
 import random
 import time
 import uuid
@@ -34,7 +35,7 @@ from cachetools import LRUCache
 from pydantic import Field
 
 from pyiceberg.exceptions import CommitFailedException, ValidationException
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNaN, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
     _InclusiveMetricsEvaluator,
@@ -418,13 +419,18 @@ class Transaction:
         if not partition_records or not partition_fields:
             return AlwaysFalse()
 
+        def _matches(partition_field: str, value: Any) -> BooleanExpression:
+            if value is None:
+                return IsNull(Reference(partition_field))
+            # Expression literals reject NaN, so match a NaN partition value with IsNaN
+            if isinstance(value, float) and math.isnan(value):
+                return IsNaN(Reference(partition_field))
+            return EqualTo(Reference(partition_field), value)
+
         per_record_exprs: list[BooleanExpression] = []
         for partition_record in partition_records:
             predicates: list[BooleanExpression] = [
-                EqualTo(Reference(partition_field), partition_record[pos])
-                if partition_record[pos] is not None
-                else IsNull(Reference(partition_field))
-                for pos, partition_field in enumerate(partition_fields)
+                _matches(partition_field, partition_record[pos]) for pos, partition_field in enumerate(partition_fields)
             ]
             per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
 

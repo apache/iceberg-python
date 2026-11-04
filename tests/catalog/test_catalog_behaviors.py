@@ -1345,6 +1345,36 @@ def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
     assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
 
 
+def test_delete_and_overwrite_nan_identity_partition(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.delete_nan_identity_partition_{catalog.name}"
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"),
+    )
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema, partition_spec=partition_spec)
+    arrow_schema = schema_to_pyarrow(iceberg_schema)
+    tbl.append(pa.Table.from_pydict({"id": [1, 2, 3, 4], "value": [1.0, 1.0, float("nan"), float("nan")]}, schema=arrow_schema))
+
+    # Rewrites the NaN partition's data file
+    tbl.delete("id = 3")
+    assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 4]
+
+    # Drops the NaN partition's data file
+    tbl.delete("value is nan")
+    assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2]
+
+    tbl.append(pa.Table.from_pydict({"id": [5], "value": [float("nan")]}, schema=arrow_schema))
+    tbl.dynamic_partition_overwrite(pa.Table.from_pydict({"id": [6], "value": [float("nan")]}, schema=arrow_schema))
+    assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 6]
+
+    tbl.overwrite(pa.Table.from_pydict({"id": [7], "value": [2.0]}, schema=arrow_schema))
+    assert tbl.scan().to_arrow()["id"].to_pylist() == [7]
+
+
 def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
     catalog.create_namespace("default")
     identifier = f"default.scan_integer_decimal_literal_{catalog.name}"
