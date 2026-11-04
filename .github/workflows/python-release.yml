@@ -41,7 +41,7 @@ permissions:
 
 jobs:
   validate-inputs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     outputs:
       VERSION: ${{ steps.validate-inputs.outputs.VERSION }} # e.g. 0.8.0
       RC: ${{ steps.validate-inputs.outputs.RC }} # e.g. 1
@@ -96,7 +96,7 @@ jobs:
           STEPS_VALIDATE_INPUTS_OUTPUTS_RC: ${{ steps.validate-inputs.outputs.RC }}
 
   validate-library-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     needs:
       - validate-inputs
     steps:
@@ -110,7 +110,7 @@ jobs:
           python-version: 3.12
 
       - name: Install UV
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: false
 

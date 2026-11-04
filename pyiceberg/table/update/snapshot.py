@@ -1008,7 +1008,7 @@ class _ManifestMergeManager(Generic[U]):
         groups = self._group_by_spec(manifests)
 
         merged_manifests = []
-        for spec_id in reversed(groups.keys()):
+        for spec_id in reversed(groups):
             merged_manifests.extend(self._merge_group(first_manifest, spec_id, groups[spec_id]))
 
         return merged_manifests
@@ -1084,7 +1084,8 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Args:
             ref_name: branch / tag name to remove
         Stages the updates and requirements for the remove-snapshot-ref.
-        Returns
+
+        Returns:
             This method for chaining
         """
         updates = (RemoveSnapshotRefUpdate(ref_name=ref_name),)
@@ -1381,6 +1382,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         Args:
             snapshot_id (int): The ID of the snapshot to expire.
+
         Returns:
             This for method chaining.
         """
@@ -1402,6 +1404,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         Args:
             snapshot_ids (List[int]): List of snapshot IDs to expire.
+
         Returns:
             This for method chaining.
         """

@@ -268,7 +268,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         return PartitionSpec(*partition_fields, spec_id=new_spec_id)
 
     def _partition_field(self, transform_key: tuple[int, Transform[Any, Any]], name: str | None) -> PartitionField:
-        if self._transaction.table_metadata.format_version == 2:
+        if self._transaction.table_metadata.format_version >= 2:
             source_id, transform = transform_key
             historical_fields = []
             for spec in self._transaction.table_metadata.specs().values():

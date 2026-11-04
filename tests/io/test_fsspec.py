@@ -20,10 +20,14 @@ import pickle
 import tempfile
 import threading
 import uuid
+from typing import Any
 from unittest import mock
 
 import pytest
+from botocore.auth import S3SigV4Auth
 from botocore.awsrequest import AWSRequest
+from botocore.config import Config
+from botocore.credentials import Credentials
 from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
 from requests_mock import Mocker
@@ -697,6 +701,37 @@ def test_adls_account_name_extracted_from_uri_hostname() -> None:
         )
 
 
+def test_adls_account_name_resolved_per_location() -> None:
+    """Two locations in different accounts must each get a filesystem for their own account."""
+    session_properties: Properties = {"adls.tenant-id": "test-tenant-id"}
+
+    with mock.patch("adlfs.AzureBlobFileSystem") as mock_adlfs:
+        adls_fileio = FsspecFileIO(properties=session_properties)
+
+        adls_fileio.new_input(location="abfss://data@accountone.dfs.core.windows.net/wh/t/a.parquet")
+        adls_fileio.new_input(location="abfss://data@accounttwo.dfs.core.windows.net/wh/t/b.parquet")
+
+    account_names = [call.kwargs["account_name"] for call in mock_adlfs.call_args_list]
+    assert account_names == ["accountone", "accounttwo"]
+
+
+def test_adls_does_not_mutate_properties() -> None:
+    """Resolving an account or SAS token from a location must not write it back into the shared properties."""
+    original_properties: Properties = {
+        "adls.tenant-id": "test-tenant-id",
+        "adls.sas-token.accountone.dfs.core.windows.net": "test-sas-token",
+    }
+    session_properties: Properties = dict(original_properties)
+
+    with mock.patch("adlfs.AzureBlobFileSystem"):
+        adls_fileio = FsspecFileIO(properties=session_properties)
+        adls_fileio.new_input(location="abfss://data@accountone.dfs.core.windows.net/wh/t/a.parquet")
+
+    assert "adls.account-name" not in adls_fileio.properties
+    assert "adls.sas-token" not in adls_fileio.properties
+    assert session_properties == original_properties
+
+
 def test_adls_account_name_not_overridden_when_in_properties() -> None:
     """Test that explicit adls.account-name in properties is not overridden by URI hostname."""
     session_properties: Properties = {
@@ -993,6 +1028,43 @@ def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
         "X-Custom-Header": "value",
     }
+
+
+@pytest.mark.s3
+def test_s3v4_rest_signer_write_read_delete(request: pytest.FixtureRequest, requests_mock: Mocker) -> None:
+    """Test writing, reading, and deleting an S3 file through a REST signing service"""
+    credentials = Credentials(request.config.getoption("--s3.access-key-id"), request.config.getoption("--s3.secret-access-key"))
+
+    def sign(signer_request: Any, _: Any) -> dict[str, Any]:
+        signer_body = signer_request.json()
+        aws_request = AWSRequest(
+            method=signer_body["method"],
+            url=signer_body["uri"],
+            headers={key: values[0] for key, values in signer_body["headers"].items()},
+        )
+        # Upload bodies are not forwarded for signing, so leave the payload unsigned
+        aws_request.context["client_config"] = Config(s3={"payload_signing_enabled": False})
+        S3SigV4Auth(credentials, "s3", signer_body["region"]).add_auth(aws_request)
+        signed_headers = ("Authorization", "X-Amz-Content-SHA256", "X-Amz-Date")
+        return {"uri": signer_body["uri"], "headers": {key: [aws_request.headers[key]] for key in signed_headers}}
+
+    requests_mock.post(f"{TEST_URI}/v1/aws/s3/sign", json=sign)
+    fileio = FsspecFileIO(
+        properties={"s3.endpoint": request.config.getoption("--s3.endpoint"), "s3.signer": "S3V4RestSigner", "uri": TEST_URI}
+    )
+    filename = str(uuid.uuid4())
+    location = f"s3://warehouse/{filename}"
+
+    with fileio.new_output(location).create() as f:
+        f.write(b"foo")
+    assert fileio.new_input(location).open().read() == b"foo"
+    fileio.delete(location)
+    assert not fileio.new_input(location).exists()
+
+    signer_bodies = [signer_request.json() for signer_request in requests_mock.request_history]
+    request_bodies = [signer_body["body"] for signer_body in signer_bodies if "body" in signer_body]
+    assert len(request_bodies) == 1
+    assert f"<Key>{filename}</Key>" in request_bodies[0]
 
 
 def test_s3v4_rest_signer_endpoint(requests_mock: Mocker) -> None:

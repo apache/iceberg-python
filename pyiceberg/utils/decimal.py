@@ -76,6 +76,7 @@ def decimal_to_bytes(value: Decimal, byte_length: int | None = None) -> bytes:
     Args:
         value (Decimal): a decimal value.
         byte_length (int): The number of bytes.
+
     Returns:
         bytes: the unscaled value of the Decimal as bytes.
     """
@@ -105,6 +106,7 @@ def truncate_decimal(value: Decimal, width: int) -> Decimal:
     Args:
         value (Decimal): a decimal value.
         width (int): A width for the returned Decimal instance.
+
     Returns:
         Decimal: A truncated Decimal instance.
     """
