@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import threading
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 from copy import copy
@@ -937,16 +938,19 @@ class ManifestFile(Record):
 
 
 class _ManifestCache:
-    """Process-wide ManifestFile cache keyed by manifest_path.
+    """Process-wide ManifestFile cache keyed by (table_uuid, manifest_path).
 
     Consecutive snapshots often reference the same manifests after append
     operations, so reusing ManifestFile instances avoids retaining duplicate
-    objects.
+    objects. The table_uuid is part of the key so that two tables can never
+    collide on a manifest_path, even if one happens to reuse the other's path.
+    A caller that does not supply a table_uuid cannot be attributed to a table,
+    so it bypasses the cache rather than sharing an unattributed entry.
     """
 
     DEFAULT_SIZE = 128
 
-    _cache: LRUCache[str, ManifestFile] | None
+    _cache: LRUCache[tuple[uuid.UUID, str], ManifestFile] | None
 
     def __init__(self) -> None:
         self.maxsize = self._load_configured_size()
@@ -969,16 +973,16 @@ class _ManifestCache:
             if self._cache is not None:
                 self._cache.clear()
 
-    def get_or_cache(self, manifest_file: ManifestFile) -> ManifestFile:
-        if self._cache is None:
+    def get_or_cache(self, manifest_file: ManifestFile, table_uuid: uuid.UUID | None = None) -> ManifestFile:
+        if self._cache is None or table_uuid is None:
             return manifest_file
 
         with self._lock:
-            manifest_path = manifest_file.manifest_path
-            if manifest_path in self._cache:
-                return self._cache[manifest_path]
+            key = (table_uuid, manifest_file.manifest_path)
+            if key in self._cache:
+                return self._cache[key]
 
-            self._cache[manifest_path] = manifest_file
+            self._cache[key] = manifest_file
             return manifest_file
 
     def __len__(self) -> int:
@@ -998,11 +1002,12 @@ def clear_manifest_cache() -> None:
     _manifest_cache.clear()
 
 
-def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
+def _manifests(io: FileIO, manifest_list: str, table_uuid: uuid.UUID | None = None) -> tuple[ManifestFile, ...]:
     """Read manifests from a manifest list, reusing cached ManifestFile objects.
 
-    Caches individual ManifestFile objects by manifest_path. This is memory-efficient
-    because consecutive manifest lists typically share most of their manifests:
+    Caches individual ManifestFile objects by (table_uuid, manifest_path). This is
+    memory-efficient because consecutive manifest lists typically share most of
+    their manifests:
 
         ManifestList1: [ManifestFile1]
         ManifestList2: [ManifestFile1, ManifestFile2]
@@ -1018,6 +1023,9 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     Args:
         io: FileIO instance for reading the manifest list.
         manifest_list: Path to the manifest list file.
+        table_uuid: UUID of the table this manifest list belongs to, used to scope
+            the cache so that two tables can never share a cached entry. When
+            omitted the manifests are returned uncached.
 
     Returns:
         A tuple of ManifestFile objects.
@@ -1025,7 +1033,7 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     file = io.new_input(manifest_list)
     manifest_files = list(read_manifest_list(file))
 
-    return tuple(_manifest_cache.get_or_cache(manifest_file) for manifest_file in manifest_files)
+    return tuple(_manifest_cache.get_or_cache(manifest_file, table_uuid) for manifest_file in manifest_files)
 
 
 def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:

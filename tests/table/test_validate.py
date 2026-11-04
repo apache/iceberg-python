@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name,eval-used
+import uuid
 from typing import cast
 from unittest.mock import patch
 
@@ -77,7 +78,7 @@ def test_validation_history(table_v2_with_extensive_snapshots_and_manifests: tup
         ]
     )
 
-    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO, table_uuid: uuid.UUID | None = None) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
         snapshot_id = self.snapshot_id
         if snapshot_id in mock_manifests:
@@ -133,7 +134,7 @@ def test_validation_history_fails_on_from_snapshot_not_matching_last_snapshot(
     oldest_snapshot = table.snapshots()[0]
     newest_snapshot = cast(Snapshot, table.current_snapshot())
 
-    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO, table_uuid: uuid.UUID | None = None) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
         snapshot_id = self.snapshot_id
         if snapshot_id in mock_manifests:
@@ -162,7 +163,7 @@ def test_deleted_data_files(
     oldest_snapshot = table.snapshots()[0]
     newest_snapshot = cast(Snapshot, table.current_snapshot())
 
-    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO, table_uuid: uuid.UUID | None = None) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
         snapshot_id = self.snapshot_id
         if snapshot_id in mock_manifests:
@@ -257,7 +258,7 @@ def test_validate_added_data_files_conflicting_count(
     boundary_snapshot = table.snapshots()[-(snapshot_history + 1)]
     newest_snapshot = cast(Snapshot, table.current_snapshot())
 
-    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO, table_uuid: uuid.UUID | None = None) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
         snapshot_id = self.snapshot_id
         if snapshot_id in mock_manifests:
@@ -311,7 +312,7 @@ def test_validate_added_data_files_non_conflicting_count(
     oldest_snapshot = table.snapshots()[-snapshot_history]
     newest_snapshot = cast(Snapshot, table.current_snapshot())
 
-    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO, table_uuid: uuid.UUID | None = None) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
         snapshot_id = self.snapshot_id
         if snapshot_id in mock_manifests:
@@ -384,7 +385,7 @@ def test_added_delete_files_non_conflicting_count(
     oldest_snapshot = table.snapshots()[-snapshot_history]
     newest_snapshot = cast(Snapshot, table.current_snapshot())
 
-    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO, table_uuid: uuid.UUID | None = None) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
         snapshot_id = self.snapshot_id
         if snapshot_id in mock_manifests:
@@ -442,7 +443,7 @@ def test_added_delete_files_conflicting_count(
 
     mock_delete_file.spec_id = 0
 
-    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO, table_uuid: uuid.UUID | None = None) -> list[ManifestFile]:
         """Mock the manifests method to use the snapshot_id for lookup."""
         snapshot_id = self.snapshot_id
         if snapshot_id in mock_manifests:
