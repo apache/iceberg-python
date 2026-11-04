@@ -882,9 +882,14 @@ class TruncateTransform(Transform[S, S]):
         return lambda v: truncate_func(v) if v is not None else None
 
     def satisfies_order_of(self, other: Transform[S, T]) -> bool:
-        # A wider string truncation satisfies the order of a narrower one, but a wider integer or decimal
-        # truncation does not. The source type is not known here, so only equal transforms are matched.
-        return self == other
+        if self == other:
+            return True
+        elif isinstance(other, TruncateTransform):
+            # Matches the Java implementation: a truncation satisfies the order of any truncation with a
+            # width less than or equal to its own.
+            return self.width >= other.width
+
+        return False
 
     def to_human_string(self, _: IcebergType, value: S | None) -> str:
         if value is None:

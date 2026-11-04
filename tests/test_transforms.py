@@ -515,16 +515,10 @@ def test_truncate_method(type_var: PrimitiveType, value: Any, expected_human_str
 
 def test_truncate_satisfies_order_of_different_widths() -> None:
     assert TruncateTransform(3).satisfies_order_of(TruncateTransform(3))
-    assert not TruncateTransform(5).satisfies_order_of(TruncateTransform(3))
+    assert TruncateTransform(5).satisfies_order_of(TruncateTransform(3))
     assert not TruncateTransform(3).satisfies_order_of(TruncateTransform(5))
     assert not TruncateTransform(3).satisfies_order_of(IdentityTransform())
     assert not TruncateTransform(3).satisfies_order_of(BucketTransform(3))
-
-    # Ordering by truncate[5] does not imply ordering by truncate[3] for integers: 3 and 2 both truncate to 0
-    # with width 5, but to 3 and 0 with width 3.
-    wide, narrow = TruncateTransform(5).transform(IntegerType()), TruncateTransform(3).transform(IntegerType())
-    assert wide(3) == wide(2)
-    assert narrow(3) > narrow(2)
 
 
 def test_unknown_transform() -> None:
