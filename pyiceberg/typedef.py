@@ -202,11 +202,7 @@ class Record(StructProtocol):
 
     def __eq__(self, other: Any) -> bool:
         """Compare records, treating NaN floats at the same position as equal."""
-        if not isinstance(other, Record):
-            return False
-        if self._data == other._data:
-            return True
-        if len(self._data) != len(other._data):
+        if not isinstance(other, Record) or len(self._data) != len(other._data):
             return False
         for a, b in zip(self._data, other._data, strict=True):
             if a is b or a == b:

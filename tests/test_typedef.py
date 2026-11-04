@@ -74,3 +74,26 @@ def test_record_equality_with_nan() -> None:
 
     assert Record(float("nan")) != Record(1.0)
     assert Record(1, float("nan")) != Record(2, float("nan"))
+
+
+def test_record_equality_compares_nested_records_once() -> None:
+    calls = 0
+
+    class Leaf:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+        def __eq__(self, other: object) -> bool:
+            nonlocal calls
+            calls += 1
+            return isinstance(other, Leaf) and self.value == other.value
+
+    depth = 20
+    for suffix in [(), (float("nan"),)]:
+        left, right = Record(Leaf(1)), Record(Leaf(2))
+        for _ in range(depth - 1):
+            left, right = Record(left, *suffix), Record(right, *suffix)
+
+        calls = 0
+        assert left != right
+        assert calls <= depth, suffix
