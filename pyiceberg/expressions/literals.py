@@ -514,12 +514,14 @@ class DecimalLiteral(Literal[Decimal]):
         super().__init__(value, Decimal)
 
     def increment(self) -> Literal[Decimal]:
-        original_scale = abs(int(self.value.as_tuple().exponent))
+        # A Decimal carries the negated scale as its exponent, so a value with a
+        # non-negative exponent (1E+2) has a negative scale and abs() would read it wrong
+        original_scale = -int(self.value.as_tuple().exponent)
         unscaled = decimal_to_unscaled(self.value)
         return DecimalLiteral(unscaled_to_decimal(unscaled + 1, original_scale))
 
     def decrement(self) -> Literal[Decimal]:
-        original_scale = abs(int(self.value.as_tuple().exponent))
+        original_scale = -int(self.value.as_tuple().exponent)
         unscaled = decimal_to_unscaled(self.value)
         return DecimalLiteral(unscaled_to_decimal(unscaled - 1, original_scale))
 

@@ -18,7 +18,7 @@ from decimal import Decimal
 
 import pytest
 
-from pyiceberg.utils.decimal import bytes_required, decimal_required_bytes, decimal_to_bytes
+from pyiceberg.utils.decimal import bytes_required, decimal_required_bytes, decimal_to_bytes, truncate_decimal
 
 
 def test_decimal_required_bytes() -> None:
@@ -65,3 +65,16 @@ def test_decimal_to_bytes() -> None:
     # Unscaled values -128 and -32768 require no sign padding.
     assert decimal_to_bytes(Decimal("-1.28")) == b"\x80"
     assert decimal_to_bytes(Decimal("-327.68")) == b"\x80\x00"
+
+
+def test_truncate_decimal() -> None:
+    assert truncate_decimal(Decimal("12.34"), 10) == Decimal("12.30")
+    # Negative values truncate toward negative infinity
+    assert truncate_decimal(Decimal("-12.34"), 10) == Decimal("-12.40")
+
+
+def test_truncate_decimal_negative_scale() -> None:
+    # A Decimal like 1.5E+3 carries a negative scale; reading its exponent as a
+    # positive scale would return a value on the wrong order of magnitude
+    assert truncate_decimal(Decimal("1.5E+3"), 4) == Decimal("1.2E+3")
+    assert truncate_decimal(Decimal("1.5E+3"), 4).as_tuple() == Decimal("1.2E+3").as_tuple()

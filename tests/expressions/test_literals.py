@@ -1000,6 +1000,24 @@ def test_decimal_literal_decrement() -> None:
     assert dec.decrement().value.as_tuple() == Decimal("10.122").as_tuple()
 
 
+def test_decimal_literal_increment_negative_scale() -> None:
+    dec = DecimalLiteral(Decimal("1E+2"))
+    # Twice to check that we don't mutate the value
+    assert dec.increment() == DecimalLiteral(Decimal("2E+2"))
+    assert dec.increment() == DecimalLiteral(Decimal("2E+2"))
+    # To check that the scale is still the same (a non-negative exponent means a negative scale)
+    assert dec.increment().value.as_tuple() == Decimal("2E+2").as_tuple()
+
+
+def test_decimal_literal_decrement_negative_scale() -> None:
+    dec = DecimalLiteral(Decimal("1E+2"))
+    # Twice to check that we don't mutate the value
+    assert dec.decrement() == DecimalLiteral(Decimal("0E+2"))
+    assert dec.decrement() == DecimalLiteral(Decimal("0E+2"))
+    # To check that the scale is still the same, also when stepping below zero
+    assert dec.decrement().decrement() == DecimalLiteral(Decimal("-1E+2"))
+
+
 def test_uuid_literal_initialization() -> None:
     test_uuid = uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7")
     uuid_literal = literal(test_uuid)
