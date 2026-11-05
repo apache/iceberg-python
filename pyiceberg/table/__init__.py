@@ -810,7 +810,20 @@ class Transaction:
             file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
             if branch is not None:
                 file_scan = file_scan.use_ref(branch)
-            files = file_scan.plan_files()
+            # Each file is rewritten in full, so it needs every delete file that applies to it,
+            # not only those whose bounds can match the delete filter.
+            snapshot = file_scan.snapshot()
+            files = (
+                ManifestGroupPlanner(
+                    table_metadata=self.table_metadata,
+                    io=self._table.io,
+                    row_filter=delete_filter,
+                    case_sensitive=case_sensitive,
+                    prune_delete_files=False,
+                ).plan_files(snapshot.manifests(self._table.io))
+                if snapshot is not None
+                else []
+            )
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -2863,12 +2876,20 @@ class ManifestGroupPlanner:
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         case_sensitive: bool = True,
         options: Properties = EMPTY_DICT,
+        prune_delete_files: bool = True,
     ):
+        """Create a planner for a group of manifests.
+
+        Args:
+            prune_delete_files: Leave out delete files whose column bounds cannot match the row filter.
+                This is only correct when the planned data files are read with the row filter applied.
+        """
         self.table_metadata = table_metadata
         self.io = io
         self.row_filter = _parse_row_filter(row_filter)
         self.case_sensitive = case_sensitive
         self.options = options
+        self.prune_delete_files = prune_delete_files
 
     @cached_property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
@@ -2906,7 +2927,7 @@ class ManifestGroupPlanner:
                     self.io,
                     manifest,
                     partition_evaluators[manifest.partition_spec_id],
-                    metrics_evaluator,
+                    metrics_evaluator if self.prune_delete_files or manifest.content == ManifestContent.DATA else lambda _: True,
                 )
                 for manifest in manifests
                 if self._check_sequence_number(min_sequence_number, manifest)
