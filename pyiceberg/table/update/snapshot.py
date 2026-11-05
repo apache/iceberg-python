@@ -1008,7 +1008,7 @@ class _ManifestMergeManager(Generic[U]):
         groups = self._group_by_spec(manifests)
 
         merged_manifests = []
-        for spec_id in reversed(groups.keys()):
+        for spec_id in reversed(groups):
             merged_manifests.extend(self._merge_group(first_manifest, spec_id, groups[spec_id]))
 
         return merged_manifests

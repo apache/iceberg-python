@@ -26,6 +26,7 @@ from typing import (
     Generic,
     Literal,
     Protocol,
+    Self,
     TypeAlias,
     TypeVar,
     Union,
@@ -34,7 +35,6 @@ from typing import (
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     from pyiceberg.expressions.literals import Literal as IcebergLiteral

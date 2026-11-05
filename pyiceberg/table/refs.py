@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated
 
 from pydantic import Field, model_validator
@@ -25,17 +25,13 @@ from pyiceberg.typedef import IcebergBaseModel
 MAIN_BRANCH = "main"
 
 
-class SnapshotRefType(str, Enum):
+class SnapshotRefType(StrEnum):
     BRANCH = "branch"
     TAG = "tag"
 
     def __repr__(self) -> str:
         """Return the string representation of the SnapshotRefType class."""
         return f"SnapshotRefType.{self.name}"
-
-    def __str__(self) -> str:
-        """Return the string representation of the SnapshotRefType class."""
-        return self.value
 
 
 class SnapshotRef(IcebergBaseModel):
