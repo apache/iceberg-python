@@ -2068,6 +2068,29 @@ def test_encryption_manager_follows_current_metadata(table_v3_encrypted: Table) 
     assert table_v3_encrypted.encryption_manager is None
 
 
+def test_encryption_manager_is_reused_until_metadata_changes(table_v3_encrypted: Table, monkeypatch: pytest.MonkeyPatch) -> None:
+    kms = table_v3_encrypted._kms_client
+    assert kms is not None
+    unwrap_key = kms.unwrap_key
+    calls = []
+
+    def _spy(wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        calls.append(wrapping_key_id)
+        return unwrap_key(wrapped_key, wrapping_key_id)
+
+    monkeypatch.setattr(kms, "unwrap_key", _spy)
+
+    for _ in range(3):
+        list(table_v3_encrypted.scan().plan_files())
+    table_v3_encrypted.inspect.manifests()
+    table_v3_encrypted.inspect.all_manifests()
+    assert len(calls) == 1
+
+    table_v3_encrypted.metadata = table_v3_encrypted.metadata.model_copy()
+    list(table_v3_encrypted.scan().plan_files())
+    assert len(calls) == 2
+
+
 def test_scan_encrypted_table(table_v3_encrypted: Table) -> None:
     """The manifest list was encrypted by iceberg-rust, and lists no manifests."""
     assert list(table_v3_encrypted.scan().plan_files()) == []

@@ -1351,6 +1351,7 @@ class Table:
         self.catalog = catalog
         self.config = config
         self._kms_client = kms_client
+        self._encryption_manager: tuple[TableMetadata, EncryptionManager | None] | None = None
 
     @property
     def encryption_manager(self) -> EncryptionManager | None:
@@ -1361,7 +1362,9 @@ class Table:
         """
         from pyiceberg.encryption.manager import EncryptionManager
 
-        return EncryptionManager.from_table_metadata(self._kms_client, self.metadata)
+        if self._encryption_manager is None or self._encryption_manager[0] is not self.metadata:
+            self._encryption_manager = (self.metadata, EncryptionManager.from_table_metadata(self._kms_client, self.metadata))
+        return self._encryption_manager[1]
 
     def transaction(self) -> Transaction:
         """Create a new transaction object to first stage the changes, and then commit them to the catalog.
