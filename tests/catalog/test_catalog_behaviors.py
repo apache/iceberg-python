@@ -20,11 +20,14 @@ Consolidated behavior tests for InMemoryCatalog and SqlCatalog.
 """
 
 import os
+import struct
+import uuid
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from pydantic_core import ValidationError
 from pytest_lazy_fixtures import lf
@@ -40,14 +43,25 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
 )
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
+from pyiceberg.manifest import (
+    DataFile,
+    DataFileContent,
+    FileFormat,
+    ManifestContent,
+    ManifestEntry,
+    ManifestEntryStatus,
+    ManifestWriterV2,
+    write_manifest_list,
+)
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties
-from pyiceberg.table.snapshots import Operation
+from pyiceberg.table import Table, TableProperties
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRefType
+from pyiceberg.table.snapshots import Operation, Snapshot, Summary
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
-from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
+from pyiceberg.table.update import AddSchemaUpdate, AddSnapshotUpdate, SetCurrentSchemaUpdate, SetSnapshotRefUpdate
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import Identifier
+from pyiceberg.typedef import Identifier, Record
 from pyiceberg.types import BooleanType, DoubleType, IntegerType, LongType, NestedField, StringType
 
 
@@ -1409,3 +1423,114 @@ def test_record_batch_reader_schema_mismatch_writes_no_files(catalog: Catalog) -
     # _append_snapshot_producer opens.
     assert tbl.metadata.current_snapshot() is None
     assert len(tbl.scan().to_arrow()) == 0
+
+
+def _commit_position_delete_with_row(tbl: Table, data_file_path: str, pos: int, row: dict[str, Any]) -> Table:
+    """Commit a position delete that stores the deleted row, which gives it bounds on the data columns."""
+
+    class DeleteManifestWriter(ManifestWriterV2):
+        def content(self) -> ManifestContent:
+            return ManifestContent.DELETES
+
+        @property
+        def _meta(self) -> dict[str, str]:
+            return {**super()._meta, "content": "deletes"}
+
+    def field(name: str, type_: pa.DataType, field_id: int) -> pa.Field:
+        return pa.field(name, type_, nullable=False, metadata={"PARQUET:field_id": str(field_id)})
+
+    row_type = pa.struct([field("k", pa.int64(), 1), field("v", pa.string(), 2)])
+    deletes = pa.Table.from_pylist(
+        [{"file_path": data_file_path, "pos": pos, "row": row}],
+        schema=pa.schema(
+            [
+                field("file_path", pa.string(), 2147483546),
+                field("pos", pa.int64(), 2147483545),
+                field("row", row_type, 2147483544),
+            ]
+        ),
+    )
+    delete_path = f"{tbl.location()}/data/delete-{uuid.uuid4()}.parquet"
+    with tbl.io.new_output(delete_path).create() as output:
+        pq.write_table(deletes, output)
+
+    bounds = {
+        2147483546: data_file_path.encode(),
+        2147483545: struct.pack("<q", pos),
+        1: struct.pack("<q", row["k"]),
+        2: row["v"].encode(),
+    }
+    delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=1,
+        file_size_in_bytes=len(tbl.io.new_input(delete_path)),
+        lower_bounds=bounds,
+        upper_bounds=bounds,
+    )
+    delete_file.spec_id = tbl.spec().spec_id
+
+    parent = tbl.current_snapshot()
+    assert parent is not None
+    snapshot_id = uuid.uuid4().int >> 65
+    sequence_number = tbl.metadata.next_sequence_number()
+    with DeleteManifestWriter(
+        spec=tbl.spec(),
+        schema=tbl.schema(),
+        output_file=tbl.io.new_output(f"{tbl.location()}/metadata/{uuid.uuid4()}-m0.avro"),
+        snapshot_id=snapshot_id,
+        avro_compression="deflate",
+    ) as writer:
+        writer.add(ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, snapshot_id=snapshot_id, data_file=delete_file))
+    manifest_list = f"{tbl.location()}/metadata/snap-{snapshot_id}.avro"
+    with write_manifest_list(
+        format_version=2,
+        output_file=tbl.io.new_output(manifest_list),
+        snapshot_id=snapshot_id,
+        parent_snapshot_id=parent.snapshot_id,
+        sequence_number=sequence_number,
+        avro_compression="deflate",
+    ) as list_writer:
+        list_writer.add_manifests([writer.to_manifest_file(), *parent.manifests(tbl.io)])
+
+    snapshot = Snapshot(
+        snapshot_id=snapshot_id,
+        parent_snapshot_id=parent.snapshot_id,
+        sequence_number=sequence_number,
+        manifest_list=manifest_list,
+        summary=Summary(Operation.DELETE),
+        schema_id=tbl.schema().schema_id,
+    )
+    tbl.catalog.commit_table(
+        tbl,
+        (),
+        (
+            AddSnapshotUpdate(snapshot=snapshot),
+            SetSnapshotRefUpdate(ref_name=MAIN_BRANCH, type=SnapshotRefType.BRANCH, snapshot_id=snapshot_id),
+        ),
+    )
+    return tbl.catalog.load_table(tbl.name())
+
+
+def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalog) -> None:
+    """Rewriting a file for a delete must apply every delete file of that file. A delete file whose
+    bounds cannot match the delete filter is skipped by a filtered scan, which is right for a read but
+    would bring its rows back in the rewritten file.
+    """
+    catalog.create_namespace("default")
+    identifier = f"default.partial_delete_keeps_earlier_deletes_{catalog.name}"
+    iceberg_schema = Schema(NestedField(1, "k", LongType(), required=True), NestedField(2, "v", StringType(), required=True))
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema, properties={"format-version": "2"})
+    tbl.append(pa.Table.from_pydict({"k": [1, 2, 3], "v": ["a", "b", "c"]}, schema=schema_to_pyarrow(iceberg_schema)))
+    data_file_path = next(iter(tbl.scan().plan_files())).file.file_path
+
+    # Delete (2, 'b'). The delete file has bounds k = 2, so a scan for k = 1 leaves it out.
+    tbl = _commit_position_delete_with_row(tbl, data_file_path, pos=1, row={"k": 2, "v": "b"})
+    assert tbl.scan().to_arrow()["k"].to_pylist() == [1, 3]
+    assert [len(task.delete_files) for task in tbl.scan(row_filter="k = 1").plan_files()] == [0]
+
+    tbl.delete("k = 1")
+
+    assert tbl.scan().to_arrow()["k"].to_pylist() == [3]
