@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from cachetools import LRUCache
 from pydantic import Field
@@ -1329,6 +1329,13 @@ class CommitTableResponse(IcebergBaseModel):
     metadata_location: str = Field(alias="metadata-location")
 
 
+class _CachedEncryptionManager(NamedTuple):
+    """An encryption manager, reused with its unwrapped KEKs until the table metadata it was built from changes."""
+
+    metadata: TableMetadata
+    manager: EncryptionManager | None
+
+
 class Table:
     """An Iceberg table."""
 
@@ -1356,20 +1363,25 @@ class Table:
         self.catalog = catalog
         self.config = config
         self._kms_client = kms_client
-        self._encryption_manager: tuple[TableMetadata, EncryptionManager | None] | None = None
+        self._encryption_manager: _CachedEncryptionManager | None = None
 
     @property
     def encryption_manager(self) -> EncryptionManager | None:
         """The table's encryption manager, or None if the table is not encrypted.
+
+        The manager is built from the current metadata, and rebuilt when the metadata changes.
 
         Raises:
             ValueError: If the table is encrypted but no key management client was provided.
         """
         from pyiceberg.encryption.manager import EncryptionManager
 
-        if self._encryption_manager is None or self._encryption_manager[0] is not self.metadata:
-            self._encryption_manager = (self.metadata, EncryptionManager.from_table_metadata(self._kms_client, self.metadata))
-        return self._encryption_manager[1]
+        cached = self._encryption_manager
+        if cached is None or cached.metadata is not self.metadata:
+            cached = self._encryption_manager = _CachedEncryptionManager(
+                self.metadata, EncryptionManager.from_table_metadata(self._kms_client, self.metadata)
+            )
+        return cached.manager
 
     def transaction(self) -> Transaction:
         """Create a new transaction object to first stage the changes, and then commit them to the catalog.
