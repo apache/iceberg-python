@@ -35,15 +35,28 @@ from pydantic import Field
 
 from pyiceberg.encryption.kms import KeyManagementClient
 from pyiceberg.exceptions import CommitFailedException, ValidationException
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
+from pyiceberg.expressions import (
+    AlwaysFalse,
+    AlwaysTrue,
+    And,
+    BooleanExpression,
+    BoundPredicate,
+    EqualTo,
+    IsNull,
+    NotNull,
+    Or,
+    Reference,
+)
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
+    _ExpressionFieldIDs,
     _InclusiveMetricsEvaluator,
     bind,
     expression_evaluator,
     extract_field_ids,
     inclusive_projection,
     manifest_evaluator,
+    visit,
 )
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import (
@@ -2466,6 +2479,14 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
     return pa.RecordBatchReader.from_batches(target_schema, batches).cast(target_schema)
 
 
+class _FieldIDsOutsideNullChecks(_ExpressionFieldIDs):
+    # Projected null checks preserve the source's NULL status, and void does not project predicates
+    def visit_bound_predicate(self, predicate: BoundPredicate) -> set[int]:
+        if predicate.as_unbound in (IsNull, NotNull):
+            return set()
+        return super().visit_bound_predicate(predicate)
+
+
 class DataScan(TableScan):
     @cached_property
     def _manifest_planner(self) -> ManifestGroupPlanner:
@@ -2594,12 +2615,31 @@ class DataScan(TableScan):
         res = 0
         # every task is a FileScanTask
         tasks = self.plan_files()
+        bound_filter = bind(self.table_metadata.schema(), self.row_filter, case_sensitive=self.case_sensitive)
+        field_ids_outside_null_checks = visit(bound_filter, _FieldIDsOutsideNullChecks())
+        specs = self.table_metadata.specs() if field_ids_outside_null_checks else {}
+        referenced_positions = {
+            spec_id: [pos for pos, field in enumerate(spec.fields) if field.source_id in field_ids_outside_null_checks]
+            for spec_id, spec in specs.items()
+        }
 
         for task in tasks:
             # task.residual is a Boolean Expression if the filter condition is fully satisfied by the
             # partition value and task.delete_files represents that positional delete haven't been merged yet
             # hence those files have to read as a pyarrow table applying the filter and deletes
-            if task.residual == AlwaysTrue() and len(task.delete_files) == 0:
+            if (
+                task.residual == AlwaysTrue()
+                and len(task.delete_files) == 0
+                # A NULL partition value can leave an AlwaysTrue residual although the filter rejects its rows
+                and (
+                    not field_ids_outside_null_checks
+                    or (
+                        task.file.spec_id in specs
+                        and len(task.file.partition) == len(specs[task.file.spec_id].fields)
+                        and all(task.file.partition[pos] is not None for pos in referenced_positions[task.file.spec_id])
+                    )
+                )
+            ):
                 # Every File has a metadata stat that stores the file record count
                 res += task.file.record_count
             else:
