@@ -2058,6 +2058,64 @@ def test_serialize_encryption_key_updates() -> None:
     assert TypeAdapter(TableUpdate).validate_json(remove.model_dump_json()) == remove
 
 
+def test_encryption_manager_of_unencrypted_table(table_v3: Table) -> None:
+    assert table_v3.encryption_manager is None
+
+
+def test_encryption_manager_requires_kms_client(example_table_metadata_v3_encrypted: dict[str, Any]) -> None:
+    table_metadata = TableMetadataUtil.parse_obj(example_table_metadata_v3_encrypted)
+    table = Table(("database", "table"), table_metadata, "s3://bucket/metadata.json", load_file_io(), NoopCatalog("noop"))
+
+    with pytest.raises(ValueError, match="no key management client was provided"):
+        table.scan()
+
+
+def test_encryption_manager_follows_current_metadata(table_v3_encrypted: Table) -> None:
+    assert table_v3_encrypted.encryption_manager is not None
+
+    # Catalogs must not let encryption.key-id be removed, but removing it shows the manager follows the current metadata
+    table_v3_encrypted.metadata = table_v3_encrypted.metadata.model_copy(update={"properties": {}})
+
+    assert table_v3_encrypted.encryption_manager is None
+
+
+def test_encryption_manager_is_reused_until_metadata_changes(table_v3_encrypted: Table, monkeypatch: pytest.MonkeyPatch) -> None:
+    kms = table_v3_encrypted._kms_client
+    assert kms is not None
+    unwrap_key = kms.unwrap_key
+    calls = []
+
+    def _spy(wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        calls.append(wrapping_key_id)
+        return unwrap_key(wrapped_key, wrapping_key_id)
+
+    monkeypatch.setattr(kms, "unwrap_key", _spy)
+
+    for _ in range(3):
+        list(table_v3_encrypted.scan().plan_files())
+    table_v3_encrypted.inspect.manifests()
+    table_v3_encrypted.inspect.all_manifests()
+    assert len(calls) == 1
+
+    table_v3_encrypted.metadata = table_v3_encrypted.metadata.model_copy()
+    list(table_v3_encrypted.scan().plan_files())
+    assert len(calls) == 2
+
+
+def test_scan_encrypted_table(table_v3_encrypted: Table) -> None:
+    """The manifest list was encrypted by iceberg-rust, and lists no manifests."""
+    assert list(table_v3_encrypted.scan().plan_files()) == []
+    assert list(table_v3_encrypted.incremental_append_scan().plan_files()) == []
+    assert table_v3_encrypted.scan().to_arrow().num_rows == 0
+
+
+def test_inspect_encrypted_table(table_v3_encrypted: Table) -> None:
+    assert table_v3_encrypted.inspect.manifests().num_rows == 0
+    assert table_v3_encrypted.inspect.all_manifests().num_rows == 0
+    assert table_v3_encrypted.inspect.entries().num_rows == 0
+    assert table_v3_encrypted.inspect.partitions().num_rows == 0
+
+
 def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:
     new_snapshot = Snapshot(
         snapshot_id=25,
