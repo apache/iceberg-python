@@ -783,6 +783,29 @@ def test_overwrite_replaces_existing_file(overwrite_table: Table, arrow_table_si
     assert _total_data_file_count(overwrite_table) == 1
 
 
+def test_overwrite_drops_manifests_without_live_files(overwrite_table: Table, arrow_table_simple: pa.Table) -> None:
+    manifest_counts = []
+    snapshot_ids = []
+    for index in range(3):
+        current_file = next(iter(overwrite_table.scan().plan_files())).file
+        replacement = _write_data_file(overwrite_table, arrow_table_simple.slice(index, 1))
+
+        with overwrite_table.transaction() as tx:
+            with tx.update_snapshot().overwrite() as overwrite:
+                overwrite.delete_data_file(current_file)
+                overwrite.append_data_file(replacement)
+
+        snapshot = overwrite_table.current_snapshot()
+        assert snapshot is not None
+        manifest_counts.append(len(snapshot.manifests(overwrite_table.io)))
+        snapshot_ids.append(snapshot.snapshot_id)
+
+    # Each overwrite lists its added file and its own deletions, never an earlier commit's deletions
+    assert manifest_counts == [2, 2, 2]
+    assert overwrite_table.scan(snapshot_id=snapshot_ids[0]).to_arrow()["foo"].to_pylist() == ["a"]
+    assert overwrite_table.scan().to_arrow()["foo"].to_pylist() == ["c"]
+
+
 def test_overwrite_rejects_explicit_delete_missing_from_base_snapshot(catalog: Catalog, overwrite_table: Table) -> None:
     stale_file = next(iter(overwrite_table.scan().plan_files())).file
     stale_rows = overwrite_table.scan().to_arrow()
