@@ -71,6 +71,12 @@ def get_null_compressor() -> None:
     assert header.compression_codec() is None
 
 
+def test_missing_codec_is_null() -> None:
+    # the Avro specification: a file without avro.codec is uncompressed (iceberg-rust writes such manifests)
+    header = AvroFileHeader(bytes(0), {}, bytes(16))
+    assert header.compression_codec() is None
+
+
 def test_unknown_codec() -> None:
     header = AvroFileHeader(bytes(0), {"avro.codec": "unknown"}, bytes(16))
 
