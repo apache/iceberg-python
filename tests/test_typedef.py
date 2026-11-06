@@ -65,3 +65,12 @@ def test_record_bind_rejects_non_schema_property() -> None:
 
     with pytest.raises(TypeError, match="Unexpected RecordWithProperty fields: computed"):
         RecordWithProperty._bind(StructType(), computed=1)
+
+
+def test_record_equality_with_nan() -> None:
+    assert Record(1, float("nan")) == Record(1, float("nan"))
+    assert Record(Record(float("nan"))) == Record(Record(float("nan")))
+    assert len({Record(float("nan")), Record(float("nan"))}) == 1
+
+    assert Record(float("nan")) != Record(1.0)
+    assert Record(1, float("nan")) != Record(2, float("nan"))

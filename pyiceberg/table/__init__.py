@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import math
 import random
 import time
 import uuid
@@ -35,7 +36,7 @@ from pydantic import Field
 
 from pyiceberg.encryption.kms import KeyManagementClient
 from pyiceberg.exceptions import CommitFailedException, ValidationException
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNaN, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
     _InclusiveMetricsEvaluator,
@@ -422,12 +423,16 @@ class Transaction:
 
         per_record_exprs: list[BooleanExpression] = []
         for partition_record in partition_records:
-            predicates: list[BooleanExpression] = [
-                EqualTo(Reference(partition_field), partition_record[pos])
-                if partition_record[pos] is not None
-                else IsNull(Reference(partition_field))
-                for pos, partition_field in enumerate(partition_fields)
-            ]
+            predicates: list[BooleanExpression] = []
+            for pos, partition_field in enumerate(partition_fields):
+                ref = Reference(partition_field)
+                value = partition_record[pos]
+                if value is None:
+                    predicates.append(IsNull(ref))
+                elif isinstance(value, float) and math.isnan(value):
+                    predicates.append(IsNaN(ref))
+                else:
+                    predicates.append(EqualTo(ref, value))
             per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
 
         return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
