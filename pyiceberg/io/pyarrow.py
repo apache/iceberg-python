@@ -106,6 +106,7 @@ from pyiceberg.io import (
     HDFS_PORT,
     HDFS_USER,
     S3_ACCESS_KEY_ID,
+    S3_ALLOW_DELAYED_OPEN,
     S3_ANONYMOUS,
     S3_CONNECT_TIMEOUT,
     S3_ENDPOINT,
@@ -466,6 +467,16 @@ class PyArrowFileIO(FileIO):
                 )
             client_kwargs["tls_ca_file_path"] = tls_ca_file_path
 
+    def _set_allow_delayed_open(self, client_kwargs: dict[str, Any]) -> None:
+        if self.properties.get(S3_ALLOW_DELAYED_OPEN) is not None:
+            min_pyarrow_version_supporting_allow_delayed_open = (21, 0)
+            if tuple(map(int, pa.__version__.split(".")[:2])) < min_pyarrow_version_supporting_allow_delayed_open:
+                raise ImportError(
+                    "pyarrow version >= 21.0.0 required for S3FileSystem allow_delayed_open support, "
+                    f"but found version {pa.__version__}."
+                )
+            client_kwargs["allow_delayed_open"] = property_as_bool(self.properties, S3_ALLOW_DELAYED_OPEN, False)
+
     def _initialize_oss_fs(self) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
@@ -499,6 +510,7 @@ class PyArrowFileIO(FileIO):
             client_kwargs["anonymous"] = strtobool(s3_anonymous)
 
         self._set_tls_ca_file_path(client_kwargs)
+        self._set_allow_delayed_open(client_kwargs)
 
         return S3FileSystem(**client_kwargs)
 
@@ -557,6 +569,7 @@ class PyArrowFileIO(FileIO):
             client_kwargs["anonymous"] = strtobool(s3_anonymous)
 
         self._set_tls_ca_file_path(client_kwargs)
+        self._set_allow_delayed_open(client_kwargs)
 
         return S3FileSystem(**client_kwargs)
 
