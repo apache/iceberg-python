@@ -14,6 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -38,9 +40,13 @@ from pyiceberg.catalog.rest.scan_planning import (
     StorageCredential,
     ValueMap,
 )
-from pyiceberg.expressions import AlwaysTrue, EqualTo, Reference
+from pyiceberg.expressions import AlwaysTrue, And, BooleanExpression, EqualTo, Or, Reference
 from pyiceberg.manifest import FileFormat
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
+from pyiceberg.schema import Schema
 from pyiceberg.table import FileScanTask
+from pyiceberg.table.metadata import new_table_metadata
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
 
 TEST_URI = "https://iceberg-test-catalog/"
 
@@ -830,6 +836,133 @@ def test_scan_uses_server_side_planning_from_load_table_config(
     tasks = list(scan.plan_files())
     assert [task.file.file_path for task in tasks] == ["s3://bucket/tbl/data/file1.parquet"]
     assert plan_mock.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "selected_fields,row_filter,case_sensitive,expected_select",
+    [
+        (("foo",), EqualTo("bar", 1), True, ["foo", "bar"]),
+        (("foo",), EqualTo("BAR", 1), False, ["foo", "bar"]),
+        (("FOO", "BAR"), EqualTo("bar", 1), False, ["FOO", "BAR"]),
+        (
+            ("foo",),
+            And(EqualTo("bar", 1), Or(EqualTo("person.age", 30), EqualTo("bar", 2))),
+            True,
+            ["foo", "bar", "person.age"],
+        ),
+        (("foo",), EqualTo("person.age", 30), True, ["foo", "person.age"]),
+        (("person",), EqualTo("person.age", 30), True, ["person", "person.age"]),
+        (("*",), EqualTo("bar", 1), True, None),
+        (("foo",), AlwaysTrue(), True, ["foo"]),
+    ],
+)
+def test_server_side_scan_requests_filter_columns(
+    rest_scan_catalog: RestCatalog,
+    requests_mock: Mocker,
+    table_schema_nested: Schema,
+    selected_fields: tuple[str, ...],
+    row_filter: BooleanExpression,
+    case_sensitive: bool,
+    expected_select: list[str] | None,
+) -> None:
+    metadata = new_table_metadata(table_schema_nested, UNPARTITIONED_PARTITION_SPEC, UNSORTED_SORT_ORDER, "s3://bucket/tbl")
+    _mock_load_table(requests_mock, metadata.model_dump(mode="json"), {})
+    plan_mock = requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={"status": "completed", "delete-files": [], "file-scan-tasks": [], "plan-tasks": []},
+    )
+    table = rest_scan_catalog.load_table(("db", "tbl"))
+    scan = table.scan(row_filter=row_filter, selected_fields=selected_fields, case_sensitive=case_sensitive)
+
+    assert list(scan.plan_files()) == []
+
+    assert plan_mock.last_request is not None
+    request = plan_mock.last_request.json()
+    assert request.get("select") == expected_select
+    assert request["case-sensitive"] is case_sensitive
+    assert scan.selected_fields == selected_fields
+
+
+def test_server_side_scan_resolves_columns_using_current_schema(
+    rest_scan_catalog: RestCatalog,
+    requests_mock: Mocker,
+    example_table_metadata_v2: dict[str, Any],
+) -> None:
+    metadata = deepcopy(example_table_metadata_v2)
+    metadata["schemas"][1]["fields"][0]["name"] = "y"
+    metadata["schemas"][1]["fields"][1]["name"] = "x"
+    metadata["snapshots"][0]["schema-id"] = 0
+    snapshot_id = metadata["snapshots"][0]["snapshot-id"]
+    _mock_load_table(requests_mock, metadata, {})
+    plan_mock = requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={"status": "completed", "delete-files": [], "file-scan-tasks": [], "plan-tasks": []},
+    )
+    table = rest_scan_catalog.load_table(("db", "tbl"))
+
+    scan = table.scan(selected_fields=("x",), row_filter=EqualTo("y", 1), snapshot_id=snapshot_id)
+    assert list(scan.plan_files()) == []
+
+    assert plan_mock.last_request is not None
+    request = plan_mock.last_request.json()
+    assert request["snapshot-id"] == snapshot_id
+    assert request["use-snapshot-schema"] is False
+    assert request["select"] == ["x", "y"]
+
+
+@pytest.mark.parametrize("server_applies_filter", [True, False])
+def test_server_side_scan_filters_on_unselected_column(
+    rest_scan_catalog: RestCatalog,
+    requests_mock: Mocker,
+    example_table_metadata_v2: dict[str, Any],
+    tmp_path: Path,
+    server_applies_filter: bool,
+) -> None:
+    import pyarrow as pa
+    from pyarrow import parquet as pq
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    _mock_load_table(requests_mock, example_table_metadata_v2, {})
+    table = rest_scan_catalog.load_table(("db", "tbl"))
+    data = pa.table(
+        {"x": [1, 2, 3], "y": [10, 20, 10], "z": [100, 200, 300]},
+        schema=schema_to_pyarrow(table.schema()),
+    )
+    filtered_data = data.filter(pa.compute.equal(data["y"], 10))
+    file_path = tmp_path / "projected.parquet"
+
+    def plan_scan(request: Any, context: Any) -> dict[str, Any]:
+        selected = request.json()["select"]
+        planned_data = filtered_data if server_applies_filter else data
+        projected_data = planned_data.select(selected)
+        pq.write_table(projected_data, file_path)
+        return {
+            "status": "completed",
+            "delete-files": [],
+            "file-scan-tasks": [
+                {
+                    "data-file": _rest_data_file(
+                        file_path=str(file_path),
+                        file_size_in_bytes=file_path.stat().st_size,
+                        record_count=len(projected_data),
+                    ),
+                }
+            ],
+            "plan-tasks": [],
+        }
+
+    requests_mock.post(f"{TEST_URI}v1/namespaces/db/tables/tbl/plan", json=plan_scan)
+
+    scan = table.scan(
+        row_filter=EqualTo("Y", 10),
+        selected_fields=("x",),
+        case_sensitive=False,
+    )
+    result = scan.to_arrow()
+
+    assert result.column_names == ["x"]
+    assert result.to_pylist() == [{"x": 1}, {"x": 3}]
 
 
 def test_scan_keeps_client_side_planning_without_load_table_config(
