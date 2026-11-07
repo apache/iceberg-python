@@ -29,7 +29,7 @@ import pytest
 from pydantic import ValidationError
 from requests import Request
 from requests.adapters import HTTPAdapter
-from requests.exceptions import HTTPError
+from requests.exceptions import ConnectionError, HTTPError
 from requests_mock import Mocker
 
 import pyiceberg
@@ -43,6 +43,8 @@ from pyiceberg.catalog.rest import (
     REST_CLIENT_MAX_RETRIES,
     REST_CLIENT_RETRY_BACKOFF_FACTOR,
     REST_CLIENT_SOCKET_TIMEOUT_MS,
+    REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS,
+    REST_TABLE_CACHE_MAX_ENTRIES,
     SIGV4_MAX_RETRIES,
     SIGV4_MAX_RETRIES_DEFAULT,
     SNAPSHOT_LOADING_MODE,
@@ -51,6 +53,7 @@ from pyiceberg.catalog.rest import (
     HttpMethod,
     RestCatalog,
     ScanPlanningMode,
+    _is_short_lived_credential,
     _RetryTimeoutHTTPAdapter,
 )
 from pyiceberg.exceptions import (
@@ -62,6 +65,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     NoSuchViewError,
     OAuthError,
+    RESTError,
     ServerError,
     ServiceUnavailableError,
     TableAlreadyExistsError,
@@ -1486,6 +1490,152 @@ def test_load_table_200_loading_mode(
     # First compare the dicts
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_load_table_reuses_cached_table_on_not_modified(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        [
+            {"json": example_table_metadata_with_snapshot_v1_rest_json, "status_code": 200, "headers": {"ETag": '"v1"'}},
+            {"status_code": 304},
+        ],
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    loaded = catalog.load_table(("fokko", "table"))
+    reloaded = catalog.load_table(("fokko", "table"))
+
+    assert rest_mock.last_request.headers["If-None-Match"] == '"v1"'
+    assert reloaded == loaded
+    assert reloaded is not loaded
+
+
+def test_load_table_not_modified_without_cached_table(rest_mock: Mocker) -> None:
+    rest_mock.get(f"{TEST_URI}v1/namespaces/fokko/tables/table", status_code=304)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    with pytest.raises(RESTError, match="304 Not Modified"):
+        catalog.load_table(("fokko", "table"))
+
+
+def test_load_table_cache_disabled_with_zero_max_entries(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json=example_table_metadata_with_snapshot_v1_rest_json,
+        status_code=200,
+        headers={"ETag": '"v1"'},
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{REST_TABLE_CACHE_MAX_ENTRIES: "0"})
+
+    catalog.load_table(("fokko", "table"))
+    catalog.load_table(("fokko", "table"))
+
+    assert "If-None-Match" not in rest_mock.last_request.headers
+
+
+@pytest.mark.parametrize("ttl_ms", ["0", "-1"])
+def test_table_cache_rejects_non_positive_expiry(rest_mock: Mocker, ttl_ms: str) -> None:
+    with pytest.raises(ValueError, match=REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS):
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS: ttl_ms})
+
+
+@pytest.mark.parametrize("change", ["drop", "rename", "register", "commit"])
+def test_table_changes_invalidate_cached_table(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any], change: str
+) -> None:
+    table_url = f"{TEST_URI}v1/namespaces/fokko/tables/table"
+    body = example_table_metadata_with_snapshot_v1_rest_json
+    rest_mock.get(table_url, json=body, headers={"ETag": '"v1"'})
+    rest_mock.get(f"{TEST_URI}v1/namespaces/fokko/tables/renamed", json=body)
+    rest_mock.head(f"{TEST_URI}v1/namespaces/fokko", status_code=204)
+    rest_mock.delete(table_url, status_code=204)
+    rest_mock.post(f"{TEST_URI}v1/tables/rename", status_code=204)
+    rest_mock.post(f"{TEST_URI}v1/namespaces/fokko/register", json=body)
+    rest_mock.post(table_url, json=body)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    identifier = ("fokko", "table")
+    table = catalog.load_table(identifier)
+
+    {
+        "drop": lambda: catalog.drop_table(identifier),
+        "rename": lambda: catalog.rename_table(identifier, ("fokko", "renamed")),
+        "register": lambda: catalog.register_table(identifier, body["metadata-location"]),
+        "commit": lambda: catalog.commit_table(table, (), ()),
+    }[change]()
+    catalog.load_table(identifier)
+
+    assert "If-None-Match" not in rest_mock.last_request.headers
+
+
+def test_failed_drop_still_invalidates_cached_table(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    table_url = f"{TEST_URI}v1/namespaces/fokko/tables/table"
+    rest_mock.get(table_url, json=example_table_metadata_with_snapshot_v1_rest_json, headers={"ETag": '"v1"'})
+    rest_mock.delete(table_url, exc=ConnectionError)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    catalog.load_table(("fokko", "table"))
+    with pytest.raises(ConnectionError):
+        catalog.drop_table(("fokko", "table"))
+    catalog.load_table(("fokko", "table"))
+
+    assert "If-None-Match" not in rest_mock.last_request.headers
+
+
+def test_load_table_404_invalidates_cached_table(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    found = {"json": example_table_metadata_with_snapshot_v1_rest_json, "headers": {"ETag": '"v1"'}}
+    rest_mock.get(f"{TEST_URI}v1/namespaces/fokko/tables/table", [found, {"status_code": 404, "json": {}}, found])
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    catalog.load_table(("fokko", "table"))
+    with pytest.raises(NoSuchTableError):
+        catalog.load_table(("fokko", "table"))
+    catalog.load_table(("fokko", "table"))
+
+    assert "If-None-Match" not in rest_mock.last_request.headers
+
+
+@pytest.mark.parametrize(
+    "vended",
+    [
+        {"config": {"s3.session-token": "token"}},
+        {"storage-credentials": [{"prefix": "s3://", "config": {"s3.session-token": "token"}}]},
+    ],
+)
+def test_load_table_vending_credentials_evicts_cached_table(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any], vended: dict[str, Any]
+) -> None:
+    plain = {"json": example_table_metadata_with_snapshot_v1_rest_json, "headers": {"ETag": '"v1"'}}
+    vending = {"json": {**example_table_metadata_with_snapshot_v1_rest_json, **vended}, "headers": {"ETag": '"v2"'}}
+    rest_mock.get(f"{TEST_URI}v1/namespaces/fokko/tables/table", [plain, vending, plain])
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    for _ in range(3):
+        catalog.load_table(("fokko", "table"))
+
+    assert "If-None-Match" not in rest_mock.last_request.headers
+
+
+@pytest.mark.parametrize(
+    "key, expected",
+    [
+        ("S3.Session-Token", True),
+        ("gcs.oauth2.token", True),
+        ("adls.sas-token.account", True),
+        ("s3.sse.key", False),
+        ("s3.access-key-id", False),
+        ("encryption.key-id", False),
+    ],
+)
+def test_is_short_lived_credential(key: str, expected: bool) -> None:
+    assert _is_short_lived_credential(key) is expected
 
 
 def test_load_table_honor_access_delegation(
