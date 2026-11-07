@@ -510,6 +510,19 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
         return self._added_name_to_id.get(name)
 
+    def _missing_for_move(self, name: str) -> str:
+        """Describe a name that cannot be moved, pointing to the original name if it is a pending rename."""
+        for field_id, update in self._updates.items():
+            field = self._schema.find_field(field_id)
+            if update.name == field.name:
+                continue
+            parent = self._id_to_parent.get(field_id)
+            new_name = f"{parent}.{update.name}" if parent else update.name
+            if new_name == name or (not self._case_sensitive and new_name.lower() == name.lower()):
+                original_name = self._schema.find_column_name(field_id)
+                return f"{name} (renamed from {original_name} in this update, refer to it as {original_name})"
+        return name
+
     def _move(self, move: _Move) -> None:
         if parent_name := self._id_to_parent.get(move.field_id):
             parent_field = self._schema.find_field(parent_name, case_sensitive=self._case_sensitive)
@@ -549,7 +562,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         field_id = self._find_for_move(full_name)
 
         if field_id is None:
-            raise ValueError(f"Cannot move missing column: {full_name}")
+            raise ValueError(f"Cannot move missing column: {self._missing_for_move(full_name)}")
 
         self._move(_Move(field_id=field_id, full_name=full_name, op=_MoveOperation.First))
 
@@ -568,7 +581,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         field_id = self._find_for_move(full_name)
 
         if field_id is None:
-            raise ValueError(f"Cannot move missing column: {full_name}")
+            raise ValueError(f"Cannot move missing column: {self._missing_for_move(full_name)}")
 
         before_full_name = (
             ".".join(
@@ -580,7 +593,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         before_field_id = self._find_for_move(before_full_name)
 
         if before_field_id is None:
-            raise ValueError(f"Cannot move {full_name} before missing column: {before_full_name}")
+            raise ValueError(f"Cannot move {full_name} before missing column: {self._missing_for_move(before_full_name)}")
 
         if field_id == before_field_id:
             raise ValueError(f"Cannot move {full_name} before itself")
@@ -603,13 +616,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         field_id = self._find_for_move(full_name)
 
         if field_id is None:
-            raise ValueError(f"Cannot move missing column: {full_name}")
+            raise ValueError(f"Cannot move missing column: {self._missing_for_move(full_name)}")
 
         after_path = ".".join(after_name) if isinstance(after_name, tuple) else after_name
         after_field_id = self._find_for_move(after_path)
 
         if after_field_id is None:
-            raise ValueError(f"Cannot move {full_name} after missing column: {after_path}")
+            raise ValueError(f"Cannot move {full_name} after missing column: {self._missing_for_move(after_path)}")
 
         if field_id == after_field_id:
             raise ValueError(f"Cannot move {full_name} after itself")
