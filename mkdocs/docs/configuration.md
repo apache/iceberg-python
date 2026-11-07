@@ -581,6 +581,8 @@ auth:
 
 ##### AWS Glue
 
+See [Accessing Amazon S3 tables using the AWS Glue Iceberg REST endpoint](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-integrating-glue-endpoint.html) for detailed documentation.
+
 ```yaml
 catalog:
   s3_tables_catalog:
@@ -589,6 +591,21 @@ catalog:
     warehouse: <account-id>:s3tablescatalog/<table-bucket-name>
     rest.sigv4-enabled: true
     rest.signing-name: glue
+    rest.signing-region: <region>
+```
+
+##### Amazon S3 Tables
+
+See [Amazon S3 Tables Iceberg REST endpoint](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-integrating-open-source.html) for detailed documentation.
+
+```yaml
+catalog:
+  s3tables_catalog:
+    type: rest
+    uri: https://s3tables.<region>.amazonaws.com/iceberg
+    warehouse: arn:aws:s3tables:<region>:<account-id>:bucket/<table-bucket-name>
+    rest.sigv4-enabled: true
+    rest.signing-name: s3tables
     rest.signing-region: <region>
 ```
 
