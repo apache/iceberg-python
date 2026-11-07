@@ -363,6 +363,68 @@ def test_validate_added_data_files_raises_on_conflict(
             )
 
 
+def test_validate_added_data_files_reports_every_conflicting_snapshot(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    """The helpers return iterators, so the entries must survive the truthiness check.
+
+    `any(entries)` consumes the iterator up to the first truthy element, leaving the
+    set comprehension that builds the error message to read what is left. With a
+    single conflicting entry that produced an empty set, i.e. a ValidationException
+    that could not name the snapshot it conflicted with.
+    """
+    table, _ = table_v2_with_extensive_snapshots_and_manifests
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    class DummyEntry:
+        def __init__(self, snapshot_id: int) -> None:
+            self.snapshot_id = snapshot_id
+
+    for snapshot_ids in ([123], [123, 456, 789]):
+        with patch(
+            "pyiceberg.table.update.validate._added_data_files",
+            return_value=iter([DummyEntry(i) for i in snapshot_ids]),
+        ):
+            with pytest.raises(ValidationException) as exc_info:
+                _validate_added_data_files(
+                    table=table,
+                    starting_snapshot=newest_snapshot,
+                    data_filter=None,
+                    parent_snapshot=oldest_snapshot,
+                )
+        message = str(exc_info.value)
+        for snapshot_id in snapshot_ids:
+            assert str(snapshot_id) in message, f"{snapshot_id} missing from {message!r}"
+
+
+def test_validate_deleted_data_files_reports_every_conflicting_snapshot(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    """Same iterator-consumption problem in the deleted-files validator."""
+    table, _ = table_v2_with_extensive_snapshots_and_manifests
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    class DummyEntry:
+        def __init__(self, snapshot_id: int) -> None:
+            self.snapshot_id = snapshot_id
+
+    with patch(
+        "pyiceberg.table.update.validate._deleted_data_files",
+        return_value=iter([DummyEntry(123)]),
+    ):
+        with pytest.raises(ValidationException) as exc_info:
+            _validate_deleted_data_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=None,
+                parent_snapshot=oldest_snapshot,
+            )
+
+    assert "123" in str(exc_info.value)
+
+
 @pytest.mark.parametrize("operation", [Operation.APPEND, Operation.REPLACE])
 def test_added_delete_files_non_conflicting_count(
     table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
