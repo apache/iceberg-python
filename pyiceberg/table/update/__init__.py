@@ -238,6 +238,16 @@ class RemoveEncryptionKeyUpdate(IcebergBaseModel):
     key_id: str = Field(alias="key-id")
 
 
+class AddViewVersionUpdate(IcebergBaseModel):
+    action: Literal["add-view-version"] = Field(default="add-view-version")
+    view_version: Any = Field(alias="view-version")
+
+
+class SetCurrentViewVersionUpdate(IcebergBaseModel):
+    action: Literal["set-current-view-version"] = Field(default="set-current-view-version")
+    view_version_id: int = Field(alias="view-version-id")
+
+
 TableUpdate = Annotated[
     AssignUUIDUpdate
     | UpgradeFormatVersionUpdate
@@ -834,6 +844,19 @@ class AssertTableUUID(ValidatableTableRequirement):
             raise CommitFailedException(f"Table UUID does not match: {self.uuid} != {base_metadata.table_uuid}")
 
 
+class AssertViewUUID(ValidatableTableRequirement):
+    """The view UUID must match the requirement's `uuid`."""
+
+    type: Literal["assert-view-uuid"] = Field(default="assert-view-uuid")
+    uuid: uuid.UUID
+
+    def validate(self, base_metadata: TableMetadata | None) -> None:
+        if base_metadata is None:
+            raise CommitFailedException("Requirement failed: current view metadata is missing")
+        elif self.uuid != base_metadata.table_uuid:
+            raise CommitFailedException(f"View UUID does not match: {self.uuid} != {base_metadata.table_uuid}")
+
+
 class AssertRefSnapshotId(ValidatableTableRequirement):
     """The table branch or tag identified by the requirement's `ref` must reference the requirement's `snapshot-id`.
 
@@ -959,6 +982,23 @@ TableRequirement = Annotated[
     | AssertLastAssignedPartitionId
     | AssertDefaultSpecId
     | AssertDefaultSortOrderId,
+    Field(discriminator="type"),
+]
+
+ViewUpdate = Annotated[
+    AssignUUIDUpdate
+    | UpgradeFormatVersionUpdate
+    | AddSchemaUpdate
+    | SetLocationUpdate
+    | SetPropertiesUpdate
+    | RemovePropertiesUpdate
+    | AddViewVersionUpdate
+    | SetCurrentViewVersionUpdate,
+    Field(discriminator="action"),
+]
+
+ViewRequirement = Annotated[
+    AssertViewUUID,
     Field(discriminator="type"),
 ]
 
