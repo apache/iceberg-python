@@ -30,6 +30,7 @@ from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.metadata import (
+    INITIAL_ROW_ID,
     SUPPORTED_TABLE_FORMAT_VERSION,
     EncryptedKey,
     TableMetadata,
@@ -476,18 +477,18 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
         )
 
     context.add_update(update)
-    return base_metadata.model_copy(
-        update={
-            "last_updated_ms": update.snapshot.timestamp_ms,
-            "last_sequence_number": update.snapshot.sequence_number,
-            "snapshots": base_metadata.snapshots + [update.snapshot],
-            "next_row_id": base_metadata.next_row_id + update.snapshot.added_rows
-            if base_metadata.format_version >= 3
-            and base_metadata.next_row_id is not None
-            and update.snapshot.added_rows is not None
-            else None,
-        }
-    )
+    metadata_updates: dict[str, Any] = {
+        "last_updated_ms": update.snapshot.timestamp_ms,
+        "last_sequence_number": update.snapshot.sequence_number,
+        "snapshots": base_metadata.snapshots + [update.snapshot],
+    }
+
+    if base_metadata.format_version >= 3:
+        if update.snapshot.added_rows is None:
+            raise ValueError("Cannot add snapshot without added rows")
+        metadata_updates["next_row_id"] = (base_metadata.next_row_id or INITIAL_ROW_ID) + update.snapshot.added_rows
+
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 @_apply_table_update.register(SetSnapshotRefUpdate)
