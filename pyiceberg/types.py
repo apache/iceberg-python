@@ -57,7 +57,7 @@ from pyiceberg.typedef import IcebergBaseModel, IcebergRootModel, L, TableVersio
 from pyiceberg.utils.parsing import ParseNumberFromBrackets
 from pyiceberg.utils.singleton import Singleton
 
-DECIMAL_REGEX = re.compile(r"decimal\((\d+),\s*(\d+)\)")
+DECIMAL_REGEX = re.compile(r"decimal\(\s*(\d+)\s*,\s*(\d+)\s*\)")
 FIXED = "fixed"
 FIXED_PARSER = ParseNumberFromBrackets(FIXED)
 
