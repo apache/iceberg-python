@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -247,7 +247,7 @@ def test_rest_scan_primitive_types(scan_catalog: RestCatalog, session_catalog: C
     table = recreate_table(scan_catalog, identifier, schema=schema)
 
     now = datetime.now()
-    now_tz = datetime.now(tz=timezone.utc)
+    now_tz = datetime.now(tz=UTC)
     today = date.today()
     uuid1, uuid2, uuid3 = uuid4(), uuid4(), uuid4()
 

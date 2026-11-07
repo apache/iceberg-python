@@ -165,13 +165,14 @@ class ConsoleOutput(Output):
 
         snapshot_tree = Tree(f"Snapshots: {'.'.join(table.name())}")
         io = table.io
+        encryption_manager = table.encryption_manager
 
         for snapshot in snapshots:
             list_tree = snapshot_tree.add(
                 f"Snapshot {snapshot.snapshot_id}, schema {snapshot.schema_id}: {snapshot.manifest_list}"
             )
 
-            manifest_list = snapshot.manifests(io)
+            manifest_list = snapshot.manifests(io, encryption_manager)
             for manifest in manifest_list:
                 manifest_tree = list_tree.add(f"Manifest: {manifest.manifest_path}")
                 for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=False):
@@ -272,10 +273,4 @@ class JsonOutput(Output):
         self._out({"version": version})
 
     def describe_refs(self, refs: list[tuple[str, SnapshotRefType, dict[str, str]]]) -> None:
-        self._out(
-            [
-                {"name": name, "type": type, detail_key: detail_val}
-                for name, type, detail in refs
-                for detail_key, detail_val in detail.items()
-            ]
-        )
+        self._out([{"name": name, "type": ref_type, **detail} for name, ref_type, detail in refs])

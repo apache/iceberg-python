@@ -125,7 +125,7 @@ class S3V4RestSigner(S3RequestSigner):
         super().__init__(properties)
         self._session = requests.Session()
 
-    def __call__(self, request: "AWSRequest", **_: Any) -> None:
+    def __call__(self, request: "AWSRequest", operation_name: str | None = None, **_: Any) -> None:
         signer_url = self.properties.get(S3_SIGNER_URI, self.properties[URI]).rstrip("/")  # type: ignore
         signer_endpoint = self.properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
@@ -148,6 +148,9 @@ class S3V4RestSigner(S3RequestSigner):
             "uri": request.url,
             "headers": {key: [val] for key, val in request.headers.items()},
         }
+        # The signing service needs the DeleteObjects body to authorize the keys being deleted
+        if operation_name == "DeleteObjects":
+            signer_body["body"] = request.body.decode("utf-8")
 
         response = self._session.post(f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body)
         try:

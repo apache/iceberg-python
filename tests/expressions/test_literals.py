@@ -21,10 +21,10 @@ import uuid
 from decimal import Decimal
 from typing import (
     Any,
+    assert_type,
 )
 
 import pytest
-from typing_extensions import assert_type
 
 from pyiceberg.expressions.literals import (
     BinaryLiteral,
