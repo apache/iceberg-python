@@ -455,24 +455,24 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
     elif (
         base_metadata.format_version >= 2
         and update.snapshot.sequence_number is not None
-        and update.snapshot.sequence_number <= base_metadata.last_sequence_number
+        and update.snapshot.sequence_number <= base_metadata.last_sequence_number  # ty: ignore[unresolved-attribute]
         and update.snapshot.parent_snapshot_id is not None
     ):
         raise ValueError(
             f"Cannot add snapshot with sequence number {update.snapshot.sequence_number} "
-            f"older than last sequence number {base_metadata.last_sequence_number}"
+            f"older than last sequence number {base_metadata.last_sequence_number}"  # ty: ignore[unresolved-attribute]
         )
     elif base_metadata.format_version >= 3 and update.snapshot.first_row_id is None:
         raise ValueError("Cannot add snapshot without first row id")
     elif (
         base_metadata.format_version >= 3
         and update.snapshot.first_row_id is not None
-        and base_metadata.next_row_id is not None
-        and update.snapshot.first_row_id < base_metadata.next_row_id
+        and base_metadata.next_row_id is not None  # ty: ignore[unresolved-attribute]
+        and update.snapshot.first_row_id < base_metadata.next_row_id  # ty: ignore[unresolved-attribute]
     ):
         raise ValueError(
             f"Cannot add a snapshot with first row id smaller than the table's next-row-id "
-            f"{update.snapshot.first_row_id} < {base_metadata.next_row_id}"
+            f"{update.snapshot.first_row_id} < {base_metadata.next_row_id}"  # ty: ignore[unresolved-attribute]
         )
 
     context.add_update(update)
@@ -481,9 +481,9 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
             "last_updated_ms": update.snapshot.timestamp_ms,
             "last_sequence_number": update.snapshot.sequence_number,
             "snapshots": base_metadata.snapshots + [update.snapshot],
-            "next_row_id": base_metadata.next_row_id + update.snapshot.added_rows
+            "next_row_id": base_metadata.next_row_id + update.snapshot.added_rows  # ty: ignore[unresolved-attribute]
             if base_metadata.format_version >= 3
-            and base_metadata.next_row_id is not None
+            and base_metadata.next_row_id is not None  # ty: ignore[unresolved-attribute]
             and update.snapshot.added_rows is not None
             else None,
         }
@@ -626,7 +626,7 @@ def _(
 
 @_apply_table_update.register(SetStatisticsUpdate)
 def _(update: SetStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.statistics.snapshot_id)
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.statistics.snapshot_id)  # ty: ignore[invalid-argument-type]
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics + [update.statistics]})
@@ -637,7 +637,7 @@ def _(update: RemoveStatisticsUpdate, base_metadata: TableMetadata, context: _Ta
     if not any(stat.snapshot_id == update.snapshot_id for stat in base_metadata.statistics):
         raise ValueError(f"Statistics with snapshot id {update.snapshot_id} does not exist")
 
-    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)
+    statistics = filter_statistics_by_snapshot_id(base_metadata.statistics, update.snapshot_id)  # ty: ignore[invalid-argument-type]
     context.add_update(update)
 
     return base_metadata.model_copy(update={"statistics": statistics})
@@ -678,7 +678,8 @@ def _(update: RemoveSchemasUpdate, base_metadata: TableMetadata, context: _Table
 @_apply_table_update.register(SetPartitionStatisticsUpdate)
 def _(update: SetPartitionStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     partition_statistics = filter_statistics_by_snapshot_id(
-        base_metadata.partition_statistics, update.partition_statistics.snapshot_id
+        base_metadata.partition_statistics,  # ty: ignore[invalid-argument-type]
+        update.partition_statistics.snapshot_id,
     )
     context.add_update(update)
 
@@ -692,7 +693,7 @@ def _(
     if not any(part_stat.snapshot_id == update.snapshot_id for part_stat in base_metadata.partition_statistics):
         raise ValueError(f"Partition Statistics with snapshot id {update.snapshot_id} does not exist")
 
-    statistics = filter_statistics_by_snapshot_id(base_metadata.partition_statistics, update.snapshot_id)
+    statistics = filter_statistics_by_snapshot_id(base_metadata.partition_statistics, update.snapshot_id)  # ty: ignore[invalid-argument-type]
     context.add_update(update)
 
     return base_metadata.model_copy(update={"partition_statistics": statistics})
@@ -786,8 +787,8 @@ def _update_table_metadata_log(base_metadata: TableMetadata, metadata_location: 
         ),  # type: ignore
     )
     previous_metadata_log = base_metadata.metadata_log
-    if len(base_metadata.metadata_log) >= max_metadata_log_entries:  # type: ignore
-        remove_index = len(base_metadata.metadata_log) - max_metadata_log_entries + 1  # type: ignore
+    if len(base_metadata.metadata_log) >= max_metadata_log_entries:  # type: ignore[operator]
+        remove_index = len(base_metadata.metadata_log) - max_metadata_log_entries + 1  # type: ignore[operator]
         previous_metadata_log = base_metadata.metadata_log[remove_index:]
     metadata_updates: dict[str, Any] = {
         "metadata_log": previous_metadata_log + [MetadataLogEntry(metadata_file=metadata_location, timestamp_ms=last_updated_ms)]
@@ -799,7 +800,7 @@ class ValidatableTableRequirement(IcebergBaseModel):
     type: str
 
     @abstractmethod
-    def validate(self, base_metadata: TableMetadata | None) -> None:
+    def validate(self, base_metadata: TableMetadata | None) -> None:  # ty: ignore[invalid-method-override]
         """Validate the requirement against the base metadata.
 
         Args:
@@ -844,9 +845,9 @@ class AssertRefSnapshotId(ValidatableTableRequirement):
     ref: str = Field(...)
     snapshot_id: int | None = Field(default=None, alias="snapshot-id")
 
-    @model_serializer(mode="wrap")
+    @model_serializer(mode="wrap")  # ty: ignore[invalid-argument-type]
     def serialize_model(self, handler: ModelWrapSerializerWithoutInfo) -> dict[str, Any]:
-        partial_result = handler(self)
+        partial_result = handler(self)  # ty: ignore[missing-argument]
         # Ensure "snapshot-id" is always present, even if value is None
         return {**partial_result, "snapshot-id": self.snapshot_id}
 

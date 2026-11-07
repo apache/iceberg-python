@@ -234,5 +234,5 @@ class DefaultWriter(Writer):
     writer: Writer
     value: Any
 
-    def write(self, encoder: BinaryEncoder, _: Any) -> None:
+    def write(self, encoder: BinaryEncoder, _: Any) -> None:  # ty: ignore[invalid-method-override]
         self.writer.write(encoder, self.value)

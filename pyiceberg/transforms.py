@@ -92,7 +92,7 @@ from pyiceberg.utils.singleton import Singleton
 if TYPE_CHECKING:
     import pyarrow as pa
 
-    ArrayLike = TypeVar("ArrayLike", pa.Array, pa.ChunkedArray)
+    ArrayLike = TypeVar("ArrayLike", pa.Array, pa.ChunkedArray)  # ty: ignore[missing-type-argument]
 
 S = TypeVar("S")
 T = TypeVar("T")
@@ -128,7 +128,7 @@ def _pyiceberg_transform_wrapper(
     def _transform(array: "ArrayLike") -> "ArrayLike":
         def _cast_if_needed(arr: "ArrayLike") -> "ArrayLike":
             if expected_type is not None:
-                return arr.cast(expected_type)
+                return arr.cast(expected_type)  # ty: ignore[invalid-return-type]
             else:
                 return arr
 
@@ -137,8 +137,8 @@ def _pyiceberg_transform_wrapper(
         elif isinstance(array, pa.ChunkedArray):
             result_chunks = []
             for arr in array.iterchunks():
-                result_chunks.append(_cast_if_needed(transform_func(arr, *args)))
-            return pa.chunked_array(result_chunks)
+                result_chunks.append(_cast_if_needed(transform_func(arr, *args)))  # ty: ignore[invalid-argument-type]
+            return pa.chunked_array(result_chunks)  # ty: ignore[invalid-return-type]
         else:
             raise ValueError(f"PyArrow array can only be of type pa.Array or pa.ChunkedArray, but found {type(array)}")
 
@@ -203,7 +203,7 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
         return False
 
     @abstractmethod
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]": ...  # ty: ignore[missing-type-argument]
 
 
 def parse_transform(v: Any) -> Transform[Any, Any]:
@@ -269,12 +269,12 @@ class BucketTransform(Transform[S, int]):
         elif isinstance(pred, BoundEqualTo):
             return pred.as_unbound(Reference(name), _transform_literal(transformer, pred.literal))
         elif isinstance(pred, BoundIn):  # NotIn can't be projected
-            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})  # type: ignore
+            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})  # type: ignore[call-arg]
         else:
             # - Comparison predicates can't be projected, notEq can't be projected
             # - Small ranges can be projected:
             #   For example, (x > 0) and (x < 3) can be turned into in({1, 2}) and projected.
-            return None  # type: ignore
+            return None  # type: ignore[unreachable]
 
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         transformer = self.transform(pred.term.ref().field.field_type)
@@ -286,10 +286,10 @@ class BucketTransform(Transform[S, int]):
         elif isinstance(pred, BoundNotEqualTo):
             return pred.as_unbound(Reference(name), _transform_literal(transformer, pred.literal))
         elif isinstance(pred, BoundNotIn):
-            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})  # type: ignore
+            return pred.as_unbound(Reference(name), {_transform_literal(transformer, literal) for literal in pred.literals})  # type: ignore[call-arg]
         else:
             # no strict projection for comparison or equality
-            return None  # type: ignore
+            return None  # type: ignore[unreachable]
 
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(
@@ -381,7 +381,7 @@ class BucketTransform(Transform[S, int]):
         """Return the string representation of the BucketTransform class."""
         return f"BucketTransform(num_buckets={self._num_buckets})"
 
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":  # ty: ignore[missing-type-argument]
         pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.bucket, self._num_buckets)
 
@@ -402,7 +402,7 @@ class TimeTransform(Transform[S, int], Generic[S], Singleton):
     def granularity(self) -> TimeResolution: ...
 
     def satisfies_order_of(self, other: Transform[S, T]) -> bool:
-        return self.granularity <= other.granularity if hasattr(other, "granularity") else False
+        return self.granularity <= other.granularity if hasattr(other, "granularity") else False  # ty: ignore[unsupported-operator]
 
     def result_type(self, source: IcebergType) -> IntegerType:
         return IntegerType()
@@ -495,7 +495,7 @@ class YearTransform(TimeTransform[S]):
         """Return the string representation of the YearTransform class."""
         return "YearTransform()"
 
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":  # ty: ignore[missing-type-argument]
         pa = try_import("pyarrow")
         pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.year, expected_type=pa.int32())
@@ -555,7 +555,7 @@ class MonthTransform(TimeTransform[S]):
         """Return the string representation of the MonthTransform class."""
         return "MonthTransform()"
 
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":  # ty: ignore[missing-type-argument]
         pa = try_import("pyarrow")
         pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
@@ -605,7 +605,7 @@ class DayTransform(TimeTransform[S]):
     def can_transform(self, source: IcebergType) -> bool:
         return isinstance(source, (DateType, TimestampType, TimestamptzType, TimestampNanoType, TimestamptzNanoType))
 
-    def result_type(self, source: IcebergType) -> IcebergType:
+    def result_type(self, source: IcebergType) -> IcebergType:  # ty: ignore[invalid-method-override]
         """Return the result type of a day transform.
 
         The physical representation conforms to the Iceberg spec as DateType is internally converted to int.
@@ -624,7 +624,7 @@ class DayTransform(TimeTransform[S]):
         """Return the string representation of the DayTransform class."""
         return "DayTransform()"
 
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":  # ty: ignore[missing-type-argument]
         pa = try_import("pyarrow", extras_name="pyarrow")
         pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
@@ -677,7 +677,7 @@ class HourTransform(TimeTransform[S]):
         """Return the string representation of the HourTransform class."""
         return "HourTransform()"
 
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":  # ty: ignore[missing-type-argument]
         pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.hour)
@@ -741,7 +741,7 @@ class IdentityTransform(Transform[S, S]):
         """Ordering by value is the same as long as the other preserves order."""
         return other.preserves_order
 
-    def to_human_string(self, source_type: IcebergType, value: S | None) -> str:
+    def to_human_string(self, source_type: IcebergType, value: S | None) -> str:  # ty: ignore[invalid-method-override]
         return _human_string(value, source_type) if value is not None else "null"
 
     def __str__(self) -> str:
@@ -752,7 +752,7 @@ class IdentityTransform(Transform[S, S]):
         """Return the string representation of the IdentityTransform class."""
         return "IdentityTransform()"
 
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":  # ty: ignore[missing-type-argument]
         return lambda v: v
 
 
@@ -798,7 +798,7 @@ class TruncateTransform(Transform[S, S]):
             return pred.as_unbound(Reference(name))
         elif isinstance(pred, BoundIn):
             return _set_apply_transform(name, pred, self.transform(field_type))
-        elif isinstance(field_type, (IntegerType, LongType, DecimalType)):  # type: ignore
+        elif isinstance(field_type, (IntegerType, LongType, DecimalType)):  # type: ignore[unreachable]
             if isinstance(pred, BoundLiteralPredicate):
                 return _truncate_number(name, pred, self.transform(field_type))
         elif isinstance(field_type, (BinaryType, StringType)):
@@ -829,7 +829,7 @@ class TruncateTransform(Transform[S, S]):
             elif isinstance(pred, BoundNotIn):
                 return _set_apply_transform(name, pred, self.transform(field_type))
             else:
-                return None  # type: ignore
+                return None  # type: ignore[unreachable]
 
         if isinstance(pred, BoundLiteralPredicate):
             if isinstance(pred, BoundStartsWith):
@@ -854,7 +854,7 @@ class TruncateTransform(Transform[S, S]):
         elif isinstance(pred, BoundNotIn):
             return _set_apply_transform(name, pred, self.transform(field_type))
         else:
-            return None  # type: ignore
+            return None  # type: ignore[unreachable]
 
     @property
     def width(self) -> int:
@@ -905,7 +905,7 @@ class TruncateTransform(Transform[S, S]):
         """Return the string representation of the TruncateTransform class."""
         return f"TruncateTransform(width={self._width})"
 
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":  # ty: ignore[missing-type-argument]
         pyiceberg_core_transform = try_import("pyiceberg_core", extras_name="pyiceberg-core").transform
 
         return _pyiceberg_transform_wrapper(pyiceberg_core_transform.truncate, self._width)
@@ -992,7 +992,7 @@ class UnknownTransform(Transform[S, T]):
         """Return the string representation of the UnknownTransform class."""
         return f"UnknownTransform(transform={repr(self._transform)})"
 
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":  # ty: ignore[missing-type-argument]
         raise NotImplementedError()
 
 
@@ -1004,7 +1004,7 @@ class VoidTransform(Transform[S, None], Singleton):
     def transform(self, source: IcebergType) -> Callable[[S | None], T | None]:
         return lambda v: None
 
-    def can_transform(self, _: IcebergType) -> bool:
+    def can_transform(self, _: IcebergType) -> bool:  # ty: ignore[invalid-method-override]
         return True
 
     def result_type(self, source: IcebergType) -> IcebergType:
@@ -1023,7 +1023,7 @@ class VoidTransform(Transform[S, None], Singleton):
         """Return the string representation of the VoidTransform class."""
         return "VoidTransform()"
 
-    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":
+    def pyarrow_transform(self, source: IcebergType) -> "Callable[[pa.Array], pa.Array]":  # ty: ignore[missing-type-argument]
         try:
             import pyarrow as pa
         except ModuleNotFoundError as e:
@@ -1129,7 +1129,7 @@ def _remove_transform(partition_name: str, pred: BoundPredicate) -> UnboundPredi
     elif isinstance(pred, BoundLiteralPredicate):
         return pred.as_unbound(Reference(partition_name), pred.literal)
     elif isinstance(pred, (BoundIn, BoundNotIn)):
-        return pred.as_unbound(Reference(partition_name), pred.literals)  # type: ignore
+        return pred.as_unbound(Reference(partition_name), pred.literals)  # type: ignore[call-arg]
     else:
         raise ValueError(f"Cannot replace transform in unknown predicate: {pred}")
 

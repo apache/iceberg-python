@@ -670,7 +670,7 @@ def visit_with_partner(
 @visit_with_partner.register(Schema)
 def _(schema: Schema, partner: P, visitor: SchemaWithPartnerVisitor[P, T], accessor: PartnerAccessor[P]) -> T:
     struct_partner = accessor.schema_partner(partner)
-    return visitor.schema(schema, partner, visit_with_partner(schema.as_struct(), struct_partner, visitor, accessor))  # type: ignore
+    return visitor.schema(schema, partner, visit_with_partner(schema.as_struct(), struct_partner, visitor, accessor))  # type: ignore[misc]
 
 
 @visit_with_partner.register(StructType)
@@ -680,7 +680,7 @@ def _(struct: StructType, partner: P, visitor: SchemaWithPartnerVisitor[P, T], a
         field_partner = accessor.field_partner(partner, field.field_id, field.name)
         visitor.before_field(field, field_partner)
         try:
-            field_result = visit_with_partner(field.field_type, field_partner, visitor, accessor)  # type: ignore
+            field_result = visit_with_partner(field.field_type, field_partner, visitor, accessor)  # type: ignore[misc]
             field_results.append(visitor.field(field, field_partner, field_result))
         finally:
             visitor.after_field(field, field_partner)
@@ -693,7 +693,7 @@ def _(list_type: ListType, partner: P, visitor: SchemaWithPartnerVisitor[P, T], 
     element_partner = accessor.list_element_partner(partner)
     visitor.before_list_element(list_type.element_field, element_partner)
     try:
-        element_result = visit_with_partner(list_type.element_type, element_partner, visitor, accessor)  # type: ignore
+        element_result = visit_with_partner(list_type.element_type, element_partner, visitor, accessor)  # type: ignore[misc]
     finally:
         visitor.after_list_element(list_type.element_field, element_partner)
 
@@ -705,14 +705,14 @@ def _(map_type: MapType, partner: P, visitor: SchemaWithPartnerVisitor[P, T], ac
     key_partner = accessor.map_key_partner(partner)
     visitor.before_map_key(map_type.key_field, key_partner)
     try:
-        key_result = visit_with_partner(map_type.key_type, key_partner, visitor, accessor)  # type: ignore
+        key_result = visit_with_partner(map_type.key_type, key_partner, visitor, accessor)  # type: ignore[misc]
     finally:
         visitor.after_map_key(map_type.key_field, key_partner)
 
     value_partner = accessor.map_value_partner(partner)
     visitor.before_map_value(map_type.value_field, value_partner)
     try:
-        value_result = visit_with_partner(map_type.value_type, value_partner, visitor, accessor)  # type: ignore
+        value_result = visit_with_partner(map_type.value_type, value_partner, visitor, accessor)  # type: ignore[misc]
     finally:
         visitor.after_map_value(map_type.value_field, value_partner)
     return visitor.map(map_type, partner, key_result, value_result)
@@ -1211,7 +1211,7 @@ def index_by_name(schema_or_type: Schema | IcebergType) -> dict[str, int]:
     Returns:
         Dict[str, int]: An index of field names to field IDs.
     """
-    if len(schema_or_type.fields) > 0:
+    if len(schema_or_type.fields) > 0:  # ty: ignore[unresolved-attribute]
         indexer = _IndexByName()
         visit(schema_or_type, indexer)
         return indexer.by_name()
@@ -1330,7 +1330,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         self.old_id_to_new_id[current_id] = new_id
         return new_id
 
-    def schema(self, schema: Schema, struct_result: Callable[[], StructType]) -> Schema:
+    def schema(self, schema: Schema, struct_result: Callable[[], StructType]) -> Schema:  # ty: ignore[invalid-method-override]
         return Schema(
             *struct_result().fields,
             identifier_field_ids=[self.old_id_to_new_id[field_id] for field_id in schema.identifier_field_ids],
@@ -1468,7 +1468,7 @@ class _SanitizeColumnsVisitor(SchemaVisitor[IcebergType | None]):
         )
 
     def struct(self, struct: StructType, field_results: builtins.list[IcebergType | None]) -> IcebergType | None:
-        return StructType(*[field for field in field_results if field is not None])
+        return StructType(*[field for field in field_results if field is not None])  # ty: ignore[invalid-argument-type]
 
     def list(self, list_type: ListType, element_result: IcebergType | None) -> IcebergType | None:
         return ListType(element_id=list_type.element_id, element_type=element_result, element_required=list_type.element_required)
@@ -1615,7 +1615,7 @@ class _PruneColumnsVisitor(SchemaVisitor[IcebergType | None]):
         if projected_field is None:
             return StructType()
         else:
-            return projected_field
+            return projected_field  # ty: ignore[invalid-return-type]
 
     @staticmethod
     def _project_list(list_type: ListType, element_result: IcebergType) -> ListType:

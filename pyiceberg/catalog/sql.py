@@ -270,7 +270,7 @@ class SqlCatalog(MetastoreCatalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
-        schema: Schema = self._convert_schema_if_needed(  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(  # type: ignore[no-redef]
             schema,
             int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
         )
@@ -389,7 +389,7 @@ class SqlCatalog(MetastoreCatalog):
                 if type_filter is not None:
                     stmt = stmt.where(type_filter)
                 res = session.execute(stmt)
-                if res.rowcount < 1:
+                if res.rowcount < 1:  # ty: ignore[unresolved-attribute]
                     raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}")
             else:
                 try:
@@ -450,7 +450,7 @@ class SqlCatalog(MetastoreCatalog):
                     if type_filter is not None:
                         stmt = stmt.where(type_filter)
                     result = session.execute(stmt)
-                    if result.rowcount < 1:
+                    if result.rowcount < 1:  # ty: ignore[unresolved-attribute]
                         raise NoSuchTableError(f"Table does not exist: {from_table_name}")
                 else:
                     try:
@@ -532,7 +532,7 @@ class SqlCatalog(MetastoreCatalog):
                         )
                     )
                     result = session.execute(stmt)
-                    if result.rowcount < 1:
+                    if result.rowcount < 1:  # ty: ignore[unresolved-attribute]
                         raise CommitFailedException(f"Table has been updated by another process: {namespace}.{table_name}")
                 else:
                     try:
@@ -566,7 +566,7 @@ class SqlCatalog(MetastoreCatalog):
         )
 
     @override
-    def namespace_exists(self, identifier: str | Identifier) -> bool:
+    def namespace_exists(self, identifier: str | Identifier) -> bool:  # ty: ignore[invalid-method-override]
         namespace_tuple = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple, NoSuchNamespaceError)
         namespace_starts_with = namespace.replace("!", "!!").replace("_", "!_").replace("%", "!%") + ".%"

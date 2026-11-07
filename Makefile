@@ -18,6 +18,7 @@
         test test-integration test-integration-setup test-integration-exec test-integration-cleanup test-integration-rebuild \
         test-s3 test-adls test-gcs test-coverage coverage-report test test-notebook\
         docs-serve docs-build notebook notebook-infra \
+        typecheck-ty \
         clean
 
 .DEFAULT_GOAL := help
@@ -96,6 +97,9 @@ check-license: ## Check license headers
 
 lint: ## Run code linters via prek (pre-commit hooks)
 	uv run $(PYTHON_ARG) prek run -a
+
+typecheck-ty: ## Type-check with ty in its isolated stub-only hook environment
+	uv run $(PYTHON_ARG) prek run ty --stage manual -a
 
 # ===============
 # Testing Section

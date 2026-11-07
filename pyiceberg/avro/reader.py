@@ -93,7 +93,7 @@ class Reader(Singleton):
 
 
 class NoneReader(Reader):
-    def read(self, _: BinaryDecoder) -> None:
+    def read(self, _: BinaryDecoder) -> None:  # ty: ignore[invalid-method-override]
         return None
 
     def skip(self, decoder: BinaryDecoder) -> None:
@@ -107,7 +107,7 @@ class DefaultReader(Reader):
     def __init__(self, default_value: Any) -> None:
         self.default_value = default_value
 
-    def read(self, _: BinaryDecoder) -> Any:
+    def read(self, _: BinaryDecoder) -> Any:  # ty: ignore[invalid-method-override]
         return self.default_value
 
     def skip(self, decoder: BinaryDecoder) -> None:

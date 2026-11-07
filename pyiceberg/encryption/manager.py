@@ -156,7 +156,7 @@ class EncryptionManager:
             for key in self._encryption_keys.values()
             if key.encrypted_by_id == self._table_key_id and not _is_kek_expired(key)
         ]
-        return max(keks, key=lambda kek: _kek_created_at(kek) or 0, default=None)
+        return max(keks, key=lambda kek: _kek_created_at(kek) or 0, default=None)  # ty: ignore[invalid-argument-type]
 
     def _unwrap_kek(self, kek: EncryptedKey) -> SecureKey:
         if (cached := self._kek_cache.get(kek.key_id)) is not None and time.monotonic() - cached[1] < KEK_CACHE_TTL_SECONDS:

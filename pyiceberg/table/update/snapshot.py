@@ -347,7 +347,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         first_row_id: int | None = None
 
         if self._transaction.table_metadata.format_version >= 3:
-            first_row_id = self._transaction.table_metadata.next_row_id
+            first_row_id = self._transaction.table_metadata.next_row_id  # ty: ignore[unresolved-attribute]
 
         snapshot = Snapshot(
             snapshot_id=self._snapshot_id,
@@ -370,7 +370,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             return (
                 (
                     add_snapshot_update,
-                    SetSnapshotRefUpdate(
+                    SetSnapshotRefUpdate(  # ty: ignore[pydantic-discarded-extra-argument]
                         snapshot_id=self._snapshot_id,
                         parent_snapshot_id=self._parent_snapshot_id,
                         ref_name=self._target_branch,
@@ -736,16 +736,16 @@ class _MergeAppendFiles(_FastAppendFiles):
 
         super().__init__(operation, transaction, io, commit_uuid, snapshot_properties, branch)
         table_properties = self._transaction.table_metadata.properties
-        self._target_size_bytes = property_as_int(
+        self._target_size_bytes = property_as_int(  # ty: ignore[invalid-assignment]
             table_properties,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES,
             TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT,
-        )  # type: ignore
-        self._min_count_to_merge = property_as_int(
+        )  # type: ignore[assignment]
+        self._min_count_to_merge = property_as_int(  # ty: ignore[invalid-assignment]
             table_properties,
             TableProperties.MANIFEST_MIN_MERGE_COUNT,
             TableProperties.MANIFEST_MIN_MERGE_COUNT_DEFAULT,
-        )  # type: ignore
+        )  # type: ignore[assignment]
         self._merge_enabled = property_as_bool(
             table_properties,
             TableProperties.MANIFEST_MERGE_ENABLED,

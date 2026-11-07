@@ -323,14 +323,14 @@ def _(primitive_type: DecimalType, value: Decimal) -> bytes:
     return decimal_to_bytes(value)
 
 
-@to_bytes.register(UnknownType)
+@to_bytes.register(UnknownType)  # ty: ignore[invalid-argument-type]
 def _(_: UnknownType, value: Any) -> None:
     """Return None since the unknown type has no binary representation."""
     return None
 
 
-@singledispatch  # type: ignore
-def from_bytes(primitive_type: PrimitiveType, b: bytes) -> L:  # type: ignore
+@singledispatch  # type: ignore[arg-type]
+def from_bytes(primitive_type: PrimitiveType, b: bytes) -> L:  # type: ignore[type-var]
     """Convert bytes to a built-in python value.
 
     Args:
@@ -406,8 +406,8 @@ def _(type_: UnknownType, buf: bytes) -> None:
     return None
 
 
-@singledispatch  # type: ignore
-def to_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore
+@singledispatch  # type: ignore[arg-type]
+def to_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore[type-var]
     """Convert built-in python values into JSON value types.
 
     https://iceberg.apache.org/spec/#json-single-value-serialization
@@ -545,8 +545,8 @@ def _(_: GeographyType, val: bytes) -> str:
     )
 
 
-@singledispatch  # type: ignore
-def from_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore
+@singledispatch  # type: ignore[arg-type]
+def from_json(primitive_type: PrimitiveType, val: Any) -> L:  # type: ignore[type-var]
     """Convert JSON value types into built-in python values.
 
     https://iceberg.apache.org/spec/#json-single-value-serialization

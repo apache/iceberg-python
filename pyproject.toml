@@ -129,6 +129,7 @@ dev = [
     "nbformat>=5.10.0",
     "ipykernel>=6.29.0",
     "ty==0.0.84",
+    "mypy==1.18.2",
 ]
 # for mkdocs
 docs = [
@@ -147,6 +148,16 @@ docs = [
 # for experimentation
 notebook = [
     "jupyterlab>=4.0.0",
+]
+# Only ty and the stub packages, to measure ty in the same bare environment the mypy
+# pre-commit hook runs in. Not a gate: sync it with `--only-group types` into a throwaway venv.
+# The ty hook in .pre-commit-config.yaml pins the same versions, so keep the two in step.
+types = [
+    "ty==0.0.84",
+    "types-cachetools==7.0.0.20260713",
+    "types-pytest-lazy-fixture==0.6.3.20260518",
+    "types-pytz==2026.5.0.20261006",
+    "types-requests==2.33.0.20261006",
 ]
 
 [tool.uv]
@@ -262,6 +273,9 @@ filterwarnings = [
 ]
 
 [tool.mypy]
+# Same scope as ty's [tool.ty.src] include, so both checkers see the same files.
+files = ["pyiceberg"]
+python_version = "3.11"
 mypy_path = "python"
 no_implicit_optional = true
 namespace_packages = false
@@ -274,16 +288,59 @@ implicit_reexport = false
 ignore_missing_imports = true
 
 [tool.ty.src]
-exclude = ["vendor/"]
+include = ["pyiceberg"]
 
 [tool.ty.environment]
 # The vendored Hive Metastore client is packaged from vendor/, so it must stay importable
 extra-paths = ["vendor"]
+python-version = "3.11"
 
 [tool.ty.analysis]
 # pyiceberg_core.datafusion is registered at runtime by its compiled extension; griffe and
 # mkdocs_gen_files are only installed with the docs dependency group
 allowed-unresolved-imports = ["pyiceberg_core.datafusion", "griffe", "mkdocs_gen_files"]
+
+[tool.ty.rules]
+# Each rule mirrors the mypy flag it replaces. missing-type-argument is the only one ty
+# silences by default; the rest already report nothing in pyiceberg/ at this level.
+missing-type-argument = "error"        # disallow_any_generics
+invalid-parameter-default = "error"    # no_implicit_optional
+redundant-cast = "error"               # warn_redundant_casts
+redundant-condition = "error"          # warn_unreachable
+unused-ignore-comment = "error"        # warn_unused_ignores
+unused-type-ignore-comment = "error"   # warn_unused_ignores
+# No mypy counterpart; off until every override carries @override.
+missing-override-decorator = "ignore"
+
+[[tool.ty.overrides]]
+include = [
+    "pyiceberg/avro/codecs/snappy_codec.py",
+    "pyiceberg/catalog/hive.py",
+    "pyiceberg/catalog/rest/auth.py",
+    "pyiceberg/io/fsspec.py",
+    "pyiceberg/io/pyarrow.py",
+    "pyiceberg/table/__init__.py",
+]
+
+[tool.ty.overrides.analysis]
+# Optional extras that only these modules import; mypy ignores missing imports globally.
+allowed-unresolved-imports = [
+    "snappy",
+    "thrift.**",
+    "azure.identity",
+    "s3fs",
+    "gcsfs",
+    "adlfs",
+    "azure.core.credentials",
+    "azure.core.credentials_async",
+    "huggingface_hub",
+    "geoarrow.pyarrow",
+    "bodo.pandas",
+    "daft",
+    "polars",
+    "ray",
+    "duckdb",
+]
 
 [tool.coverage.run]
 source = ['pyiceberg/']

@@ -1033,7 +1033,7 @@ class ExpressionToPlainFormat(BoundBooleanExpressionVisitor[list[tuple[str, str,
             iceberg_type_class = type(iceberg_type)
             conversions = {TimestampType: micros_to_timestamp, TimestamptzType: micros_to_timestamptz}
             if iceberg_type_class in conversions:
-                conversion_function = conversions[iceberg_type_class]
+                conversion_function = conversions[iceberg_type_class]  # ty: ignore[invalid-argument-type]
                 if isinstance(literal, set):
                     return {conversion_function(lit) for lit in literal}  # type: ignore
                 else:

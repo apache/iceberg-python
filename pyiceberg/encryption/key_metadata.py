@@ -82,7 +82,7 @@ class StandardKeyMetadata:
     def to_bytes(self) -> bytes:
         """Encode key metadata to its wire format."""
         output = io.BytesIO()
-        encoder = BinaryEncoder(output)
+        encoder = BinaryEncoder(output)  # ty: ignore[invalid-argument-type]
         encoder.write(bytes([KEY_METADATA_V1]))
         record = Record(self.encryption_key, self.aad_prefix, self.file_length)
         construct_writer(KEY_METADATA_SCHEMA_V1).write(encoder, record)

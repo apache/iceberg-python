@@ -185,7 +185,7 @@ class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
     def visit_timestamp(self, timestamp_type: TimestampType) -> Writer:
         return TimestampWriter()
 
-    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType) -> Writer:
+    def visit_timestamp_ns(self, timestamp_ns_type: TimestampNanoType) -> Writer:  # ty: ignore[invalid-method-override]
         return TimestampNanoWriter()
 
     def visit_timestamptz(self, timestamptz_type: TimestamptzType) -> Writer:
@@ -233,7 +233,7 @@ def resolve_writer(
     """
     if record_schema == file_schema:
         return construct_writer(file_schema)
-    return visit_with_partner(file_schema, record_schema, WriteSchemaResolver(), SchemaPartnerAccessor())  # type: ignore
+    return visit_with_partner(file_schema, record_schema, WriteSchemaResolver(), SchemaPartnerAccessor())  # type: ignore[misc]
 
 
 def resolve_reader(
@@ -253,7 +253,7 @@ def resolve_reader(
     Raises:
         NotImplementedError: If attempting to resolve an unrecognized object type.
     """
-    return visit_with_partner(file_schema, read_schema, ReadSchemaResolver(read_types, read_enums), SchemaPartnerAccessor())  # type: ignore
+    return visit_with_partner(file_schema, read_schema, ReadSchemaResolver(read_types, read_enums), SchemaPartnerAccessor())  # type: ignore[misc]
 
 
 class EnumReader(Reader):
@@ -276,10 +276,10 @@ class EnumReader(Reader):
 
 
 class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
-    def schema(self, file_schema: Schema, record_schema: IcebergType | None, result: Writer) -> Writer:
+    def schema(self, file_schema: Schema, record_schema: IcebergType | None, result: Writer) -> Writer:  # ty: ignore[invalid-method-override]
         return result
 
-    def struct(self, file_schema: StructType, record_struct: IcebergType | None, file_writers: list[Writer]) -> Writer:
+    def struct(self, file_schema: StructType, record_struct: IcebergType | None, file_writers: list[Writer]) -> Writer:  # ty: ignore[invalid-method-override]
         if not isinstance(record_struct, StructType):
             raise ResolveError(f"File/write schema are not aligned for struct, got {record_struct}")
 
@@ -301,16 +301,16 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
 
         return StructWriter(field_writers=tuple(results))
 
-    def field(self, file_field: NestedField, record_type: IcebergType | None, field_writer: Writer) -> Writer:
+    def field(self, file_field: NestedField, record_type: IcebergType | None, field_writer: Writer) -> Writer:  # ty: ignore[invalid-method-override]
         return field_writer if file_field.required else OptionWriter(field_writer)
 
-    def list(self, file_list_type: ListType, file_list: IcebergType | None, element_writer: Writer) -> Writer:
+    def list(self, file_list_type: ListType, file_list: IcebergType | None, element_writer: Writer) -> Writer:  # ty: ignore[invalid-method-override]
         return ListWriter(element_writer if file_list_type.element_required else OptionWriter(element_writer))
 
-    def map(self, file_map_type: MapType, file_primitive: IcebergType | None, key_writer: Writer, value_writer: Writer) -> Writer:
+    def map(self, file_map_type: MapType, file_primitive: IcebergType | None, key_writer: Writer, value_writer: Writer) -> Writer:  # ty: ignore[invalid-method-override]
         return MapWriter(key_writer, value_writer if file_map_type.value_required else OptionWriter(value_writer))
 
-    def primitive(self, file_primitive: PrimitiveType, record_primitive: IcebergType | None) -> Writer:
+    def primitive(self, file_primitive: PrimitiveType, record_primitive: IcebergType | None) -> Writer:  # ty: ignore[invalid-method-override]
         if record_primitive is not None:
             # ensure that the type can be projected to the expected
             if file_primitive != record_primitive:
@@ -393,16 +393,16 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
         self.read_enums = read_enums
         self.context = []
 
-    def schema(self, schema: Schema, expected_schema: IcebergType | None, result: Reader) -> Reader:
+    def schema(self, schema: Schema, expected_schema: IcebergType | None, result: Reader) -> Reader:  # ty: ignore[invalid-method-override]
         return result
 
-    def before_field(self, field: NestedField, field_partner: NestedField | None) -> None:
+    def before_field(self, field: NestedField, field_partner: NestedField | None) -> None:  # ty: ignore[invalid-method-override]
         self.context.append(field.field_id)
 
-    def after_field(self, field: NestedField, field_partner: NestedField | None) -> None:
+    def after_field(self, field: NestedField, field_partner: NestedField | None) -> None:  # ty: ignore[invalid-method-override]
         self.context.pop()
 
-    def struct(self, struct: StructType, expected_struct: IcebergType | None, field_readers: list[Reader]) -> Reader:
+    def struct(self, struct: StructType, expected_struct: IcebergType | None, field_readers: list[Reader]) -> Reader:  # ty: ignore[invalid-method-override]
         read_struct_id = self.context[STRUCT_ROOT] if len(self.context) > 0 else STRUCT_ROOT
         struct_callable = self.read_types.get(read_struct_id, Record)
 
@@ -439,22 +439,22 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
 
         return StructReader(tuple(results), struct_callable, expected_struct)
 
-    def field(self, field: NestedField, expected_field: IcebergType | None, field_reader: Reader) -> Reader:
+    def field(self, field: NestedField, expected_field: IcebergType | None, field_reader: Reader) -> Reader:  # ty: ignore[invalid-method-override]
         return field_reader if field.required else OptionReader(field_reader)
 
-    def list(self, list_type: ListType, expected_list: IcebergType | None, element_reader: Reader) -> Reader:
+    def list(self, list_type: ListType, expected_list: IcebergType | None, element_reader: Reader) -> Reader:  # ty: ignore[invalid-method-override]
         if expected_list and not isinstance(expected_list, ListType):
             raise ResolveError(f"File/read schema are not aligned for list, got {expected_list}")
 
         return ListReader(element_reader if list_type.element_required else OptionReader(element_reader))
 
-    def map(self, map_type: MapType, expected_map: IcebergType | None, key_reader: Reader, value_reader: Reader) -> Reader:
+    def map(self, map_type: MapType, expected_map: IcebergType | None, key_reader: Reader, value_reader: Reader) -> Reader:  # ty: ignore[invalid-method-override]
         if expected_map and not isinstance(expected_map, MapType):
             raise ResolveError(f"File/read schema are not aligned for map, got {expected_map}")
 
         return MapReader(key_reader, value_reader if map_type.value_required else OptionReader(value_reader))
 
-    def primitive(self, primitive: PrimitiveType, expected_primitive: IcebergType | None) -> Reader:
+    def primitive(self, primitive: PrimitiveType, expected_primitive: IcebergType | None) -> Reader:  # ty: ignore[invalid-method-override]
         if expected_primitive is not None:
             if not isinstance(expected_primitive, PrimitiveType):
                 raise ResolveError(f"File/read schema are not aligned for {primitive}, got {expected_primitive}")
@@ -547,7 +547,7 @@ class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):
 
         raise ResolveError(f"File/read schema are not aligned for schema, got {partner}")
 
-    def field_partner(self, partner: IcebergType | None, field_id: int, field_name: str) -> IcebergType | None:
+    def field_partner(self, partner: IcebergType | None, field_id: int, field_name: str) -> IcebergType | None:  # ty: ignore[invalid-method-override]
         if isinstance(partner, StructType):
             field = partner.field(field_id)
         else:

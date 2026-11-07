@@ -76,15 +76,15 @@ class DeletionVector:
 
             last_key = key
 
-        return bitmaps
+        return bitmaps  # ty: ignore[invalid-return-type]
 
     @staticmethod
-    def _bitmaps_to_chunked_array(bitmaps: list[BitMap]) -> "pa.ChunkedArray":
+    def _bitmaps_to_chunked_array(bitmaps: list[BitMap]) -> "pa.ChunkedArray":  # ty: ignore[missing-type-argument]
         import pyarrow as pa
 
         return pa.chunked_array([(key_pos << 32) + pos for pos in bitmap] for key_pos, bitmap in enumerate(bitmaps))
 
-    def to_vector(self) -> "pa.ChunkedArray":
+    def to_vector(self) -> "pa.ChunkedArray":  # ty: ignore[missing-type-argument]
         return self._bitmaps_to_chunked_array(self._bitmaps)
 
 

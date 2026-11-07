@@ -54,12 +54,12 @@ try:
             checksum = data[-4:]  # store checksum before truncating data
             data = data[0:-4]  # remove checksum from the data
             uncompressed = snappy.decompress(data)
-            SnappyCodec._check_crc32(uncompressed, checksum)
+            SnappyCodec._check_crc32(uncompressed, checksum)  # ty: ignore[unresolved-attribute]
             return uncompressed
 
 except ImportError:
 
-    class SnappyCodec(Codec):  # type: ignore
+    class SnappyCodec(Codec):  # type: ignore[no-redef]
         @staticmethod
         def compress(data: bytes) -> tuple[bytes, int]:
             raise ImportError("Snappy support not installed, please install using `pip install pyiceberg[snappy]`")

@@ -261,7 +261,7 @@ class IcebergType(IcebergBaseModel):
         return 1
 
 
-class PrimitiveType(Singleton, IcebergRootModel[str], IcebergType):
+class PrimitiveType(Singleton, IcebergRootModel[str], IcebergType):  # ty: ignore[invalid-method-override]
     """Base class for all Iceberg Primitive Types."""
 
     root: Any = Field()
@@ -429,15 +429,15 @@ class NestedField(IcebergType):
     field_type: SerializeAsAny[IcebergType] = Field(alias="type")
     required: bool = Field(default=False)
     doc: str | None = Field(default=None, repr=False)
-    initial_default: DefaultValue | None = Field(alias="initial-default", default=None, repr=True)  # type: ignore
-    write_default: DefaultValue | None = Field(alias="write-default", default=None, repr=True)  # type: ignore
+    initial_default: DefaultValue | None = Field(alias="initial-default", default=None, repr=True)  # type: ignore[type-arg]
+    write_default: DefaultValue | None = Field(alias="write-default", default=None, repr=True)  # type: ignore[type-arg]
 
     @field_validator("field_type", mode="before")
     def convert_field_type(cls, v: Any) -> IcebergType:
         """Convert string values into IcebergType instances."""
         if isinstance(v, str):
             try:
-                return IcebergType.handle_primitive_type(v, None)
+                return IcebergType.handle_primitive_type(v, None)  # ty: ignore[call-non-callable]
             except ValueError as e:
                 raise ValueError(f"Unsupported field type: '{v}'") from e
         return v

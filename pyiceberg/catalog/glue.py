@@ -219,7 +219,7 @@ class _IcebergSchemaToGlueType(SchemaVisitor[str]):
             return f"decimal({primitive.precision},{primitive.scale})"
         if (primitive_type := type(primitive)) not in GLUE_PRIMITIVE_TYPES:
             return str(primitive)
-        return GLUE_PRIMITIVE_TYPES[primitive_type]
+        return GLUE_PRIMITIVE_TYPES[primitive_type]  # ty: ignore[invalid-argument-type]
 
 
 def _to_columns(metadata: TableMetadata) -> list["ColumnTypeDef"]:

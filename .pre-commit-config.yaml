@@ -40,6 +40,8 @@ repos:
     rev: v1.18.2
     hooks:
       - id: mypy
+        # Scoped to the package while ty and mypy are compared on the same files.
+        files: ^pyiceberg/
         args:
           [--config=pyproject.toml]
         additional_dependencies:
@@ -47,6 +49,34 @@ repos:
           - types-pytest-lazy-fixture
           - types-pytz
           - types-requests
+  # Experimental: ty is not the gate yet, so this hook is manual-stage only.
+  # Run it with: uv run prek run ty --stage manual -a
+  # Local hook so ty runs in this hook's own environment, which holds only ty and the stub
+  # packages, the same bare environment the mypy hook gets. The entry points at it through
+  # VIRTUAL_ENV, which the hook runner exports. Keep these pins in step with the types group.
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty
+        entry: >-
+          ty check
+          -c 'rules.unresolved-import = "ignore"'
+          -c 'rules.unused-ignore-comment = "ignore"'
+          -c 'rules.unused-type-ignore-comment = "ignore"'
+          -c 'rules.invalid-assignment = "ignore"'
+          -c 'rules.invalid-argument-type = "ignore"'
+          -c 'rules.call-non-callable = "ignore"'
+        language: python
+        additional_dependencies:
+          - ty==0.0.84
+          - types-cachetools==7.0.0.20260713
+          - types-pytest-lazy-fixture==0.6.3.20260518
+          - types-pytz==2026.5.0.20261006
+          - types-requests==2.33.0.20261006
+        always_run: true
+        pass_filenames: false
+        require_serial: true
+        stages: [manual]
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
     hooks:

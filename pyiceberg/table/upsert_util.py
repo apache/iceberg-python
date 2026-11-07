@@ -107,18 +107,18 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         matching_indices[TARGET_INDEX_COLUMN_NAME].to_pylist(),
         strict=True,
     ):
-        source_row = source_table.slice(source_idx, 1)
-        target_row = target_table.slice(target_idx, 1)
+        source_row = source_table.slice(source_idx, 1)  # ty: ignore[invalid-argument-type]
+        target_row = target_table.slice(target_idx, 1)  # ty: ignore[invalid-argument-type]
 
         for key in non_key_cols:
-            source_val = source_row.column(key)[0].as_py()
-            target_val = target_row.column(key)[0].as_py()
+            source_val = source_row.column(key)[0].as_py()  # ty: ignore[unresolved-attribute]
+            target_val = target_row.column(key)[0].as_py()  # ty: ignore[unresolved-attribute]
             if source_val != target_val:
                 to_update_indices.append(source_idx)
                 break
 
     # Step 5: Take rows from source table using the indices and cast to target schema
     if to_update_indices:
-        return source_table.take(to_update_indices)
+        return source_table.take(to_update_indices)  # ty: ignore[invalid-argument-type]
     else:
         return source_table.schema.empty_table()

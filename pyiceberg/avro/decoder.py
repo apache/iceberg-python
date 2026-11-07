@@ -137,7 +137,7 @@ class StreamingBinaryDecoder(BinaryDecoder):
         """Reader is a Python object on which we can call read, seek, and tell."""
         if isinstance(input_stream, bytes):
             # In the case of bytes, we wrap it into a BytesIO to make it a stream
-            self._input_stream = io.BytesIO(input_stream)
+            self._input_stream = io.BytesIO(input_stream)  # ty: ignore[invalid-assignment]
         else:
             self._input_stream = input_stream
 

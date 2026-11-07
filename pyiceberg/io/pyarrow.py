@@ -245,12 +245,12 @@ def _import_retry_strategy(impl: str) -> S3RetryStrategy | None:
 class UnsupportedPyArrowTypeException(Exception):
     """Cannot convert PyArrow type to corresponding Iceberg type."""
 
-    def __init__(self, field: pa.Field, *args: Any):
+    def __init__(self, field: pa.Field, *args: Any):  # ty: ignore[missing-type-argument]
         self.field = field
         super().__init__(*args)
 
 
-class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):
+class PyArrowLocalFileSystem(pyarrow.fs.LocalFileSystem):  # ty: ignore[possibly-missing-submodule]
     def open_output_stream(self, path: str, *args: Any, **kwargs: Any) -> pyarrow.NativeFile:
         # In LocalFileSystem, parent directories must be first created before opening an output stream
         self.create_dir(os.path.dirname(path), recursive=True)
@@ -352,7 +352,7 @@ class PyArrowFile(InputFile, OutputFile):
             elif e.errno == 13 or "AWS Error [code 15]" in str(e):
                 raise PermissionError(f"Cannot open file, access denied: {self.location}") from e
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
-        return input_file
+        return input_file  # ty: ignore[invalid-return-type]
 
     @override
     def create(self, overwrite: bool = False) -> OutputStream:
@@ -384,7 +384,7 @@ class PyArrowFile(InputFile, OutputFile):
             if e.errno == 13 or "AWS Error [code 15]" in str(e):
                 raise PermissionError(f"Cannot create file, access denied: {self.location}") from e
             raise  # pragma: no cover - If some other kind of OSError, raise the raw error
-        return output_file
+        return output_file  # ty: ignore[invalid-return-type]
 
     @override
     def to_input_file(self) -> PyArrowFile:
@@ -618,7 +618,7 @@ class PyArrowFileIO(FileIO):
                 f"Provided: {provided_keys}, Missing: {missing_keys}"
             )
 
-        return AzureFileSystem(**client_kwargs)
+        return AzureFileSystem(**client_kwargs)  # ty: ignore[invalid-argument-type]
 
     def _initialize_hdfs_fs(self, scheme: str, netloc: str | None) -> FileSystem:
         from pyarrow.fs import HadoopFileSystem
@@ -756,13 +756,13 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         self._include_field_ids = include_field_ids
         self._file_format = file_format
 
-    def schema(self, _: Schema, struct_result: pa.StructType) -> pa.Schema:
-        return pa.schema(list(struct_result), metadata=self._metadata)
+    def schema(self, _: Schema, struct_result: pa.StructType) -> pa.Schema:  # ty: ignore[invalid-method-override]
+        return pa.schema(list(struct_result), metadata=self._metadata)  # ty: ignore[invalid-argument-type]
 
-    def struct(self, _: StructType, field_results: builtins.list[pa.DataType]) -> pa.DataType:
-        return pa.struct(field_results)
+    def struct(self, _: StructType, field_results: builtins.list[pa.DataType]) -> pa.DataType:  # ty: ignore[invalid-method-override]
+        return pa.struct(field_results)  # ty: ignore[invalid-argument-type]
 
-    def field(self, field: NestedField, field_result: pa.DataType) -> pa.Field:
+    def field(self, field: NestedField, field_result: pa.DataType) -> pa.Field:  # ty: ignore[invalid-method-override, missing-type-argument]
         metadata = {}
         if field.doc:
             metadata[PYARROW_FIELD_DOC_KEY] = field.doc
@@ -790,7 +790,7 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     def map(self, map_type: MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
         key_field = self.field(map_type.key_field, key_result)
         value_field = self.field(map_type.value_field, value_result)
-        return pa.map_(key_type=key_field, item_type=value_field)
+        return pa.map_(key_type=key_field, item_type=value_field)  # ty: ignore[invalid-argument-type]
 
     def visit_fixed(self, fixed_type: FixedType) -> pa.DataType:
         return pa.binary(len(fixed_type))
@@ -804,53 +804,53 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
         # https://github.com/apache/arrow/blob/598938711a8376cbfdceaf5c77ab0fd5057e6c02/cpp/src/parquet/arrow/schema.cc#L380-L392
         return pa.decimal128(decimal_type.precision, decimal_type.scale)
 
-    def visit_boolean(self, _: BooleanType) -> pa.DataType:
+    def visit_boolean(self, _: BooleanType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.bool_()
 
-    def visit_integer(self, _: IntegerType) -> pa.DataType:
+    def visit_integer(self, _: IntegerType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.int32()
 
-    def visit_long(self, _: LongType) -> pa.DataType:
+    def visit_long(self, _: LongType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.int64()
 
-    def visit_float(self, _: FloatType) -> pa.DataType:
+    def visit_float(self, _: FloatType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         # 32-bit IEEE 754 floating point
         return pa.float32()
 
-    def visit_double(self, _: DoubleType) -> pa.DataType:
+    def visit_double(self, _: DoubleType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         # 64-bit IEEE 754 floating point
         return pa.float64()
 
-    def visit_date(self, _: DateType) -> pa.DataType:
+    def visit_date(self, _: DateType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         # Date encoded as an int
         return pa.date32()
 
-    def visit_time(self, _: TimeType) -> pa.DataType:
+    def visit_time(self, _: TimeType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.time64("us")
 
-    def visit_timestamp(self, _: TimestampType) -> pa.DataType:
+    def visit_timestamp(self, _: TimestampType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.timestamp(unit="us")
 
-    def visit_timestamp_ns(self, _: TimestampNanoType) -> pa.DataType:
+    def visit_timestamp_ns(self, _: TimestampNanoType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.timestamp(unit="ns")
 
-    def visit_timestamptz(self, _: TimestamptzType) -> pa.DataType:
+    def visit_timestamptz(self, _: TimestamptzType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.timestamp(unit="us", tz="UTC")
 
-    def visit_timestamptz_ns(self, _: TimestamptzNanoType) -> pa.DataType:
+    def visit_timestamptz_ns(self, _: TimestamptzNanoType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.timestamp(unit="ns", tz="UTC")
 
-    def visit_string(self, _: StringType) -> pa.DataType:
+    def visit_string(self, _: StringType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.large_string()
 
-    def visit_uuid(self, _: UUIDType) -> pa.DataType:
+    def visit_uuid(self, _: UUIDType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.uuid()
 
-    def visit_unknown(self, _: UnknownType) -> pa.DataType:
+    def visit_unknown(self, _: UnknownType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         """Type `UnknownType` can be promoted to any primitive type in V3+ tables per the Iceberg spec."""
         return pa.null()
 
-    def visit_binary(self, _: BinaryType) -> pa.DataType:
+    def visit_binary(self, _: BinaryType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         return pa.large_binary()
 
     def visit_geometry(self, geometry_type: GeometryType) -> pa.DataType:
@@ -885,10 +885,10 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             return pa.large_binary()
 
 
-def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
+def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:  # ty: ignore[invalid-type-form]
     if not isinstance(iceberg_type, PrimitiveType):
         raise ValueError(f"Expected primitive type, got: {iceberg_type}")
-    return pa.scalar(value=value, type=schema_to_pyarrow(iceberg_type))
+    return pa.scalar(value=value, type=schema_to_pyarrow(iceberg_type))  # ty: ignore[no-matching-overload]
 
 
 class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
@@ -925,26 +925,26 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return term.ref().field.name
 
     def visit_in(self, term: BoundTerm, literals: set[Any]) -> pc.Expression:
-        pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
+        pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))  # ty: ignore[no-matching-overload]
         return pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_not_in(self, term: BoundTerm, literals: set[Any]) -> pc.Expression:
-        pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
+        pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))  # ty: ignore[no-matching-overload]
         return ~pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_is_nan(self, term: BoundTerm) -> pc.Expression:
         ref = pc.field(self._get_field_name(term))
-        return pc.is_nan(ref)
+        return pc.is_nan(ref)  # ty: ignore[invalid-return-type]
 
     def visit_not_nan(self, term: BoundTerm) -> pc.Expression:
         ref = pc.field(self._get_field_name(term))
-        return ~pc.is_nan(ref)
+        return ~pc.is_nan(ref)  # ty: ignore[unsupported-operator]
 
     def visit_is_null(self, term: BoundTerm) -> pc.Expression:
         return pc.field(self._get_field_name(term)).is_null(nan_is_null=False)
 
     def visit_not_null(self, term: BoundTerm) -> pc.Expression:
-        return pc.field(self._get_field_name(term)).is_valid()
+        return pc.field(self._get_field_name(term)).is_valid()  # ty: ignore[invalid-return-type]
 
     def visit_equal(self, term: BoundTerm, literal: Literal[Any]) -> pc.Expression:
         return pc.field(self._get_field_name(term)) == _convert_scalar(literal.value, term.ref().field.field_type)
@@ -965,10 +965,10 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return pc.field(self._get_field_name(term)) <= _convert_scalar(literal.value, term.ref().field.field_type)
 
     def visit_starts_with(self, term: BoundTerm, literal: Literal[Any]) -> pc.Expression:
-        return pc.starts_with(pc.field(self._get_field_name(term)), literal.value)
+        return pc.starts_with(pc.field(self._get_field_name(term)), literal.value)  # ty: ignore[invalid-return-type]
 
     def visit_not_starts_with(self, term: BoundTerm, literal: Literal[Any]) -> pc.Expression:
-        return ~pc.starts_with(pc.field(self._get_field_name(term)), literal.value)
+        return ~pc.starts_with(pc.field(self._get_field_name(term)), literal.value)  # ty: ignore[unsupported-operator]
 
     def visit_true(self) -> pc.Expression:
         return pc.scalar(True)
@@ -1149,7 +1149,7 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression, schema: Schema
 @lru_cache
 def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.FileFormat:
     if file_format == FileFormat.PARQUET:
-        return ds.ParquetFileFormat(**kwargs)
+        return ds.ParquetFileFormat(**kwargs)  # ty: ignore[invalid-argument-type]
     elif file_format == FileFormat.ORC:
         # ORC doesn't support pre_buffer and buffer_size parameters
         orc_kwargs = {k: v for k, v in kwargs.items() if k not in ["pre_buffer", "buffer_size"]}
@@ -1158,21 +1158,21 @@ def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.Fi
         raise ValueError(f"Unsupported file format: {file_format}")
 
 
-def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]:
+def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]:  # ty: ignore[missing-type-argument]
     if data_file.file_format == FileFormat.PARQUET:
         with io.new_input(data_file.file_path).open() as fi:
             delete_fragment = _get_file_format(
                 data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
-            ).make_fragment(fi)
+            ).make_fragment(fi)  # ty: ignore[invalid-argument-type]
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
         table = table.unify_dictionaries()
         return {
             file.as_py(): table.filter(pc.field("file_path") == file).column("pos")
-            for file in table.column("file_path").chunks[0].dictionary
+            for file in table.column("file_path").chunks[0].dictionary  # ty: ignore[unresolved-attribute]
         }
     elif data_file.file_format == FileFormat.ORC:
         with io.new_input(data_file.file_path).open() as fi:
-            delete_fragment = _get_file_format(data_file.file_format).make_fragment(fi)
+            delete_fragment = _get_file_format(data_file.file_format).make_fragment(fi)  # ty: ignore[invalid-argument-type]
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
             # For ORC, file_path columns are not dictionary-encoded, so we use unique() directly
             return {
@@ -1185,7 +1185,7 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
         raise ValueError(f"Delete file format not supported: {data_file.file_format}")
 
 
-def _combine_positional_deletes(positional_deletes: list[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:
+def _combine_positional_deletes(positional_deletes: list[pa.ChunkedArray], start_index: int, end_index: int) -> pa.Array:  # ty: ignore[missing-type-argument]
     if len(positional_deletes) == 1:
         all_chunks = positional_deletes[0]
     else:
@@ -1200,7 +1200,7 @@ def _combine_positional_deletes(positional_deletes: list[pa.ChunkedArray], start
     result = pc.filter(full_range, pc.invert(pc.is_in(full_range, value_set=all_chunks)))
 
     # Subtract the start_index from each element in the result
-    return pc.subtract(result, pa.scalar(start_index))
+    return pc.subtract(result, pa.scalar(start_index))  # ty: ignore[invalid-return-type]
 
 
 def pyarrow_to_schema(
@@ -1275,15 +1275,15 @@ def _(obj: pa.StructType, visitor: PyArrowSchemaVisitor[T]) -> T:
 @visit_pyarrow.register(pa.ListType)
 @visit_pyarrow.register(pa.FixedSizeListType)
 @visit_pyarrow.register(pa.LargeListType)
-def _(obj: pa.ListType | pa.LargeListType | pa.FixedSizeListType, visitor: PyArrowSchemaVisitor[T]) -> T:
+def _(obj: pa.ListType | pa.LargeListType | pa.FixedSizeListType, visitor: PyArrowSchemaVisitor[T]) -> T:  # ty: ignore[missing-type-argument]
     visitor.before_list_element(obj.value_field)
     result = visit_pyarrow(obj.value_type, visitor)
     visitor.after_list_element(obj.value_field)
-    return visitor.list(obj, result)
+    return visitor.list(obj, result)  # ty: ignore[invalid-argument-type]
 
 
 @visit_pyarrow.register(pa.MapType)
-def _(obj: pa.MapType, visitor: PyArrowSchemaVisitor[T]) -> T:
+def _(obj: pa.MapType, visitor: PyArrowSchemaVisitor[T]) -> T:  # ty: ignore[missing-type-argument]
     visitor.before_map_key(obj.key_field)
     key_result = visit_pyarrow(obj.key_type, visitor)
     visitor.after_map_key(obj.key_field)
@@ -1296,7 +1296,7 @@ def _(obj: pa.MapType, visitor: PyArrowSchemaVisitor[T]) -> T:
 
 
 @visit_pyarrow.register(pa.DictionaryType)
-def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
+def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:  # ty: ignore[missing-type-argument]
     # Parquet has no dictionary type. dictionary-encoding is handled
     # as an encoding detail, not as a separate type.
     # We will follow this approach in determining the Iceberg Type,
@@ -1306,7 +1306,7 @@ def _(obj: pa.DictionaryType, visitor: PyArrowSchemaVisitor[T]) -> T:
 
 
 @visit_pyarrow.register(pa.Field)
-def _(obj: pa.Field, visitor: PyArrowSchemaVisitor[T]) -> T:
+def _(obj: pa.Field, visitor: PyArrowSchemaVisitor[T]) -> T:  # ty: ignore[missing-type-argument]
     field_type = obj.type
 
     visitor.before_field(obj)
@@ -1327,28 +1327,28 @@ def _(obj: pa.DataType, visitor: PyArrowSchemaVisitor[T]) -> T:
 
 
 class PyArrowSchemaVisitor(Generic[T], ABC):
-    def before_field(self, field: pa.Field) -> None:
+    def before_field(self, field: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         """Override this method to perform an action immediately before visiting a field."""
 
-    def after_field(self, field: pa.Field) -> None:
+    def after_field(self, field: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         """Override this method to perform an action immediately after visiting a field."""
 
-    def before_list_element(self, element: pa.Field) -> None:
+    def before_list_element(self, element: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         """Override this method to perform an action immediately before visiting an element within a ListType."""
 
-    def after_list_element(self, element: pa.Field) -> None:
+    def after_list_element(self, element: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         """Override this method to perform an action immediately after visiting an element within a ListType."""
 
-    def before_map_key(self, key: pa.Field) -> None:
+    def before_map_key(self, key: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         """Override this method to perform an action immediately before visiting a key within a MapType."""
 
-    def after_map_key(self, key: pa.Field) -> None:
+    def after_map_key(self, key: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         """Override this method to perform an action immediately after visiting a key within a MapType."""
 
-    def before_map_value(self, value: pa.Field) -> None:
+    def before_map_value(self, value: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         """Override this method to perform an action immediately before visiting a value within a MapType."""
 
-    def after_map_value(self, value: pa.Field) -> None:
+    def after_map_value(self, value: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         """Override this method to perform an action immediately after visiting a value within a MapType."""
 
     @abstractmethod
@@ -1360,15 +1360,15 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
         """Visit a struct."""
 
     @abstractmethod
-    def field(self, field: pa.Field, field_result: T) -> T:
+    def field(self, field: pa.Field, field_result: T) -> T:  # ty: ignore[missing-type-argument]
         """Visit a field."""
 
     @abstractmethod
-    def list(self, list_type: pa.ListType, element_result: T) -> T:
+    def list(self, list_type: pa.ListType, element_result: T) -> T:  # ty: ignore[missing-type-argument]
         """Visit a list."""
 
     @abstractmethod
-    def map(self, map_type: pa.MapType, key_result: T, value_result: T) -> T:
+    def map(self, map_type: pa.MapType, key_result: T, value_result: T) -> T:  # ty: ignore[missing-type-argument]
         """Visit a map."""
 
     @abstractmethod
@@ -1376,7 +1376,7 @@ class PyArrowSchemaVisitor(Generic[T], ABC):
         """Visit a primitive type."""
 
 
-def _get_field_id(field: pa.Field) -> int | None:
+def _get_field_id(field: pa.Field) -> int | None:  # ty: ignore[missing-type-argument]
     """Return the Iceberg field ID from Parquet or ORC metadata if available."""
     if field.metadata:
         # Try Parquet field ID first
@@ -1397,15 +1397,15 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
     def struct(self, struct: pa.StructType, field_results: builtins.list[bool]) -> bool:
         return all(field_results)
 
-    def field(self, field: pa.Field, field_result: bool) -> bool:
+    def field(self, field: pa.Field, field_result: bool) -> bool:  # ty: ignore[missing-type-argument]
         return all([_get_field_id(field) is not None, field_result])
 
-    def list(self, list_type: pa.ListType, element_result: bool) -> bool:
+    def list(self, list_type: pa.ListType, element_result: bool) -> bool:  # ty: ignore[missing-type-argument]
         element_field = list_type.value_field
         element_id = _get_field_id(element_field)
         return element_result and element_id is not None
 
-    def map(self, map_type: pa.MapType, key_result: bool, value_result: bool) -> bool:
+    def map(self, map_type: pa.MapType, key_result: bool, value_result: bool) -> bool:  # ty: ignore[missing-type-argument]
         key_field = map_type.key_field
         key_id = _get_field_id(key_field)
         value_field = map_type.item_field
@@ -1428,32 +1428,32 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._format_version = format_version
 
-    def _field_id(self, field: pa.Field) -> int:
+    def _field_id(self, field: pa.Field) -> int:  # ty: ignore[missing-type-argument]
         if (field_id := _get_field_id(field)) is not None:
             return field_id
         else:
             raise ValueError(f"Cannot convert {field} to Iceberg Field as field_id is empty.")
 
-    def schema(self, schema: pa.Schema, struct_result: StructType) -> Schema:
+    def schema(self, schema: pa.Schema, struct_result: StructType) -> Schema:  # ty: ignore[invalid-method-override]
         return Schema(*struct_result.fields)
 
-    def struct(self, struct: pa.StructType, field_results: builtins.list[NestedField]) -> StructType:
+    def struct(self, struct: pa.StructType, field_results: builtins.list[NestedField]) -> StructType:  # ty: ignore[invalid-method-override]
         return StructType(*field_results)
 
-    def field(self, field: pa.Field, field_result: IcebergType) -> NestedField:
+    def field(self, field: pa.Field, field_result: IcebergType) -> NestedField:  # ty: ignore[invalid-method-override, missing-type-argument]
         field_id = self._field_id(field)
         field_doc = doc_str.decode() if (field.metadata and (doc_str := field.metadata.get(PYARROW_FIELD_DOC_KEY))) else None
         field_type = field_result
         return NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc)
 
-    def list(self, list_type: pa.ListType, element_result: IcebergType) -> ListType:
+    def list(self, list_type: pa.ListType, element_result: IcebergType) -> ListType:  # ty: ignore[invalid-method-override, missing-type-argument]
         element_field = list_type.value_field
         self._field_names.append(LIST_ELEMENT_NAME)
         element_id = self._field_id(element_field)
         self._field_names.pop()
         return ListType(element_id, element_result, element_required=not element_field.nullable)
 
-    def map(self, map_type: pa.MapType, key_result: IcebergType, value_result: IcebergType) -> MapType:
+    def map(self, map_type: pa.MapType, key_result: IcebergType, value_result: IcebergType) -> MapType:  # ty: ignore[invalid-method-override, missing-type-argument]
         key_field = map_type.key_field
         self._field_names.append(MAP_KEY_NAME)
         key_id = self._field_id(key_field)
@@ -1540,48 +1540,48 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
 
         raise TypeError(f"Unsupported type: {primitive}")
 
-    def before_field(self, field: pa.Field) -> None:
+    def before_field(self, field: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         self._field_names.append(field.name)
 
-    def after_field(self, field: pa.Field) -> None:
+    def after_field(self, field: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         self._field_names.pop()
 
-    def before_list_element(self, element: pa.Field) -> None:
+    def before_list_element(self, element: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         self._field_names.append(LIST_ELEMENT_NAME)
 
-    def after_list_element(self, element: pa.Field) -> None:
+    def after_list_element(self, element: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         self._field_names.pop()
 
-    def before_map_key(self, key: pa.Field) -> None:
+    def before_map_key(self, key: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         self._field_names.append(MAP_KEY_NAME)
 
-    def after_map_key(self, element: pa.Field) -> None:
+    def after_map_key(self, element: pa.Field) -> None:  # ty: ignore[invalid-method-override, missing-type-argument]
         self._field_names.pop()
 
-    def before_map_value(self, value: pa.Field) -> None:
+    def before_map_value(self, value: pa.Field) -> None:  # ty: ignore[missing-type-argument]
         self._field_names.append(MAP_VALUE_NAME)
 
-    def after_map_value(self, element: pa.Field) -> None:
+    def after_map_value(self, element: pa.Field) -> None:  # ty: ignore[invalid-method-override, missing-type-argument]
         self._field_names.pop()
 
 
 class _ConvertToLargeTypes(PyArrowSchemaVisitor[IcebergType | pa.Schema]):
-    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
+    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:  # ty: ignore[invalid-method-override]
         return pa.schema(struct_result)
 
-    def struct(self, struct: pa.StructType, field_results: builtins.list[pa.Field]) -> pa.StructType:
+    def struct(self, struct: pa.StructType, field_results: builtins.list[pa.Field]) -> pa.StructType:  # ty: ignore[invalid-method-override, missing-type-argument]
         return pa.struct(field_results)
 
-    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:
+    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:  # ty: ignore[invalid-method-override, missing-type-argument]
         return field.with_type(field_result)
 
-    def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:
+    def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:  # ty: ignore[invalid-method-override, missing-type-argument]
         return pa.large_list(element_result)
 
-    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
+    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:  # ty: ignore[invalid-method-override, missing-type-argument]
         return pa.map_(key_result, value_result)
 
-    def primitive(self, primitive: pa.DataType) -> pa.DataType:
+    def primitive(self, primitive: pa.DataType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         if primitive == pa.string():
             return pa.large_string()
         elif primitive == pa.binary():
@@ -1590,22 +1590,22 @@ class _ConvertToLargeTypes(PyArrowSchemaVisitor[IcebergType | pa.Schema]):
 
 
 class _ConvertToSmallTypes(PyArrowSchemaVisitor[IcebergType | pa.Schema]):
-    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
+    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:  # ty: ignore[invalid-method-override]
         return pa.schema(struct_result)
 
-    def struct(self, struct: pa.StructType, field_results: builtins.list[pa.Field]) -> pa.StructType:
+    def struct(self, struct: pa.StructType, field_results: builtins.list[pa.Field]) -> pa.StructType:  # ty: ignore[invalid-method-override, missing-type-argument]
         return pa.struct(field_results)
 
-    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:
+    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:  # ty: ignore[invalid-method-override, missing-type-argument]
         return field.with_type(field_result)
 
-    def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:
+    def list(self, list_type: pa.ListType, element_result: pa.DataType) -> pa.DataType:  # ty: ignore[invalid-method-override, missing-type-argument]
         return pa.list_(element_result)
 
-    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
+    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:  # ty: ignore[invalid-method-override, missing-type-argument]
         return pa.map_(key_result, value_result)
 
-    def primitive(self, primitive: pa.DataType) -> pa.DataType:
+    def primitive(self, primitive: pa.DataType) -> pa.DataType:  # ty: ignore[invalid-method-override]
         if primitive == pa.large_string():
             return pa.string()
         elif primitive == pa.large_binary():
@@ -1619,16 +1619,16 @@ class _ConvertViewTypes(PyArrowSchemaVisitor[pa.Schema | pa.DataType]):
     Everything else is kept as is: list flavour, field names, nullability, metadata and dictionary encoding.
     """
 
-    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:
-        return pa.schema(struct_result, metadata=schema.metadata)
+    def schema(self, schema: pa.Schema, struct_result: pa.StructType) -> pa.Schema:  # ty: ignore[invalid-method-override]
+        return pa.schema(struct_result, metadata=schema.metadata)  # ty: ignore[invalid-argument-type]
 
-    def struct(self, struct: pa.StructType, field_results: builtins.list[pa.Field]) -> pa.StructType:
+    def struct(self, struct: pa.StructType, field_results: builtins.list[pa.Field]) -> pa.StructType:  # ty: ignore[invalid-method-override, missing-type-argument]
         return pa.struct(field_results)
 
-    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:
+    def field(self, field: pa.Field, field_result: pa.DataType) -> pa.Field:  # ty: ignore[invalid-method-override, missing-type-argument]
         return field.with_type(_keep_dictionary(field.type, field_result))
 
-    def list(self, list_type: pa.ListType | pa.LargeListType | pa.FixedSizeListType, element_result: pa.DataType) -> pa.DataType:
+    def list(self, list_type: pa.ListType | pa.LargeListType | pa.FixedSizeListType, element_result: pa.DataType) -> pa.DataType:  # ty: ignore[invalid-method-override, missing-type-argument]
         value_field = list_type.value_field.with_type(_keep_dictionary(list_type.value_type, element_result))
         if isinstance(list_type, pa.FixedSizeListType):
             return pa.list_(value_field, list_type.list_size)
@@ -1636,8 +1636,8 @@ class _ConvertViewTypes(PyArrowSchemaVisitor[pa.Schema | pa.DataType]):
             return pa.large_list(value_field)
         return pa.list_(value_field)
 
-    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:
-        return pa.map_(
+    def map(self, map_type: pa.MapType, key_result: pa.DataType, value_result: pa.DataType) -> pa.DataType:  # ty: ignore[invalid-method-override, missing-type-argument]
+        return pa.map_(  # ty: ignore[no-matching-overload]
             map_type.key_field.with_type(_keep_dictionary(map_type.key_type, key_result)),
             map_type.item_field.with_type(_keep_dictionary(map_type.item_type, value_result)),
             keys_sorted=map_type.keys_sorted,
@@ -1654,7 +1654,7 @@ class _ConvertViewTypes(PyArrowSchemaVisitor[pa.Schema | pa.DataType]):
 def _keep_dictionary(original: pa.DataType, result: pa.DataType) -> pa.DataType:
     """Re-apply dictionary encoding that visit_pyarrow strips before visiting the value type."""
     if isinstance(original, pa.DictionaryType):
-        return pa.dictionary(original.index_type, result, ordered=original.ordered)
+        return pa.dictionary(original.index_type, result, ordered=original.ordered)  # ty: ignore[invalid-argument-type]
     return result
 
 
@@ -1669,7 +1669,7 @@ class _ConvertToIcebergWithoutIDs(_ConvertToIceberg):
     creating a new Iceberg table.
     """
 
-    def _field_id(self, field: pa.Field) -> int:
+    def _field_id(self, field: pa.Field) -> int:  # ty: ignore[missing-type-argument]
         return -1
 
 
@@ -1704,7 +1704,7 @@ def _task_to_record_batches(
     projected_schema: Schema,
     table_schema: Schema,
     projected_field_ids: set[int],
-    positional_deletes: list[ChunkedArray] | None,
+    positional_deletes: list[ChunkedArray] | None,  # ty: ignore[missing-type-argument]
     case_sensitive: bool,
     name_mapping: NameMapping | None = None,
     partition_spec: PartitionSpec | None = None,
@@ -1717,7 +1717,7 @@ def _task_to_record_batches(
         format_kwargs["dictionary_columns"] = dictionary_columns
     arrow_format = _get_file_format(task.file.file_format, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
-        fragment = arrow_format.make_fragment(fin)
+        fragment = arrow_format.make_fragment(fin)  # ty: ignore[invalid-argument-type]
         physical_schema = fragment.physical_schema
 
         # For V1 and V2, we only support Timestamp 'us' in Iceberg Schema,
@@ -1799,8 +1799,8 @@ class _DeleteFileKey:
     content_size_in_bytes: int | None
 
 
-def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[str, list[ChunkedArray]]:
-    deletes_per_file: dict[str, list[ChunkedArray]] = {}
+def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[str, list[ChunkedArray]]:  # ty: ignore[missing-type-argument]
+    deletes_per_file: dict[str, list[ChunkedArray]] = {}  # ty: ignore[missing-type-argument]
     # DataFile equality uses only the path; DVs from different tasks may share a file.
     unique_deletes: dict[_DeleteFileKey, DataFile] = {}
     for task in tasks:
@@ -1809,7 +1809,7 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
             unique_deletes.setdefault(key, delete_file)
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
-        deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(
+        deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(  # ty: ignore[missing-type-argument]
             lambda args: _read_deletes(*args),
             [(io, delete_file) for delete_file in unique_deletes.values()],
         )
@@ -1955,7 +1955,9 @@ class ArrowScan:
                 break
 
     def _record_batches_from_scan_tasks_and_deletes(
-        self, tasks: Iterable[FileScanTask], deletes_per_file: dict[str, list[ChunkedArray]]
+        self,
+        tasks: Iterable[FileScanTask],
+        deletes_per_file: dict[str, list[ChunkedArray]],  # ty: ignore[missing-type-argument]
     ) -> Iterator[pa.RecordBatch]:
         total_row_count = 0
         for task in tasks:
@@ -2013,7 +2015,7 @@ def _to_requested_schema(
     return pa.RecordBatch.from_struct_array(struct_array)
 
 
-class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]):
+class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]):  # ty: ignore[missing-type-argument]
     _file_schema: Schema
     _include_field_ids: bool
     _downcast_ns_timestamp_to_us: bool
@@ -2041,7 +2043,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         self._allow_timestamp_tz_mismatch = allow_timestamp_tz_mismatch
         self._format_model = format_model
 
-    def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:
+    def _cast_if_needed(self, field: NestedField, values: pa.Array) -> pa.Array:  # ty: ignore[missing-type-argument]
         file_field = self._file_schema.find_field(field.field_id)
 
         if field.field_type.is_primitive:
@@ -2051,29 +2053,29 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                         self._allow_timestamp_tz_mismatch and values.type.tz in UTC_ALIASES
                     )
                     if (
-                        pa.types.is_timestamp(target_type)
-                        and not target_type.tz
+                        pa.types.is_timestamp(target_type)  # ty: ignore[invalid-argument-type]
+                        and not target_type.tz  # ty: ignore[unresolved-attribute]
                         and pa.types.is_timestamp(values.type)
                         and source_tz_compatible
                     ):
                         # Downcasting of nanoseconds to microseconds
-                        if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
-                            return values.cast(target_type, safe=False)
-                        elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
-                            return values.cast(target_type)
+                        if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:  # ty: ignore[unresolved-attribute]
+                            return values.cast(target_type, safe=False)  # ty: ignore[invalid-argument-type]
+                        elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:  # ty: ignore[unresolved-attribute]
+                            return values.cast(target_type)  # ty: ignore[invalid-argument-type]
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
                 elif field.field_type == TimestamptzType():
                     if (
-                        pa.types.is_timestamp(target_type)
-                        and target_type.tz == "UTC"
+                        pa.types.is_timestamp(target_type)  # ty: ignore[invalid-argument-type]
+                        and target_type.tz == "UTC"  # ty: ignore[unresolved-attribute]
                         and pa.types.is_timestamp(values.type)
                         and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
                         # Downcasting of nanoseconds to microseconds
-                        if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:
-                            return values.cast(target_type, safe=False)
-                        elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
-                            return values.cast(target_type)
+                        if target_type.unit == "us" and values.type.unit == "ns" and self._downcast_ns_timestamp_to_us:  # ty: ignore[unresolved-attribute]
+                            return values.cast(target_type, safe=False)  # ty: ignore[invalid-argument-type]
+                        elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:  # ty: ignore[unresolved-attribute]
+                            return values.cast(target_type)  # ty: ignore[invalid-argument-type]
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
                 elif isinstance(field.field_type, (IntegerType, LongType)):
                     # Cast smaller integer types to target type for cross-platform compatibility
@@ -2081,28 +2083,28 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                     # Narrowing conversions fall through to promote() handling below
                     if pa.types.is_integer(values.type):
                         source_width = values.type.bit_width
-                        target_width = target_type.bit_width
+                        target_width = target_type.bit_width  # ty: ignore[unresolved-attribute]
                         if source_width < target_width:
-                            return values.cast(target_type)
+                            return values.cast(target_type)  # ty: ignore[invalid-argument-type]
                 elif isinstance(field.field_type, (FloatType, DoubleType)):
                     # Cast smaller float types to target type for cross-platform compatibility
                     # Only allow widening conversions (smaller bit width to larger), e.g. float16 -> float32
                     # Narrowing conversions fall through to promote() handling below
                     if pa.types.is_floating(values.type):
                         source_width = values.type.bit_width
-                        target_width = target_type.bit_width
+                        target_width = target_type.bit_width  # ty: ignore[unresolved-attribute]
                         if source_width < target_width:
-                            return values.cast(target_type)
+                            return values.cast(target_type)  # ty: ignore[invalid-argument-type]
 
             if field.field_type != file_field.field_type:
                 target_schema = schema_to_pyarrow(
                     promote(file_field.field_type, field.field_type), include_field_ids=self._include_field_ids
                 )
-                return values.cast(target_schema)
+                return values.cast(target_schema)  # ty: ignore[invalid-argument-type]
 
         return values
 
-    def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:
+    def _construct_field(self, field: NestedField, arrow_type: pa.DataType) -> pa.Field:  # ty: ignore[missing-type-argument]
         metadata: dict[bytes, bytes] = {}
         if field.doc:
             metadata[PYARROW_FIELD_DOC_KEY] = field.doc.encode()
@@ -2116,16 +2118,19 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             metadata=metadata,
         )
 
-    def schema(self, schema: Schema, schema_partner: pa.Array | None, struct_result: pa.Array | None) -> pa.Array | None:
+    def schema(self, schema: Schema, schema_partner: pa.Array | None, struct_result: pa.Array | None) -> pa.Array | None:  # ty: ignore[missing-type-argument]
         return struct_result
 
-    def struct(
-        self, struct: StructType, struct_array: pa.Array | None, field_results: builtins.list[pa.Array | None]
-    ) -> pa.Array | None:
+    def struct(  # ty: ignore[invalid-method-override]
+        self,
+        struct: StructType,
+        struct_array: pa.Array | None,  # ty: ignore[missing-type-argument]
+        field_results: builtins.list[pa.Array | None],  # ty: ignore[missing-type-argument]
+    ) -> pa.Array | None:  # ty: ignore[missing-type-argument]
         if struct_array is None:
             return None
-        field_arrays: list[pa.Array] = []
-        fields: list[pa.Field] = []
+        field_arrays: list[pa.Array] = []  # ty: ignore[missing-type-argument]
+        fields: list[pa.Field] = []  # ty: ignore[missing-type-argument]
         for field, field_array in zip(struct.fields, field_results, strict=True):
             if field_array is not None:
                 array = self._cast_if_needed(field, field_array)
@@ -2136,46 +2141,50 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                 arrow_type = schema_to_pyarrow(field.field_type, include_field_ids=self._include_field_ids)
                 if field.field_id in self._projected_missing_fields:
                     projected_value = self._projected_missing_fields[field.field_id]
-                    field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))
+                    field_arrays.append(pa.repeat(pa.scalar(projected_value, type=arrow_type), len(struct_array)))  # ty: ignore[no-matching-overload]
                 elif field.initial_default is None:
-                    field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))
+                    field_arrays.append(pa.nulls(len(struct_array), type=arrow_type))  # ty: ignore[no-matching-overload]
                 else:
-                    field_arrays.append(pa.repeat(pa.scalar(field.initial_default, type=arrow_type), len(struct_array)))
-                fields.append(self._construct_field(field, arrow_type))
+                    field_arrays.append(pa.repeat(pa.scalar(field.initial_default, type=arrow_type), len(struct_array)))  # ty: ignore[no-matching-overload]
+                fields.append(self._construct_field(field, arrow_type))  # ty: ignore[invalid-argument-type]
             else:
                 raise ResolveError(f"Field is required, and could not be found in the file: {field}")
 
         return pa.StructArray.from_arrays(
             arrays=field_arrays,
-            fields=pa.struct(fields),
+            fields=pa.struct(fields),  # ty: ignore[invalid-argument-type]
             mask=struct_array.is_null() if isinstance(struct_array, pa.StructArray) else None,
         )
 
-    def field(self, field: NestedField, _: pa.Array | None, field_array: pa.Array | None) -> pa.Array | None:
+    def field(self, field: NestedField, _: pa.Array | None, field_array: pa.Array | None) -> pa.Array | None:  # ty: ignore[invalid-method-override, missing-type-argument]
         return field_array
 
-    def list(self, list_type: ListType, list_array: pa.Array | None, value_array: pa.Array | None) -> pa.Array | None:
+    def list(self, list_type: ListType, list_array: pa.Array | None, value_array: pa.Array | None) -> pa.Array | None:  # ty: ignore[invalid-method-override, missing-type-argument]
         if isinstance(list_array, (pa.ListArray, pa.LargeListArray, pa.FixedSizeListArray)) and value_array is not None:
             list_initializer = pa.large_list if isinstance(list_array, pa.LargeListArray) else pa.list_
             if isinstance(value_array, pa.StructArray):
                 # This can be removed once this has been fixed:
                 # https://github.com/apache/arrow/issues/38809
-                list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)
+                list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)  # ty: ignore[invalid-argument-type, unresolved-attribute]
             value_array = self._cast_if_needed(list_type.element_field, value_array)
             arrow_field = list_initializer(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
         else:
             return None
 
-    def map(
-        self, map_type: MapType, map_array: pa.Array | None, key_result: pa.Array | None, value_result: pa.Array | None
-    ) -> pa.Array | None:
+    def map(  # ty: ignore[invalid-method-override]
+        self,
+        map_type: MapType,
+        map_array: pa.Array | None,  # ty: ignore[missing-type-argument]
+        key_result: pa.Array | None,  # ty: ignore[missing-type-argument]
+        value_result: pa.Array | None,  # ty: ignore[missing-type-argument]
+    ) -> pa.Array | None:  # ty: ignore[missing-type-argument]
         if isinstance(map_array, pa.MapArray) and key_result is not None and value_result is not None:
             key_result = self._cast_if_needed(map_type.key_field, key_result)
             value_result = self._cast_if_needed(map_type.value_field, value_result)
             arrow_field = pa.map_(
-                self._construct_field(map_type.key_field, key_result.type),
-                self._construct_field(map_type.value_field, value_result.type),
+                self._construct_field(map_type.key_field, key_result.type),  # ty: ignore[invalid-argument-type]
+                self._construct_field(map_type.value_field, value_result.type),  # ty: ignore[invalid-argument-type]
             )
             if isinstance(value_result, pa.StructArray):
                 # Arrow does not allow reordering of fields, therefore we have to copy the array :(
@@ -2196,20 +2205,20 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         else:
             return None
 
-    def primitive(self, _: PrimitiveType, array: pa.Array | None) -> pa.Array | None:
+    def primitive(self, _: PrimitiveType, array: pa.Array | None) -> pa.Array | None:  # ty: ignore[invalid-method-override, missing-type-argument]
         return array
 
 
-class ArrowAccessor(PartnerAccessor[pa.Array]):
+class ArrowAccessor(PartnerAccessor[pa.Array]):  # ty: ignore[missing-type-argument]
     file_schema: Schema
 
     def __init__(self, file_schema: Schema):
         self.file_schema = file_schema
 
-    def schema_partner(self, partner: pa.Array | None) -> pa.Array | None:
+    def schema_partner(self, partner: pa.Array | None) -> pa.Array | None:  # ty: ignore[missing-type-argument]
         return partner
 
-    def field_partner(self, partner_struct: pa.Array | None, field_id: int, _: str) -> pa.Array | None:
+    def field_partner(self, partner_struct: pa.Array | None, field_id: int, _: str) -> pa.Array | None:  # ty: ignore[invalid-method-override, missing-type-argument]
         if partner_struct is not None:
             # use the field name from the file schema
             try:
@@ -2228,13 +2237,13 @@ class ArrowAccessor(PartnerAccessor[pa.Array]):
 
         return None
 
-    def list_element_partner(self, partner_list: pa.Array | None) -> pa.Array | None:
+    def list_element_partner(self, partner_list: pa.Array | None) -> pa.Array | None:  # ty: ignore[missing-type-argument]
         return partner_list.values if isinstance(partner_list, (pa.ListArray, pa.LargeListArray, pa.FixedSizeListArray)) else None
 
-    def map_key_partner(self, partner_map: pa.Array | None) -> pa.Array | None:
+    def map_key_partner(self, partner_map: pa.Array | None) -> pa.Array | None:  # ty: ignore[missing-type-argument]
         return partner_map.keys if isinstance(partner_map, pa.MapArray) else None
 
-    def map_value_partner(self, partner_map: pa.Array | None) -> pa.Array | None:
+    def map_value_partner(self, partner_map: pa.Array | None) -> pa.Array | None:  # ty: ignore[missing-type-argument]
         return partner_map.items if isinstance(partner_map, pa.MapArray) else None
 
 
@@ -2661,8 +2670,8 @@ def data_file_statistics_from_parquet_metadata(
         data_offset = row_group.column(0).data_page_offset
         dictionary_offset = row_group.column(0).dictionary_page_offset
 
-        if row_group.column(0).has_dictionary_page and dictionary_offset < data_offset:
-            split_offsets.append(dictionary_offset)
+        if row_group.column(0).has_dictionary_page and dictionary_offset < data_offset:  # ty: ignore[unsupported-operator]
+            split_offsets.append(dictionary_offset)  # ty: ignore[invalid-argument-type]
         else:
             split_offsets.append(data_offset)
 
@@ -2684,8 +2693,8 @@ def data_file_statistics_from_parquet_metadata(
                 try:
                     statistics = column.statistics
 
-                    if statistics.has_null_count:
-                        null_value_counts[field_id] = null_value_counts.get(field_id, 0) + statistics.null_count
+                    if statistics.has_null_count:  # ty: ignore[unresolved-attribute]
+                        null_value_counts[field_id] = null_value_counts.get(field_id, 0) + statistics.null_count  # ty: ignore[unresolved-attribute, unsupported-operator]
 
                     if stats_col.mode == MetricsMode(MetricModeTypes.COUNTS):
                         continue
@@ -2693,26 +2702,28 @@ def data_file_statistics_from_parquet_metadata(
                     if field_id not in col_aggs:
                         try:
                             col_aggs[field_id] = StatsAggregator(
-                                stats_col.iceberg_type, statistics.physical_type, stats_col.mode.length
+                                stats_col.iceberg_type,
+                                statistics.physical_type,  # ty: ignore[unresolved-attribute]
+                                stats_col.mode.length,
                             )
                         except ValueError as e:
                             raise ValueError(f"{e} for column '{stats_col.column_name}'") from e
 
-                    if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":
+                    if isinstance(stats_col.iceberg_type, DecimalType) and statistics.physical_type != "FIXED_LEN_BYTE_ARRAY":  # ty: ignore[unresolved-attribute]
                         scale = stats_col.iceberg_type.scale
                         (
-                            col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))
-                            if statistics.min_raw is not None
+                            col_aggs[field_id].update_min(unscaled_to_decimal(statistics.min_raw, scale))  # ty: ignore[unresolved-attribute]
+                            if statistics.min_raw is not None  # ty: ignore[unresolved-attribute]
                             else None
                         )
                         (
-                            col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))
-                            if statistics.max_raw is not None
+                            col_aggs[field_id].update_max(unscaled_to_decimal(statistics.max_raw, scale))  # ty: ignore[unresolved-attribute]
+                            if statistics.max_raw is not None  # ty: ignore[unresolved-attribute]
                             else None
                         )
                     else:
-                        col_aggs[field_id].update_min(statistics.min)
-                        col_aggs[field_id].update_max(statistics.max)
+                        col_aggs[field_id].update_min(statistics.min)  # ty: ignore[unresolved-attribute]
+                        col_aggs[field_id].update_max(statistics.max)  # ty: ignore[unresolved-attribute]
 
                 except pyarrow.lib.ArrowNotImplementedError as e:
                     invalidate_col.add(field_id)
@@ -2956,22 +2967,22 @@ def _check_pyarrow_schema_compatible(
     name_mapping = requested_schema.name_mapping
 
     try:
-        provided_schema = pyarrow_to_schema(
+        provided_schema = pyarrow_to_schema(  # ty: ignore[invalid-assignment]
             provided_schema,
             name_mapping=name_mapping,
             downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             format_version=format_version,
         )
     except ValueError as e:
-        provided_schema = _pyarrow_to_schema_without_ids(
+        provided_schema = _pyarrow_to_schema_without_ids(  # ty: ignore[invalid-assignment]
             provided_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
         )
-        additional_names = set(provided_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())
+        additional_names = set(provided_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())  # ty: ignore[unresolved-attribute]
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. "
             "Update the schema first (hint, use union_by_name)."
         ) from e
-    _check_schema_compatible(requested_schema, provided_schema)
+    _check_schema_compatible(requested_schema, provided_schema)  # ty: ignore[invalid-argument-type]
 
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
@@ -2983,7 +2994,7 @@ def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_
 def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_path: str) -> DataFile:
     input_file = io.new_input(file_path)
     with input_file.open() as input_stream:
-        parquet_metadata = pq.read_metadata(input_stream)
+        parquet_metadata = pq.read_metadata(input_stream)  # ty: ignore[invalid-argument-type]
 
     arrow_schema = parquet_metadata.schema.to_arrow_schema()
 
@@ -3217,11 +3228,11 @@ def _partition_value_filter(partition_field_name: str, value: Any) -> pc.Express
     if value is None:
         return pc.field(partition_field_name).is_null()
     elif isinstance(value, float) and math.isnan(value):
-        return pc.is_nan(pc.field(partition_field_name))
+        return pc.is_nan(pc.field(partition_field_name))  # ty: ignore[invalid-return-type]
     return pc.field(partition_field_name) == value
 
 
-def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:
+def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:  # ty: ignore[missing-type-argument]
     """Get a field from an Arrow table, supporting both literal field names and nested field paths.
 
     This function handles two cases:
@@ -3240,7 +3251,7 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
     """
     # Try exact column name match (handles field names containing literal dots)
     if field_path in arrow_table.column_names:
-        return arrow_table[field_path]
+        return arrow_table[field_path]  # ty: ignore[invalid-return-type]
 
     # If not found as exact name, treat as nested field path
     path_parts = field_path.split(".")

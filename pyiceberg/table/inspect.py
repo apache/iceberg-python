@@ -183,14 +183,14 @@ class InspectTable:
                     pa.field("value_count", pa.int64(), nullable=True),
                     pa.field("null_value_count", pa.int64(), nullable=True),
                     pa.field("nan_value_count", pa.int64(), nullable=True),
-                    pa.field("lower_bound", pa_bound_type, nullable=True),
-                    pa.field("upper_bound", pa_bound_type, nullable=True),
+                    pa.field("lower_bound", pa_bound_type, nullable=True),  # ty: ignore[invalid-argument-type]
+                    pa.field("upper_bound", pa_bound_type, nullable=True),  # ty: ignore[invalid-argument-type]
                 ]
             )
 
         for field in self.tbl.metadata.schema().fields:
             readable_metrics_struct.append(
-                pa.field(schema.find_column_name(field.field_id), _readable_metrics_struct(field.field_type), nullable=False)
+                pa.field(schema.find_column_name(field.field_id), _readable_metrics_struct(field.field_type), nullable=False)  # ty: ignore[invalid-argument-type]
             )
 
         partition_record = self.tbl.metadata.specs_struct()
@@ -209,7 +209,7 @@ class InspectTable:
                             pa.field("content", pa.int8(), nullable=False),
                             pa.field("file_path", pa.string(), nullable=False),
                             pa.field("file_format", pa.string(), nullable=False),
-                            pa.field("partition", pa_record_struct, nullable=False),
+                            pa.field("partition", pa_record_struct, nullable=False),  # ty: ignore[invalid-argument-type]
                             pa.field("record_count", pa.int64(), nullable=False),
                             pa.field("file_size_in_bytes", pa.int64(), nullable=False),
                             pa.field("column_sizes", pa.map_(pa.int32(), pa.int64()), nullable=True),
@@ -247,8 +247,8 @@ class InspectTable:
                         "null_value_count": null_value_counts.get(field.field_id),
                         "nan_value_count": nan_value_counts.get(field.field_id),
                         # Makes them readable
-                        "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),
-                        "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),
+                        "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),  # ty: ignore[invalid-argument-type]
+                        "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),  # ty: ignore[invalid-argument-type]
                     }
                     for field in self.tbl.metadata.schema().fields
                 }
@@ -391,7 +391,7 @@ class InspectTable:
             pa_record_struct = schema_to_pyarrow(partition_record)
             partitions_schema = pa.schema(
                 [
-                    pa.field("partition", pa_record_struct, nullable=False),
+                    pa.field("partition", pa_record_struct, nullable=False),  # ty: ignore[invalid-argument-type]
                     pa.field("spec_id", pa.int32(), nullable=False),
                 ]
             )
@@ -421,7 +421,7 @@ class InspectTable:
             )
 
         return pa.Table.from_pylist(
-            partitions_map.values(),
+            partitions_map.values(),  # ty: ignore[invalid-argument-type]
             schema=table_schema,
         )
 
@@ -755,8 +755,8 @@ class InspectTable:
                     "value_count": value_counts.get(field.field_id),
                     "null_value_count": null_value_counts.get(field.field_id),
                     "nan_value_count": nan_value_counts.get(field.field_id),
-                    "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),
-                    "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),
+                    "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),  # ty: ignore[invalid-argument-type]
+                    "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),  # ty: ignore[invalid-argument-type]
                 }
                 for field in self.tbl.metadata.schema().fields
             }
@@ -821,8 +821,8 @@ class InspectTable:
                     pa.field("value_count", pa.int64(), nullable=True),
                     pa.field("null_value_count", pa.int64(), nullable=True),
                     pa.field("nan_value_count", pa.int64(), nullable=True),
-                    pa.field("lower_bound", pa_bound_type, nullable=True),
-                    pa.field("upper_bound", pa_bound_type, nullable=True),
+                    pa.field("lower_bound", pa_bound_type, nullable=True),  # ty: ignore[invalid-argument-type]
+                    pa.field("upper_bound", pa_bound_type, nullable=True),  # ty: ignore[invalid-argument-type]
                 ]
             )
 
@@ -831,7 +831,7 @@ class InspectTable:
 
         for field in self.tbl.metadata.schema().fields:
             readable_metrics_struct.append(
-                pa.field(schema.find_column_name(field.field_id), _readable_metrics_struct(field.field_type), nullable=False)
+                pa.field(schema.find_column_name(field.field_id), _readable_metrics_struct(field.field_type), nullable=False)  # ty: ignore[invalid-argument-type]
             )
 
         files_schema = pa.schema(
@@ -840,7 +840,7 @@ class InspectTable:
                 pa.field("file_path", pa.string(), nullable=False),
                 pa.field("file_format", pa.dictionary(pa.int32(), pa.string()), nullable=False),
                 pa.field("spec_id", pa.int32(), nullable=False),
-                pa.field("partition", pa_record_struct, nullable=False),
+                pa.field("partition", pa_record_struct, nullable=False),  # ty: ignore[invalid-argument-type]
                 pa.field("record_count", pa.int64(), nullable=False),
                 pa.field("file_size_in_bytes", pa.int64(), nullable=False),
                 pa.field("column_sizes", pa.map_(pa.int32(), pa.int64()), nullable=True),

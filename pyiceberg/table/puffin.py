@@ -78,7 +78,7 @@ class PuffinFile:
             raise ValueError(f"Unsupported puffin compression codec: {blob.compression_codec!r}")
 
     @deprecated(deprecated_in="0.12.0", removed_in="0.13.0", help_message="Use deletion_vectors_from_puffin_file(...) instead")
-    def to_vector(self) -> dict[str, "pa.ChunkedArray"]:
+    def to_vector(self) -> dict[str, "pa.ChunkedArray"]:  # ty: ignore[missing-type-argument]
         from pyiceberg.table.deletion_vector import deletion_vectors_from_puffin_file  # local import avoids the cycle
 
         return {dv.referenced_data_file: dv.to_vector() for dv in deletion_vectors_from_puffin_file(self)}

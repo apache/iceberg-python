@@ -341,9 +341,9 @@ class And(BooleanExpression):
         # De Morgan's law: not (A and B) = (not A) or (not B)
         return Or(~self.left, ~self.right)
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> And:
+    def __deepcopy__(self, memo: dict[int, Any]) -> And:  # ty: ignore[invalid-method-override]
         """Return a deep copy of the And expression."""
-        return And(copy.deepcopy(self.left, memo), copy.deepcopy(self.right, memo))
+        return And(copy.deepcopy(self.left, memo), copy.deepcopy(self.right, memo))  # ty: ignore[invalid-return-type]
 
     def __getnewargs__(self) -> tuple[BooleanExpression, BooleanExpression]:
         """Pickle the And class."""
@@ -392,9 +392,9 @@ class Or(BooleanExpression):
         # De Morgan's law: not (A or B) = (not A) and (not B)
         return And(~self.left, ~self.right)
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> Or:
+    def __deepcopy__(self, memo: dict[int, Any]) -> Or:  # ty: ignore[invalid-method-override]
         """Return a deep copy of the Or expression."""
-        return Or(copy.deepcopy(self.left, memo), copy.deepcopy(self.right, memo))
+        return Or(copy.deepcopy(self.left, memo), copy.deepcopy(self.right, memo))  # ty: ignore[invalid-return-type]
 
     def __getnewargs__(self) -> tuple[BooleanExpression, BooleanExpression]:
         """Pickle the Or class."""
@@ -438,16 +438,16 @@ class Not(BooleanExpression):
         """Transform the Expression into its negated version."""
         return self.child
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> Not:
+    def __deepcopy__(self, memo: dict[int, Any]) -> Not:  # ty: ignore[invalid-method-override]
         """Return a deep copy of the Not expression."""
-        return Not(copy.deepcopy(self.child, memo))
+        return Not(copy.deepcopy(self.child, memo))  # ty: ignore[invalid-return-type]
 
     def __getnewargs__(self) -> tuple[BooleanExpression]:
         """Pickle the Not class."""
         return (self.child,)
 
 
-class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[bool]):
+class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[bool]):  # ty: ignore[invalid-method-override]
     """TRUE expression."""
 
     root: bool = True
@@ -465,7 +465,7 @@ class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[bool]):
         return "AlwaysTrue()"
 
 
-class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel[bool]):
+class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel[bool]):  # ty: ignore[invalid-method-override]
     """FALSE expression."""
 
     root: bool = False
@@ -576,7 +576,7 @@ class BoundIsNull(BoundUnaryPredicate):
 
     def __invert__(self) -> BoundNotNull:
         """Transform the Expression into its negated version."""
-        return BoundNotNull(self.term)
+        return BoundNotNull(self.term)  # ty: ignore[invalid-return-type]
 
     @property
     def as_unbound(self) -> type[IsNull]:
@@ -591,7 +591,7 @@ class BoundNotNull(BoundUnaryPredicate):
 
     def __invert__(self) -> BoundIsNull:
         """Transform the Expression into its negated version."""
-        return BoundIsNull(self.term)
+        return BoundIsNull(self.term)  # ty: ignore[invalid-return-type]
 
     @property
     def as_unbound(self) -> type[NotNull]:
@@ -637,7 +637,7 @@ class BoundIsNaN(BoundUnaryPredicate):
 
     def __invert__(self) -> BoundNotNaN:
         """Transform the Expression into its negated version."""
-        return BoundNotNaN(self.term)
+        return BoundNotNaN(self.term)  # ty: ignore[invalid-return-type]
 
     @property
     def as_unbound(self) -> type[IsNaN]:
@@ -653,7 +653,7 @@ class BoundNotNaN(BoundUnaryPredicate):
 
     def __invert__(self) -> BoundIsNaN:
         """Transform the Expression into its negated version."""
-        return BoundIsNaN(self.term)
+        return BoundIsNaN(self.term)  # ty: ignore[invalid-return-type]
 
     @property
     def as_unbound(self) -> type[NotNaN]:
@@ -711,7 +711,7 @@ class SetPredicate(UnboundPredicate, ABC):
     def bind(self, schema: Schema, case_sensitive: bool = True) -> BoundSetPredicate:
         bound_term = self.term.bind(schema, case_sensitive)
         literal_set = self.literals
-        return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore
+        return self.as_bound(bound_term, {lit.to(bound_term.ref().field.field_type) for lit in literal_set})  # type: ignore[misc]
 
     def __str__(self) -> str:
         """Return the string representation of the SetPredicate class."""
@@ -787,7 +787,7 @@ class BoundIn(BoundSetPredicate):
 
     def __invert__(self) -> BoundNotIn:
         """Transform the Expression into its negated version."""
-        return BoundNotIn(self.term, self.literals)
+        return BoundNotIn(self.term, self.literals)  # ty: ignore[invalid-return-type]
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the BoundIn class."""
@@ -814,7 +814,7 @@ class BoundNotIn(BoundSetPredicate):
 
     def __invert__(self) -> BoundIn:
         """Transform the Expression into its negated version."""
-        return BoundIn(self.term, self.literals)
+        return BoundIn(self.term, self.literals)  # ty: ignore[invalid-return-type]
 
     @property
     def as_unbound(self) -> type[NotIn]:
@@ -841,9 +841,9 @@ class In(SetPredicate):
             literals_set = _to_literal_set(literals)
         count = len(literals_set)
         if count == 0:
-            return AlwaysFalse()
+            return AlwaysFalse()  # ty: ignore[invalid-return-type]
         elif count == 1:
-            return EqualTo(term, next(iter(literals_set)))
+            return EqualTo(term, next(iter(literals_set)))  # ty: ignore[invalid-return-type]
         else:
             return super().__new__(cls)
 
@@ -876,9 +876,9 @@ class NotIn(SetPredicate, ABC):
             literals_set = _to_literal_set(literals)
         count = len(literals_set)
         if count == 0:
-            return AlwaysTrue()
+            return AlwaysTrue()  # ty: ignore[invalid-return-type]
         elif count == 1:
-            return NotEqualTo(term, next(iter(literals_set)))
+            return NotEqualTo(term, next(iter(literals_set)))  # ty: ignore[invalid-return-type]
         else:
             return super().__new__(cls)
 
@@ -913,20 +913,20 @@ class LiteralPredicate(UnboundPredicate, ABC):
 
         if isinstance(lit, AboveMax):
             if isinstance(self, (LessThan, LessThanOrEqual, NotEqualTo)):
-                return AlwaysTrue()
+                return AlwaysTrue()  # ty: ignore[invalid-return-type]
             elif isinstance(self, (GreaterThan, GreaterThanOrEqual, EqualTo)):
-                return AlwaysFalse()
+                return AlwaysFalse()  # ty: ignore[invalid-return-type]
             else:
                 raise ValueError(f"Cannot bind {type(self).__name__} with AboveMax literal")
         elif isinstance(lit, BelowMin):
             if isinstance(self, (GreaterThan, GreaterThanOrEqual, NotEqualTo)):
-                return AlwaysTrue()
+                return AlwaysTrue()  # ty: ignore[invalid-return-type]
             elif isinstance(self, (LessThan, LessThanOrEqual, EqualTo)):
-                return AlwaysFalse()
+                return AlwaysFalse()  # ty: ignore[invalid-return-type]
             else:
                 raise ValueError(f"Cannot bind {type(self).__name__} with BelowMin literal")
 
-        return self.as_bound(bound_term, lit)  # type: ignore
+        return self.as_bound(bound_term, lit)  # type: ignore[misc]
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the LiteralPredicate class."""

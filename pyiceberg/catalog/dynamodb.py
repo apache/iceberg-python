@@ -150,9 +150,9 @@ class DynamoDbCatalog(MetastoreCatalog):
         try:
             self.dynamodb.create_table(
                 TableName=self.dynamodb_table_name,
-                AttributeDefinitions=CREATE_CATALOG_ATTRIBUTE_DEFINITIONS,
-                KeySchema=CREATE_CATALOG_KEY_SCHEMA,
-                GlobalSecondaryIndexes=CREATE_CATALOG_GLOBAL_SECONDARY_INDEXES,
+                AttributeDefinitions=CREATE_CATALOG_ATTRIBUTE_DEFINITIONS,  # ty: ignore[invalid-argument-type]
+                KeySchema=CREATE_CATALOG_KEY_SCHEMA,  # ty: ignore[invalid-argument-type]
+                GlobalSecondaryIndexes=CREATE_CATALOG_GLOBAL_SECONDARY_INDEXES,  # ty: ignore[invalid-argument-type]
                 BillingMode=DYNAMODB_PAY_PER_REQUEST,
             )
         except (
@@ -160,7 +160,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             self.dynamodb.exceptions.LimitExceededException,
             self.dynamodb.exceptions.InternalServerError,
         ) as e:
-            raise GenericDynamoDbError(e.message) from e
+            raise GenericDynamoDbError(e.message) from e  # ty: ignore[unresolved-attribute]
 
     def _dynamodb_table_exists(self) -> bool:
         try:
@@ -168,7 +168,7 @@ class DynamoDbCatalog(MetastoreCatalog):
         except self.dynamodb.exceptions.ResourceNotFoundException:
             return False
         except self.dynamodb.exceptions.InternalServerError as e:
-            raise GenericDynamoDbError(e.message) from e
+            raise GenericDynamoDbError(e.message) from e  # ty: ignore[unresolved-attribute]
 
         if response["Table"]["TableStatus"] != ACTIVE:
             raise GenericDynamoDbError(f"DynamoDB table for catalog {self.dynamodb_table_name} is not {ACTIVE}")
@@ -204,7 +204,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             ValueError: If the identifier is invalid, or no path is given to store metadata.
 
         """
-        schema: Schema = self._convert_schema_if_needed(  # type: ignore
+        schema: Schema = self._convert_schema_if_needed(  # type: ignore[no-redef]
             schema,
             int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
         )
@@ -462,7 +462,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             self.dynamodb.exceptions.InternalServerError,
             self.dynamodb.exceptions.ResourceNotFoundException,
         ) as e:
-            raise GenericDynamoDbError(e.message) from e
+            raise GenericDynamoDbError(e.message) from e  # ty: ignore[unresolved-attribute]
 
         table_identifiers = []
         for page in page_iterator:
@@ -508,7 +508,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             self.dynamodb.exceptions.InternalServerError,
             self.dynamodb.exceptions.ResourceNotFoundException,
         ) as e:
-            raise GenericDynamoDbError(e.message) from e
+            raise GenericDynamoDbError(e.message) from e  # ty: ignore[unresolved-attribute]
 
         database_identifiers = []
         for page in page_iterator:
@@ -651,7 +651,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             self.dynamodb.exceptions.RequestLimitExceeded,
             self.dynamodb.exceptions.InternalServerError,
         ) as e:
-            raise GenericDynamoDbError(e.message) from e
+            raise GenericDynamoDbError(e.message) from e  # ty: ignore[unresolved-attribute]
 
     def _put_dynamo_item(self, item: dict[str, Any], condition_expression: str) -> None:
         try:
@@ -666,7 +666,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             self.dynamodb.exceptions.ItemCollectionSizeLimitExceededException,
             self.dynamodb.exceptions.TransactionConflictException,
         ) as e:
-            raise GenericDynamoDbError(e.message) from e
+            raise GenericDynamoDbError(e.message) from e  # ty: ignore[unresolved-attribute]
 
     def _delete_dynamo_item(self, namespace: str, identifier: str, condition_expression: str) -> None:
         try:
@@ -694,7 +694,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             self.dynamodb.exceptions.ItemCollectionSizeLimitExceededException,
             self.dynamodb.exceptions.TransactionConflictException,
         ) as e:
-            raise GenericDynamoDbError(e.message) from e
+            raise GenericDynamoDbError(e.message) from e  # ty: ignore[unresolved-attribute]
 
     def _convert_dynamo_table_item_to_iceberg_table(self, dynamo_table_item: dict[str, Any]) -> Table:
         table_dict = _convert_dynamo_item_to_regular_dict(dynamo_table_item)

@@ -33,7 +33,7 @@ try:
 
 except ImportError:
 
-    class BZip2Codec(Codec):  # type: ignore
+    class BZip2Codec(Codec):  # type: ignore[no-redef]
         @staticmethod
         def compress(data: bytes) -> tuple[bytes, int]:
             raise ImportError("Python bzip2 support not installed, please install the extension")

@@ -294,7 +294,7 @@ class SchemaToHiveConverter(SchemaVisitor[str]):
             # Hive2 doesn't support timestamp with local time zone
             return "timestamp"
         else:
-            return HIVE_PRIMITIVE_TYPES[type(primitive)]
+            return HIVE_PRIMITIVE_TYPES[type(primitive)]  # ty: ignore[invalid-argument-type]
 
 
 class HiveCatalog(MetastoreCatalog):
@@ -333,7 +333,7 @@ class HiveCatalog(MetastoreCatalog):
             raise ValueError(f"Unable to connect to hive using uri: {properties[URI]}")
 
     def _convert_hive_into_iceberg(self, table: HiveTable) -> Table:
-        properties: dict[str, str] = table.parameters
+        properties: dict[str, str] = table.parameters  # ty: ignore[invalid-assignment]
         if TABLE_TYPE not in properties:
             raise NoSuchPropertyException(
                 f"Property table_type missing, could not determine type: {table.dbName}.{table.tableName}"
@@ -354,7 +354,7 @@ class HiveCatalog(MetastoreCatalog):
         file = io.new_input(metadata_location)
         metadata = FromInputFile.table_metadata(file)
         return Table(
-            identifier=(table.dbName, table.tableName),
+            identifier=(table.dbName, table.tableName),  # ty: ignore[invalid-argument-type]
             metadata=metadata,
             metadata_location=metadata_location,
             io=self._load_file_io(location=metadata_location, table_properties=metadata.properties),
@@ -536,8 +536,8 @@ class HiveCatalog(MetastoreCatalog):
     def _wait_for_lock(self, database_name: str, table_name: str, lockid: int, open_client: Client) -> LockResponse:
         @retry(
             retry=retry_if_exception_type(WaitingForLockException),
-            wait=wait_exponential(multiplier=2, min=self._lock_check_min_wait_time, max=self._lock_check_max_wait_time),
-            stop=stop_after_attempt(self._lock_check_retries),
+            wait=wait_exponential(multiplier=2, min=self._lock_check_min_wait_time, max=self._lock_check_max_wait_time),  # ty: ignore[invalid-argument-type]
+            stop=stop_after_attempt(self._lock_check_retries),  # ty: ignore[invalid-argument-type]
             reraise=True,
         )
         def _do_wait_for_lock() -> LockResponse:
@@ -581,7 +581,7 @@ class HiveCatalog(MetastoreCatalog):
             try:
                 if lock.state != LockState.ACQUIRED:
                     if lock.state == LockState.WAITING:
-                        self._wait_for_lock(database_name, table_name, lock.lockid, open_client)
+                        self._wait_for_lock(database_name, table_name, lock.lockid, open_client)  # ty: ignore[invalid-argument-type]
                     else:
                         raise CommitFailedException(f"Failed to acquire lock for {table_identifier}, state: {lock.state}")
 
@@ -810,10 +810,10 @@ class HiveCatalog(MetastoreCatalog):
         """
         database_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
         with self._client as open_client:
-            return [
+            return [  # ty: ignore[invalid-return-type]
                 (database_name, table.tableName)
                 for table in self._fetch_hive_tables(open_client, database_name)
-                if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG
+                if table.parameters.get(TABLE_TYPE, "").lower() == ICEBERG  # ty: ignore[unresolved-attribute]
             ]
 
     @override

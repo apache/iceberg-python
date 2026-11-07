@@ -24,7 +24,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from pyiceberg.exceptions import ResolveError, ValidationError
-from pyiceberg.expressions import literal  # type: ignore
+from pyiceberg.expressions import literal  # type: ignore[attr-defined]
 from pyiceberg.schema import (
     PartnerAccessor,
     Schema,
@@ -155,7 +155,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             Catalog._convert_schema_if_needed(new_schema, format_version=format_version),
             -1,
             _UnionByNameVisitor(update_schema=self, existing_schema=self._schema, case_sensitive=self._case_sensitive),
-            # type: ignore
+            # type: ignore[misc]
             PartnerIdByNameAccessor(partner_schema=self._schema, case_sensitive=self._case_sensitive),
         )
         return self
@@ -231,7 +231,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             except ValueError as e:
                 raise ValueError(f"Invalid default value: {e}") from e
         else:
-            initial_default = default_value  # type: ignore
+            initial_default = default_value  # type: ignore[assignment]
 
         if (required and initial_default is None) and not self._allow_incompatible_changes:
             # Table format version 1 and 2 cannot add required column because there is no initial value
@@ -244,7 +244,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         field = NestedField(
             field_id=new_id,
             name=name,
-            field_type=new_type,
+            field_type=new_type,  # ty: ignore[invalid-argument-type]
             required=required,
             doc=doc,
             initial_default=initial_default,
@@ -857,10 +857,10 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
         self.existing_schema = existing_schema
         self.case_sensitive = case_sensitive
 
-    def schema(self, schema: Schema, partner_id: int | None, struct_result: bool) -> bool:
+    def schema(self, schema: Schema, partner_id: int | None, struct_result: bool) -> bool:  # ty: ignore[invalid-method-override]
         return struct_result
 
-    def struct(self, struct: StructType, partner_id: int | None, missing_positions: builtins.list[bool]) -> bool:
+    def struct(self, struct: StructType, partner_id: int | None, missing_positions: builtins.list[bool]) -> bool:  # ty: ignore[invalid-method-override]
         if partner_id is None:
             return True
 
@@ -875,7 +875,7 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
                 self._add_column(partner_id, fields[pos])
             else:
                 field = fields[pos]
-                if nested_field := partner_struct.field_by_name(field.name, case_sensitive=self.case_sensitive):
+                if nested_field := partner_struct.field_by_name(field.name, case_sensitive=self.case_sensitive):  # ty: ignore[unresolved-attribute]
                     self._update_column(field, nested_field)
 
         return False
@@ -915,10 +915,10 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
         else:
             return self.existing_schema.find_field(field_id).field_type
 
-    def field(self, field: NestedField, partner_id: int | None, field_result: bool) -> bool:
+    def field(self, field: NestedField, partner_id: int | None, field_result: bool) -> bool:  # ty: ignore[invalid-method-override]
         return partner_id is None
 
-    def list(self, list_type: ListType, list_partner_id: int | None, element_missing: bool) -> bool:
+    def list(self, list_type: ListType, list_partner_id: int | None, element_missing: bool) -> bool:  # ty: ignore[invalid-method-override]
         if list_partner_id is None:
             return True
 
@@ -933,7 +933,7 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
 
         return False
 
-    def map(self, map_type: MapType, map_partner_id: int | None, key_missing: bool, value_missing: bool) -> bool:
+    def map(self, map_type: MapType, map_partner_id: int | None, key_missing: bool, value_missing: bool) -> bool:  # ty: ignore[invalid-method-override]
         if map_partner_id is None:
             return True
 
@@ -952,7 +952,7 @@ class _UnionByNameVisitor(SchemaWithPartnerVisitor[int, bool]):
 
         return False
 
-    def primitive(self, primitive: PrimitiveType, primitive_partner_id: int | None) -> bool:
+    def primitive(self, primitive: PrimitiveType, primitive_partner_id: int | None) -> bool:  # ty: ignore[invalid-method-override]
         return primitive_partner_id is None
 
 
@@ -967,7 +967,7 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
     def schema_partner(self, partner: int | None) -> int | None:
         return -1
 
-    def field_partner(self, partner_field_id: int | None, field_id: int, field_name: str) -> int | None:
+    def field_partner(self, partner_field_id: int | None, field_id: int, field_name: str) -> int | None:  # ty: ignore[invalid-method-override]
         if partner_field_id is not None:
             if partner_field_id == -1:
                 struct = self.partner_schema.as_struct()
@@ -976,12 +976,12 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
                 if not struct.is_struct:
                     raise ValueError(f"Expected StructType: {struct}")
 
-            if field := struct.field_by_name(name=field_name, case_sensitive=self.case_sensitive):
+            if field := struct.field_by_name(name=field_name, case_sensitive=self.case_sensitive):  # ty: ignore[unresolved-attribute]
                 return field.field_id
 
         return None
 
-    def list_element_partner(self, partner_list_id: int | None) -> int | None:
+    def list_element_partner(self, partner_list_id: int | None) -> int | None:  # ty: ignore[invalid-method-override]
         if partner_list_id is not None and (field := self.partner_schema.find_field(partner_list_id)):
             if not isinstance(field.field_type, ListType):
                 raise ValueError(f"Expected ListType: {field}")
@@ -989,7 +989,7 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
         else:
             return None
 
-    def map_key_partner(self, partner_map_id: int | None) -> int | None:
+    def map_key_partner(self, partner_map_id: int | None) -> int | None:  # ty: ignore[invalid-method-override]
         if partner_map_id is not None and (field := self.partner_schema.find_field(partner_map_id)):
             if not isinstance(field.field_type, MapType):
                 raise ValueError(f"Expected MapType: {field}")
@@ -997,7 +997,7 @@ class PartnerIdByNameAccessor(PartnerAccessor[int]):
         else:
             return None
 
-    def map_value_partner(self, partner_map_id: int | None) -> int | None:
+    def map_value_partner(self, partner_map_id: int | None) -> int | None:  # ty: ignore[invalid-method-override]
         if partner_map_id is not None and (field := self.partner_schema.find_field(partner_map_id)):
             if not isinstance(field.field_type, MapType):
                 raise ValueError(f"Expected MapType: {field}")
