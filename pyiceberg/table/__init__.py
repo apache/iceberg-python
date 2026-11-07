@@ -63,7 +63,7 @@ from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
 from pyiceberg.table.name_mapping import NameMapping
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -333,7 +333,7 @@ class Transaction:
 
     def _scan(self, row_filter: str | BooleanExpression = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
         """Minimal data scan of the table with the current state of the transaction."""
-        return _TransactionScan(
+        return DataScan(
             table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
         )
 
@@ -2209,6 +2209,7 @@ class TableScan(BaseScan):
     """A base class for table scans targeting a single snapshot."""
 
     snapshot_id: int | None
+    _branch_name: str | None
     catalog: Catalog | None
     table_identifier: Identifier | None
     table_config: Properties
@@ -2227,6 +2228,8 @@ class TableScan(BaseScan):
         table_identifier: Identifier | None = None,
         table_config: Properties = EMPTY_DICT,
         encryption_manager: EncryptionManager | None = None,
+        *,
+        _branch_name: str | None = None,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2239,6 +2242,7 @@ class TableScan(BaseScan):
             encryption_manager=encryption_manager,
         )
         self.snapshot_id = snapshot_id
+        self._branch_name = _branch_name
         self.catalog = catalog
         self.table_identifier = table_identifier
         self.table_config = table_config
@@ -2250,7 +2254,7 @@ class TableScan(BaseScan):
 
     def _scan_schema(self) -> Schema:
         current_schema = self.table_metadata.schema()
-        if self.snapshot_id is not None:
+        if self.snapshot_id is not None and self._branch_name is None:
             snapshot = self.table_metadata.snapshot_by_id(self.snapshot_id)
             if snapshot is not None:
                 if snapshot.schema_id is not None:
@@ -2273,10 +2277,15 @@ class TableScan(BaseScan):
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     def use_ref(self: S, name: str) -> S:
+        """Select a branch using the table schema or a tag using its snapshot schema."""
         if self.snapshot_id is not None:
             raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
         if snapshot := self.table_metadata.snapshot_by_name(name):
-            return self.update(snapshot_id=snapshot.snapshot_id)
+            ref = self.table_metadata.refs[name]
+            return self.update(
+                snapshot_id=snapshot.snapshot_id,
+                _branch_name=name if ref.snapshot_ref_type == SnapshotRefType.BRANCH else None,
+            )
 
         raise ValueError(f"Cannot scan unknown ref={name}")
 
@@ -2622,11 +2631,6 @@ class DataScan(TableScan):
                 tbl = arrow_scan.to_table([task])
                 res += len(tbl)
         return res
-
-
-class _TransactionScan(DataScan):
-    def _scan_schema(self) -> Schema:
-        return self.table_metadata.schema()
 
 
 IAS = TypeVar("IAS", bound="IncrementalAppendScan", covariant=True)

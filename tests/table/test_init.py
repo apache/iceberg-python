@@ -415,6 +415,58 @@ def test_time_travel_row_filter_after_drop_and_readd(catalog: Catalog, arrow_tab
     assert table.scan(row_filter="bar IS NULL").count() == 3
 
 
+def test_branch_row_filter_after_drop_and_readd(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.branch_column_replacement", schema=arrow_table_simple.schema)
+    table.append(arrow_table_simple)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    table.manage_snapshots().create_branch(snapshot.snapshot_id, "audit").create_tag(snapshot.snapshot_id, "before").commit()
+
+    with table.update_schema() as update:
+        update.delete_column("bar")
+    with table.update_schema() as update:
+        update.add_column("bar", IntegerType())
+
+    expected = {"foo": ["a", "b", "c"], "baz": [True, False, True], "bar": [None, None, None]}
+    for branch in (MAIN_BRANCH, "audit"):
+        scan = table.scan().use_ref(branch)
+        filtered = scan.with_case_sensitive(False).filter("BAR >= 2").select("foo")
+        assert filtered.to_arrow().to_pydict() == {"foo": []}
+        assert filtered.to_arrow_batch_reader().read_all().to_pydict() == {"foo": []}
+        assert filtered.count() == 0
+        assert scan.projection() == table.schema()
+        assert scan.to_arrow().to_pydict() == expected
+        assert scan.to_arrow_batch_reader().read_all().to_pydict() == expected
+        assert scan.filter("bar IS NULL").count() == 3
+
+    for scan in (table.scan(snapshot_id=snapshot.snapshot_id), table.scan().use_ref("before")):
+        assert scan.to_arrow().to_pydict() == arrow_table_simple.to_pydict()
+        assert scan.filter("bar >= 2").select("foo").to_arrow().to_pydict() == {"foo": ["b", "c"]}
+
+
+def test_branch_row_filter_after_column_rename(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.branch_column_rename", schema=arrow_table_simple.schema)
+    table.append(arrow_table_simple)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    table.manage_snapshots().create_branch(snapshot.snapshot_id, "audit").commit()
+    with table.update_schema() as update:
+        update.rename_column("bar", "score")
+
+    for branch in (MAIN_BRANCH, "audit"):
+        scan = table.scan().use_ref(branch)
+        filtered = scan.with_case_sensitive(False).filter("SCORE >= 2").select("foo")
+        assert filtered.to_arrow().to_pydict() == {"foo": ["b", "c"]}
+        assert filtered.to_arrow_batch_reader().read_all().to_pydict() == {"foo": ["b", "c"]}
+        assert filtered.count() == 2
+        assert scan.projection() == table.schema()
+        assert scan.to_arrow().to_pydict() == {"foo": ["a", "b", "c"], "score": [1, 2, 3], "baz": [True, False, True]}
+        with pytest.raises(ValueError, match="Could not find field with name bar"):
+            scan.filter("bar >= 2").to_arrow()
+
+
 def test_time_travel_row_filter_after_partition_column_rename(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
     catalog.create_namespace("default")
     table = catalog.create_table("default.renamed_partition_column", schema=arrow_table_simple.schema)
