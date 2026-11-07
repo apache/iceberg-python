@@ -957,6 +957,59 @@ def test_commit_retry_delete_on_non_main_branch(catalog: Catalog) -> None:
     assert sorted(result.column("x").to_pylist()) == [2, 3, 4, 5, 6, 7, 8, 9]
 
 
+def test_commit_retry_after_branch_removed_starts_from_main(catalog: Catalog) -> None:
+    """Verify that a retried append to a branch removed concurrently starts from the current snapshot of main."""
+    catalog.create_namespace("default")
+    catalog.create_table("default.branch_removed_retry_test", schema=_test_schema())
+
+    import pyarrow as pa
+
+    tbl = catalog.load_table("default.branch_removed_retry_test")
+    tbl.append(pa.table({"x": [1, 2]}))
+    assert tbl.metadata.current_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name="test-branch").commit()
+    tbl.append(pa.table({"x": [3]}))
+
+    tbl1 = catalog.load_table("default.branch_removed_retry_test")
+    tbl2 = catalog.load_table("default.branch_removed_retry_test")
+
+    tbl1.manage_snapshots().remove_branch("test-branch").commit()
+
+    # tbl2 still sees test-branch, so the first attempt fails and the retry finds the branch missing
+    tbl2.append(pa.table({"x": [4]}), branch="test-branch")
+
+    refreshed = catalog.load_table("default.branch_removed_retry_test")
+    branch_snapshot = refreshed.snapshot_by_name("test-branch")
+    assert branch_snapshot is not None
+    # The parent is the current snapshot of main ([1, 2] + [3]), not the removed head of test-branch ([1, 2])
+    assert branch_snapshot.parent_snapshot_id == refreshed.metadata.current_snapshot_id
+    assert sorted(refreshed.scan(snapshot_id=branch_snapshot.snapshot_id).to_arrow().column("x").to_pylist()) == [1, 2, 3, 4]
+
+
+def test_delete_retried_after_branch_removed_validates_against_main(catalog: Catalog) -> None:
+    """Verify that a delete retried on main after its branch was removed concurrently validates the changes on main."""
+    catalog.create_namespace("default")
+    catalog.create_table("default.branch_removed_delete_test", schema=_test_schema())
+
+    import pyarrow as pa
+
+    tbl = catalog.load_table("default.branch_removed_delete_test")
+    tbl.append(pa.table({"x": [1, 2]}))
+    assert tbl.metadata.current_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name="test-branch").commit()
+
+    tbl1 = catalog.load_table("default.branch_removed_delete_test")
+    tbl2 = catalog.load_table("default.branch_removed_delete_test")
+
+    tbl1.manage_snapshots().remove_branch("test-branch").commit()
+    # A concurrent append to main adds a row that matches the delete filter
+    catalog.load_table("default.branch_removed_delete_test").append(pa.table({"x": [1]}))
+
+    # tbl2 still sees test-branch, so the retry starts from main, and the default serializable isolation rejects the new row
+    with pytest.raises(ValidationException, match="Added data files were found matching the filter"):
+        tbl2.delete("x <= 2", branch="test-branch")
+
+
 def test_negative_num_retries_still_commits(catalog: Catalog) -> None:
     """A negative commit.retry.num-retries is clamped to 0, so one attempt still runs (matches Java).
 
