@@ -417,6 +417,8 @@ def test_satisfies_order_of_method(transform: TimeTransform[Any], other_transfor
         (TimeType(), 36775038194, "10:12:55.038194"),
         (TimestamptzType(), 1512151975038194, "2017-12-01T18:12:55.038194+00:00"),
         (TimestampType(), 1512151975038194, "2017-12-01T18:12:55.038194"),
+        (TimestampNanoType(), 1740342104375612001, "2025-02-23T20:21:44.375612001"),
+        (TimestamptzNanoType(), 1740342104375612001, "2025-02-23T20:21:44.375612001+00:00"),
         (LongType(), -1234567890000, "-1234567890000"),
         (StringType(), "a/b/c=d", "a/b/c=d"),
         (DecimalType(9, 2), Decimal("-1.50"), "-1.50"),
