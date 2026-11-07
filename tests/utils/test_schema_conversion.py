@@ -414,3 +414,107 @@ def test_iceberg_to_avro_manifest(avro_schema_manifest_entry: dict[str, Any]) ->
     iceberg_schema = AvroSchemaConversion().avro_to_iceberg(avro_schema_manifest_entry)
     avro_result = AvroSchemaConversion().iceberg_to_avro(iceberg_schema, schema_name="manifest_entry")
     assert avro_schema_manifest_entry == avro_result
+
+
+DECIMAL_10_2 = {"type": "fixed", "name": "decimal_10_2", "size": 5, "logicalType": "decimal", "precision": 10, "scale": 2}
+
+
+def test_avro_to_iceberg_resolves_named_type_references() -> None:
+    """A named type used a second time is written as a reference to its name, as Java and iceberg-rust do"""
+    avro_schema = {
+        "type": "record",
+        "name": "r102",
+        "fields": [
+            {"name": "a", "type": ["null", DECIMAL_10_2], "field-id": 1000, "default": None},
+            {"name": "b", "type": ["null", "decimal_10_2"], "field-id": 1001, "default": None},
+            {"name": "c", "type": {"type": "fixed", "name": "fixed_3", "size": 3}, "field-id": 1002},
+            {"name": "d", "type": "fixed_3", "field-id": 1003},
+            {"name": "e", "type": {"type": "fixed", "name": "uuid_fixed", "size": 16, "logicalType": "uuid"}, "field-id": 1004},
+            {"name": "f", "type": ["null", "uuid_fixed"], "field-id": 1005, "default": None},
+        ],
+    }
+
+    assert AvroSchemaConversion().avro_to_iceberg(avro_schema) == Schema(
+        NestedField(field_id=1000, name="a", field_type=DecimalType(10, 2), required=False),
+        NestedField(field_id=1001, name="b", field_type=DecimalType(10, 2), required=False),
+        NestedField(field_id=1002, name="c", field_type=FixedType(3), required=True),
+        NestedField(field_id=1003, name="d", field_type=FixedType(3), required=True),
+        NestedField(field_id=1004, name="e", field_type=UUIDType(), required=True),
+        NestedField(field_id=1005, name="f", field_type=UUIDType(), required=False),
+        schema_id=1,
+    )
+
+
+def test_avro_to_iceberg_accepts_repeated_named_type_definitions() -> None:
+    """Manifests written before named types were defined once repeat the full definition"""
+    avro_schema = {
+        "type": "record",
+        "name": "r102",
+        "fields": [
+            {"name": "a", "type": ["null", DECIMAL_10_2], "field-id": 1000, "default": None},
+            {"name": "b", "type": ["null", DECIMAL_10_2], "field-id": 1001, "default": None},
+        ],
+    }
+
+    assert AvroSchemaConversion().avro_to_iceberg(avro_schema) == Schema(
+        NestedField(field_id=1000, name="a", field_type=DecimalType(10, 2), required=False),
+        NestedField(field_id=1001, name="b", field_type=DecimalType(10, 2), required=False),
+        schema_id=1,
+    )
+
+
+def test_avro_to_iceberg_unknown_named_type_reference() -> None:
+    avro_schema = {"type": "record", "name": "r102", "fields": [{"name": "a", "type": "decimal_10_2", "field-id": 1000}]}
+
+    with pytest.raises(TypeError, match="Type not recognized: decimal_10_2"):
+        AvroSchemaConversion().avro_to_iceberg(avro_schema)
+
+
+def test_iceberg_to_avro_names_fixed_types_by_field_id() -> None:
+    """A named type can be defined once per schema, so fixed types used by several fields get the field-id in their name"""
+    schema = Schema(
+        NestedField(field_id=1, name="a", field_type=DecimalType(10, 2), required=False),
+        NestedField(field_id=2, name="b", field_type=DecimalType(10, 2), required=True),
+        NestedField(field_id=3, name="c", field_type=FixedType(3), required=True),
+        NestedField(
+            field_id=4,
+            name="nested",
+            field_type=StructType(
+                NestedField(field_id=5, name="d", field_type=FixedType(3), required=False),
+                NestedField(field_id=6, name="e", field_type=UUIDType(), required=True),
+            ),
+            required=True,
+        ),
+        NestedField(field_id=7, name="f", field_type=UUIDType(), required=False),
+        NestedField(
+            field_id=8,
+            name="g",
+            field_type=ListType(element_id=9, element_type=UUIDType(), element_required=True),
+            required=True,
+        ),
+        NestedField(
+            field_id=10,
+            name="h",
+            field_type=MapType(key_id=11, key_type=UUIDType(), value_id=12, value_type=DecimalType(10, 2)),
+            required=True,
+        ),
+        schema_id=1,
+    )
+
+    avro_schema = AvroSchemaConversion().iceberg_to_avro(schema, schema_name="r102")
+    assert isinstance(avro_schema, dict)
+    fields = avro_schema["fields"]
+    nested_fields = fields[3]["type"]["fields"]
+    map_fields = fields[6]["type"]["items"]["fields"]
+
+    assert fields[0]["type"] == ["null", {**DECIMAL_10_2, "name": "decimal_10_2_1"}]
+    assert fields[1]["type"] == {**DECIMAL_10_2, "name": "decimal_10_2_2"}
+    assert fields[2]["type"] == {"type": "fixed", "size": 3, "name": "fixed_3_3"}
+    assert nested_fields[0]["type"] == ["null", {"type": "fixed", "size": 3, "name": "fixed_3_5"}]
+    assert nested_fields[1]["type"] == {"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed_6"}
+    assert fields[4]["type"] == ["null", {"type": "fixed", "size": 16, "logicalType": "uuid", "name": "uuid_fixed_7"}]
+    assert fields[5]["type"]["items"]["name"] == "uuid_fixed_9"
+    assert map_fields[0]["type"]["name"] == "uuid_fixed_11"
+    assert map_fields[1]["type"]["name"] == "decimal_10_2_12"
+    # and the schema reads back as the same types
+    assert AvroSchemaConversion().avro_to_iceberg(avro_schema) == schema
