@@ -147,7 +147,7 @@ class ConstructWriter(SchemaVisitorPerPrimitiveType[Writer]):
         return StructWriter(tuple((pos, result) for pos, result in enumerate(field_results)))
 
     def field(self, field: NestedField, field_result: Writer) -> Writer:
-        return field_result if field.required else OptionWriter(field_result)
+        return field_result if field.required or isinstance(field.field_type, UnknownType) else OptionWriter(field_result)
 
     def list(self, list_type: ListType, element_result: Writer) -> Writer:
         return ListWriter(element_result)
@@ -302,7 +302,9 @@ class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
         return StructWriter(field_writers=tuple(results))
 
     def field(self, file_field: NestedField, record_type: IcebergType | None, field_writer: Writer) -> Writer:
-        return field_writer if file_field.required else OptionWriter(field_writer)
+        return (
+            field_writer if file_field.required or isinstance(file_field.field_type, UnknownType) else OptionWriter(field_writer)
+        )
 
     def list(self, file_list_type: ListType, file_list: IcebergType | None, element_writer: Writer) -> Writer:
         return ListWriter(element_writer if file_list_type.element_required else OptionWriter(element_writer))

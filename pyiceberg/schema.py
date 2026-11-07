@@ -1310,9 +1310,13 @@ def build_position_accessors(schema_or_type: Schema | IcebergType) -> dict[int, 
     return visit(schema_or_type, _BuildPositionAccessors())
 
 
-def assign_fresh_schema_ids(schema_or_type: Schema | IcebergType, next_id: Callable[[], int] | None = None) -> Schema:
-    """Traverses the schema, and sets new IDs."""
-    return pre_order_visit(schema_or_type, _SetFreshIDs(next_id_func=next_id))
+def assign_fresh_schema_ids(
+    schema_or_type: Schema | IcebergType,
+    next_id: Callable[[], int] | None = None,
+    base_schema: Schema | None = None,
+) -> Schema:
+    """Assign fresh IDs, reusing IDs by name from a base schema when supplied."""
+    return pre_order_visit(schema_or_type, _SetFreshIDs(next_id_func=next_id, base_schema=base_schema))
 
 
 class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
@@ -1320,17 +1324,21 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
 
     old_id_to_new_id: dict[int, int]
 
-    def __init__(self, next_id_func: Callable[[], int] | None = None) -> None:
+    def __init__(self, next_id_func: Callable[[], int] | None = None, base_schema: Schema | None = None) -> None:
         self.old_id_to_new_id = {}
-        counter = itertools.count(1)
+        self._base_name_to_id = index_by_name(base_schema) if base_schema is not None else {}
+        self._id_to_name: dict[int, str] = {}
+        counter = itertools.count(base_schema.highest_field_id + 1 if base_schema is not None else 1)
         self.next_id_func = next_id_func if next_id_func is not None else lambda: next(counter)
 
     def _get_and_increment(self, current_id: int) -> int:
-        new_id = self.next_id_func()
+        name = self._id_to_name.get(current_id)
+        new_id = self._base_name_to_id[name] if name is not None and name in self._base_name_to_id else self.next_id_func()
         self.old_id_to_new_id[current_id] = new_id
         return new_id
 
     def schema(self, schema: Schema, struct_result: Callable[[], StructType]) -> Schema:
+        self._id_to_name = index_name_by_id(schema) if self._base_name_to_id else {}
         return Schema(
             *struct_result().fields,
             identifier_field_ids=[self.old_id_to_new_id[field_id] for field_id in schema.identifier_field_ids],
@@ -1340,15 +1348,7 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         new_ids = [self._get_and_increment(field.field_id) for field in struct.fields]
         new_fields = []
         for field_id, field, field_type in zip(new_ids, struct.fields, field_results, strict=True):
-            new_fields.append(
-                NestedField(
-                    field_id=field_id,
-                    name=field.name,
-                    field_type=field_type(),
-                    required=field.required,
-                    doc=field.doc,
-                )
-            )
+            new_fields.append(field.model_copy(update={"field_id": field_id, "field_type": field_type()}))
         return StructType(*new_fields)
 
     def field(self, field: NestedField, field_result: Callable[[], IcebergType]) -> IcebergType:

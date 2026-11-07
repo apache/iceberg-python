@@ -70,12 +70,13 @@ from pyiceberg.exceptions import (
 from pyiceberg.io import ARROW_FILE_IO, FSSPEC_FILE_IO, PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table
+from pyiceberg.table import CommitTableRequest, Table
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
+from pyiceberg.table.update import update_table_metadata
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
-from pyiceberg.types import StringType
+from pyiceberg.types import NestedField, StringType
 from pyiceberg.utils.config import Config
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewMetadata, ViewVersion
@@ -3713,3 +3714,55 @@ def test_load_table_without_storage_credentials(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_replace_table_transaction_uses_commit_endpoint(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    response = example_table_metadata_with_snapshot_v1_rest_json
+    base = TableMetadataV1.model_validate(response["metadata"])
+    url = f"{TEST_URI}v1/namespaces/fokko/tables/table"
+    rest_mock.get(url, json=response, request_headers=TEST_HEADERS)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    tx = catalog.replace_table_transaction("fokko.table", Schema(NestedField(88, "replacement", StringType())))
+    updated_metadata = tx.table_metadata
+    rest_mock.post(
+        url,
+        json={
+            "metadata": updated_metadata.model_dump(mode="json", by_alias=True),
+            "metadata-location": response["metadata-location"],
+        },
+        request_headers=TEST_HEADERS,
+    )
+    tx.commit_transaction()
+
+    request = CommitTableRequest.model_validate(rest_mock.last_request.json())
+    assert request.identifier.namespace.root == ["fokko"]
+    assert request.identifier.name == "table"
+    for requirement in request.requirements:
+        requirement.validate(base)
+    reconstructed = update_table_metadata(base, request.updates)
+    assert reconstructed.model_dump(exclude={"last_updated_ms"}) == updated_metadata.model_dump(exclude={"last_updated_ms"})
+    assert reconstructed.table_uuid == base.table_uuid
+    assert reconstructed.current_snapshot_id is None
+    assert reconstructed.snapshots == base.snapshots
+    assert reconstructed.schema().find_field("replacement").field_id > base.last_column_id
+    assert [req.type for req in request.requirements].count("assert-table-uuid") == 1
+    assert [entry.method for entry in rest_mock.request_history] == ["GET", "GET", "POST"]
+
+
+def test_replace_table_transaction_without_sort_order_history(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]
+) -> None:
+    response = example_table_metadata_with_snapshot_v1_rest_json
+    metadata = TableMetadataV1.model_validate(response["metadata"]).to_v2()
+    metadata = metadata.model_copy(update={"sort_orders": [], "default_sort_order_id": 0})
+    response["metadata"] = metadata.model_dump(mode="json", by_alias=True)
+    rest_mock.get(f"{TEST_URI}v1/namespaces/fokko/tables/table", json=response)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    tx = catalog.replace_table_transaction(
+        "fokko.table",
+        Schema(NestedField(1, "replacement", StringType())),
+        sort_order=SortOrder(SortField(1, IdentityTransform())),
+    )
+    assert tx.table_metadata.sort_order().order_id == 1

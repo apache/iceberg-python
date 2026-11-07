@@ -155,7 +155,7 @@ from pyiceberg.table.deletion_vector import read_deletion_vectors
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
-from pyiceberg.transforms import IdentityTransform, TruncateTransform
+from pyiceberg.transforms import IdentityTransform, TruncateTransform, VoidTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -3175,6 +3175,9 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     partition_fields = [f"_partition_{field.name}" for field in spec.fields]
 
     for partition, name in zip(spec.fields, partition_fields, strict=True):
+        if isinstance(partition.transform, VoidTransform):
+            arrow_table = arrow_table.append_column(name, pa.nulls(arrow_table.num_rows, type=pa.int32()))
+            continue
         source_field = schema.find_field(partition.source_id)
         full_field_name = schema.find_column_name(partition.source_id)
         if full_field_name is None:
