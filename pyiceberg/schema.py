@@ -377,6 +377,11 @@ class Schema(IcebergBaseModel):
                     f"{field.field_type} is only supported in {field.field_type.minimum_format_version()} or higher. "
                     f"Current format version is: {format_version}"
                 )
+            if format_version < 3 and field.initial_default is not None:
+                raise ValueError(
+                    f"Non-null initial-default for {field.name} is only supported in 3 or higher. "
+                    f"Current format version is: {format_version}"
+                )
 
 
 class SchemaVisitor(Generic[T], ABC):
