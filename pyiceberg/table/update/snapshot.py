@@ -51,6 +51,7 @@ from pyiceberg.manifest import (
     ManifestEntry,
     ManifestEntryStatus,
     ManifestFile,
+    ManifestListWriterV3,
     ManifestWriter,
     write_manifest,
     write_manifest_list,
@@ -209,19 +210,6 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._deleted_data_files.add(data_file)
         return self
 
-    def _calculate_added_rows(self, manifests: list[ManifestFile]) -> int:
-        """Calculate the number of added rows from a list of manifest files."""
-        added_rows = 0
-        for manifest in manifests:
-            if manifest.added_snapshot_id is None or manifest.added_snapshot_id == self._snapshot_id:
-                if manifest.added_rows_count is None:
-                    raise ValueError(
-                        "Cannot determine number of added rows in snapshot because "
-                        f"the entry for manifest {manifest.manifest_path} is missing the field `added-rows-count`"
-                    )
-                added_rows += manifest.added_rows_count
-        return added_rows
-
     @abstractmethod
     def _deleted_entries(self) -> list[ManifestEntry]: ...
 
@@ -334,6 +322,12 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
         self._written_manifest_lists.append(manifest_list_file_path)
 
+        first_row_id: int | None = None
+        added_rows: int | None = None
+
+        if self._transaction.table_metadata.format_version >= 3:
+            first_row_id = self._transaction.table_metadata.next_row_id
+
         with write_manifest_list(
             format_version=self._transaction.table_metadata.format_version,
             output_file=self._io.new_output(manifest_list_file_path),
@@ -341,13 +335,13 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             parent_snapshot_id=self._parent_snapshot_id,
             sequence_number=next_sequence_number,
             avro_compression=self._compression,
+            first_row_id=first_row_id,
         ) as writer:
             writer.add_manifests(new_manifests)
 
-        first_row_id: int | None = None
-
-        if self._transaction.table_metadata.format_version >= 3:
-            first_row_id = self._transaction.table_metadata.next_row_id
+        if isinstance(writer, ManifestListWriterV3) and first_row_id is not None:
+            # row IDs assigned to manifests without a first_row_id, including existing rows of upgraded tables
+            added_rows = writer.next_row_id - first_row_id
 
         snapshot = Snapshot(
             snapshot_id=self._snapshot_id,
@@ -357,6 +351,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             summary=summary,
             schema_id=self._transaction.table_metadata.current_schema_id,
             first_row_id=first_row_id,
+            added_rows=added_rows,
         )
 
         add_snapshot_update = AddSnapshotUpdate(snapshot=snapshot)
