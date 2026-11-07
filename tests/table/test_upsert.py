@@ -427,6 +427,64 @@ def test_upsert_into_empty_table(catalog: Catalog) -> None:
     assert upd.rows_inserted == 4
 
 
+def test_upsert_uses_current_schema_after_join_column_change(catalog: Catalog) -> None:
+    for drop_existing in (False, True):
+        for branch in ("main", "audit", None):
+            original = pa.table({"value": [1, 2]})
+            if drop_existing:
+                original = original.append_column("key", pa.array(["old", "keep"]))
+            table = catalog.create_table(f"default.changed_join_column_{drop_existing}_{branch}", schema=original.schema)
+            table.append(original)
+            snapshot = table.current_snapshot()
+            assert snapshot is not None
+            if branch == "audit":
+                table.manage_snapshots().create_branch(snapshot.snapshot_id, branch).commit()
+            if drop_existing:
+                with table.update_schema() as update:
+                    update.delete_column("key")
+            with table.update_schema() as update:
+                update.add_column("key", StringType())
+
+            result = table.upsert(pa.table({"value": [3], "key": ["old"]}), join_cols=["key"], branch=branch)
+            assert_upsert_result(result, expected_updated=0, expected_inserted=1)
+            scan = table.scan(snapshot_id=table.snapshots()[-1].snapshot_id) if branch is None else table.scan().use_ref(branch)
+            assert sorted(scan.to_arrow().to_pylist(), key=lambda row: row["value"]) == [
+                {"value": 1, "key": None},
+                {"value": 2, "key": None},
+                {"value": 3, "key": "old"},
+            ]
+            if branch != "main":
+                assert table.metadata.current_snapshot_id == snapshot.snapshot_id
+                assert table.scan().count() == 2
+
+
+def test_upsert_projects_staged_schema_for_matched_rows(catalog: Catalog) -> None:
+    for branch in ("main", "audit"):
+        original = pa.table({"id": [1, 2], "value": [10, 20]})
+        table = catalog.create_table(f"default.staged_upsert_schema_{branch}", schema=original.schema)
+        table.append(original)
+        snapshot = table.current_snapshot()
+        assert snapshot is not None
+        if branch == "audit":
+            table.manage_snapshots().create_branch(snapshot.snapshot_id, branch).commit()
+
+        with table.transaction() as transaction:
+            with transaction.update_schema() as update:
+                update.add_column("note", StringType())
+            result = transaction.upsert(
+                pa.table({"id": [1], "value": [11], "note": ["updated"]}), join_cols=["id"], branch=branch
+            )
+            assert_upsert_result(result, expected_updated=1, expected_inserted=0)
+
+        assert sorted(table.scan().use_ref(branch).to_arrow().to_pylist(), key=lambda row: row["id"]) == [
+            {"id": 1, "value": 11, "note": "updated"},
+            {"id": 2, "value": 20, "note": None},
+        ]
+        if branch != "main":
+            assert table.metadata.current_snapshot_id == snapshot.snapshot_id
+            assert table.scan().to_arrow()["value"].to_pylist() == [10, 20]
+
+
 def test_create_match_filter_single_condition() -> None:
     """
     Test create_match_filter with a composite key where the source yields exactly one unique key.
