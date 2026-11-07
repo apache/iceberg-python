@@ -24,10 +24,10 @@ import pyarrow.dataset as ds
 import pytest
 
 from pyiceberg.io.fileformat import FileFormatFactory, FileFormatModel
-from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.io.pyarrow import PyArrowFileIO, schema_to_pyarrow
 from pyiceberg.manifest import FileFormat
 from pyiceberg.schema import Schema
-from pyiceberg.types import LongType, NestedField
+from pyiceberg.types import DoubleType, FloatType, ListType, LongType, MapType, NestedField, StringType, StructType
 
 
 @pytest.fixture(params=FileFormatFactory.available_formats(), ids=lambda f: f.name.lower())
@@ -71,6 +71,57 @@ def test_null_handling(format_model: FileFormatModel, table_schema_simple: Schem
     stats = writer.close()
     assert stats.record_count == 3
     assert stats.null_value_counts.get(1) == 1
+
+
+def test_nan_value_counts(format_model: FileFormatModel, tmp_path: Path) -> None:
+    """Float and double columns produce nan_value_counts, including nested and empty counts."""
+    nan = float("nan")
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "f", FloatType(), required=False),
+        NestedField(3, "d", DoubleType(), required=False),
+        NestedField(4, "no_nans", DoubleType(), required=False),
+        NestedField(5, "s", StructType(NestedField(6, "x", DoubleType(), required=False)), required=False),
+        NestedField(7, "l", ListType(element_id=8, element_type=DoubleType(), element_required=False), required=False),
+        NestedField(
+            9,
+            "m",
+            MapType(key_id=10, key_type=StringType(), value_id=11, value_type=DoubleType(), value_required=False),
+            required=False,
+        ),
+    )
+    table = pa.Table.from_pylist(
+        [
+            {"id": 1, "f": nan, "d": nan, "no_nans": 1.0, "s": {"x": nan}, "l": [nan, 1.0], "m": {"a": nan}},
+            {"id": 2, "f": 1.0, "d": nan, "no_nans": None, "s": None, "l": None, "m": None},
+            {"id": 3, "f": None, "d": 2.0, "no_nans": 2.0, "s": {"x": 1.0}, "l": [nan, nan], "m": {"b": 1.0, "c": nan}},
+        ],
+        schema=schema_to_pyarrow(schema),
+    )
+    file_path = str(tmp_path / f"test.{format_model.file_extension()}")
+    writer = format_model.create_writer(PyArrowFileIO().new_output(file_path), schema, {})
+    writer.write(table)
+    writer.write(table.slice(0, 1))
+    stats = writer.close()
+
+    assert stats.nan_value_counts == {2: 2, 3: 3, 4: 0, 6: 2, 8: 4, 11: 3}
+
+
+def test_nan_value_counts_respect_metrics_mode(format_model: FileFormatModel, tmp_path: Path) -> None:
+    """Columns with metrics mode none do not get a NaN count."""
+    schema = Schema(
+        NestedField(1, "a", DoubleType(), required=False),
+        NestedField(2, "b", DoubleType(), required=False),
+    )
+    table = pa.Table.from_pydict({"a": [float("nan")], "b": [float("nan")]}, schema=schema_to_pyarrow(schema))
+    file_path = str(tmp_path / f"test.{format_model.file_extension()}")
+    writer = format_model.create_writer(
+        PyArrowFileIO().new_output(file_path), schema, {"write.metadata.metrics.column.b": "none"}
+    )
+    writer.write(table)
+    stats = writer.close()
+
+    assert stats.nan_value_counts == {1: 1}
 
 
 def test_context_manager_caches_result(
