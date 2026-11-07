@@ -1418,11 +1418,14 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         Args:
             dt (datetime): Only snapshots with datetime < this value will be expired.
+                A naive datetime is read as local time, like datetime.now() returns it.
 
         Returns:
             This for method chaining.
         """
         protected_ids = self._get_protected_snapshot_ids()
+        if dt.tzinfo is None:
+            dt = dt.astimezone()
         expire_from = datetime_to_millis(dt)
         for snapshot in self._transaction.table_metadata.snapshots:
             if snapshot.timestamp_ms < expire_from and snapshot.snapshot_id not in protected_ids:

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import threading
+import time
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
@@ -172,6 +173,34 @@ def test_expire_snapshots_by_timestamp_skips_protected(table_v2: Table) -> None:
     remove_update = next((u for u in updates if getattr(u, "action", None) == "remove-snapshots"), None)
     assert remove_update is not None
     assert remove_update.snapshot_ids == []
+
+
+def test_expire_snapshots_older_than_reads_naive_datetime_as_local_time(table_v2: Table, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that older_than reads a naive datetime, as datetime.now() returns it, in the local time zone."""
+    if not hasattr(time, "tzset"):
+        pytest.skip("time.tzset is not available on Windows")
+    EXPIRE_SNAPSHOT = 3051729675574597004
+    KEEP_SNAPSHOT = 3055729675574597004
+    expire_snapshot_ms = 1515100955770
+
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={"refs": {"main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch")}}
+    )
+
+    # A zone east of UTC, so reading local time as UTC moves the cutoff nine hours earlier
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    time.tzset()
+    try:
+        local_snapshot_time = datetime.fromtimestamp(expire_snapshot_ms / 1000)
+        for cutoff, expected in (
+            (local_snapshot_time - timedelta(minutes=1), set()),
+            (local_snapshot_time + timedelta(minutes=1), {EXPIRE_SNAPSHOT}),
+        ):
+            expire = table_v2.maintenance.expire_snapshots().older_than(cutoff)
+            assert expire._snapshot_ids_to_expire == expected
+    finally:
+        monkeypatch.undo()
+        time.tzset()
 
 
 def test_expire_snapshots_by_ids(table_v2: Table) -> None:
