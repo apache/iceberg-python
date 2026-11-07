@@ -46,15 +46,18 @@ from pyiceberg.manifest import (
     _inherit_from_manifest,
     _manifests,
     clear_manifest_cache,
+    data_file_with_partition,
+    manifest_entry_schema_with_data_file,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
 )
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record, TableVersion
-from pyiceberg.types import IntegerType, ListType, LongType, NestedField, StructType
+from pyiceberg.types import IntegerType, ListType, LongType, NestedField, StringType, StructType, UnknownType
 from tests.encryption.memory_kms import MemoryKeyManagementClient
 
 
@@ -1519,3 +1522,84 @@ def test_negative_manifest_cache_size_raises_value_error(monkeypatch: pytest.Mon
     finally:
         monkeypatch.delenv("PYICEBERG_MANIFEST_CACHE_SIZE", raising=False)
         importlib.reload(manifest_module)
+
+
+def _entry_with_partition(partition: Record) -> ManifestEntry:
+    return ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=1,
+        data_file=DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path="s3://bucket/data/file.parquet",
+            file_format=FileFormat.PARQUET,
+            partition=partition,
+            record_count=100,
+            file_size_in_bytes=1024,
+        ),
+    )
+
+
+# The source column of "category" (field 1) has been dropped, so its partition type is unknown
+DROPPED_SOURCE_SCHEMA = Schema(NestedField(2, "region", StringType(), False))
+DROPPED_SOURCE_SPEC = PartitionSpec(
+    PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"),
+    PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="region"),
+)
+
+
+def test_write_manifest_skips_unknown_partition_field(tmp_path: Path) -> None:
+    io = load_file_io()
+    for format_version in (1, 2):
+        path = str(tmp_path / f"manifest-v{format_version}.avro")
+        with write_manifest(
+            format_version=format_version,
+            spec=DROPPED_SOURCE_SPEC,
+            schema=DROPPED_SOURCE_SCHEMA,
+            output_file=io.new_output(path),
+            snapshot_id=1,
+            avro_compression="null",
+        ) as writer:
+            writer.add_entry(_entry_with_partition(Record(None, "y")))
+            manifest = writer.to_manifest_file()
+
+        with open(path, "rb") as f:
+            data_file_schema = next(field for field in fastavro.reader(f).writer_schema["fields"] if field["name"] == "data_file")
+        partition_schema = next(field for field in data_file_schema["type"]["fields"] if field["name"] == "partition")
+        assert [field["name"] for field in partition_schema["type"]["fields"]] == ["region"]
+
+        assert manifest.fetch_manifest_entry(io)[0].data_file.partition == Record(None, "y")
+
+
+def test_read_manifest_with_unknown_partition_field_written_as_null(tmp_path: Path) -> None:
+    # Java writes an unknown partition field as an Avro "null" field instead of omitting it
+    # required=True makes the Avro schema a plain "null" instead of a ["null", ...] union
+    io = load_file_io()
+    path = str(tmp_path / "manifest.avro")
+    partition_type = StructType(
+        NestedField(1000, "category", UnknownType(), required=True),
+        NestedField(1001, "region", StringType(), required=False),
+    )
+    with AvroOutputFile[ManifestEntry](
+        output_file=io.new_output(path),
+        file_schema=manifest_entry_schema_with_data_file(2, data_file_with_partition(partition_type, 2)),
+        schema_name="manifest_entry",
+        metadata={
+            "schema": DROPPED_SOURCE_SCHEMA.model_dump_json(),
+            "partition-spec": '[{"source-id":1,"field-id":1000,"transform":"identity","name":"category"},'
+            '{"source-id":2,"field-id":1001,"transform":"identity","name":"region"}]',
+            "partition-spec-id": "0",
+            "format-version": "2",
+        },
+    ) as out:
+        out.write_block([_entry_with_partition(Record(None, "y"))])
+
+    manifest = ManifestFile.from_args(
+        manifest_path=path,
+        manifest_length=1,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=1,
+        min_sequence_number=1,
+        added_snapshot_id=1,
+    )
+    assert manifest.fetch_manifest_entry(io)[0].data_file.partition == Record(None, "y")

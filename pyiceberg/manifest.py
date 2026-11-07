@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import json
 import math
 import threading
 from abc import ABC, abstractmethod
@@ -32,7 +33,7 @@ from cachetools import LRUCache
 from pydantic_core import to_json
 
 from pyiceberg.avro.codecs import AVRO_CODEC_KEY, AvroCompressionCodec
-from pyiceberg.avro.file import AvroFile, AvroOutputFile
+from pyiceberg.avro.file import AvroFile, AvroFileHeader, AvroOutputFile
 from pyiceberg.conversions import to_bytes
 from pyiceberg.encryption.io import EncryptedInputFile
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
@@ -52,6 +53,7 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    UnknownType,
 )
 from pyiceberg.utils.config import Config
 
@@ -913,7 +915,7 @@ class ManifestFile(Record):
         input_file = io.new_input(self.manifest_path)
         with AvroFile[ManifestEntry](
             input_file,
-            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
+            _manifest_entry_read_schema,
             read_types={-1: ManifestEntry, 2: DataFile},
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
@@ -1052,6 +1054,44 @@ def read_manifest_list(input_file: InputFile) -> Iterator[ManifestFile]:
         yield from reader
 
 
+def _manifest_entry_read_schema(header: AvroFileHeader, file_schema: Schema) -> Schema:
+    """Read the partition tuple with all fields of the partition spec in the manifest header.
+
+    Fields of the unknown type are omitted when writing a manifest. Missing fields are added back as
+    optional fields that read as null, which keeps the partition fields after them in place.
+    """
+    read_schema = MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION]
+    spec_json = header.meta.get("partition-spec")
+    if not spec_json:
+        return read_schema
+
+    data_file = next((field.field_type for field in file_schema.fields if field.field_id == 2), None)
+    if not isinstance(data_file, StructType):
+        return read_schema
+    file_partition = next((field.field_type for field in data_file.fields if field.field_id == 102), None)
+    if not isinstance(file_partition, StructType):
+        return read_schema
+
+    file_fields = {field.field_id: field for field in file_partition.fields}
+    try:
+        spec_fields = [(field["field-id"], field["name"]) for field in json.loads(spec_json)]
+    except (ValueError, TypeError, KeyError):
+        # Fall back to the fields in the file, e.g. for old specs without field IDs or written as an object
+        return read_schema
+    if all(field_id in file_fields for field_id, _ in spec_fields):
+        return read_schema
+
+    partition_type = StructType(
+        *[
+            file_fields.get(field_id) or NestedField(field_id=field_id, name=name, field_type=UnknownType(), required=False)
+            for field_id, name in spec_fields
+        ]
+    )
+    return manifest_entry_schema_with_data_file(
+        DEFAULT_READ_VERSION, data_file_with_partition(partition_type, DEFAULT_READ_VERSION)
+    )
+
+
 def _inherit_from_manifest(entry: ManifestEntry, manifest: ManifestFile) -> ManifestEntry:
     """
     Inherits properties from manifest file.
@@ -1172,16 +1212,20 @@ class ManifestWriter(ABC):
             AVRO_CODEC_KEY: self._compression,
         }
 
-    def _with_partition(self, format_version: TableVersion) -> Schema:
-        data_file_type = data_file_with_partition(
-            format_version=format_version, partition_type=self._spec.partition_type(self._schema)
-        )
+    def _with_partition(self, format_version: TableVersion, skip_unknown: bool = False) -> Schema:
+        partition_type = self._spec.partition_type(self._schema)
+        if skip_unknown:
+            # The record keeps all fields; the Avro file omits unknown ones, which read back as null
+            partition_type = StructType(
+                *[field for field in partition_type.fields if not isinstance(field.field_type, UnknownType)]
+            )
+        data_file_type = data_file_with_partition(format_version=format_version, partition_type=partition_type)
         return manifest_entry_schema_with_data_file(format_version=format_version, data_file=data_file_type)
 
     def new_writer(self) -> AvroOutputFile[ManifestEntry]:
         return AvroOutputFile[ManifestEntry](
             output_file=self._output_file,
-            file_schema=self._with_partition(self.version),
+            file_schema=self._with_partition(self.version, skip_unknown=True),
             record_schema=self._with_partition(DEFAULT_READ_VERSION),
             schema_name="manifest_entry",
             metadata=self._meta,
