@@ -180,6 +180,7 @@ For the FileIO there are several configuration options available:
 | s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or boto's credential resolver.                                                                                                                                         |
 | s3.server-side-encryption   | aws:kms                    | Configure server-side encryption (e.g. `AES256` or `aws:kms`). Only supported by `FsspecFileIO`.                                                                                                                                     |
 | s3.sse-kms-key-id           | alias/my-key               | Configure the SSE-KMS key id (or ARN) for multipart uploads. Only supported by `FsspecFileIO`.                                                                                                                                                               |
+| s3.ssl.ca-cert              | /etc/ssl/certs/ca.pem      | Path to a CA certificate bundle used to verify TLS connections to the S3 endpoint. Only supported by `PyArrowFileIO`, and requires pyarrow 21.0.0 or later. |
 
 <!-- markdown-link-check-enable-->
 
@@ -233,7 +234,7 @@ For the FileIO there are several configuration options available:
 | gcs.requester-pays          | False               | Configure whether to use requester-pays requests                                                                                                                                                                                                    |
 | gcs.session-kwargs          | {}                  | Configure a dict of parameters to pass on to aiohttp.ClientSession; can contain, for example, proxy settings.                                                                                                                                       |
 | gcs.service.host            | <http://0.0.0.0:4443> | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint. |
-| gcs.default-location        | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                              |
+| gcs.default-bucket-location | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                              |
 | gcs.version-aware           | False               | Configure whether to support object versioning on the GCS bucket.                                                                                                                                                                                   |
 
 <!-- markdown-link-check-enable-->
