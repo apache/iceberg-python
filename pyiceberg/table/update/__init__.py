@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Generic, Literal, TypeVar, cas
 from pydantic import Field, field_validator, model_serializer, model_validator
 
 from pyiceberg.exceptions import CommitFailedException
-from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
+from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec, validate_partition_name
 from pyiceberg.schema import Schema
 from pyiceberg.table.metadata import (
     SUPPORTED_TABLE_FORMAT_VERSION,
@@ -407,6 +407,11 @@ def _(update: AddPartitionSpecUpdate, base_metadata: TableMetadata, context: _Ta
         # Only raise in case of a discrepancy
         if spec.spec_id == update.spec.spec_id and spec != update.spec:
             raise ValueError(f"Partition spec with id {spec.spec_id} already exists: {spec}")
+
+    # The spec was built against the schema it was loaded with, which another writer may have changed since
+    schema = base_metadata.schema()
+    for field in update.spec.fields:
+        validate_partition_name(field.name, field.transform, field.source_id, schema, set())
 
     metadata_updates: dict[str, Any] = {
         "partition_specs": base_metadata.partition_specs + [update.spec],
