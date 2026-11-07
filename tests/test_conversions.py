@@ -80,10 +80,10 @@ Notes:
 import struct
 import uuid
 from datetime import (
+    UTC,
     date,
     datetime,
     time,
-    timezone,
 )
 from decimal import Decimal
 from typing import Any
@@ -511,6 +511,13 @@ def test_raise_on_unregistered_type() -> None:
     "primitive_type, value, expected_error_message",
     [
         (DecimalType(7, 3), Decimal("123.4567"), "Cannot serialize value, scale of value does not match type decimal(7, 3): 4"),
+        # A Decimal with a negative scale must not pass as its positive counterpart
+        (DecimalType(10, 2), Decimal("1E+2"), "Cannot serialize value, scale of value does not match type decimal(10, 2): -2"),
+        (
+            DecimalType(10, 2),
+            Decimal("100").normalize(),
+            "Cannot serialize value, scale of value does not match type decimal(10, 2): -2",
+        ),
         (
             DecimalType(18, 8),
             Decimal("123456789.123456789"),
@@ -549,7 +556,7 @@ def test_raise_on_incorrect_precision_or_scale(primitive_type: DecimalType, valu
     "primitive_type, value, expected_bytes",
     [
         (TimestampType(), datetime(2023, 3, 1, 19, 25, 0), b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
-        (TimestamptzType(), datetime(2023, 3, 1, 19, 25, 0, tzinfo=timezone.utc), b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
+        (TimestamptzType(), datetime(2023, 3, 1, 19, 25, 0, tzinfo=UTC), b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
         (DateType(), date(2023, 3, 1), b"\xd9K\x00\x00"),
         (TimeType(), time(12, 30, 45, 500000), b"`\xc8\xeb|\n\x00\x00\x00"),
     ],
@@ -574,7 +581,7 @@ def test_datetime_obj_to_bytes(primitive_type: PrimitiveType, value: datetime | 
         (DateType(), date(2017, 11, 16), "2017-11-16"),
         (TimeType(), time(22, 31, 8, 123456), "22:31:08.123456"),
         (TimestampType(), datetime(2017, 11, 16, 22, 31, 8, 123456), "2017-11-16T22:31:08.123456"),
-        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=timezone.utc), "2017-11-16T22:31:08.123456+00:00"),
+        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=UTC), "2017-11-16T22:31:08.123456+00:00"),
         (StringType(), "iceberg", "iceberg"),
         (BinaryType(), b"\x01\x02\x03\xff", "010203ff"),
         (FixedType(4), b"\x01\x02\x03\xff", "010203ff"),
@@ -599,7 +606,7 @@ def test_json_single_serialization(primitive_type: PrimitiveType, value: Any, ex
         (DateType(), date(2017, 11, 16)),
         (TimeType(), time(22, 31, 8, 123456)),
         (TimestampType(), datetime(2017, 11, 16, 22, 31, 8, 123456)),
-        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=timezone.utc)),
+        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=UTC)),
         (StringType(), "iceberg"),
         (BinaryType(), b"\x01\x02\x03\xff"),
         (FixedType(4), b"\x01\x02\x03\xff"),
@@ -607,6 +614,23 @@ def test_json_single_serialization(primitive_type: PrimitiveType, value: Any, ex
 )
 def test_json_serialize_roundtrip(primitive_type: PrimitiveType, value: Any) -> None:
     assert value == conversions.from_json(primitive_type, conversions.to_json(primitive_type, value))
+
+
+@pytest.mark.parametrize(
+    "primitive_type, json_val, expected",
+    [
+        (TimestampType(), "2017-11-16T22:31:08.123456789", datetime(2017, 11, 16, 22, 31, 8, 123456)),
+        (
+            TimestamptzType(),
+            "2017-11-16T22:31:08.123456789+00:00",
+            datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=UTC),
+        ),
+    ],
+)
+def test_json_single_deserialization_with_nano_precision(
+    primitive_type: PrimitiveType, json_val: str, expected: datetime
+) -> None:
+    assert conversions.from_json(primitive_type, json_val) == expected
 
 
 def test_unknown_type_conversions() -> None:

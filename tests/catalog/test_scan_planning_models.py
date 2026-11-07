@@ -40,6 +40,7 @@ from pyiceberg.catalog.rest.scan_planning import (
 )
 from pyiceberg.expressions import AlwaysTrue, EqualTo, Reference
 from pyiceberg.manifest import FileFormat
+from pyiceberg.table import FileScanTask
 
 TEST_URI = "https://iceberg-test-catalog/"
 
@@ -524,6 +525,80 @@ def test_plan_scan_with_delete_files(rest_scan_catalog: RestCatalog, requests_mo
     assert len(tasks) == 1
     assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
     assert len(tasks[0].delete_files) == 1
+
+
+@pytest.mark.parametrize("include_referenced_data_file", [True, False])
+def test_plan_scan_with_shared_dv_file(
+    rest_scan_catalog: RestCatalog, requests_mock: Mocker, include_referenced_data_file: bool
+) -> None:
+    data_files = [_rest_data_file(file_path=f"s3://bucket/data-{index}.parquet") for index in range(2)]
+    delete_files = [
+        {
+            **_rest_position_delete_file(
+                file_path="s3://bucket/deletes.bin", file_format="puffin", file_size_in_bytes=400, content_offset=offset
+            ),
+            **({"referenced-data-file": data_file["file-path"]} if include_referenced_data_file else {}),
+        }
+        for data_file, offset in zip(data_files, [0, 200], strict=True)
+    ]
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "delete-files": delete_files,
+            "file-scan-tasks": [
+                {"data-file": data_file, "delete-file-references": [index, index]} for index, data_file in enumerate(data_files)
+            ],
+        },
+    )
+
+    tasks = rest_scan_catalog.plan_scan(("db", "tbl"), PlanTableScanRequest())
+
+    assert len(tasks) == 2
+    assert all(len(task.delete_files) == 1 for task in tasks)
+    deletes = [dv for task in tasks for dv in task.delete_files]
+    assert len(deletes) == 2
+    assert {(dv.referenced_data_file, dv.content_offset, dv.content_size_in_bytes) for dv in deletes} == {
+        ("s3://bucket/data-0.parquet", 0, 200),
+        ("s3://bucket/data-1.parquet", 200, 200),
+    }
+
+
+@pytest.mark.parametrize("missing_field", ["content-offset", "content-size-in-bytes"])
+@pytest.mark.parametrize("include_referenced_data_file", [True, False])
+def test_rest_task_preserves_partial_dv_reference(missing_field: str, include_referenced_data_file: bool) -> None:
+    fields = {
+        **_rest_position_delete_file(file_format="puffin", content_offset=0),
+        **({"referenced-data-file": "s3://bucket/data.parquet"} if include_referenced_data_file else {}),
+    }
+    fields.pop(missing_field)
+    task = FileScanTask.from_rest_response(
+        RESTFileScanTask.model_validate(
+            {"data-file": _rest_data_file(file_path="s3://bucket/data.parquet"), "delete-file-references": [0]}
+        ),
+        [RESTPositionDeleteFile.model_validate(fields)],
+    )
+    dv = next(iter(task.delete_files))
+
+    assert dv.referenced_data_file == "s3://bucket/data.parquet"
+    assert dv.content_offset == fields.get("content-offset")
+    assert dv.content_size_in_bytes == fields.get("content-size-in-bytes")
+
+
+@pytest.mark.parametrize("file_format", ["puffin", "parquet"])
+def test_rest_task_preserves_whole_delete_file_reference(file_format: str) -> None:
+    fields = _rest_position_delete_file(file_format=file_format)
+    fields.pop("content-offset")
+    fields.pop("content-size-in-bytes")
+    task = FileScanTask.from_rest_response(
+        RESTFileScanTask.model_validate({"data-file": _rest_data_file(), "delete-file-references": [0]}),
+        [RESTPositionDeleteFile.model_validate(fields)],
+    )
+    dv = next(iter(task.delete_files))
+
+    assert dv.referenced_data_file is None
+    assert dv.content_offset is None
+    assert dv.content_size_in_bytes is None
 
 
 def test_plan_scan_async_poll_completes(

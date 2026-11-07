@@ -19,6 +19,7 @@
 Consolidated behavior tests for InMemoryCatalog and SqlCatalog.
 """
 
+import json
 import os
 from collections.abc import Generator
 from pathlib import Path
@@ -503,6 +504,20 @@ def test_purge_table(catalog: Catalog, table_schema_simple: Schema, test_table_i
     catalog.purge_table(test_table_identifier)
     with pytest.raises(NoSuchTableError, match=f"Table does not exist: {'.'.join(test_table_identifier)}"):
         catalog.load_table(test_table_identifier)
+
+
+def test_purge_encrypted_table_without_kms_client(
+    catalog: Catalog, test_table_identifier: Identifier, example_table_metadata_v3_encrypted: dict[str, Any], tmp_path: Path
+) -> None:
+    metadata_location = tmp_path / "00000-encrypted.metadata.json"
+    metadata_location.write_text(json.dumps(example_table_metadata_v3_encrypted))
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    catalog.register_table(test_table_identifier, str(metadata_location))
+
+    with pytest.raises(ValueError, match="no key management client was provided"):
+        catalog.purge_table(test_table_identifier)
+
+    assert catalog.table_exists(test_table_identifier)
 
 
 # List tables tests
@@ -1365,6 +1380,20 @@ def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
 
     assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 3, 4]
     assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
+
+
+def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.scan_integer_decimal_literal_{catalog.name}"
+    tbl = catalog.create_table(identifier=identifier, schema=pa.schema([pa.field("x", pa.int32())]))
+    tbl.append(pa.table({"x": pa.array([1, 2, 3, 4], pa.int32())}))
+
+    # A literal with no fractional part, such as 2.0, still filters exactly
+    assert sorted(tbl.scan(row_filter="x > 2.0").to_arrow()["x"].to_pylist()) == [3, 4]
+    assert tbl.scan(row_filter="x = 2.0").to_arrow()["x"].to_pylist() == [2]
+    # Rounding 2.6 to 3 would turn x > 2.6 into x > 3 and silently drop x = 3
+    with pytest.raises(ValueError, match="Could not convert 2.6 into a int"):
+        tbl.scan(row_filter="x > 2.6").to_arrow()
 
 
 def test_record_batch_reader_consumed_exactly_once(catalog: Catalog) -> None:

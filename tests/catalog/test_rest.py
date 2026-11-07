@@ -23,8 +23,10 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, cast
 from unittest import mock
+from urllib.parse import parse_qs, quote, urlsplit
 
 import pytest
+from pydantic import ValidationError
 from requests import Request
 from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
@@ -119,6 +121,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_CREATE_VIEW,
     Capability.V1_REGISTER_VIEW,
     Capability.V1_DELETE_VIEW,
+    Capability.V1_RENAME_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
     Capability.V1_TABLE_SCAN_PLAN_TASKS,
 ]
@@ -972,6 +975,42 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "parent",
+    [
+        ("accounting",),
+        ("accounting", "tax"),
+        ("my namespace",),
+        ("dept/finance", "tax"),
+        ("100%",),
+        ("\u65e5\u672c",),
+    ],
+)
+def test_list_namespace_with_parent_is_encoded_once(rest_mock: Mocker, parent: tuple[str, ...]) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [[*parent, "child"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(parent) == [(*parent, "child")]
+    query = parse_qs(urlsplit(rest_mock.last_request.url).query)
+    assert query["parent"] == ["\x1f".join(parent)]
+
+
+def test_list_namespace_with_parent_custom_separator(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["my namespace", "tax", "child"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"namespace-separator": "."})
+    assert catalog.list_namespaces(("my namespace", "tax")) == [("my namespace", "tax", "child")]
+    query = parse_qs(urlsplit(rest_mock.last_request.url).query)
+    assert query["parent"] == ["my namespace.tax"]
+
+
 def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
     # First page with next-page-token
     rest_mock.get(
@@ -1762,9 +1801,31 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
     expected = View(
         identifier=("fokko", "fokko2"),
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
     )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
+
+
+def test_create_view_name_is_not_encoded_in_body(
+    rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    view_version = ViewVersion(
+        schema_id=1,
+        summary={"engine-name": "spark", "engineVersion": "3.3"},
+        representations=[],
+        default_namespace=["default"],
+    )
+    for view_name in ["my view", "dept/view", "100%", "\u65e5\u672c"]:
+        catalog.create_view(identifier=("fokko", view_name), schema=table_schema_simple, view_version=view_version)
+        assert rest_mock.last_request.json()["name"] == view_name
 
 
 def test_create_view_409(
@@ -1809,9 +1870,26 @@ def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     actual = catalog.load_view(("fokko", "view"))
-    expected = View(identifier=("fokko", "view"), metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]))
+    expected = View(
+        identifier=("fokko", "view"),
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
+    )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
+
+
+def test_load_view_missing_metadata_location(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    response = {k: v for k, v in example_view_metadata_rest_json.items() if k != "metadata-location"}
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=response,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(ValidationError, match="metadata-location"):
+        catalog.load_view(("fokko", "view"))
 
 
 def test_load_view_404(rest_mock: Mocker) -> None:
@@ -2769,9 +2847,28 @@ def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: d
     expected = View(
         identifier=("default", "registered_view"),
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
     )
     assert actual == expected
     assert actual.config == example_view_metadata_rest_json["config"]
+
+
+def test_register_view_name_is_not_encoded_in_body(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/register-view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    for view_name in ["my view", "dept/view", "100%", "\u65e5\u672c"]:
+        rest_mock.head(
+            f"{TEST_URI}v1/namespaces/default/tables/{quote(view_name, safe='')}",
+            status_code=404,
+            request_headers=TEST_HEADERS,
+        )
+        catalog.register_view(identifier=("default", view_name), metadata_location="s3://warehouse/database/view/metadata.json")
+        assert rest_mock.last_request.json()["name"] == view_name
 
 
 def test_register_view_409_view(rest_mock: Mocker) -> None:
@@ -2852,6 +2949,125 @@ def test_drop_view_204(rest_mock: Mocker) -> None:
         request_headers=TEST_HEADERS,
     )
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "some_view"))
+
+
+def test_rename_view_204(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "old_view")
+    to_identifier = ("some_namespace", "new_view")
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "source": {"namespace": ["some_namespace"], "name": "old_view"},
+            "destination": {"namespace": ["some_namespace"], "name": "new_view"},
+        },
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    catalog.rename_view(from_identifier, to_identifier)
+    assert (
+        rest_mock.last_request.text == """{"source": {"namespace": ["some_namespace"], "name": "old_view"}, """
+        """"destination": {"namespace": ["some_namespace"], "name": "new_view"}}"""
+    )
+
+
+def test_rename_view_404(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "non_existent_view")
+    to_identifier = ("some_namespace", "new_view")
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "error": {
+                "message": "View does not exist: some_namespace.non_existent_view",
+                "type": "NoSuchViewException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchViewError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "View does not exist: some_namespace.non_existent_view" in str(exc_info.value)
+
+
+def test_rename_view_409(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "old_view")
+    to_identifier = ("some_namespace", "existing_view")
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "error": {
+                "message": "View already exists: some_namespace.existing_view",
+                "type": "ViewAlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(ViewAlreadyExistsError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "View already exists: some_namespace.existing_view" in str(exc_info.value)
+
+
+def test_rename_view_source_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    from_identifier = ("non_existent_namespace", "old_view")
+    to_identifier = ("some_namespace", "new_view")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/non_existent_namespace",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchNamespaceError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "Source namespace does not exist: ('non_existent_namespace',)" in str(exc_info.value)
+
+
+def test_rename_view_destination_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "old_view")
+    to_identifier = ("non_existent_namespace", "new_view")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/non_existent_namespace",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchNamespaceError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "Destination namespace does not exist: ('non_existent_namespace',)" in str(exc_info.value)
 
 
 @mock.patch("google.auth.transport.requests.Request")
@@ -3215,6 +3431,7 @@ class TestRestCatalogClose:
         # View endpoints should be supported when enabled
         catalog._check_endpoint(Capability.V1_LIST_VIEWS)
         catalog._check_endpoint(Capability.V1_DELETE_VIEW)
+        catalog._check_endpoint(Capability.V1_RENAME_VIEW)
 
 
 def test_table_uuid_check_on_commit(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
