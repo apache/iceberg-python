@@ -768,7 +768,7 @@ def test_invalid_arguments(spark: SparkSession, session_catalog: Catalog) -> Non
         properties={"format-version": "1"},
     )
 
-    with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader, got: not a df"):
+    with pytest.raises(ValueError, match="Expected pa.Table, pa.RecordBatchReader, or an object implementing"):
         tbl.append("not a df")
 
 
