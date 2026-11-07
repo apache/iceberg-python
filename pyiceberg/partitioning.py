@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property, singledispatch
 from typing import Annotated, Any, Generic, TypeVar
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote_plus
 
 from pydantic import (
     BeforeValidator,
@@ -40,6 +40,7 @@ from pyiceberg.transforms import (
     HourTransform,
     IdentityTransform,
     MonthTransform,
+    TimeTransform,
     Transform,
     TruncateTransform,
     UnknownTransform,
@@ -49,7 +50,9 @@ from pyiceberg.transforms import (
 )
 from pyiceberg.typedef import IcebergBaseModel, Record
 from pyiceberg.types import (
+    BinaryType,
     DateType,
+    FixedType,
     IcebergType,
     NestedField,
     PrimitiveType,
@@ -254,6 +257,56 @@ class PartitionSpec(IcebergBaseModel):
 
         path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs, strict=True)])
         return path
+
+    def partition_from_path(self, location: str, schema: Schema) -> Record | None:
+        """Infer a partition Record from a Hive-style path (trailing key=value dirs).
+
+        Supports identity, bucket, and truncate (non-binary) transforms, since their
+        to_human_string output is parseable back into the transform's result value.
+        Returns None for unsupported transforms or a non-Hive-style path, so the
+        caller can fall back to another inference strategy.
+        """
+        from pyiceberg.conversions import partition_to_py
+
+        if self.is_unpartitioned():
+            return None
+
+        for field in self.fields:
+            if isinstance(field.transform, (TimeTransform, VoidTransform, UnknownTransform)):
+                return None
+            if isinstance(field.transform, TruncateTransform):
+                source_field = schema.find_field(field.source_id)
+                if isinstance(source_field.field_type, (FixedType, BinaryType)):
+                    # base64-encoded in the path, not decodable back to bytes
+                    return None
+
+        segments = [segment for segment in location.split("/") if segment]
+
+        partition_size = len(self.fields)
+        partition_end_index_exclusive = len(segments) - 1  # exclude the file name
+        partition_start_index = partition_end_index_exclusive - partition_size
+        if partition_start_index < 0:
+            return None
+
+        partition_segments = segments[partition_start_index:partition_end_index_exclusive]
+        if not all("=" in segment for segment in partition_segments):
+            return None
+
+        partition_type = self.partition_type(schema)
+        field_types = partition_type.fields
+
+        values = []
+        for partition_field, segment, field_type in zip(self.fields, partition_segments, field_types, strict=True):
+            key, _, raw_value = segment.partition("=")
+            key = unquote_plus(key)
+            if key != partition_field.name:
+                return None
+
+            value_str = unquote_plus(raw_value)
+            value = partition_to_py(field_type.field_type, value_str) if value_str else None
+            values.append(value)
+
+        return Record(*values)
 
     def check_compatible(self, schema: Schema, allow_missing_fields: bool = False) -> None:
         # if the underlying field is dropped, we cannot check they are compatible -- continue
