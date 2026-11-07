@@ -275,6 +275,8 @@ class Transaction:
 
     @property
     def table_metadata(self) -> TableMetadata:
+        if not self._updates:
+            return self._table.metadata
         return update_table_metadata(self._table.metadata, self._updates)
 
     def __enter__(self) -> Transaction:

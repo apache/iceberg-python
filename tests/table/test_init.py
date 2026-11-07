@@ -1103,6 +1103,20 @@ def test_update_metadata_table_schema(table_v2: Table) -> None:
     assert new_metadata.current_schema_id == 2
 
 
+def test_transaction_table_metadata_without_staged_updates(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    assert transaction.table_metadata is table_v2.metadata
+
+
+def test_transaction_table_metadata_with_staged_updates(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    transaction.set_properties(test_a="test_a")
+
+    assert transaction.table_metadata.properties["test_a"] == "test_a"
+    assert transaction.table_metadata is not table_v2.metadata
+    assert "test_a" not in table_v2.metadata.properties
+
+
 def test_update_metadata_add_snapshot(table_v2: Table) -> None:
     new_snapshot = Snapshot(
         snapshot_id=25,
