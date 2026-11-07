@@ -544,11 +544,14 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
         for snapshot in base_metadata.snapshots
         if snapshot.snapshot_id not in update.snapshot_ids
     ]
-    snapshot_log = [
-        snapshot_log_entry
-        for snapshot_log_entry in base_metadata.snapshot_log
-        if snapshot_log_entry.snapshot_id not in update.snapshot_ids
-    ]
+    retained_snapshot_ids = {snapshot.snapshot_id for snapshot in snapshots}
+    snapshot_log: list[SnapshotLogEntry] = []
+    for entry in base_metadata.snapshot_log:
+        if entry.snapshot_id not in retained_snapshot_ids:
+            # Earlier entries would make time travel resolve across a missing snapshot.
+            snapshot_log.clear()
+        else:
+            snapshot_log.append(entry)
 
     remove_ref_updates = (
         RemoveSnapshotRefUpdate(ref_name=ref_name)
