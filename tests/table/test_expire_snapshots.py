@@ -22,7 +22,7 @@ from uuid import uuid4
 import pytest
 
 from pyiceberg.table import CommitTableResponse, Table
-from pyiceberg.table.update import RemoveSnapshotsUpdate, update_table_metadata
+from pyiceberg.table.update import AssertRefSnapshotId, RemoveSnapshotsUpdate, update_table_metadata
 from pyiceberg.table.update.snapshot import ExpireSnapshots
 
 
@@ -316,3 +316,66 @@ def test_update_remove_snapshots_with_statistics(table_v2_with_statistics: Table
     assert not any(stat.snapshot_id == REMOVE_SNAPSHOT for stat in new_metadata.statistics), (
         "Statistics for removed snapshot should be gone"
     )
+
+
+def test_expire_snapshots_asserts_ref_snapshot_id_requirements(table_v2: Table) -> None:
+    """Test that expiring snapshots stages AssertRefSnapshotId for protected refs."""
+    EXPIRE_SNAPSHOT = 3051729675574597004
+    KEEP_SNAPSHOT = 3055729675574597004
+
+    mock_response = CommitTableResponse(
+        metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}),
+        metadata_location="mock://metadata/location",
+        uuid=uuid4(),
+    )
+    table_v2.catalog = MagicMock()
+    table_v2.catalog.commit_table.return_value = mock_response
+
+    table_v2.metadata = table_v2.metadata.model_copy(
+        update={
+            "refs": {
+                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
+                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
+            }
+        }
+    )
+
+    table_v2.maintenance.expire_snapshots().by_id(EXPIRE_SNAPSHOT).commit()
+
+    table_v2.catalog.commit_table.assert_called_once()
+    args, _ = table_v2.catalog.commit_table.call_args
+    requirements = args[1] if len(args) > 1 else ()
+    ref_reqs = [r for r in requirements if isinstance(r, AssertRefSnapshotId)]
+    assert {r.ref: r.snapshot_id for r in ref_reqs} == {
+        "main": KEEP_SNAPSHOT,
+        "tag1": KEEP_SNAPSHOT,
+    }
+
+
+def test_expire_snapshots_concurrent_rollback_fails(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Test that expiring snapshots fails when a protected reference changes concurrently (#4200)."""
+    import pyarrow as pa
+
+    from pyiceberg.catalog.sql import SqlCatalog
+    from pyiceberg.exceptions import CommitFailedException
+
+    tmp_dir = tmp_path_factory.mktemp("iceberg_expire")
+    warehouse = f"file://{tmp_dir.as_posix()}"
+    cat = SqlCatalog("c", uri="sqlite:///:memory:", warehouse=warehouse)
+    cat.create_namespace("ns")
+    t = cat.create_table("ns.t", schema=pa.schema([("x", pa.int64())]))
+    t.append(pa.table({"x": [1]}))
+    current_snapshot = t.current_snapshot()
+    assert current_snapshot is not None
+    s1 = current_snapshot.snapshot_id
+    t.append(pa.table({"x": [2]}))
+
+    cat.load_table("ns.t").manage_snapshots().rollback_to_snapshot(s1).commit()
+
+    with pytest.raises(CommitFailedException, match="Requirement failed: branch main has changed"):
+        t.maintenance.expire_snapshots().by_id(s1).commit()
+
+    reloaded = cat.load_table("ns.t")
+    assert "main" in reloaded.metadata.refs
+    assert reloaded.metadata.refs["main"].snapshot_id == s1
+    assert reloaded.scan().to_arrow()["x"].to_pylist() == [1]
