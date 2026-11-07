@@ -746,11 +746,11 @@ def update_table_metadata(
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
 
-    # Update last_updated_ms if it was not updated by update operations
+    # last_updated_ms must not precede the base's, which becomes the latest metadata-log entry
     if context.has_changes():
         if metadata_location:
             new_metadata = _update_table_metadata_log(new_metadata, metadata_location, base_metadata.last_updated_ms)
-        if base_metadata.last_updated_ms == new_metadata.last_updated_ms:
+        if new_metadata.last_updated_ms <= base_metadata.last_updated_ms:
             new_metadata = new_metadata.model_copy(update={"last_updated_ms": datetime_to_millis(datetime.now().astimezone())})
 
     # Check correctness of partition spec, and sort order
