@@ -28,6 +28,7 @@ from sqlalchemy import (
     String,
     create_engine,
     delete,
+    func,
     insert,
     select,
     text,
@@ -569,7 +570,13 @@ class SqlCatalog(MetastoreCatalog):
     def namespace_exists(self, identifier: str | Identifier) -> bool:
         namespace_tuple = Catalog.identifier_to_tuple(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple, NoSuchNamespaceError)
-        namespace_starts_with = namespace.replace("!", "!!").replace("_", "!_").replace("%", "!%") + ".%"
+        # A namespace exists if it is stored itself or is a parent of a stored
+        # namespace. The prefix comparison must be case-sensitive: LIKE is
+        # case-insensitive for ASCII on SQLite, so it reported e.g. "SALES" as
+        # existing when only "sales.eu" was stored, unlike PostgreSQL. substr
+        # with = is case-sensitive on both backends.
+        namespace_prefix = namespace + "."
+        prefix_length = len(namespace_prefix)
 
         with Session(self.engine) as session:
             stmt = (
@@ -577,7 +584,7 @@ class SqlCatalog(MetastoreCatalog):
                 .where(
                     IcebergTables.catalog_name == self.name,
                     (IcebergTables.table_namespace == namespace)
-                    | (IcebergTables.table_namespace.like(namespace_starts_with, escape="!")),
+                    | (func.substr(IcebergTables.table_namespace, 1, prefix_length) == namespace_prefix),
                 )
                 .limit(1)
             )
@@ -589,7 +596,7 @@ class SqlCatalog(MetastoreCatalog):
                 .where(
                     IcebergNamespaceProperties.catalog_name == self.name,
                     (IcebergNamespaceProperties.namespace == namespace)
-                    | (IcebergNamespaceProperties.namespace.like(namespace_starts_with, escape="!")),
+                    | (func.substr(IcebergNamespaceProperties.namespace, 1, prefix_length) == namespace_prefix),
                 )
                 .limit(1)
             )
