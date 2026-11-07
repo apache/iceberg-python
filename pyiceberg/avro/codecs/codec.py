@@ -18,6 +18,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+# The compressed block alone determines how much a codec decodes, so decompression
+# is bounded to keep a small block from expanding without limit.
+MAX_DECOMPRESSED_BLOCK_SIZE = 1 << 30
+
 
 class Codec(ABC):
     """Abstract base class for all Avro codec classes."""
