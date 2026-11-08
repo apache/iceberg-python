@@ -29,7 +29,7 @@ from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.metadata import TableMetadataUtil
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
-from pyiceberg.table.update import SetSnapshotRefUpdate, TableRequirement, TableUpdate
+from pyiceberg.table.update import RemoveSnapshotRefUpdate, SetSnapshotRefUpdate, TableRequirement, TableUpdate
 
 # The two snapshots in the table_v2 fixture: CHILD's parent is PARENT.
 PARENT_SNAPSHOT_ID = 3051729675574597004
@@ -80,6 +80,62 @@ def table_v2_main_behind(example_table_metadata_v2: dict[str, Any]) -> Table:
         io=PyArrowFileIO(),
         catalog=MagicMock(),
     )
+
+
+def test_create_ref_rejects_existing_name(table_v2: Table) -> None:
+    table_v2.catalog = MagicMock()
+
+    # "test" is a tag in the fixture; neither kind may take an existing name.
+    with pytest.raises(ValueError, match="Ref test already exists"):
+        table_v2.manage_snapshots().create_branch(snapshot_id=CHILD_SNAPSHOT_ID, branch_name="test")
+    with pytest.raises(ValueError, match="Ref test already exists"):
+        table_v2.manage_snapshots().create_tag(snapshot_id=CHILD_SNAPSHOT_ID, tag_name="test")
+
+    table_v2.catalog.commit_table.assert_not_called()
+    assert table_v2.metadata.refs["test"].snapshot_id == PARENT_SNAPSHOT_ID
+
+
+def test_create_ref_rejects_name_staged_earlier_in_chain(table_v2: Table) -> None:
+    table_v2.catalog = MagicMock()
+    ms = table_v2.manage_snapshots().create_branch(snapshot_id=PARENT_SNAPSHOT_ID, branch_name="dev")
+
+    with pytest.raises(ValueError, match="Ref dev already exists"):
+        ms.create_branch(snapshot_id=CHILD_SNAPSHOT_ID, branch_name="dev")
+    with pytest.raises(ValueError, match="Ref dev already exists"):
+        ms.create_tag(snapshot_id=CHILD_SNAPSHOT_ID, tag_name="dev")
+
+    table_v2.catalog.commit_table.assert_not_called()
+
+
+def test_remove_ref_rejects_main_missing_and_wrong_kind(table_v2_main_behind: Table) -> None:
+    table_v2_main_behind.catalog = MagicMock()
+    ms = table_v2_main_behind.manage_snapshots()
+
+    for method, name, message in [
+        (ms.remove_branch, "main", "Cannot remove main branch"),
+        (ms.remove_branch, "missing", "Branch does not exist: missing"),
+        (ms.remove_branch, "test", "Ref test is a tag not a branch"),
+        (ms.remove_tag, "missing", "Tag does not exist: missing"),
+        (ms.remove_tag, "audit", "Ref audit is a branch not a tag"),
+    ]:
+        with pytest.raises(ValueError, match=message):
+            method(name)
+
+    table_v2_main_behind.catalog.commit_table.assert_not_called()
+
+
+def test_remove_then_create_same_name_in_one_chain(table_v2_main_behind: Table) -> None:
+    table = table_v2_main_behind
+    mock_catalog = MagicMock()
+    mock_catalog.commit_table.return_value = _mock_commit_response(table)
+    table.catalog = mock_catalog
+
+    table.manage_snapshots().remove_branch("audit").create_branch(snapshot_id=PARENT_SNAPSHOT_ID, branch_name="audit").commit()
+
+    updates = _get_updates(mock_catalog)
+    assert [type(update) for update in updates] == [RemoveSnapshotRefUpdate, SetSnapshotRefUpdate]
+    assert isinstance(updates[1], SetSnapshotRefUpdate)
+    assert updates[1].snapshot_id == PARENT_SNAPSHOT_ID
 
 
 def test_set_current_snapshot_basic(table_v2: Table) -> None:
