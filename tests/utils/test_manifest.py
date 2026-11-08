@@ -27,6 +27,7 @@ import pytest
 import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.avro.file import DEFAULT_SYNC_INTERVAL, AvroFile, AvroOutputFile
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.manager import EncryptionManager
 from pyiceberg.encryption.stream import _encrypt_ags1
 from pyiceberg.io import load_file_io
@@ -546,6 +547,59 @@ def test_read_encrypted_manifest_list_without_encryption_manager(generated_manif
 
     with pytest.raises(ValueError, match="Snapshot 25 is encrypted, but no encryption manager was provided"):
         snapshot.manifests(load_file_io())
+
+
+def test_read_encrypted_manifest(generated_manifest_entry_file: str, tmp_path: Path) -> None:
+    io = load_file_io()
+    key_metadata = StandardKeyMetadata.generate()
+    encrypted = _encrypt_ags1(Path(generated_manifest_entry_file).read_bytes(), key_metadata)
+    encrypted_path = tmp_path / "manifest.avro"
+    encrypted_path.write_bytes(encrypted)
+    key_metadata = replace(key_metadata, file_length=len(encrypted))
+
+    def manifest(path: str, key_metadata: bytes | None) -> ManifestFile:
+        return ManifestFile.from_args(
+            manifest_path=path,
+            manifest_length=0,
+            partition_spec_id=0,
+            added_snapshot_id=0,
+            sequence_number=0,
+            partitions=[],
+            key_metadata=key_metadata,
+        )
+
+    expected = manifest(generated_manifest_entry_file, None).fetch_manifest_entry(io, discard_deleted=False)
+    assert manifest(str(encrypted_path), key_metadata.to_bytes()).fetch_manifest_entry(io, discard_deleted=False) == expected
+
+    wrong_key = replace(key_metadata, encryption_key=bytes(16))
+    with pytest.raises(ValueError, match="GCM tag check failed"):
+        manifest(str(encrypted_path), wrong_key.to_bytes()).fetch_manifest_entry(io)
+
+    with pytest.raises(ValueError, match="No schema found in Avro file headers"):
+        manifest(str(encrypted_path), None).fetch_manifest_entry(io)
+
+
+def test_read_manifest_encrypted_by_iceberg_rust() -> None:
+    """The manifest was encrypted by iceberg-rust, see tests/table/encryption/README.md."""
+    manifest = ManifestFile.from_args(
+        manifest_path=str(Path(__file__).parent.parent / "table" / "encryption" / "manifest-v3-encrypted.avro"),
+        manifest_length=3444,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=1,
+        min_sequence_number=1,
+        added_snapshot_id=1,
+        partitions=[],
+        key_metadata=bytes.fromhex("01203031323334353637383961626364656602206665646362613938373635343332313002e835"),
+    )
+
+    entries = manifest.fetch_manifest_entry(load_file_io())
+
+    assert [(entry.data_file.file_path, entry.data_file.record_count) for entry in entries] == [
+        ("s3://bucket/table/data/00000.parquet", 3),
+        ("s3://bucket/table/data/00001.parquet", 5),
+    ]
+    assert all(entry.status == ManifestEntryStatus.ADDED and entry.snapshot_id == 1 for entry in entries)
 
 
 def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:

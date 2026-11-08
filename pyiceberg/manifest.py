@@ -900,7 +900,7 @@ class ManifestFile(Record):
         entry_filter: Callable[[ManifestEntry], bool] | None = None,
     ) -> list[ManifestEntry]:
         """
-        Read the manifest entries from the manifest file.
+        Read the manifest entries from the manifest file, decrypting it when it has key metadata.
 
         Args:
             io: The FileIO to fetch the file.
@@ -911,6 +911,8 @@ class ManifestFile(Record):
             An Iterator of manifest entries.
         """
         input_file = io.new_input(self.manifest_path)
+        if self.key_metadata is not None:
+            input_file = EncryptedInputFile(input_file, StandardKeyMetadata.from_bytes(self.key_metadata))
         with AvroFile[ManifestEntry](
             input_file,
             MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
