@@ -300,6 +300,11 @@ def validate_partition_name(
     partition_names: set[str],
 ) -> None:
     """Validate that a partition field name doesn't conflict with schema field names."""
+    if not field_name:
+        raise ValueError("Undefined name")
+    if field_name in partition_names:
+        raise ValueError(f"Partition name has to be unique: {field_name}")
+
     try:
         schema_field = schema.find_field(field_name)
     except ValueError:
@@ -311,14 +316,11 @@ def validate_partition_name(
             raise ValueError(f"Cannot create identity partition sourced from different field in schema: {field_name}")
     else:
         raise ValueError(f"Cannot create partition with a name that exists in schema: {field_name}")
-    if not field_name:
-        raise ValueError("Undefined name")
-    if field_name in partition_names:
-        raise ValueError(f"Partition name has to be unique: {field_name}")
 
 
 def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fresh_schema: Schema) -> PartitionSpec:
     partition_fields = []
+    partition_names: set[str] = set()
     for pos, field in enumerate(spec.fields):
         original_column_name = old_schema.find_column_name(field.source_id)
         if original_column_name is None:
@@ -327,7 +329,8 @@ def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fre
         if fresh_field is None:
             raise ValueError(f"Could not find field in fresh schema: {original_column_name}")
 
-        validate_partition_name(field.name, field.transform, fresh_field.field_id, fresh_schema, set())
+        validate_partition_name(field.name, field.transform, fresh_field.field_id, fresh_schema, partition_names)
+        partition_names.add(field.name)
 
         partition_fields.append(
             PartitionField(
