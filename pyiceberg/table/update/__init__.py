@@ -763,7 +763,16 @@ def update_table_metadata(
     if enforce_validation:
         return TableMetadataUtil.parse_obj(new_metadata.model_dump())
     else:
-        return new_metadata.model_copy(deep=True)
+        return _copy_containers(new_metadata)
+
+
+def _copy_containers(metadata: TableMetadata) -> TableMetadata:
+    """Copy the list and dict fields of the metadata and share the frozen models they hold.
+
+    The frozen config cannot prevent a list append or a dict assignment on a field, so copying the
+    containers keeps the base metadata isolated without deep-copying the whole table history.
+    """
+    return metadata.model_copy(update={name: value.copy() for name, value in metadata if isinstance(value, (list, dict))})
 
 
 def _update_table_metadata_log(base_metadata: TableMetadata, metadata_location: str, last_updated_ms: int) -> TableMetadata:
