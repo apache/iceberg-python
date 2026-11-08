@@ -68,6 +68,7 @@ from pyarrow.fs import (
 from typing_extensions import override
 
 from pyiceberg.conversions import to_bytes
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
 from pyiceberg.expressions.literals import Literal
@@ -1158,11 +1159,34 @@ def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.Fi
         raise ValueError(f"Unsupported file format: {file_format}")
 
 
+def _get_data_file_format(data_file: DataFile, **kwargs: Any) -> ds.FileFormat:
+    if data_file.key_metadata is None:
+        return _get_file_format(data_file.file_format, **kwargs)
+    if data_file.file_format != FileFormat.PARQUET:
+        raise ValueError(f"Cannot read encrypted {data_file.file_format} file {data_file.file_path}: only Parquet is supported")
+    return ds.ParquetFileFormat(decryption_properties=_parquet_decryption_properties(data_file.key_metadata), **kwargs)
+
+
+def _parquet_decryption_properties(key_metadata: bytes) -> pq.FileDecryptionProperties:
+    from packaging import version
+    from pyarrow.parquet import encryption
+
+    MIN_PYARROW_VERSION_SUPPORTING_PARQUET_DECRYPTION = "25.0.0"
+    if version.parse(pyarrow.__version__) < version.parse(MIN_PYARROW_VERSION_SUPPORTING_PARQUET_DECRYPTION):
+        raise ImportError(
+            f"pyarrow version >= {MIN_PYARROW_VERSION_SUPPORTING_PARQUET_DECRYPTION} required to read encrypted Parquet files, "
+            f"but found version {pyarrow.__version__}."
+        )
+
+    metadata = StandardKeyMetadata.from_bytes(key_metadata)
+    return encryption.create_decryption_properties(metadata.encryption_key, aad_prefix=metadata.aad_prefix)
+
+
 def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]:
     if data_file.file_format == FileFormat.PARQUET:
         with io.new_input(data_file.file_path).open() as fi:
-            delete_fragment = _get_file_format(
-                data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
+            delete_fragment = _get_data_file_format(
+                data_file, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
             ).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
         table = table.unify_dictionaries()
@@ -1172,7 +1196,7 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
         }
     elif data_file.file_format == FileFormat.ORC:
         with io.new_input(data_file.file_path).open() as fi:
-            delete_fragment = _get_file_format(data_file.file_format).make_fragment(fi)
+            delete_fragment = _get_data_file_format(data_file).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
             # For ORC, file_path columns are not dictionary-encoded, so we use unique() directly
             return {
@@ -1715,7 +1739,7 @@ def _task_to_record_batches(
     format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
     if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
         format_kwargs["dictionary_columns"] = dictionary_columns
-    arrow_format = _get_file_format(task.file.file_format, **format_kwargs)
+    arrow_format = _get_data_file_format(task.file, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema

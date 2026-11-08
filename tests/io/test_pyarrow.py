@@ -25,6 +25,7 @@ import uuid
 import warnings
 import zlib
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -42,6 +43,7 @@ from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3F
 from pyroaring import BitMap
 
 from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTDeleteFile, RESTFileScanTask, RESTPositionDeleteFile
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -81,6 +83,7 @@ from pyiceberg.io.pyarrow import (
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
     _determine_partitions,
+    _get_data_file_format,
     _primitive_to_physical,
     _read_all_delete_files,
     _read_deletes,
@@ -4130,6 +4133,111 @@ def test_task_to_record_batches_filter_after_positional_deletes_empty_result(tmp
     )
 
     assert result_batches == []
+
+
+def test_task_to_record_batches_encrypted_by_iceberg_rust() -> None:
+    """The data file was encrypted by iceberg-rust, see tests/table/encryption/README.md."""
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=str(Path(__file__).parent.parent / "table" / "encryption" / "data-v3-encrypted.parquet"),
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=3,
+        file_size_in_bytes=1407,
+        key_metadata=bytes.fromhex("01207d30accaf199ff6f49ae7f3d65cbd8c6022033a904147e53c08d6f71c21c6638852a00"),
+    )
+    table_schema = Schema(NestedField(1, "id", LongType(), required=True), NestedField(2, "data", StringType(), required=False))
+
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=AlwaysTrue(),
+        projected_schema=table_schema,
+        table_schema=table_schema,
+        projected_field_ids={1, 2},
+        positional_deletes=None,
+        case_sensitive=True,
+    )
+
+    assert pa.Table.from_batches(batches).to_pylist() == [{"id": 1, "data": "a"}, {"id": 2, "data": None}, {"id": 3, "data": "c"}]
+
+
+def test_read_encrypted_parquet_with_position_deletes(tmp_path: Path) -> None:
+    from pyarrow.parquet import encryption
+
+    def write_encrypted(path: str, table: pa.Table, content: DataFileContent) -> DataFile:
+        key_metadata = StandardKeyMetadata.generate()
+        # Java does not store the AAD prefix in the file, so it must come from key metadata
+        encryption_properties = encryption.create_encryption_properties(
+            key_metadata.encryption_key, aad_prefix=key_metadata.aad_prefix, store_aad_prefix=False
+        )
+        pq.write_table(table, path, encryption_properties=encryption_properties)
+        return DataFile.from_args(
+            content=content,
+            file_path=path,
+            file_format=FileFormat.PARQUET,
+            partition={},
+            record_count=len(table),
+            file_size_in_bytes=os.path.getsize(path),
+            key_metadata=key_metadata.to_bytes(),
+        )
+
+    arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
+    data_path = str(tmp_path / "data.parquet")
+    data_file = write_encrypted(
+        data_path, pa.table([pa.array([1, 2, 3, 4], type=pa.int32())], schema=arrow_schema), DataFileContent.DATA
+    )
+    delete_file = write_encrypted(
+        str(tmp_path / "deletes.parquet"),
+        pa.table({"file_path": [data_path], "pos": pa.array([2], type=pa.int64())}),
+        DataFileContent.POSITION_DELETES,
+    )
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    deletes = _read_deletes(PyArrowFileIO(), delete_file)
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=AlwaysTrue(),
+        projected_schema=table_schema,
+        table_schema=table_schema,
+        projected_field_ids={1},
+        positional_deletes=[deletes[data_path]],
+        case_sensitive=True,
+    )
+
+    assert pa.Table.from_batches(batches).column("id").to_pylist() == [1, 2, 4]
+
+
+def test_read_encrypted_parquet_fails_closed(tmp_path: Path) -> None:
+    from pyarrow.parquet import encryption
+
+    key_metadata = StandardKeyMetadata.generate()
+    encrypted_path = str(tmp_path / "encrypted.parquet")
+    pq.write_table(
+        pa.table({"id": [1]}),
+        encrypted_path,
+        encryption_properties=encryption.create_encryption_properties(
+            key_metadata.encryption_key, aad_prefix=key_metadata.aad_prefix, store_aad_prefix=False
+        ),
+    )
+    plaintext_path = str(tmp_path / "plaintext.parquet")
+    pq.write_table(pa.table({"id": [1]}), plaintext_path)
+
+    for path, key, error in [
+        (encrypted_path, replace(key_metadata, encryption_key=bytes(16)).to_bytes(), "Failed decryption finalization"),
+        (encrypted_path, replace(key_metadata, aad_prefix=bytes(16)).to_bytes(), "Failed decryption finalization"),
+        (encrypted_path, None, "no decryption found in reader's properties"),
+        (plaintext_path, key_metadata.to_bytes(), "Applying decryption properties on plaintext file"),
+    ]:
+        data_file = DataFile.from_args(file_path=path, file_format=FileFormat.PARQUET, key_metadata=key)
+        with pytest.raises(OSError, match=error):
+            with open(path, "rb") as f:
+                _get_data_file_format(data_file).make_fragment(f).to_table()
+
+    orc_file = DataFile.from_args(file_path="file.orc", file_format=FileFormat.ORC, key_metadata=key_metadata.to_bytes())
+    with pytest.raises(ValueError, match="only Parquet is supported"):
+        _get_data_file_format(orc_file)
 
 
 def test_parse_location_defaults() -> None:
