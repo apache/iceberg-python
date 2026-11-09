@@ -3734,3 +3734,37 @@ def test_load_responses_parse_labels(
         assert response_type.model_validate(payload).labels == Labels()
         for invalid in invalid_values:
             assert response_type.model_validate({**payload, "labels": invalid}).labels == Labels()
+
+
+def test_load_table_with_labels(rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any]) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            **example_table_metadata_with_snapshot_v1_rest_json,
+            "labels": {"object-labels": {"owner": "team-a"}, "fields": [{"field-id": 1, "labels": {"classification": "pii"}}]},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    table = catalog.load_table(("fokko", "table"))
+
+    expected = Labels(object_labels={"owner": "team-a"}, fields=[FieldLabel(field_id=1, labels={"classification": "pii"})])
+    assert table.labels == expected
+
+    # Labels are not table state, so equality ignores them and refresh() keeps the labels from the first load.
+    assert table == Table(
+        identifier=("fokko", "table"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={**example_table_metadata_with_snapshot_v1_rest_json, "labels": {"object-labels": {"owner": "team-b"}}},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    table.refresh()
+    assert table.labels == expected

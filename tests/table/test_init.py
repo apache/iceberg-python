@@ -46,6 +46,7 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.metadata import EncryptedKey, TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -191,6 +192,10 @@ def test_sort_orders(table_v2: Table) -> None:
 
 def test_location(table_v2: Table) -> None:
     assert table_v2.location() == "s3://bucket/test/location"
+
+
+def test_labels_default_to_empty(table_v2: Table) -> None:
+    assert table_v2.labels == Labels()
 
 
 def test_current_snapshot(table_v2: Table) -> None:
