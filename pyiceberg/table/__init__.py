@@ -1194,17 +1194,10 @@ class Transaction:
         elif self._snapshot_producers:
             # An empty staged output (e.g. a delete whose plan matched nothing) skips the
             # commit loop above, so run concurrency validation explicitly before reporting success.
-            from pyiceberg.table.update.snapshot import CommitWindow
-
             try:
                 self._table.refresh()
-                commit_window = CommitWindow.resolve(
-                    self._table.metadata,
-                    self._snapshot_producers[0]._starting_snapshot_id,
-                    self._snapshot_producers[0]._target_branch,
-                )
+                self._resolve_commit_windows()
                 for producer in self._snapshot_producers:
-                    producer._commit_window = commit_window
                     producer._validate_concurrency()
             except Exception:
                 for producer in self._snapshot_producers:
@@ -1224,20 +1217,30 @@ class Transaction:
         for producer in self._snapshot_producers:
             producer._cleanup_uncommitted()
 
+    def _resolve_commit_windows(self) -> None:
+        """Resolve each producer's commit window against the refreshed metadata of its own branch.
+
+        The window starts where the transaction first wrote to the branch. Later producers on the same
+        branch start from a snapshot staged by this transaction, which the catalog has never seen.
+        """
+        from pyiceberg.table.update.snapshot import CommitWindow
+
+        windows: dict[str | None, CommitWindow] = {}
+        for producer in self._snapshot_producers:
+            branch = producer._target_branch
+            if branch not in windows:
+                windows[branch] = CommitWindow.resolve(self._table.metadata, producer._starting_snapshot_id, branch)
+            producer._commit_window = windows[branch]
+
     def _rebuild_snapshot_updates(self) -> None:
         """Rebuild snapshot updates for retry by re-executing registered producers."""
         from pyiceberg.table.update import AddSnapshotUpdate, AssertRefSnapshotId, SetSnapshotRefUpdate
-        from pyiceberg.table.update.snapshot import CommitWindow
 
         self._updates = tuple(u for u in self._updates if not isinstance(u, (AddSnapshotUpdate, SetSnapshotRefUpdate)))
         self._requirements = tuple(r for r in self._requirements if not isinstance(r, AssertRefSnapshotId))
 
-        starting_id = self._snapshot_producers[0]._starting_snapshot_id if self._snapshot_producers else None
-        target_branch = self._snapshot_producers[0]._target_branch if self._snapshot_producers else None
-        commit_window = CommitWindow.resolve(self._table.metadata, starting_id, target_branch)
-
+        self._resolve_commit_windows()
         for producer in self._snapshot_producers:
-            producer._commit_window = commit_window
             producer._refresh_for_retry()
             producer._validate_concurrency()
             updates, requirements = producer._commit()
