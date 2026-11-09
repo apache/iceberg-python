@@ -449,6 +449,9 @@ as a single request timeout (floored to whole seconds). Retries are applied to i
 only (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`) and to the transient HTTP status codes `429`, `500`,
 `502`, `503`, `504`. Other failures are not retried.
 
+When the server advertises `idempotency-key-lifetime` in its config response, mutating requests carry an
+`Idempotency-Key` header and `POST` is retried as well, reusing the same key for each retry.
+
 #### Headers in REST Catalog
 
 To configure custom headers in REST Catalog, include them in the catalog properties with `header.<Header-Name>`. This
