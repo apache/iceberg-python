@@ -88,6 +88,7 @@ from pyiceberg.table import (
     TableIdentifier,
     TableProperties,
 )
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.table.update import (
@@ -357,6 +358,7 @@ class TableResponse(IcebergBaseModel):
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
     storage_credentials: list[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
+    labels: Labels = Field(default_factory=Labels)
 
 
 class LoadCredentialsResponse(IcebergBaseModel):
@@ -367,6 +369,7 @@ class ViewResponse(IcebergBaseModel):
     metadata_location: str = Field(..., alias="metadata-location")
     metadata: ViewMetadata
     config: Properties = Field(default_factory=dict)
+    labels: Labels = Field(default_factory=Labels)
 
 
 class CreateTableRequest(IcebergBaseModel):
