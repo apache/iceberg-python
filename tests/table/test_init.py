@@ -1532,8 +1532,10 @@ def test_update_spec_rejects_duplicate_partition_name(table_v2: Table) -> None:
     with pytest.raises(ValueError, match="Partition name has to be unique: z_bucket"):
         txn.update_spec().rename_field("y_bucket", "z_bucket").add_field("z", BucketTransform(16), "z_bucket").commit()
 
+
+def test_update_spec_rejects_empty_partition_name(table_v2: Table) -> None:
     with pytest.raises(ValueError, match="Undefined name"):
-        txn.update_spec().add_field("z", BucketTransform(16), "").commit()
+        table_v2.transaction().update_spec().add_field("z", BucketTransform(16), "").commit()
 
 
 @pytest.mark.parametrize("table", [lf("table_v2"), lf("table_v3")])
