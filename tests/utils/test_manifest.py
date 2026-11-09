@@ -27,6 +27,7 @@ import pytest
 import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.avro.file import DEFAULT_SYNC_INTERVAL, AvroFile, AvroOutputFile
+from pyiceberg.conversions import to_bytes
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.manager import EncryptionManager
 from pyiceberg.encryption.stream import _encrypt_ags1
@@ -47,15 +48,17 @@ from pyiceberg.manifest import (
     _inherit_from_manifest,
     _manifests,
     clear_manifest_cache,
+    construct_partition_summaries,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
 )
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record, TableVersion
-from pyiceberg.types import IntegerType, ListType, LongType, NestedField, StructType
+from pyiceberg.types import DoubleType, FloatType, IntegerType, ListType, LongType, NestedField, StructType
 from tests.encryption.memory_kms import MemoryKeyManagementClient
 
 
@@ -1363,6 +1366,21 @@ def test_write_manifest_min_sequence_number_zero(format_version: TableVersion) -
             manifest_file = writer.to_manifest_file()
 
     assert manifest_file.min_sequence_number == 0
+
+
+def test_construct_partition_summaries_orders_negative_zero_below_zero() -> None:
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"))
+    for field_type in (FloatType(), DoubleType()):
+        schema = Schema(NestedField(1, "x", field_type, required=False))
+        expected = PartitionFieldSummary.from_args(
+            contains_null=False,
+            contains_nan=False,
+            lower_bound=to_bytes(field_type, -0.0),
+            upper_bound=to_bytes(field_type, 0.0),
+        )
+        for values in ([0.0, -0.0], [-0.0, 0.0]):
+            summaries = construct_partition_summaries(spec, schema, [Record(value) for value in values])
+            assert summaries == [expected], (field_type, values)
 
 
 def test_inherit_from_manifest_snapshot_id() -> None:

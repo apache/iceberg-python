@@ -736,6 +736,12 @@ class PartitionFieldStats:
             else:
                 self._max = max(self._max, value)
                 self._min = min(self._min, value)
+                if isinstance(value, float) and value == 0.0:
+                    # min and max keep whichever zero came first, but bounds must order -0.0 below 0.0
+                    if math.copysign(1.0, value) < 0 and self._min == 0.0:
+                        self._min = value
+                    elif math.copysign(1.0, value) > 0 and self._max == 0.0:
+                        self._max = value
 
 
 def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partitions: list[Record]) -> list[PartitionFieldSummary]:
