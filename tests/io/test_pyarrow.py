@@ -82,8 +82,8 @@ from pyiceberg.io.pyarrow import (
     StatsAggregator,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
+    _create_arrow_read_format,
     _determine_partitions,
-    _get_data_file_format,
     _primitive_to_physical,
     _read_all_delete_files,
     _read_deletes,
@@ -4230,14 +4230,14 @@ def test_read_encrypted_parquet_fails_closed(tmp_path: Path) -> None:
         (encrypted_path, None, "no decryption found in reader's properties"),
         (plaintext_path, key_metadata.to_bytes(), "Applying decryption properties on plaintext file"),
     ]:
-        data_file = DataFile.from_args(file_path=path, file_format=FileFormat.PARQUET, key_metadata=key)
         with pytest.raises(OSError, match=error):
             with open(path, "rb") as f:
-                _get_data_file_format(data_file).make_fragment(f).to_table()
+                _create_arrow_read_format(FileFormat.PARQUET, key).make_fragment(f).to_table()
 
-    orc_file = DataFile.from_args(file_path="file.orc", file_format=FileFormat.ORC, key_metadata=key_metadata.to_bytes())
-    with pytest.raises(ValueError, match="only Parquet is supported"):
-        _get_data_file_format(orc_file)
+    for file_format in [FileFormat.ORC, FileFormat.PUFFIN]:
+        delete_file = DataFile.from_args(file_path="deletes", file_format=file_format, key_metadata=key_metadata.to_bytes())
+        with pytest.raises(ValueError, match="file deletes: only Parquet is supported"):
+            _read_deletes(PyArrowFileIO(), delete_file)
 
 
 def test_parse_location_defaults() -> None:
