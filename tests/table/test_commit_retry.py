@@ -23,9 +23,10 @@ import pytest
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties, Transaction
+from pyiceberg.table import Table, TableProperties, Transaction
 from pyiceberg.table.snapshots import IsolationLevel, Operation
-from pyiceberg.types import LongType, NestedField, StringType
+from pyiceberg.typedef import Record
+from pyiceberg.types import DoubleType, LongType, NestedField, StringType
 
 
 def test_isolation_level_enum() -> None:
@@ -393,6 +394,85 @@ def test_file_overwrite_validates_concurrent_file_delete(
 
     result = catalog.load_table(identifier).scan().to_arrow()
     assert sorted(result["value"].to_pylist()) == expected_values
+
+
+def _commit_partition_position_delete(table: Table, partition: Record, file_path: str, pos: int) -> None:
+    """PyIceberg cannot write delete files, so commit one without path bounds, as other engines write them."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestContent, ManifestWriter, ManifestWriterV2
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.table.update.snapshot import _OverwriteFiles
+
+    class DeleteManifestWriter(ManifestWriterV2):
+        def content(self) -> ManifestContent:
+            return ManifestContent.DELETES
+
+        @property
+        def _meta(self) -> dict[str, str]:
+            return {**super()._meta, "content": "deletes"}
+
+    def new_delete_manifest_writer(producer: _OverwriteFiles, spec: PartitionSpec) -> ManifestWriter:
+        return DeleteManifestWriter(
+            spec, producer.schema(), producer.new_manifest_output(), producer._snapshot_id, producer._compression
+        )
+
+    delete_path = table.location_provider().new_data_location(f"pos-delete-{uuid.uuid4()}.parquet")
+    with table.io.new_output(delete_path).create() as output:
+        pq.write_table(pa.table({"file_path": [file_path], "pos": [pos]}), output)
+    delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_path,
+        file_format=FileFormat.PARQUET,
+        partition=partition,
+        record_count=1,
+        file_size_in_bytes=len(table.io.new_input(delete_path)),
+        spec_id=table.spec().spec_id,
+    )
+
+    with patch.object(_OverwriteFiles, "new_manifest_writer", new_delete_manifest_writer):
+        with table.transaction() as transaction, transaction.update_snapshot().overwrite() as overwrite:
+            overwrite.append_data_file(delete_file)
+
+
+def test_file_overwrite_validates_concurrent_position_delete_in_nan_partition(catalog: Catalog) -> None:
+    """A file replacement in a NaN partition must fail when a delete for that file was committed concurrently."""
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import _dataframe_to_data_files
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"))
+    identifier = "default.concurrent_nan_position_delete"
+    table = catalog.create_table(identifier, schema=schema, partition_spec=spec, properties={"format-version": "2"})
+    rows = pa.table({"id": pa.array([1, 2], pa.int64()), "value": [float("nan"), float("nan")]})
+    table.append(rows)
+    file_to_replace = next(task.file for task in table.scan().plan_files())
+
+    replacing_table = catalog.load_table(identifier)
+    deleting_table = catalog.load_table(identifier)
+
+    replacement_file = list(
+        _dataframe_to_data_files(table_metadata=replacing_table.metadata, df=rows, io=replacing_table.io, write_uuid=uuid.uuid4())
+    )[0]
+    replacing_transaction = replacing_table.transaction()
+    with replacing_transaction.update_snapshot().overwrite() as overwrite:
+        overwrite.delete_data_file(file_to_replace)
+        overwrite.append_data_file(replacement_file)
+
+    _commit_partition_position_delete(deleting_table, Record(float("nan")), file_to_replace.file_path, pos=0)
+
+    with pytest.raises(ValidationException, match="found new delete for replace data file"):
+        replacing_transaction.commit_transaction()
+
+    assert catalog.load_table(identifier).scan().to_arrow()["id"].to_pylist() == [2]
 
 
 def test_concurrent_overwrite_append_retries_successfully(catalog: Catalog) -> None:

@@ -33,6 +33,8 @@ from pyiceberg.expressions import (
     And,
     EqualTo,
     In,
+    IsNaN,
+    IsNull,
 )
 from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
@@ -2265,6 +2267,16 @@ def test_build_large_partition_predicate(table_v2: Table) -> None:
         )
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
+
+
+def test_build_partition_predicate_with_nan_and_null(table_v2: Table) -> None:
+    with table_v2.transaction() as tx:
+        expr = tx._build_partition_predicate(
+            partition_records={Record(float("nan"), None, 1.0)},
+            partition_fields=["a", "b", "c"],
+        )
+
+    assert expr == And(IsNaN("a"), IsNull("b"), EqualTo("c", 1.0))
 
 
 def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> None:
