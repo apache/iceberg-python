@@ -2651,6 +2651,7 @@ def data_file_statistics_from_parquet_metadata(
     col_aggs = {}
 
     invalidate_col: set[int] = set()
+    without_bounds: set[int] = set()
     for r in range(parquet_metadata.num_row_groups):
         # References:
         # https://github.com/apache/iceberg/blob/fc381a81a1fdb8f51a0637ca27cd30673bd7aad3/parquet/src/main/java/org/apache/iceberg/parquet/ParquetUtil.java#L232
@@ -2690,6 +2691,11 @@ def data_file_statistics_from_parquet_metadata(
                     if stats_col.mode == MetricsMode(MetricModeTypes.COUNTS):
                         continue
 
+                    if not statistics.has_min_max:
+                        if not (statistics.has_null_count and statistics.null_count == column.num_values):
+                            without_bounds.add(field_id)
+                        continue
+
                     if field_id not in col_aggs:
                         try:
                             col_aggs[field_id] = StatsAggregator(
@@ -2726,6 +2732,9 @@ def data_file_statistics_from_parquet_metadata(
     for field_id in invalidate_col:
         col_aggs.pop(field_id, None)
         null_value_counts.pop(field_id, None)
+
+    for field_id in without_bounds:
+        col_aggs.pop(field_id, None)
 
     return DataFileStatistics(
         record_count=parquet_metadata.num_rows,
