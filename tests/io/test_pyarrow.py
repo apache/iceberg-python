@@ -25,6 +25,7 @@ import uuid
 import warnings
 import zlib
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -42,6 +43,8 @@ from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3F
 from pyroaring import BitMap
 
 from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTDeleteFile, RESTFileScanTask, RESTPositionDeleteFile
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
+from pyiceberg.encryption.stream import _encrypt_ags1
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -80,6 +83,7 @@ from pyiceberg.io.pyarrow import (
     StatsAggregator,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
+    _create_arrow_read_format,
     _determine_partitions,
     _primitive_to_physical,
     _read_all_delete_files,
@@ -2078,6 +2082,68 @@ def test_read_deletion_vector_blob_from_content_range(tmp_path: Path) -> None:
     )
 
     assert deletes == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+
+def _puffin_delete_file(file_path: str, **kwargs: Any) -> DataFile:
+    return DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=file_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=3,
+        **kwargs,
+    )
+
+
+def test_read_deletes_from_puffin_file_encrypted_by_iceberg_rust() -> None:
+    """The deletion vector was encrypted by iceberg-rust, see tests/table/encryption/README.md."""
+    file_path = str(Path(__file__).parent.parent / "table" / "encryption" / "dv-v3-encrypted.puffin")
+    referenced_data_file = "s3://bucket/table/data/00000.parquet"
+    key_metadata = bytes.fromhex("01203031323334353637383961626364656602206665646362613938373635343332313002ea04")
+
+    for dv in [
+        _puffin_delete_file(file_path, key_metadata=key_metadata),
+        _puffin_delete_file(
+            file_path,
+            key_metadata=key_metadata,
+            referenced_data_file=referenced_data_file,
+            content_offset=4,
+            content_size_in_bytes=46,
+        ),
+    ]:
+        assert _read_deletes(PyArrowFileIO(), dv) == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+
+def test_read_deletes_from_encrypted_puffin_file(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+    puffin_payload = _deletion_vector_puffin_payload(referenced_data_file)
+    blob = PuffinFile(puffin_payload).footer.blobs[0]
+    key_metadata = StandardKeyMetadata.generate()
+    encrypted = _encrypt_ags1(puffin_payload, key_metadata)
+    key_metadata = replace(key_metadata, file_length=len(encrypted))
+    wrong_key = replace(key_metadata, encryption_key=bytes(16))
+
+    with open(delete_file_path, "wb") as f:
+        f.write(encrypted)
+
+    for content_reference, plaintext_error in [
+        ({}, "Incorrect magic bytes"),
+        (
+            {"referenced_data_file": referenced_data_file, "content_offset": blob.offset, "content_size_in_bytes": blob.length},
+            "Invalid bitmap data length",
+        ),
+    ]:
+        dv = _puffin_delete_file(delete_file_path, key_metadata=key_metadata.to_bytes(), **content_reference)
+        assert _read_deletes(PyArrowFileIO(), dv) == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+        with pytest.raises(ValueError, match="GCM tag check failed"):
+            _read_deletes(
+                PyArrowFileIO(), _puffin_delete_file(delete_file_path, key_metadata=wrong_key.to_bytes(), **content_reference)
+            )
+
+        with pytest.raises(ValueError, match=plaintext_error):
+            _read_deletes(PyArrowFileIO(), _puffin_delete_file(delete_file_path, **content_reference))
 
 
 def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tmp_path: Path) -> None:
@@ -4130,6 +4196,110 @@ def test_task_to_record_batches_filter_after_positional_deletes_empty_result(tmp
     )
 
     assert result_batches == []
+
+
+def test_task_to_record_batches_encrypted_by_iceberg_rust() -> None:
+    """The data file was encrypted by iceberg-rust, see tests/table/encryption/README.md."""
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=str(Path(__file__).parent.parent / "table" / "encryption" / "data-v3-encrypted.parquet"),
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=3,
+        file_size_in_bytes=1407,
+        key_metadata=bytes.fromhex("01207d30accaf199ff6f49ae7f3d65cbd8c6022033a904147e53c08d6f71c21c6638852a00"),
+    )
+    table_schema = Schema(NestedField(1, "id", LongType(), required=True), NestedField(2, "data", StringType(), required=False))
+
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=AlwaysTrue(),
+        projected_schema=table_schema,
+        table_schema=table_schema,
+        projected_field_ids={1, 2},
+        positional_deletes=None,
+        case_sensitive=True,
+    )
+
+    assert pa.Table.from_batches(batches).to_pylist() == [{"id": 1, "data": "a"}, {"id": 2, "data": None}, {"id": 3, "data": "c"}]
+
+
+def test_read_encrypted_parquet_with_position_deletes(tmp_path: Path) -> None:
+    from pyarrow.parquet import encryption
+
+    def write_encrypted(path: str, table: pa.Table, content: DataFileContent) -> DataFile:
+        key_metadata = StandardKeyMetadata.generate()
+        # Java does not store the AAD prefix in the file, so it must come from key metadata
+        encryption_properties = encryption.create_encryption_properties(
+            key_metadata.encryption_key, aad_prefix=key_metadata.aad_prefix, store_aad_prefix=False
+        )
+        pq.write_table(table, path, encryption_properties=encryption_properties)
+        return DataFile.from_args(
+            content=content,
+            file_path=path,
+            file_format=FileFormat.PARQUET,
+            partition={},
+            record_count=len(table),
+            file_size_in_bytes=os.path.getsize(path),
+            key_metadata=key_metadata.to_bytes(),
+        )
+
+    arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
+    data_path = str(tmp_path / "data.parquet")
+    data_file = write_encrypted(
+        data_path, pa.table([pa.array([1, 2, 3, 4], type=pa.int32())], schema=arrow_schema), DataFileContent.DATA
+    )
+    delete_file = write_encrypted(
+        str(tmp_path / "deletes.parquet"),
+        pa.table({"file_path": [data_path], "pos": pa.array([2], type=pa.int64())}),
+        DataFileContent.POSITION_DELETES,
+    )
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    deletes = _read_deletes(PyArrowFileIO(), delete_file)
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=AlwaysTrue(),
+        projected_schema=table_schema,
+        table_schema=table_schema,
+        projected_field_ids={1},
+        positional_deletes=[deletes[data_path]],
+        case_sensitive=True,
+    )
+
+    assert pa.Table.from_batches(batches).column("id").to_pylist() == [1, 2, 4]
+
+
+def test_read_encrypted_parquet_fails_closed(tmp_path: Path) -> None:
+    from pyarrow.parquet import encryption
+
+    key_metadata = StandardKeyMetadata.generate()
+    encrypted_path = str(tmp_path / "encrypted.parquet")
+    pq.write_table(
+        pa.table({"id": [1]}),
+        encrypted_path,
+        encryption_properties=encryption.create_encryption_properties(
+            key_metadata.encryption_key, aad_prefix=key_metadata.aad_prefix, store_aad_prefix=False
+        ),
+    )
+    plaintext_path = str(tmp_path / "plaintext.parquet")
+    pq.write_table(pa.table({"id": [1]}), plaintext_path)
+
+    for path, key, error in [
+        (encrypted_path, replace(key_metadata, encryption_key=bytes(16)).to_bytes(), "Failed decryption finalization"),
+        (encrypted_path, replace(key_metadata, aad_prefix=bytes(16)).to_bytes(), "Failed decryption finalization"),
+        (encrypted_path, None, "no decryption found in reader's properties"),
+        (plaintext_path, key_metadata.to_bytes(), "Applying decryption properties on plaintext file"),
+    ]:
+        with pytest.raises(OSError, match=error):
+            with open(path, "rb") as f:
+                _create_arrow_read_format(FileFormat.PARQUET, key).make_fragment(f).to_table()
+
+    delete_file = DataFile.from_args(file_path="deletes", file_format=FileFormat.ORC, key_metadata=key_metadata.to_bytes())
+    with pytest.raises(ValueError, match="file deletes: only Parquet and Puffin are supported"):
+        _read_deletes(PyArrowFileIO(), delete_file)
 
 
 def test_parse_location_defaults() -> None:
