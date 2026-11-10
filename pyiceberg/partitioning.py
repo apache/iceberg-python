@@ -490,6 +490,8 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
     Then the corresponding PartitionField's transform is applied to return
     the final partition record value.
     """
+    if isinstance(partition_field.transform, VoidTransform):
+        return None
     iceberg_type = schema.find_field(name_or_id=partition_field.source_id).field_type
     return _to_partition_representation(iceberg_type, value)
 
