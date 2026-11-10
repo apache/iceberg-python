@@ -821,3 +821,109 @@ def test_overwrite_rejects_explicit_delete_without_parent_snapshot(
         with empty.transaction() as tx:
             with tx.update_snapshot().overwrite() as overwrite:
                 overwrite.delete_data_file(stale_file)
+
+
+def test_manifest_list_receives_first_row_id_for_v3(table_v3: Table) -> None:
+    """The V3 manifest list writer requires first-row-id, so the producer has to supply it."""
+    from unittest import mock
+
+    from pyiceberg.table.update.snapshot import _FastAppendFiles
+
+    txn = table_v3.transaction()
+    append = _FastAppendFiles(operation=Operation.APPEND, transaction=txn, io=table_v3.io)
+
+    with (
+        mock.patch("pyiceberg.table.update.snapshot.write_manifest_list") as writer,
+        mock.patch.object(_FastAppendFiles, "_manifests", return_value=[]),
+    ):
+        append._commit()
+
+    assert writer.call_args.kwargs["format_version"] == 3
+    assert writer.call_args.kwargs["first_row_id"] == table_v3.metadata.next_row_id
+
+
+def test_manifest_list_has_no_first_row_id_for_v2(table_v2: Table) -> None:
+    from unittest import mock
+
+    from pyiceberg.table.update.snapshot import _FastAppendFiles
+
+    txn = table_v2.transaction()
+    append = _FastAppendFiles(operation=Operation.APPEND, transaction=txn, io=table_v2.io)
+
+    with (
+        mock.patch("pyiceberg.table.update.snapshot.write_manifest_list") as writer,
+        mock.patch.object(_FastAppendFiles, "_manifests", return_value=[]),
+    ):
+        append._commit()
+
+    assert writer.call_args.kwargs["format_version"] == 2
+    assert writer.call_args.kwargs["first_row_id"] is None
+
+
+@pytest.fixture
+def empty_table_v3(tmp_path: Path, arrow_table_simple: pa.Table) -> Table:
+    """An empty V3 table; writing V3 metadata files is not supported, so commits stay staged in a transaction."""
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.io import load_file_io
+    from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
+    from pyiceberg.table.metadata import new_table_metadata
+    from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
+
+    metadata = new_table_metadata(
+        schema=Catalog._convert_schema_if_needed(arrow_table_simple.schema, format_version=3),
+        partition_spec=UNPARTITIONED_PARTITION_SPEC,
+        sort_order=UNSORTED_SORT_ORDER,
+        location=str(tmp_path),
+        properties={"format-version": "3"},
+    ).model_copy(update={"next_row_id": 0})
+    return Table(
+        identifier=("default", "lineage"),
+        metadata=metadata,
+        metadata_location=f"{tmp_path}/metadata/00000.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+def test_v3_append_assigns_row_lineage(empty_table_v3: Table, arrow_table_simple: pa.Table) -> None:
+    txn = empty_table_v3.transaction()
+
+    txn.append(arrow_table_simple)
+    first = txn.table_metadata.current_snapshot()
+    assert first is not None
+    assert (first.first_row_id, first.added_rows) == (0, 3)
+    assert txn.table_metadata.next_row_id == 3
+
+    txn.append(arrow_table_simple)
+    second = txn.table_metadata.current_snapshot()
+    assert second is not None
+    assert (second.first_row_id, second.added_rows) == (3, 3)
+    assert txn.table_metadata.next_row_id == 6
+
+
+def test_v3_add_files_assigns_row_lineage(empty_table_v3: Table, arrow_table_simple: pa.Table, tmp_path: Path) -> None:
+    import pyarrow.parquet as pq
+
+    file_path = str(tmp_path / "data.parquet")
+    pq.write_table(arrow_table_simple, file_path)
+    txn = empty_table_v3.transaction()
+
+    txn.add_files([file_path])
+
+    snapshot = txn.table_metadata.current_snapshot()
+    assert snapshot is not None
+    assert (snapshot.first_row_id, snapshot.added_rows) == (0, 3)
+    assert txn.table_metadata.next_row_id == 3
+
+
+def test_v3_delete_assigns_row_ids_to_rewritten_rows_only(empty_table_v3: Table, arrow_table_simple: pa.Table) -> None:
+    txn = empty_table_v3.transaction()
+    txn.append(arrow_table_simple)
+
+    txn.delete("bar == 1")
+
+    snapshot = txn.table_metadata.current_snapshot()
+    assert snapshot is not None
+    # the rewritten data file holds the 2 surviving rows; the old file's DELETED entry uses no row IDs
+    assert (snapshot.first_row_id, snapshot.added_rows) == (3, 2)
+    assert txn.table_metadata.next_row_id == 5
