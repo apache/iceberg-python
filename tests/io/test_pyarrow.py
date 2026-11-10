@@ -26,7 +26,7 @@ import warnings
 import zlib
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import MagicMock, patch
@@ -3428,6 +3428,27 @@ def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> Non
 
     assert len(table.inspect.partitions()) == 2
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+
+
+def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="event_time", field_type=TimeType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=BucketTransform(4), name="event_time_bucket"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_bucketed_by_time", schema=schema, partition_spec=spec)
+
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "event_time": pa.array([time(9, 30), time(22, 31, 8), None], type=pa.time64("us")),
+        }
+    )
+    table.append(arrow_table)
+
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+    assert table.scan(row_filter=EqualTo("event_time", "22:31:08")).to_arrow()["id"].to_pylist() == [2]
 
 
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
