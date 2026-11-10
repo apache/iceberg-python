@@ -51,6 +51,8 @@ from pyiceberg.catalog.rest import (
     HttpMethod,
     RestCatalog,
     ScanPlanningMode,
+    TableResponse,
+    ViewResponse,
     _RetryTimeoutHTTPAdapter,
 )
 from pyiceberg.exceptions import (
@@ -71,6 +73,7 @@ from pyiceberg.io import ARROW_FILE_IO, FSSPEC_FILE_IO, PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.table.labels import FieldLabel, Labels
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
@@ -3713,3 +3716,21 @@ def test_load_table_without_storage_credentials(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_load_responses_parse_labels(
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any], example_view_metadata_rest_json: dict[str, Any]
+) -> None:
+    labels_json = {"object-labels": {"owner": "team-a"}, "fields": [{"field-id": 1, "labels": {"classification": "pii"}}]}
+    expected = Labels(object_labels={"owner": "team-a"}, fields=[FieldLabel(field_id=1, labels={"classification": "pii"})])
+    cases: list[tuple[type[TableResponse | ViewResponse], dict[str, Any]]] = [
+        (TableResponse, example_table_metadata_with_snapshot_v1_rest_json),
+        (ViewResponse, example_view_metadata_rest_json),
+    ]
+    # Like Java, a null or non-object value reads as empty labels.
+    invalid_values: list[Any] = [None, "oops", [], 1, True]
+    for response_type, payload in cases:
+        assert response_type.model_validate({**payload, "labels": labels_json}).labels == expected
+        assert response_type.model_validate(payload).labels == Labels()
+        for invalid in invalid_values:
+            assert response_type.model_validate({**payload, "labels": invalid}).labels == Labels()
