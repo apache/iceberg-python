@@ -41,12 +41,13 @@ class Labels(IcebergBaseModel):
     @model_validator(mode="before")
     @classmethod
     def treat_null_as_absent(cls, data: Any) -> Any:
-        # A null value parses the same as a missing key.
-        if data is None:
-            return {}
+        # A key with a null value parses the same as a missing key.
         if isinstance(data, dict):
             return {key: value for key, value in data.items() if value is not None}
-        return data
+        if isinstance(data, cls):
+            return data
+        # Like Java, a null or non-object value reads as empty labels.
+        return {}
 
     def is_empty(self) -> bool:
         """Return True when there are neither object-level nor field-level labels."""

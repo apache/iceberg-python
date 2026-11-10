@@ -3727,7 +3727,10 @@ def test_load_responses_parse_labels(
         (TableResponse, example_table_metadata_with_snapshot_v1_rest_json),
         (ViewResponse, example_view_metadata_rest_json),
     ]
+    # Like Java, a null or non-object value reads as empty labels.
+    invalid_values: list[Any] = [None, "oops", [], 1, True]
     for response_type, payload in cases:
         assert response_type.model_validate({**payload, "labels": labels_json}).labels == expected
-        assert response_type.model_validate({**payload, "labels": None}).labels == Labels()
         assert response_type.model_validate(payload).labels == Labels()
+        for invalid in invalid_values:
+            assert response_type.model_validate({**payload, "labels": invalid}).labels == Labels()
