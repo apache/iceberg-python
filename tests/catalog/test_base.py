@@ -88,3 +88,8 @@ class TestCatalogClose:
 
         # InMemoryCatalog inherits close from SqlCatalog, so engine should be disposed
         assert hasattr(cat, "engine")
+
+
+def test_commit_transactions_not_supported(catalog: InMemoryCatalog) -> None:
+    with pytest.raises(NotImplementedError, match="does not support multi-table commits"):
+        catalog.commit_transactions()
