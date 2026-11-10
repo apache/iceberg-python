@@ -144,7 +144,7 @@ class AvroFile(Generic[D]):
         "block",
     )
     input_file: InputFile
-    read_schema: Schema | None
+    read_schema: Schema | Callable[[AvroFileHeader, Schema], Schema] | None
     read_types: dict[int, Callable[..., StructProtocol]]
     read_enums: dict[int, Callable[..., Enum]]
     header: AvroFileHeader
@@ -157,7 +157,7 @@ class AvroFile(Generic[D]):
     def __init__(
         self,
         input_file: InputFile,
-        read_schema: Schema | None = None,
+        read_schema: Schema | Callable[[AvroFileHeader, Schema], Schema] | None = None,
         read_types: dict[int, Callable[..., StructProtocol]] = EMPTY_DICT,
         read_enums: dict[int, Callable[..., Enum]] = EMPTY_DICT,
     ) -> None:
@@ -177,8 +177,9 @@ class AvroFile(Generic[D]):
             self.decoder = new_decoder(f.read())
         self.header = self._read_header()
         self.schema = self.header.get_schema()
-        if not self.read_schema:
-            self.read_schema = self.schema
+        # The read schema can depend on the file header, e.g. on the partition spec of a manifest
+        read_schema = self.read_schema(self.header, self.schema) if callable(self.read_schema) else self.read_schema
+        self.read_schema = read_schema or self.schema
 
         self.reader = resolve_reader(self.schema, self.read_schema, self.read_types, self.read_enums)
 

@@ -48,7 +48,7 @@ from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.typedef import Identifier
+from pyiceberg.typedef import Identifier, Record
 from pyiceberg.types import BooleanType, DoubleType, IntegerType, LongType, NestedField, StringType
 
 
@@ -877,6 +877,63 @@ def test_write_and_evolve(catalog: Catalog, format_version: int) -> None:
         txn.append(pa_table_with_column)
         txn.overwrite(pa_table_with_column)
         txn.delete("foo = 'a'")
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_delete_after_dropping_old_partition_source_column(catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.delete_after_dropping_old_partition_source_v{format_version}"
+    catalog.create_namespace_if_not_exists("default")
+
+    pa_table = pa.Table.from_pydict({"id": [1, 2], "category": ["a", "b"]})
+    tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)})
+    with tbl.update_spec() as spec_update:
+        spec_update.add_identity("category")
+    tbl.append(pa_table)
+
+    with tbl.update_spec() as spec_update:
+        spec_update.remove_field("category")
+    with tbl.update_schema() as schema_update:
+        schema_update.delete_column("category")
+
+    # Rewrites the manifest of the old spec, whose partition source column is gone
+    tbl.delete("id == 1")
+
+    tbl = catalog.load_table(identifier)
+    assert tbl.scan().to_arrow()["id"].to_pylist() == [2]
+    # The skipped field reads back as null instead of disappearing from the partition tuple
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    partitions = [
+        entry.data_file.partition for manifest in snapshot.manifests(tbl.io) for entry in manifest.fetch_manifest_entry(tbl.io)
+    ]
+    assert partitions == [Record(None)]
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_filter_after_dropping_earlier_partition_source_column(catalog: Catalog, format_version: int) -> None:
+    identifier = f"default.filter_after_dropping_earlier_partition_source_v{format_version}"
+    catalog.create_namespace_if_not_exists("default")
+
+    pa_table = pa.Table.from_pydict({"id": [1, 2, 3], "category": ["a", "b", "a"], "region": ["x", "y", "y"]})
+    tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema, properties={"format-version": str(format_version)})
+    with tbl.update_spec() as spec_update:
+        spec_update.add_identity("category")
+        spec_update.add_identity("region")
+    tbl.append(pa_table)
+
+    with tbl.update_spec() as spec_update:
+        spec_update.remove_field("category")
+    with tbl.update_schema() as schema_update:
+        schema_update.delete_column("category")
+
+    # The dropped field comes before region in the old spec, so region must not shift when the manifest is read
+    tbl.delete("id == 1")
+    assert sorted(catalog.load_table(identifier).scan(row_filter="region == 'y'").to_arrow()["id"].to_pylist()) == [2, 3]
+
+    # Reads the rewritten manifest and writes it again
+    tbl = catalog.load_table(identifier)
+    tbl.delete("id == 2")
+    assert catalog.load_table(identifier).scan(row_filter="region == 'y'").to_arrow()["id"].to_pylist() == [3]
 
 
 # Merge manifests
