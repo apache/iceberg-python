@@ -207,6 +207,47 @@ def test_concurrent_append_delete_raises_validation_exception(catalog: Catalog) 
         tbl2.delete("x == 1")
 
 
+def test_concurrent_append_case_insensitive_delete_retries_successfully(catalog: Catalog) -> None:
+    """A case-insensitive delete that does not conflict with a concurrent append retries and commits."""
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "Id", LongType(), required=False))
+    catalog.create_table("default.app_del_case_test", schema=schema)
+
+    import pyarrow as pa
+
+    tbl = catalog.load_table("default.app_del_case_test")
+    tbl.append(pa.table({"Id": [6, 7, 8]}))
+
+    tbl1 = catalog.load_table("default.app_del_case_test")
+    tbl2 = catalog.load_table("default.app_del_case_test")
+
+    tbl1.append(pa.table({"Id": [0]}))
+    tbl2.delete("id > 5", case_sensitive=False)
+
+    refreshed = catalog.load_table("default.app_del_case_test")
+    assert refreshed.scan().to_arrow()["Id"].to_pylist() == [0]
+
+
+def test_concurrent_append_case_insensitive_delete_raises_validation_exception(catalog: Catalog) -> None:
+    """A case-insensitive delete still detects a conflicting concurrent append."""
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "Id", LongType(), required=False))
+    catalog.create_table("default.app_del_case_conflict_test", schema=schema)
+
+    import pyarrow as pa
+
+    tbl = catalog.load_table("default.app_del_case_conflict_test")
+    tbl.append(pa.table({"Id": [6, 7, 8]}))
+
+    tbl1 = catalog.load_table("default.app_del_case_conflict_test")
+    tbl2 = catalog.load_table("default.app_del_case_conflict_test")
+
+    tbl1.append(pa.table({"Id": [9]}))
+
+    with pytest.raises(ValidationException):
+        tbl2.delete("id > 5", case_sensitive=False)
+
+
 def test_concurrent_delete_append_retries_successfully(catalog: Catalog) -> None:
     """Append after a concurrent delete should succeed via retry."""
     catalog.create_namespace("default")

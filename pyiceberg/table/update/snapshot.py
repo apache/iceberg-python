@@ -498,19 +498,26 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
 
         if isolation_level == IsolationLevel.SERIALIZABLE:
-            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot, self._case_sensitive)
 
         if self._predicate != AlwaysFalse():
             # partition_set is None, so any concurrently committed delete file counts as
             # a conflict even in unrelated partitions. Scope this via partition projection
             # (as Java does) when delete-file write support lands.
-            _validate_no_new_delete_files(table, catalog_head, conflict_detection_filter, None, starting_snapshot)
-            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+            _validate_no_new_delete_files(
+                table, catalog_head, conflict_detection_filter, None, starting_snapshot, self._case_sensitive
+            )
+            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot, self._case_sensitive)
 
         if self._deleted_data_files:
             _validate_data_files_exist(table, catalog_head, self._deleted_data_files, starting_snapshot)
             _validate_no_new_deletes_for_data_files(
-                table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
+                table,
+                catalog_head,
+                conflict_detection_filter,
+                self._deleted_data_files,
+                starting_snapshot,
+                self._case_sensitive,
             )
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
