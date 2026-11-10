@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from pydantic_core import ValidationError
 from pytest_lazy_fixtures import lf
@@ -336,6 +337,26 @@ def test_write_pyarrow_schema(catalog: Catalog, test_table_identifier: Identifie
     catalog.create_namespace(namespace)
     table = catalog.create_table(test_table_identifier, pyarrow_table.schema)
     table.append(pyarrow_table)
+
+
+def test_add_column_keeps_values_of_renamed_column_without_field_ids(
+    catalog_with_warehouse: Catalog,
+    tmp_path: Path,
+) -> None:
+    imported = tmp_path / "imported.parquet"
+    pq.write_table(pa.table({"a": [1, 3]}), imported)
+
+    catalog_with_warehouse.create_namespace("default")
+    table = catalog_with_warehouse.create_table(("default", "imported"), Schema(NestedField(1, "a", LongType())))
+    table.add_files([f"file://{imported}"])
+
+    with table.update_schema() as update:
+        update.rename_column("a", "b")
+
+    with table.update_schema() as update:
+        update.add_column("a", LongType())
+
+    assert table.scan().to_arrow().to_pydict() == {"b": [1, 3], "a": [None, None]}
 
 
 @pytest.mark.parametrize(

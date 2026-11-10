@@ -345,6 +345,7 @@ def test_update_mapping(table_name_mapping_nested: NameMapping) -> None:
                 field_id=15,
                 names=["person"],
                 fields=[
+                    MappedField(field_id=16, names=["name"]),
                     MappedField(field_id=17, names=["age"]),
                     MappedField(field_id=19, names=["name"]),
                     MappedField(field_id=20, names=["add_20"]),
@@ -354,6 +355,16 @@ def test_update_mapping(table_name_mapping_nested: NameMapping) -> None:
         ]
     )
     assert update_mapping(table_name_mapping_nested, updates, adds) == expected
+
+
+def test_update_mapping_keeps_name_of_existing_field(table_name_mapping_nested: NameMapping) -> None:
+    updates = {1: NestedField(1, "foo_update", StringType(), True)}
+    adds = {-1: [NestedField(18, "foo", StringType(), True)]}
+
+    updated = update_mapping(table_name_mapping_nested, updates, adds)
+
+    assert updated.root[0] == MappedField(field_id=1, names=["foo", "foo_update"])
+    assert updated.root[-1] == MappedField(field_id=18, names=["foo"])
 
 
 def test_mapping_using_by_visitor(table_schema_nested: Schema, table_name_mapping_nested: NameMapping) -> None:
