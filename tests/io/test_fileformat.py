@@ -48,7 +48,7 @@ def test_duplicate_registration_raises() -> None:
         def file_extension(self) -> str:
             return "orc"
 
-        def create_writer(self, output_file: Any, file_schema: Any, properties: Any) -> Any:
+        def create_writer(self, output_file: Any, file_schema: Any, properties: Any, key_metadata: Any = None) -> Any:
             raise NotImplementedError
 
         def add_field_metadata(self, field: Any, metadata: Any, include_field_ids: bool) -> None:
@@ -89,7 +89,7 @@ class _StructuralModel:
     def file_extension(self) -> str:
         return "orc"
 
-    def create_writer(self, output_file: Any, file_schema: Any, properties: Any) -> Any:
+    def create_writer(self, output_file: Any, file_schema: Any, properties: Any, key_metadata: Any = None) -> Any:
         raise NotImplementedError
 
     def add_field_metadata(self, field: Any, metadata: Any, include_field_ids: bool) -> None:
