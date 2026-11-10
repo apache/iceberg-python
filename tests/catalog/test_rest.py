@@ -1744,6 +1744,33 @@ def test_create_staged_table_200(
     assert actual_response == expected
 
 
+def test_create_staged_table_with_storage_credentials(
+    rest_mock: Mocker,
+    table_schema_simple: Schema,
+    example_table_metadata_no_snapshot_v1: dict[str, Any],
+) -> None:
+    table_location = "gs://bucket/ns/t"
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json={
+            "metadata": {**example_table_metadata_no_snapshot_v1, "location": table_location},
+            "config": {},
+            "storage-credentials": [
+                {
+                    "prefix": f"{table_location}/",
+                    "config": {"gcs.oauth2.token": "vended"},
+                }
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    txn = catalog.create_table_transaction(identifier=("fokko", "fokko2"), schema=table_schema_simple)
+
+    assert txn._table.io.properties["gcs.oauth2.token"] == "vended"
+
+
 def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
