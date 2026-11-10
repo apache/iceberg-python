@@ -1138,13 +1138,14 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
 
         Raises:
-            ValueError: If the tag does not exist, or the name belongs to a branch.
+            NoSuchSnapshotRefError: If the tag does not exist.
+            SnapshotRefTypeError: If the name belongs to a branch.
         """
         ref = self._effective_refs().get(tag_name)
         if ref is None:
-            raise ValueError(f"Tag does not exist: {tag_name}")
+            raise NoSuchSnapshotRefError(f"Tag does not exist: {tag_name}")
         if ref.snapshot_ref_type != SnapshotRefType.TAG:
-            raise ValueError(f"Ref {tag_name} is a branch not a tag")
+            raise SnapshotRefTypeError(f"Ref {tag_name} is a branch, not a tag")
         return self._remove_ref_snapshot(ref_name=tag_name)
 
     def create_branch(
@@ -1194,15 +1195,17 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             This for method chaining
 
         Raises:
-            ValueError: If the branch is main, does not exist, or the name belongs to a tag.
+            ValueError: If the branch is main.
+            NoSuchSnapshotRefError: If the branch does not exist.
+            SnapshotRefTypeError: If the name belongs to a tag.
         """
         if branch_name == MAIN_BRANCH:
             raise ValueError("Cannot remove main branch")
         ref = self._effective_refs().get(branch_name)
         if ref is None:
-            raise ValueError(f"Branch does not exist: {branch_name}")
+            raise NoSuchSnapshotRefError(f"Branch does not exist: {branch_name}")
         if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
-            raise ValueError(f"Ref {branch_name} is a tag not a branch")
+            raise SnapshotRefTypeError(f"Ref {branch_name} is a tag, not a branch")
         return self._remove_ref_snapshot(ref_name=branch_name)
 
     def set_current_snapshot(self, snapshot_id: int | None = None, ref_name: str | None = None) -> ManageSnapshots:

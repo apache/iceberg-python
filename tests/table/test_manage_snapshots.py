@@ -111,15 +111,16 @@ def test_remove_ref_rejects_main_missing_and_wrong_kind(table_v2_main_behind: Ta
     table_v2_main_behind.catalog = MagicMock()
     ms = table_v2_main_behind.manage_snapshots()
 
-    for method, name, message in [
-        (ms.remove_branch, "main", "Cannot remove main branch"),
-        (ms.remove_branch, "missing", "Branch does not exist: missing"),
-        (ms.remove_branch, "test", "Ref test is a tag not a branch"),
-        (ms.remove_tag, "missing", "Tag does not exist: missing"),
-        (ms.remove_tag, "audit", "Ref audit is a branch not a tag"),
-    ]:
-        with pytest.raises(ValueError, match=message):
-            method(name)
+    with pytest.raises(ValueError, match="Cannot remove main branch"):
+        ms.remove_branch("main")
+    with pytest.raises(NoSuchSnapshotRefError, match="Branch does not exist: missing"):
+        ms.remove_branch("missing")
+    with pytest.raises(SnapshotRefTypeError, match="Ref test is a tag, not a branch"):
+        ms.remove_branch("test")
+    with pytest.raises(NoSuchSnapshotRefError, match="Tag does not exist: missing"):
+        ms.remove_tag("missing")
+    with pytest.raises(SnapshotRefTypeError, match="Ref audit is a branch, not a tag"):
+        ms.remove_tag("audit")
 
     table_v2_main_behind.catalog.commit_table.assert_not_called()
 
@@ -136,6 +137,22 @@ def test_remove_then_create_same_name_in_one_chain(table_v2_main_behind: Table) 
     assert [type(update) for update in updates] == [RemoveSnapshotRefUpdate, SetSnapshotRefUpdate]
     assert isinstance(updates[1], SetSnapshotRefUpdate)
     assert updates[1].snapshot_id == PARENT_SNAPSHOT_ID
+
+
+def test_remove_then_create_same_name_as_other_kind_in_one_chain(table_v2_main_behind: Table) -> None:
+    table = table_v2_main_behind
+    mock_catalog = MagicMock()
+    mock_catalog.commit_table.return_value = _mock_commit_response(table)
+    table.catalog = mock_catalog
+
+    # "test" is a tag; once removed in the chain the name is free for a branch.
+    table.manage_snapshots().remove_tag("test").create_branch(snapshot_id=CHILD_SNAPSHOT_ID, branch_name="test").commit()
+
+    updates = _get_updates(mock_catalog)
+    assert [type(update) for update in updates] == [RemoveSnapshotRefUpdate, SetSnapshotRefUpdate]
+    assert isinstance(updates[1], SetSnapshotRefUpdate)
+    assert updates[1].type == SnapshotRefType.BRANCH
+    assert updates[1].snapshot_id == CHILD_SNAPSHOT_ID
 
 
 def test_set_current_snapshot_basic(table_v2: Table) -> None:
