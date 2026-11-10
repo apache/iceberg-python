@@ -1161,8 +1161,10 @@ def _create_arrow_read_format(file_format: FileFormat, key_metadata: bytes | Non
 
 
 def _check_encryption_supported(data_file: DataFile) -> None:
-    if data_file.key_metadata is not None and data_file.file_format != FileFormat.PARQUET:
-        raise ValueError(f"Cannot read encrypted {data_file.file_format} file {data_file.file_path}: only Parquet is supported")
+    if data_file.key_metadata is not None and data_file.file_format not in (FileFormat.PARQUET, FileFormat.PUFFIN):
+        raise ValueError(
+            f"Cannot read encrypted {data_file.file_format} file {data_file.file_path}: only Parquet and Puffin are supported"
+        )
 
 
 def _parquet_decryption_properties(key_metadata: bytes) -> pq.FileDecryptionProperties:

@@ -31,3 +31,8 @@ entry would record is in `test_read_manifest_encrypted_by_iceberg_rust` in `test
 `data-v3-encrypted.parquet` is a Parquet data file with three rows, written and encrypted by iceberg-rust's
 `ParquetWriter` with a key from its `EncryptionManager`. The key metadata that its manifest entry would record is in
 `test_task_to_record_batches_encrypted_by_iceberg_rust` in `tests/io/test_pyarrow.py`.
+
+`dv-v3-encrypted.puffin` is a Puffin file with one deletion vector, deleting positions 1, 3 and 5 of
+`s3://bucket/table/data/00000.parquet`. It was written and encrypted by iceberg-rust's `PuffinWriter` with key
+`0123456789abcdef` and AAD prefix `fedcba9876543210`. The key metadata that its manifest entry would record is in
+`test_read_deletes_from_puffin_file_encrypted_by_iceberg_rust` in `tests/io/test_pyarrow.py`.
