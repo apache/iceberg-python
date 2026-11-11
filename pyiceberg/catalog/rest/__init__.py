@@ -375,6 +375,16 @@ class TableResponse(IcebergBaseModel):
     storage_credentials: list[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
     labels: Labels = Field(default_factory=Labels)
 
+    @field_validator("config", mode="before")
+    @classmethod
+    def replace_none_config_with_dict(cls, v: Any) -> Properties:
+        return {} if v is None else v
+
+    @field_validator("storage_credentials", mode="before")
+    @classmethod
+    def replace_none_storage_credentials_with_list(cls, v: Any) -> list[StorageCredential]:
+        return [] if v is None else v
+
 
 class LoadCredentialsResponse(IcebergBaseModel):
     storage_credentials: list[StorageCredential] = Field(alias="storage-credentials")
@@ -385,6 +395,11 @@ class ViewResponse(IcebergBaseModel):
     metadata: ViewMetadata
     config: Properties = Field(default_factory=dict)
     labels: Labels = Field(default_factory=Labels)
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def replace_none_config_with_dict(cls, v: Any) -> Properties:
+        return {} if v is None else v
 
 
 class CreateTableRequest(IcebergBaseModel):
@@ -440,6 +455,11 @@ class ConfigResponse(IcebergBaseModel):
     overrides: Properties | None = Field(default_factory=dict)
     endpoints: set[Endpoint] | None = Field(default=None)
     idempotency_key_lifetime: str | None = Field(alias="idempotency-key-lifetime", default=None)
+
+    @field_validator("defaults", "overrides", mode="before")
+    @classmethod
+    def replace_none_with_dict(cls, v: Any) -> Properties:
+        return {} if v is None else v
 
     @field_validator("endpoints", mode="before")
     @classmethod
