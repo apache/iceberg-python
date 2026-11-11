@@ -68,6 +68,7 @@ from pyarrow.fs import (
 from typing_extensions import override
 
 from pyiceberg.conversions import to_bytes
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
 from pyiceberg.expressions.literals import Literal
@@ -1180,9 +1181,10 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression, schema: Schema
     return expression_to_pyarrow(preserve_expr, schema)
 
 
-@lru_cache
-def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.FileFormat:
+def _create_arrow_read_format(file_format: FileFormat, key_metadata: bytes | None, **kwargs: Any) -> ds.FileFormat:
     if file_format == FileFormat.PARQUET:
+        if key_metadata is not None:
+            kwargs["decryption_properties"] = _parquet_decryption_properties(key_metadata)
         return ds.ParquetFileFormat(**kwargs)
     elif file_format == FileFormat.ORC:
         # ORC doesn't support pre_buffer and buffer_size parameters
@@ -1192,11 +1194,33 @@ def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.Fi
         raise ValueError(f"Unsupported file format: {file_format}")
 
 
+def _check_encryption_supported(data_file: DataFile) -> None:
+    if data_file.key_metadata is not None and data_file.file_format not in (FileFormat.PARQUET, FileFormat.PUFFIN):
+        raise ValueError(
+            f"Cannot read encrypted {data_file.file_format} file {data_file.file_path}: only Parquet and Puffin are supported"
+        )
+
+
+def _parquet_decryption_properties(key_metadata: bytes) -> pq.FileDecryptionProperties:
+    try:
+        from pyarrow.parquet.encryption import create_decryption_properties
+    except ImportError as e:
+        raise ImportError(f"pyarrow >= 25.0.0 required to read encrypted Parquet files, found {pyarrow.__version__}") from e
+
+    metadata = StandardKeyMetadata.from_bytes(key_metadata)
+    return create_decryption_properties(metadata.encryption_key, aad_prefix=metadata.aad_prefix)
+
+
 def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]:
+    _check_encryption_supported(data_file)
     if data_file.file_format == FileFormat.PARQUET:
         with io.new_input(data_file.file_path).open() as fi:
-            delete_fragment = _get_file_format(
-                data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
+            delete_fragment = _create_arrow_read_format(
+                data_file.file_format,
+                data_file.key_metadata,
+                dictionary_columns=("file_path",),
+                pre_buffer=True,
+                buffer_size=ONE_MEGABYTE,
             ).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
         table = table.unify_dictionaries()
@@ -1206,7 +1230,7 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
         }
     elif data_file.file_format == FileFormat.ORC:
         with io.new_input(data_file.file_path).open() as fi:
-            delete_fragment = _get_file_format(data_file.file_format).make_fragment(fi)
+            delete_fragment = _create_arrow_read_format(data_file.file_format, data_file.key_metadata).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
             # For ORC, file_path columns are not dictionary-encoded, so we use unique() directly
             return {
@@ -1746,10 +1770,11 @@ def _task_to_record_batches(
     downcast_ns_timestamp_to_us: bool | None = None,
     dictionary_columns: tuple[str, ...] = (),
 ) -> Iterator[pa.RecordBatch]:
+    _check_encryption_supported(task.file)
     format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
     if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
         format_kwargs["dictionary_columns"] = dictionary_columns
-    arrow_format = _get_file_format(task.file.file_format, **format_kwargs)
+    arrow_format = _create_arrow_read_format(task.file.file_format, task.file.key_metadata, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
@@ -2685,6 +2710,7 @@ def data_file_statistics_from_parquet_metadata(
     col_aggs = {}
 
     invalidate_col: set[int] = set()
+    without_bounds: set[int] = set()
     for r in range(parquet_metadata.num_row_groups):
         # References:
         # https://github.com/apache/iceberg/blob/fc381a81a1fdb8f51a0637ca27cd30673bd7aad3/parquet/src/main/java/org/apache/iceberg/parquet/ParquetUtil.java#L232
@@ -2724,6 +2750,11 @@ def data_file_statistics_from_parquet_metadata(
                     if stats_col.mode == MetricsMode(MetricModeTypes.COUNTS):
                         continue
 
+                    if not statistics.has_min_max:
+                        if not (statistics.has_null_count and statistics.null_count == column.num_values):
+                            without_bounds.add(field_id)
+                        continue
+
                     if field_id not in col_aggs:
                         try:
                             col_aggs[field_id] = StatsAggregator(
@@ -2760,6 +2791,9 @@ def data_file_statistics_from_parquet_metadata(
     for field_id in invalidate_col:
         col_aggs.pop(field_id, None)
         null_value_counts.pop(field_id, None)
+
+    for field_id in without_bounds:
+        col_aggs.pop(field_id, None)
 
     return DataFileStatistics(
         record_count=parquet_metadata.num_rows,

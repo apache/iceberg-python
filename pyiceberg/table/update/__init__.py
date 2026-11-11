@@ -35,6 +35,7 @@ from pyiceberg.table.metadata import (
     TableMetadata,
     TableMetadataUtil,
     TableMetadataV3,
+    _check_properties_format_version_compatibility,
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -349,6 +350,8 @@ def _(
 def _(update: SetPropertiesUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if len(update.updates) == 0:
         return base_metadata
+
+    _check_properties_format_version_compatibility(update.updates, base_metadata.format_version)
 
     properties = dict(base_metadata.properties)
     properties.update(update.updates)

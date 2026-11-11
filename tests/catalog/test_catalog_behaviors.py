@@ -19,6 +19,7 @@
 Consolidated behavior tests for InMemoryCatalog and SqlCatalog.
 """
 
+import json
 import os
 from collections.abc import Generator
 from pathlib import Path
@@ -207,6 +208,22 @@ def test_create_v1_table(catalog: Catalog, table_schema_nested: Schema, test_tab
     assert table.format_version == 1
     assert table.spec() == UNPARTITIONED_PARTITION_SPEC
     catalog.drop_table(test_table_identifier)
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_create_table_rejects_encryption_properties_before_v3(
+    catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier, format_version: int
+) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+
+    with pytest.raises(ValueError, match=rf"Invalid properties for v{format_version}: \['encryption.key-id'\]"):
+        catalog.create_table(
+            test_table_identifier,
+            table_schema_nested,
+            properties={"format-version": str(format_version), "encryption.key-id": "key"},
+        )
+
+    assert not catalog.table_exists(test_table_identifier)
 
 
 def test_create_table_custom_sort_order(catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier) -> None:
@@ -503,6 +520,20 @@ def test_purge_table(catalog: Catalog, table_schema_simple: Schema, test_table_i
     catalog.purge_table(test_table_identifier)
     with pytest.raises(NoSuchTableError, match=f"Table does not exist: {'.'.join(test_table_identifier)}"):
         catalog.load_table(test_table_identifier)
+
+
+def test_purge_encrypted_table_without_kms_client(
+    catalog: Catalog, test_table_identifier: Identifier, example_table_metadata_v3_encrypted: dict[str, Any], tmp_path: Path
+) -> None:
+    metadata_location = tmp_path / "00000-encrypted.metadata.json"
+    metadata_location.write_text(json.dumps(example_table_metadata_v3_encrypted))
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    catalog.register_table(test_table_identifier, str(metadata_location))
+
+    with pytest.raises(ValueError, match="no key management client was provided"):
+        catalog.purge_table(test_table_identifier)
+
+    assert catalog.table_exists(test_table_identifier)
 
 
 # List tables tests

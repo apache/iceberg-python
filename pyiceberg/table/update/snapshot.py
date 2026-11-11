@@ -1008,7 +1008,7 @@ class _ManifestMergeManager(Generic[U]):
         groups = self._group_by_spec(manifests)
 
         merged_manifests = []
-        for spec_id in reversed(groups.keys()):
+        for spec_id in reversed(groups):
             merged_manifests.extend(self._merge_group(first_manifest, spec_id, groups[spec_id]))
 
         return merged_manifests
@@ -1112,7 +1112,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
         Returns:
             This for method chaining
+
+        Raises:
+            ValueError: If a branch or tag with this name already exists.
         """
+        if tag_name in self._effective_refs():
+            raise ValueError(f"Ref {tag_name} already exists")
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
@@ -1131,7 +1136,16 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             tag_name (str): name of tag to remove
         Returns:
             This for method chaining
+
+        Raises:
+            NoSuchSnapshotRefError: If the tag does not exist.
+            SnapshotRefTypeError: If the name belongs to a branch.
         """
+        ref = self._effective_refs().get(tag_name)
+        if ref is None:
+            raise NoSuchSnapshotRefError(f"Tag does not exist: {tag_name}")
+        if ref.snapshot_ref_type != SnapshotRefType.TAG:
+            raise SnapshotRefTypeError(f"Ref {tag_name} is a branch, not a tag")
         return self._remove_ref_snapshot(ref_name=tag_name)
 
     def create_branch(
@@ -1153,7 +1167,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             min_snapshots_to_keep (Optional[int]): min number of snapshots to keep for the branch
         Returns:
             This for method chaining
+
+        Raises:
+            ValueError: If a branch or tag with this name already exists.
         """
+        if branch_name in self._effective_refs():
+            raise ValueError(f"Ref {branch_name} already exists")
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=branch_name,
@@ -1174,7 +1193,19 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             branch_name (str): name of branch to remove
         Returns:
             This for method chaining
+
+        Raises:
+            ValueError: If the branch is main.
+            NoSuchSnapshotRefError: If the branch does not exist.
+            SnapshotRefTypeError: If the name belongs to a tag.
         """
+        if branch_name == MAIN_BRANCH:
+            raise ValueError("Cannot remove main branch")
+        ref = self._effective_refs().get(branch_name)
+        if ref is None:
+            raise NoSuchSnapshotRefError(f"Branch does not exist: {branch_name}")
+        if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+            raise SnapshotRefTypeError(f"Ref {branch_name} is a tag, not a branch")
         return self._remove_ref_snapshot(ref_name=branch_name)
 
     def set_current_snapshot(self, snapshot_id: int | None = None, ref_name: str | None = None) -> ManageSnapshots:
