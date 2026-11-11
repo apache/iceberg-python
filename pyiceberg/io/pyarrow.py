@@ -3218,8 +3218,13 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         arrow_table = arrow_table.cast(arrow_schema)
 
     # Assign unique names to columns where the partition transform has been applied
-    # to avoid conflicts
-    partition_fields = [f"_partition_{field.name}" for field in spec.fields]
+    # to avoid conflicts with the data columns
+    partition_fields: list[str] = []
+    for field in spec.fields:
+        name = f"_partition_{field.name}"
+        while name in arrow_table.column_names or name in partition_fields:
+            name = f"_{name}"
+        partition_fields.append(name)
 
     for partition, name in zip(spec.fields, partition_fields, strict=True):
         source_field = schema.find_field(partition.source_id)

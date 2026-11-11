@@ -3397,6 +3397,32 @@ def test_determine_partitions_identity_nan() -> None:
     assert rows_by_partition == {"1.0": [1], "nan": [2, 4], "None": [3]}
 
 
+def test_determine_partitions_with_column_named_like_partition_helper() -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="_partition_region", field_type=StringType(), required=False),
+        NestedField(id=3, name="region", field_type=StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="region"))
+    arrow_table = pa.Table.from_pydict(
+        {"id": [1, 2, 3], "_partition_region": ["a", "b", "c"], "region": ["us", "eu", "us"]},
+        schema=schema.as_arrow(),
+    )
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    rows_by_partition = {
+        p.partition_key.partition[0]: sorted(p.arrow_table_partition.to_pylist(), key=lambda row: row["id"]) for p in partitions
+    }
+    assert rows_by_partition == {
+        "us": [
+            {"id": 1, "_partition_region": "a", "region": "us"},
+            {"id": 3, "_partition_region": "c", "region": "us"},
+        ],
+        "eu": [{"id": 2, "_partition_region": "b", "region": "eu"}],
+    }
+
+
 @pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(4), TruncateTransform(1)])
 def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) -> None:
     schema = Schema(
