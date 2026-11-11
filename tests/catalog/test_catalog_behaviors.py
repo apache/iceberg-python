@@ -338,6 +338,18 @@ def test_write_pyarrow_schema(catalog: Catalog, test_table_identifier: Identifie
     table.append(pyarrow_table)
 
 
+def test_scan_mixed_dictionary_and_plain_string_batches(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.mixed_dictionary", schema=pa.schema([pa.field("s", pa.string())]))
+
+    table.append(pa.table({"s": pa.array(["a"]).dictionary_encode()}))
+    table.append(pa.table({"s": pa.array(["b"])}))
+
+    scanned = table.scan().to_arrow()
+    assert scanned.schema.field("s").type == pa.string()
+    assert sorted(scanned["s"].to_pylist()) == ["a", "b"]
+
+
 @pytest.mark.parametrize(
     "schema,expected",
     [

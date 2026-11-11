@@ -1848,6 +1848,32 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
     return deletes_per_file
 
 
+def _decode_unrequested_dictionary_columns(batch: pa.RecordBatch, dictionary_columns: set[str]) -> pa.RecordBatch:
+    """Decode dictionary-encoded columns that were not requested as dictionary encoded.
+
+    Files with dictionary-encoded columns and files with plain columns produce different batch
+    schemas, which cannot be concatenated. Decoding the columns that were not requested as
+    dictionaries gives the batches one logical schema, while requested dictionary columns stay as
+    they are.
+    """
+    to_decode = [field for field in batch.schema if pa.types.is_dictionary(field.type) and field.name not in dictionary_columns]
+    if not to_decode:
+        return batch
+
+    decode_names = {field.name for field in to_decode}
+    schema = pa.schema(
+        [
+            pa.field(field.name, field.type.value_type, field.nullable, field.metadata) if field.name in decode_names else field
+            for field in batch.schema
+        ]
+    )
+    arrays = [
+        batch.column(i).dictionary_decode() if field.name in decode_names else batch.column(i)
+        for i, field in enumerate(batch.schema)
+    ]
+    return pa.RecordBatch.from_arrays(arrays, schema=schema)
+
+
 class ArrowScan:
     _table_metadata: TableMetadata
     _io: FileIO
@@ -1927,8 +1953,13 @@ class ArrowScan:
 
         # Note: cannot use pa.Table.from_batches(itertools.chain([first_batch], batches)))
         #       as different batches can use different schema's (due to large_ types)
+        dictionary_columns = set(self._dictionary_columns)
         result = pa.concat_tables(
-            (pa.Table.from_batches([batch]) for batch in itertools.chain([first_batch], batches)), promote_options="permissive"
+            (
+                pa.Table.from_batches([_decode_unrequested_dictionary_columns(batch, dictionary_columns)])
+                for batch in itertools.chain([first_batch], batches)
+            ),
+            promote_options="permissive",
         )
 
         return result
