@@ -338,6 +338,24 @@ def test_write_pyarrow_schema(catalog: Catalog, test_table_identifier: Identifie
     table.append(pyarrow_table)
 
 
+def test_write_dictionary_encoded_column_with_bucket_partition(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    schema = pa.schema([pa.field("id", pa.int64()), pa.field("s", pa.string())])
+    table = catalog.create_table("default.dictionary_bucket", schema=schema)
+    with table.update_spec() as update:
+        update.add_field("s", "bucket[8]")
+
+    plain = pa.table({"id": [1, 2], "s": ["a", "b"]})
+    encoded = plain.cast(pa.schema([pa.field("id", pa.int64()), pa.field("s", pa.dictionary(pa.int32(), pa.string()))]))
+    table.append(encoded)
+
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == [
+        {"id": 1, "s": "a"},
+        {"id": 2, "s": "b"},
+    ]
+    assert len(table.inspect.partitions()) == 2
+
+
 @pytest.mark.parametrize(
     "schema,expected",
     [
