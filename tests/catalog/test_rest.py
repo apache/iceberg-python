@@ -3266,18 +3266,16 @@ def test_auth_header(rest_mock: Mocker) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("implementation", "python_version", "expected"),
-    [("CPython", "3.11.4", "pyiceberg/0.11.0 (cpython 3.11.4)"), ("PyPy", "3.10.16", "pyiceberg/0.11.0 (pypy 3.10.16)")],
-)
-def test_user_agent_header(
-    rest_mock: Mocker, monkeypatch: pytest.MonkeyPatch, implementation: str, python_version: str, expected: str
-) -> None:
+def test_user_agent_header(rest_mock: Mocker, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("pyiceberg.catalog.rest.__version__", "0.11.0")
-    monkeypatch.setattr(platform, "python_implementation", lambda: implementation)
-    monkeypatch.setattr(platform, "python_version", lambda: python_version)
-    catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
-    assert catalog._session.headers["User-Agent"] == expected
+    for implementation, python_version, expected in [
+        ("CPython", "3.11.4", "pyiceberg/0.11.0 (cpython 3.11.4)"),
+        ("PyPy", "3.10.16", "pyiceberg/0.11.0 (pypy 3.10.16)"),
+    ]:
+        monkeypatch.setattr(platform, "python_implementation", lambda implementation=implementation: implementation)
+        monkeypatch.setattr(platform, "python_version", lambda python_version=python_version: python_version)
+        catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+        assert catalog._session.headers["User-Agent"] == expected
 
 
 def test_client_version_header(rest_mock: Mocker) -> None:
