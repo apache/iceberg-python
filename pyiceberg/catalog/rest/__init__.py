@@ -1192,6 +1192,7 @@ class RestCatalog(Catalog):
             ),
             catalog=self,
             config=table_response.config,
+            labels=table_response.labels,
         )
 
     def _response_to_staged_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> StagedTable:

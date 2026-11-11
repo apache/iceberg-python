@@ -59,6 +59,7 @@ from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTI
 from pyiceberg.schema import Schema
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
@@ -1349,6 +1350,8 @@ class Table:
     io: FileIO
     catalog: Catalog
     config: dict[str, str]
+    # Catalog-provided labels, set when the catalog loads the table. They are not table state, so refresh() and commits keep them.
+    labels: Labels
 
     def __init__(
         self,
@@ -1359,6 +1362,7 @@ class Table:
         catalog: Catalog,
         config: dict[str, str] = EMPTY_DICT,
         kms_client: KeyManagementClient | None = None,
+        labels: Labels | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
@@ -1367,6 +1371,7 @@ class Table:
         self.catalog = catalog
         self.config = config
         self._kms_client = kms_client
+        self.labels = labels if labels is not None else Labels()
         self._encryption_manager: _CachedEncryptionManager | None = None
 
     @property
