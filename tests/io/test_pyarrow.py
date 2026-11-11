@@ -3353,6 +3353,27 @@ def test_determine_partitions_identity_nan() -> None:
     assert rows_by_partition == {"1.0": [1], "nan": [2, 4], "None": [3]}
 
 
+def test_determine_partitions_identity_signed_zero() -> None:
+    for field_type in (DoubleType(), FloatType()):
+        schema = Schema(
+            NestedField(id=1, name="id", field_type=IntegerType(), required=False),
+            NestedField(id=2, name="value", field_type=field_type, required=False),
+        )
+        spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"))
+        arrow_table = pa.Table.from_pydict(
+            {"id": [1, 2, 3, 4], "value": [-0.0, 0.0, 1.0, -0.0]},
+            schema=schema.as_arrow(),
+        )
+
+        partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+        # -0.0 == 0.0, but they are separate partitions, so each row must land in exactly one of them
+        rows_by_partition = {
+            repr(p.partition_key.partition[0]): sorted(p.arrow_table_partition["id"].to_pylist()) for p in partitions
+        }
+        assert rows_by_partition == {"-0.0": [1, 4], "0.0": [2], "1.0": [3]}, field_type
+
+
 @pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(4), TruncateTransform(1)])
 def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) -> None:
     schema = Schema(
