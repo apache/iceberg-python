@@ -74,6 +74,7 @@ from pyiceberg.expressions.visitors import (
     _ManifestEvalVisitor,
     expression_evaluator,
     expression_to_plain_format,
+    resolve_missing_columns,
     rewrite_not,
     rewrite_to_dnf,
     translate_column_names,
@@ -1982,3 +1983,31 @@ def test_translate_column_names_missing_column_projected_field_ignores_initial_d
 
     # Should evaluate to AlwaysFalse since projected field value doesn't match the expression literal
     assert translated_expr == AlwaysFalse()
+
+
+def test_resolve_missing_columns_keeps_bound_predicates_in_table_types() -> None:
+    """Predicates on columns in the file stay bound, and predicates on missing columns become constants."""
+    table_schema = Schema(
+        NestedField(field_id=1, name="existing_col", field_type=DoubleType(), required=False),
+        NestedField(field_id=2, name="missing_col", field_type=IntegerType(), required=False),
+        schema_id=1,
+    )
+    file_schema = Schema(
+        NestedField(field_id=1, name="existing_col", field_type=FloatType(), required=False),
+        schema_id=0,
+    )
+
+    bound_expr = visit(
+        And(GreaterThan("existing_col", 0.1), EqualTo("missing_col", 42)),
+        visitor=BindVisitor(schema=table_schema, case_sensitive=True),
+    )
+    assert resolve_missing_columns(bound_expr, file_schema) == AlwaysFalse()
+
+    bound_expr = visit(
+        And(GreaterThan("existing_col", 0.1), IsNull("missing_col")),
+        visitor=BindVisitor(schema=table_schema, case_sensitive=True),
+    )
+    resolved = resolve_missing_columns(bound_expr, file_schema)
+    assert isinstance(resolved, BoundGreaterThan)
+    assert resolved.literal.value == 0.1
+    assert isinstance(resolved.term.ref().field.field_type, DoubleType)
