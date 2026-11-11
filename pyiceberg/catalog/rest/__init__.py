@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import sys
 import time
 import uuid
@@ -1232,7 +1233,9 @@ class RestCatalog(Catalog):
         header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
-        session.headers["User-Agent"] = f"PyIceberg/{__version__}"
+        session.headers["User-Agent"] = (
+            f"pyiceberg/{__version__} ({platform.python_implementation().lower()} {platform.python_version()})"
+        )
         session.headers["X-Client-Version"] = f"PyIceberg {__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
