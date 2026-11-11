@@ -75,7 +75,9 @@ class DataFileStatistics:
                 schema=schema,
             )
         )
-        if lower_value != upper_value:
+        # A file holding a value and NULL spans two partitions
+        has_nulls = self.null_value_counts.get(partition_field.source_id, 0) > 0
+        if lower_value != upper_value or (lower_value is not None and has_nulls):
             raise ValueError(
                 f"Cannot infer partition value from parquet metadata as there are more than one partition values "
                 f"for Partition Field: {partition_field.name}. {lower_value=}, {upper_value=}"

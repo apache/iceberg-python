@@ -43,7 +43,7 @@ from pyiceberg.exceptions import (
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties
+from pyiceberg.table import Table, TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
@@ -1374,6 +1374,36 @@ def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
 
     assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 3, 4]
     assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
+
+
+def test_add_files_refuses_partition_value_with_nulls(catalog: Catalog) -> None:
+    import pyarrow.parquet as pq
+
+    catalog.create_namespace("default")
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "s", StringType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="s"))
+    arrow_schema = schema_to_pyarrow(iceberg_schema)
+
+    def write_file(tbl: Table, name: str, ids: list[int], values: list[str | None]) -> str:
+        file_path = f"{tbl.location()}/data/{name}.parquet"
+        with tbl.io.new_output(file_path).create(overwrite=True) as fos:
+            pq.write_table(pa.Table.from_pydict({"id": ids, "s": values}, schema=arrow_schema), fos)
+        return file_path
+
+    identifier = f"default.add_files_partition_{catalog.name}"
+    tbl = catalog.create_table(identifier, schema=iceberg_schema, partition_spec=partition_spec)
+    tbl.add_files([write_file(tbl, "a", [1, 2], ["a", "a"]), write_file(tbl, "null", [3, 4], [None, None])])
+    assert sorted(tbl.scan(row_filter="s = 'a'").to_arrow()["id"].to_pylist()) == [1, 2]
+    assert sorted(tbl.scan(row_filter="s IS NULL").to_arrow()["id"].to_pylist()) == [3, 4]
+
+    # A value and NULL are two partition values, like 'a' and 'b'
+    with pytest.raises(ValueError, match="more than one partition values for Partition Field: s"):
+        tbl.add_files([write_file(tbl, "a_and_null", [5, 6], ["a", None])])
+
+    assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 3, 4]
 
 
 def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
