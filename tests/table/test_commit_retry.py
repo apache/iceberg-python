@@ -1493,3 +1493,72 @@ def test_transaction_stages_one_ref_assertion_per_ref(catalog: Catalog) -> None:
     ref_assertions = {r.ref: r.snapshot_id for r in tx._requirements if isinstance(r, AssertRefSnapshotId)}
     assert ref_assertions == {"b": base_snapshot_id, "main": base_snapshot_id}
     assert len([r for r in tx._requirements if isinstance(r, AssertRefSnapshotId)]) == 2
+
+
+def _table_with_branch(catalog: Catalog, identifier: str) -> Any:
+    import pyarrow as pa
+
+    tbl = catalog.create_table(
+        identifier,
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1", TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2"},
+    )
+    tbl.append(pa.table({"x": [0, 1]}))
+    snapshot_id = tbl.metadata.current_snapshot_id
+    assert snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=snapshot_id, branch_name="b").commit()
+    return tbl
+
+
+def test_retry_validates_each_branch_against_its_own_commits(catalog: Catalog) -> None:
+    """A retried delete on a second branch is validated against that branch, not the first producer's branch."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    tx = _table_with_branch(catalog, "default.retry_window_per_branch").transaction()
+    tx.append(pa.table({"x": [9]}))
+    tx.delete("x == 1", branch="b")
+
+    # A row matching the delete lands on b after the delete was planned; main is untouched.
+    catalog.load_table("default.retry_window_per_branch").append(pa.table({"x": [1]}), branch="b")
+
+    with pytest.raises(ValidationException):
+        tx.commit_transaction()
+
+    refreshed = catalog.load_table("default.retry_window_per_branch")
+    assert sorted(refreshed.scan().use_ref("b").to_arrow()["x"].to_pylist()) == [0, 1, 1]
+    assert sorted(refreshed.scan().to_arrow()["x"].to_pylist()) == [0, 1]
+
+
+def test_empty_plan_validation_checks_each_branch_against_its_own_commits(catalog: Catalog) -> None:
+    """Empty-plan deletes on two branches are each validated against their own branch."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    tx = _table_with_branch(catalog, "default.empty_plan_window_per_branch").transaction()
+    with pytest.warns(UserWarning):  # neither delete matches anything at staging time
+        tx.delete("x > 45")
+        tx.delete("x > 45", branch="b")
+
+    catalog.load_table("default.empty_plan_window_per_branch").append(pa.table({"x": [50]}), branch="b")
+
+    with pytest.raises(ValidationException):
+        tx.commit_transaction()
+
+
+def test_retry_with_two_writes_to_one_branch_succeeds(catalog: Catalog) -> None:
+    """The second write to a branch starts from a staged snapshot; its retry window must use the committed base."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    tx = _table_with_branch(catalog, "default.retry_two_writes_one_branch").transaction()
+    tx.append(pa.table({"x": [9]}))
+    tx.delete("x == 0")
+
+    # Non-conflicting concurrent append to the same branch forces a retry.
+    catalog.load_table("default.retry_two_writes_one_branch").append(pa.table({"x": [5]}))
+
+    tx.commit_transaction()
+
+    rows = sorted(catalog.load_table("default.retry_two_writes_one_branch").scan().to_arrow()["x"].to_pylist())
+    assert rows == [1, 5, 9]
