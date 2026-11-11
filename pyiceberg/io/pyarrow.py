@@ -78,7 +78,6 @@ from pyiceberg.expressions import (
     BoundIsNull,
     BoundNotEqualTo,
     BoundNotIn,
-    BoundPredicate,
     BoundTerm,
     Not,
     Or,
@@ -1733,19 +1732,17 @@ def _get_column_projection_values(
     return projected_missing_fields
 
 
-def _has_nan_sensitive_predicate(expr: BooleanExpression, negated: bool = False) -> bool:
+def _has_nan_sensitive_predicate(expr: BooleanExpression) -> bool:
     """Return whether a predicate in the expression can match NaN values that pyarrow may prune away.
 
     Parquet statistics exclude NaN, so a row group whose non-NaN values are all equal reports min == max.
     pyarrow then prunes it for predicates that the NaN values satisfy: IsNaN, NotEqualTo and NotIn on a
-    float or double column, and any predicate on such a column under a NOT.
+    float or double column.
     """
     if isinstance(expr, (And, Or)):
-        return _has_nan_sensitive_predicate(expr.left, negated) or _has_nan_sensitive_predicate(expr.right, negated)
-    if isinstance(expr, Not):
-        return _has_nan_sensitive_predicate(expr.child, not negated)
-    if isinstance(expr, BoundPredicate) and isinstance(expr.term.ref().field.field_type, (FloatType, DoubleType)):
-        return negated or isinstance(expr, (BoundIsNaN, BoundNotEqualTo, BoundNotIn))
+        return _has_nan_sensitive_predicate(expr.left) or _has_nan_sensitive_predicate(expr.right)
+    if isinstance(expr, (BoundIsNaN, BoundNotEqualTo, BoundNotIn)):
+        return isinstance(expr.term.ref().field.field_type, (FloatType, DoubleType))
     return False
 
 
@@ -1810,7 +1807,8 @@ def _task_to_record_batches(
                 filter_batches = True
             elif _has_nan_sensitive_predicate(bound_file_filter):
                 # Parquet statistics exclude NaN, so pyarrow can prune a row group that holds NaN rows matching
-                # a NaN-sensitive conjunct. Only the other conjuncts are pushed down.
+                # a NaN-sensitive conjunct (https://github.com/apache/arrow/issues/51491). Only the other
+                # conjuncts are pushed down.
                 filter_batches = True
                 nan_safe_filter = _nan_safe_conjuncts(bound_file_filter)
                 if nan_safe_filter is not AlwaysTrue():
