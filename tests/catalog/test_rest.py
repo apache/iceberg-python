@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import os
+import pickle
 import platform
 import uuid
 from collections.abc import Callable, Iterator
@@ -952,6 +953,53 @@ def test_view_exists_multilevel_namespace_404(rest_mock: Mocker) -> None:
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     assert not catalog.view_exists((multilevel_namespace, view))
+
+
+def test_view_exists_fallback_200(requests_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_VIEW)]},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.view_exists(("fokko", "view"))
+
+
+def test_view_exists_fallback_200_legacy_server(requests_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {"view-endpoints-supported": "true"}, "overrides": {}},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.view_exists(("fokko", "view"))
+
+
+def test_view_exists_fallback_404(requests_mock: Mocker) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_VIEW)]},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert not catalog.view_exists(("fokko", "view"))
 
 
 def test_list_namespaces_200(rest_mock: Mocker) -> None:
@@ -3803,3 +3851,43 @@ def test_load_responses_parse_labels(
         assert response_type.model_validate(payload).labels == Labels()
         for invalid in invalid_values:
             assert response_type.model_validate({**payload, "labels": invalid}).labels == Labels()
+
+
+def test_table_labels_from_rest_responses(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any], table_schema_simple: Schema
+) -> None:
+    response = {
+        **example_table_metadata_with_snapshot_v1_rest_json,
+        "labels": {"object-labels": {"owner": "team-a"}, "fields": [{"field-id": 1, "labels": {"classification": "pii"}}]},
+    }
+    rest_mock.get(f"{TEST_URI}v1/namespaces/fokko/tables/table", json=response, status_code=200, request_headers=TEST_HEADERS)
+    rest_mock.post(f"{TEST_URI}v1/namespaces/fokko/tables", json=response, status_code=200, request_headers=TEST_HEADERS)
+    rest_mock.post(f"{TEST_URI}v1/namespaces/fokko/register", json=response, status_code=200, request_headers=TEST_HEADERS)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    expected = Labels(object_labels={"owner": "team-a"}, fields=[FieldLabel(field_id=1, labels={"classification": "pii"})])
+
+    table = catalog.load_table(("fokko", "table"))
+    created = catalog.create_table(("fokko", "table"), schema=table_schema_simple)
+    registered = catalog.register_table(("fokko", "table"), metadata_location="s3://warehouse/database/table/metadata.json")
+    for actual in (table, created, registered):
+        assert actual.labels == expected
+
+    # A pickled table keeps its labels. Java does not serialize them, because BaseTable.labels is transient.
+    assert pickle.loads(pickle.dumps(table)).labels == expected
+
+    # Labels are not table state, so equality ignores them and refresh() keeps the labels from the first load.
+    assert table == Table(
+        identifier=("fokko", "table"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={**example_table_metadata_with_snapshot_v1_rest_json, "labels": {"object-labels": {"owner": "team-b"}}},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    table.refresh()
+    assert table.labels == expected

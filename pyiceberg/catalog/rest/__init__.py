@@ -1193,6 +1193,7 @@ class RestCatalog(Catalog):
             ),
             catalog=self,
             config=table_response.config,
+            labels=table_response.labels,
         )
 
     def _response_to_staged_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> StagedTable:
@@ -1845,6 +1846,14 @@ class RestCatalog(Catalog):
         Returns:
             bool: True if the view exists, False otherwise.
         """
+        # fallback in order to work with older rest catalog implementations
+        if Capability.V1_VIEW_EXISTS not in self._supported_endpoints:
+            try:
+                self.load_view(identifier)
+                return True
+            except NoSuchViewError:
+                return False
+
         response = self._session.head(
             self.url(Endpoints.view_exists, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
         )
