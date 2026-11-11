@@ -1010,3 +1010,18 @@ def test_v3_metadata_with_encryption_keys_serializes_them(example_table_metadata
     assert table_metadata.model_dump(mode="json")["encryption-keys"] == [
         {"key-id": "a", "encrypted-key-metadata": "a2V5", "properties": {}}
     ]
+
+
+def test_v3_metadata_encryption_keys_round_trip_through_json(example_table_metadata_v3: dict[str, Any]) -> None:
+    encryption_keys = [
+        {"key-id": "table-key-1", "encrypted-key-metadata": "a2V5", "properties": {"a": "b"}},
+        {"key-id": "table-key-2", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "table-key-1"},
+    ]
+    table_metadata = TableMetadataUtil.parse_obj({**example_table_metadata_v3, "encryption-keys": encryption_keys})
+
+    serialized = table_metadata.model_dump_json()
+    assert json.loads(serialized)["encryption-keys"] == [
+        {"key-id": "table-key-1", "encrypted-key-metadata": "a2V5", "properties": {"a": "b"}},
+        {"key-id": "table-key-2", "encrypted-key-metadata": "a2V5", "encrypted-by-id": "table-key-1", "properties": {}},
+    ]
+    assert TableMetadataUtil.parse_raw(serialized) == table_metadata
