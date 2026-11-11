@@ -236,6 +236,34 @@ def test_snapshot_by_timestamp(table_v2: Table) -> None:
     assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
 
 
+def test_snapshot_by_timestamp_with_unordered_snapshot_log(table_v2: Table) -> None:
+    # Writers with slightly skewed clocks can append snapshot log entries out of timestamp order
+    first, second = table_v2.metadata.snapshot_log
+    now = second.timestamp_ms
+    log = [
+        SnapshotLogEntry(snapshot_id=second.snapshot_id, timestamp_ms=now),
+        SnapshotLogEntry(snapshot_id=first.snapshot_id, timestamp_ms=now - 10_000),
+    ]
+    table_v2.metadata = table_v2.metadata.model_copy(update={"snapshot_log": log})
+
+    latest = table_v2.snapshot_as_of_timestamp(now)
+    assert latest is not None
+    assert latest.snapshot_id == second.snapshot_id
+
+    earlier = table_v2.snapshot_as_of_timestamp(now - 5_000)
+    assert earlier is not None
+    assert earlier.snapshot_id == first.snapshot_id
+
+    assert table_v2.snapshot_as_of_timestamp(now - 10_000, inclusive=False) is None
+
+    # On equal timestamps the later entry wins
+    tied = [SnapshotLogEntry(snapshot_id=first.snapshot_id, timestamp_ms=now), log[0]]
+    table_v2.metadata = table_v2.metadata.model_copy(update={"snapshot_log": tied})
+    result = table_v2.snapshot_as_of_timestamp(now)
+    assert result is not None
+    assert result.snapshot_id == second.snapshot_id
+
+
 def test_snapshot_by_id_does_not_exist(table_v2: Table) -> None:
     assert table_v2.snapshot_by_id(-1) is None
 
