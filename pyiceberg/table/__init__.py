@@ -34,7 +34,7 @@ from cachetools import LRUCache
 from pydantic import Field
 
 from pyiceberg.encryption.kms import KeyManagementClient
-from pyiceberg.exceptions import CommitFailedException, ValidationException
+from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
 from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
@@ -1146,6 +1146,12 @@ class Transaction:
                         except CommitFailedException:
                             elapsed_ms = (time.monotonic() - start_time) * 1000
                             if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
+                                # The catalog can apply a commit and still report failure, for example
+                                # when the response is lost. Check before cleaning up, since cleaning
+                                # up a snapshot that landed would leave the table unreadable.
+                                if self._snapshot_producers and self._attempt_landed():
+                                    self._cleanup_uncommitted_manifests()
+                                    break
                                 raise
 
                             wait = min(min_wait_ms * (2**attempt), max_wait_ms)
@@ -1158,11 +1164,7 @@ class Transaction:
                             )
                             time.sleep((wait + jitter) / 1000.0)
 
-                            self._table.refresh()
-                            if all(
-                                self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None
-                                for producer in self._snapshot_producers
-                            ):
+                            if self._attempt_landed():
                                 # A previous attempt actually landed even though it was reported as
                                 # failed (for example a lost response that the transport layer retried).
                                 # The snapshot id is stable across attempts, so finding it in the
@@ -1214,6 +1216,24 @@ class Transaction:
         self._requirements = ()
 
         return self._table
+
+    def _attempt_landed(self) -> bool:
+        """Refresh the table and return whether a snapshot written by this transaction is present.
+
+        Raises:
+            CommitStateUnknownException: If the table cannot be refreshed, the outcome is unknown and
+                the files written for the attempt must not be deleted.
+        """
+        try:
+            self._table.refresh()
+        except Exception as e:
+            raise CommitStateUnknownException(
+                f"Commit failed and the table could not be refreshed to check whether it landed: {e}"
+            ) from e
+
+        return all(
+            self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None for producer in self._snapshot_producers
+        )
 
     def _cleanup_uncommitted_manifests(self) -> None:
         """Clean up manifests from failed retry attempts after a successful commit."""
