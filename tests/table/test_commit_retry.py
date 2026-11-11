@@ -23,7 +23,7 @@ import pytest
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties, Transaction
+from pyiceberg.table import Table, TableProperties, Transaction
 from pyiceberg.table.snapshots import IsolationLevel, Operation
 from pyiceberg.types import LongType, NestedField, StringType
 
@@ -1290,6 +1290,79 @@ def test_negative_wait_properties_do_not_mask_commit_failure(catalog: Catalog) -
 
     result = catalog.load_table("default.negative_wait_test").scan().to_arrow()
     assert len(result) == 6
+
+
+def _commit_outcomes(catalog: Catalog, *outcomes: str) -> Any:
+    """Simulate a commit failing before ("conflict") or after ("lost") the catalog applied it."""
+    real_commit = catalog.commit_table
+    remaining = iter(outcomes)
+
+    def commit(*args: Any, **kwargs: Any) -> Any:
+        outcome = next(remaining, "ok")
+        if outcome == "conflict":
+            raise CommitFailedException("concurrent update")
+        result = real_commit(*args, **kwargs)
+        if outcome == "lost":
+            raise CommitFailedException("response lost after the commit landed")
+        return result
+
+    return patch.object(catalog, "commit_table", side_effect=commit)
+
+
+def _assert_single_readable_snapshot(catalog: Catalog, identifier: str, expected: list[dict[str, Any]]) -> None:
+    table = catalog.load_table(identifier)
+    assert len(table.snapshots()) == 1
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert table.io.new_input(snapshot.manifest_list).exists()
+    assert table.scan().to_arrow().to_pylist() == expected
+
+
+def test_lost_response_on_the_last_attempt_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """A commit that lands but reports failure on the last attempt is not cleaned up."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.lost_response_last_attempt",
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_NUM_RETRIES: "0"},
+    )
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"):
+        table.append(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_last_attempt", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_lost_response_on_the_final_retry_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """A landed retry is detected even when the retry budget is exhausted."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.lost_response_final_retry",
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_NUM_RETRIES: "1"},
+    )
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "conflict", "lost"):
+        table.append(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_final_retry", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_unreadable_commit_outcome_raises_commit_state_unknown(catalog: Catalog) -> None:
+    """When the table cannot be refreshed, the outcome is unknown and no file is deleted."""
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.unknown_commit_outcome", schema=_test_schema())
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"):
+        with patch.object(Table, "refresh", side_effect=RuntimeError("catalog unavailable")):
+            with pytest.raises(CommitStateUnknownException):
+                table.append(pa.table({"x": [1, 2, 3]}))
 
 
 def test_transaction_writing_two_branches_detects_concurrent_change_to_either(catalog: Catalog) -> None:
