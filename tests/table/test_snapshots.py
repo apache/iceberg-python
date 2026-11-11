@@ -671,7 +671,9 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
     from pyiceberg.table.update.snapshot import _FastAppendFiles, _MergeAppendFiles
 
     def make_file() -> DataFile:
-        return DataFile.from_args(content=DataFileContent.DATA, record_count=1, file_size_in_bytes=1, partition=Record())
+        return DataFile.from_args(
+            content=DataFileContent.DATA, record_count=1, file_size_in_bytes=1, partition=Record(), spec_id=0
+        )
 
     txn = table_v2.transaction()
 
