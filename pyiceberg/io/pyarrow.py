@@ -70,7 +70,19 @@ from typing_extensions import override
 from pyiceberg.conversions import to_bytes
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.exceptions import ResolveError
-from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
+from pyiceberg.expressions import (
+    AlwaysTrue,
+    And,
+    BooleanExpression,
+    BoundIsNaN,
+    BoundIsNull,
+    BoundNotEqualTo,
+    BoundNotIn,
+    BoundPredicate,
+    BoundTerm,
+    Not,
+    Or,
+)
 from pyiceberg.expressions.literals import Literal
 from pyiceberg.expressions.visitors import (
     BoundBooleanExpressionVisitor,
@@ -1721,6 +1733,29 @@ def _get_column_projection_values(
     return projected_missing_fields
 
 
+def _has_nan_sensitive_predicate(expr: BooleanExpression, negated: bool = False) -> bool:
+    """Return whether a predicate in the expression can match NaN values that pyarrow may prune away.
+
+    Parquet statistics exclude NaN, so a row group whose non-NaN values are all equal reports min == max.
+    pyarrow then prunes it for predicates that the NaN values satisfy: IsNaN, NotEqualTo and NotIn on a
+    float or double column, and any predicate on such a column under a NOT.
+    """
+    if isinstance(expr, (And, Or)):
+        return _has_nan_sensitive_predicate(expr.left, negated) or _has_nan_sensitive_predicate(expr.right, negated)
+    if isinstance(expr, Not):
+        return _has_nan_sensitive_predicate(expr.child, not negated)
+    if isinstance(expr, BoundPredicate) and isinstance(expr.term.ref().field.field_type, (FloatType, DoubleType)):
+        return negated or isinstance(expr, (BoundIsNaN, BoundNotEqualTo, BoundNotIn))
+    return False
+
+
+def _nan_safe_conjuncts(expr: BooleanExpression) -> BooleanExpression:
+    """Return the top-level conjuncts that pyarrow can prune on without dropping NaN rows, joined with AND."""
+    if isinstance(expr, And):
+        return And(_nan_safe_conjuncts(expr.left), _nan_safe_conjuncts(expr.right))
+    return AlwaysTrue() if _has_nan_sensitive_predicate(expr) else expr
+
+
 def _task_to_record_batches(
     io: FileIO,
     task: FileScanTask,
@@ -1761,12 +1796,27 @@ def _task_to_record_batches(
         )
 
         pyarrow_filter = None
+        scanner_filter = None
+        # Set when the scanner does not apply the whole filter, so each batch is filtered after the read
+        filter_batches = False
         if bound_row_filter is not AlwaysTrue():
             translated_row_filter = translate_column_names(
                 bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
             )
             bound_file_filter = bind(file_schema, translated_row_filter, case_sensitive=case_sensitive)
             pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
+            if positional_deletes:
+                # Positional deletes must be applied before any row is filtered
+                filter_batches = True
+            elif _has_nan_sensitive_predicate(bound_file_filter):
+                # Parquet statistics exclude NaN, so pyarrow can prune a row group that holds NaN rows matching
+                # a NaN-sensitive conjunct. Only the other conjuncts are pushed down.
+                filter_batches = True
+                nan_safe_filter = _nan_safe_conjuncts(bound_file_filter)
+                if nan_safe_filter is not AlwaysTrue():
+                    scanner_filter = expression_to_pyarrow(nan_safe_filter, file_schema)
+            else:
+                scanner_filter = pyarrow_filter
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
@@ -1774,8 +1824,7 @@ def _task_to_record_batches(
             fragment=fragment,
             schema=physical_schema,
             # This will push down the query to Arrow.
-            # But in case there are positional deletes, we have to apply them first
-            filter=pyarrow_filter if not positional_deletes else None,
+            filter=scanner_filter,
             columns=[col.name for col in file_project_schema.columns],
         )
 
@@ -1790,16 +1839,17 @@ def _task_to_record_batches(
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                 current_batch = current_batch.take(indices)
-                if pyarrow_filter is not None:
-                    # Temporary fix until PyArrow 21 is the minimum supported version
-                    # (https://github.com/apache/arrow/pull/46057): RecordBatch.filter raises
-                    # IndexError on PyArrow <21 when the result is empty; Table.filter does not.
-                    table = pa.Table.from_batches([current_batch])
-                    table = table.filter(pyarrow_filter)
-                    if table.num_rows == 0:
-                        current_batch = current_batch.slice(0, 0)
-                    else:
-                        current_batch = table.combine_chunks().to_batches()[0]
+
+            if filter_batches and pyarrow_filter is not None:
+                # Temporary fix until PyArrow 21 is the minimum supported version
+                # (https://github.com/apache/arrow/pull/46057): RecordBatch.filter raises
+                # IndexError on PyArrow <21 when the result is empty; Table.filter does not.
+                table = pa.Table.from_batches([current_batch])
+                table = table.filter(pyarrow_filter)
+                if table.num_rows == 0:
+                    current_batch = current_batch.slice(0, 0)
+                else:
+                    current_batch = table.combine_chunks().to_batches()[0]
 
             # skip empty batches
             if current_batch.num_rows == 0:
