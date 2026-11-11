@@ -2184,7 +2184,24 @@ def test_delete_table_204(rest_mock: Mocker) -> None:
         status_code=204,
         request_headers=TEST_HEADERS,
     )
-    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(("example", "fokko"))
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    catalog.drop_table(("example", "fokko"))
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/example/tables/fokko?purgeRequested=false"
+
+    catalog.drop_table(("example", "fokko"), purge_requested=True)
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/example/tables/fokko?purgeRequested=true"
+
+
+def test_purge_table_204(rest_mock: Mocker) -> None:
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/example/tables/fokko",
+        json={},
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).purge_table(("example", "fokko"))
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/example/tables/fokko?purgeRequested=true"
 
 
 def test_delete_table_from_self_identifier_204(
