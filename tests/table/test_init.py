@@ -48,6 +48,7 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.metadata import EncryptedKey, TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -99,6 +100,7 @@ from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
+    VoidTransform,
 )
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
@@ -193,6 +195,10 @@ def test_sort_orders(table_v2: Table) -> None:
 
 def test_location(table_v2: Table) -> None:
     assert table_v2.location() == "s3://bucket/test/location"
+
+
+def test_labels_default_to_empty(table_v2: Table) -> None:
+    assert table_v2.labels == Labels()
 
 
 def test_current_snapshot(table_v2: Table) -> None:
@@ -1546,6 +1552,25 @@ def test_update_spec_remove_and_add_same_field_reuses_id(table: Table) -> None:
         PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
     )
     assert txn.table_metadata.last_partition_id == 1000
+
+
+def test_update_spec_remove_and_add_field_with_same_name(table_v1: Table, table_v2: Table) -> None:
+    for table in [table_v1, table_v2]:
+        txn = table.transaction()
+        txn.update_spec().add_field("y", BucketTransform(16), "y_shard").commit()
+        txn.update_spec().remove_field("y_shard").add_field("y", BucketTransform(32), "y_shard").commit()
+
+        if table.format_version == 1:
+            assert txn.table_metadata.spec().fields == (
+                PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+                PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+                PartitionField(source_id=2, field_id=1002, transform=BucketTransform(32), name="y_shard"),
+            )
+        else:
+            assert txn.table_metadata.spec().fields == (
+                PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+                PartitionField(source_id=2, field_id=1002, transform=BucketTransform(32), name="y_shard"),
+            )
 
 
 def test_assert_default_spec_id(table_v2: Table) -> None:

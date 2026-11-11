@@ -35,7 +35,7 @@ from cachetools import LRUCache
 from pydantic import Field
 
 from pyiceberg.encryption.kms import KeyManagementClient
-from pyiceberg.exceptions import CommitFailedException, ValidationException
+from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
 from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNaN, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
@@ -60,6 +60,7 @@ from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTI
 from pyiceberg.schema import Schema
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
@@ -307,10 +308,14 @@ class Transaction:
         self._updates += updates
 
         # For the requirements, it does not make sense to add a requirement more than once
-        # For example, you cannot assert that the current schema has two different IDs
-        existing_requirements = {type(requirement) for requirement in self._requirements}
+        # For example, you cannot assert that the current schema has two different IDs.
+        # Ref assertions are the exception: they apply per ref, so each ref keeps its own first assertion.
+        def _requirement_key(requirement: TableRequirement) -> tuple[type[TableRequirement], str | None]:
+            return type(requirement), requirement.ref if isinstance(requirement, AssertRefSnapshotId) else None
+
+        existing_requirements = {_requirement_key(requirement) for requirement in self._requirements}
         for new_requirement in requirements:
-            if type(new_requirement) not in existing_requirements:
+            if _requirement_key(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
 
         return self
@@ -1151,6 +1156,12 @@ class Transaction:
                         except CommitFailedException:
                             elapsed_ms = (time.monotonic() - start_time) * 1000
                             if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
+                                # The catalog can apply a commit and still report failure, for example
+                                # when the response is lost. Check before cleaning up, since cleaning
+                                # up a snapshot that landed would leave the table unreadable.
+                                if self._snapshot_producers and self._attempt_landed():
+                                    self._cleanup_uncommitted_manifests()
+                                    break
                                 raise
 
                             wait = min(min_wait_ms * (2**attempt), max_wait_ms)
@@ -1163,11 +1174,7 @@ class Transaction:
                             )
                             time.sleep((wait + jitter) / 1000.0)
 
-                            self._table.refresh()
-                            if all(
-                                self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None
-                                for producer in self._snapshot_producers
-                            ):
+                            if self._attempt_landed():
                                 # A previous attempt actually landed even though it was reported as
                                 # failed (for example a lost response that the transport layer retried).
                                 # The snapshot id is stable across attempts, so finding it in the
@@ -1219,6 +1226,24 @@ class Transaction:
         self._requirements = ()
 
         return self._table
+
+    def _attempt_landed(self) -> bool:
+        """Refresh the table and return whether a snapshot written by this transaction is present.
+
+        Raises:
+            CommitStateUnknownException: If the table cannot be refreshed, the outcome is unknown and
+                the files written for the attempt must not be deleted.
+        """
+        try:
+            self._table.refresh()
+        except Exception as e:
+            raise CommitStateUnknownException(
+                f"Commit failed and the table could not be refreshed to check whether it landed: {e}"
+            ) from e
+
+        return all(
+            self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None for producer in self._snapshot_producers
+        )
 
     def _cleanup_uncommitted_manifests(self) -> None:
         """Clean up manifests from failed retry attempts after a successful commit."""
@@ -1350,6 +1375,8 @@ class Table:
     io: FileIO
     catalog: Catalog
     config: dict[str, str]
+    # Catalog-provided labels, set when the catalog loads the table. They are not table state, so refresh() and commits keep them.
+    labels: Labels
 
     def __init__(
         self,
@@ -1360,6 +1387,7 @@ class Table:
         catalog: Catalog,
         config: dict[str, str] = EMPTY_DICT,
         kms_client: KeyManagementClient | None = None,
+        labels: Labels | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
@@ -1368,6 +1396,7 @@ class Table:
         self.catalog = catalog
         self.config = config
         self._kms_client = kms_client
+        self.labels = labels if labels is not None else Labels()
         self._encryption_manager: _CachedEncryptionManager | None = None
 
     @property

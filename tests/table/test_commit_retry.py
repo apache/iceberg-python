@@ -248,6 +248,63 @@ def test_concurrent_delete_append_retries_successfully(catalog: Catalog) -> None
     assert len(result) == 5
 
 
+def test_retried_append_records_the_spec_it_was_planned_with(catalog: Catalog) -> None:
+    """A retried append keeps the partition spec of the files it planned, not the refreshed default."""
+    catalog.create_namespace("default")
+
+    import pyarrow as pa
+
+    def row(x: int, p: int, q: int) -> pa.Table:
+        return pa.table({"x": [x], "p": [p], "q": [q]})
+
+    table = catalog.create_table("default.spec_retry_test", schema=row(1, 5, 50).schema)
+    with table.update_spec() as update:
+        update.add_identity("p")
+
+    other = catalog.load_table("default.spec_retry_test")
+    with other.update_spec() as update:
+        update.remove_field("p")
+        update.add_identity("q")
+    other.append(row(2, 6, 60))
+
+    table.append(row(3, 7, 70))
+
+    refreshed = catalog.load_table("default.spec_retry_test")
+    assert refreshed.scan(row_filter="q == 70").to_arrow()["x"].to_pylist() == [3]
+
+    snapshot = refreshed.current_snapshot()
+    assert snapshot is not None
+    assert {manifest.partition_spec_id for manifest in snapshot.manifests(io=refreshed.io)} == {1, 2}
+
+
+def test_retried_append_with_a_spec_that_has_more_fields(catalog: Catalog) -> None:
+    """A retried append does not index the planned partitions with the refreshed spec's fields."""
+    catalog.create_namespace("default")
+
+    import pyarrow as pa
+
+    def row(x: int, p: int, q: int) -> pa.Table:
+        return pa.table({"x": [x], "p": [p], "q": [q]})
+
+    table = catalog.create_table("default.spec_retry_more_fields_test", schema=row(1, 5, 50).schema)
+    with table.update_spec() as update:
+        update.add_identity("p")
+
+    other = catalog.load_table("default.spec_retry_more_fields_test")
+    with other.update_spec() as update:
+        update.add_identity("q")
+    other.append(row(2, 6, 60))
+
+    table.append(row(3, 7, 70))
+
+    refreshed = catalog.load_table("default.spec_retry_more_fields_test")
+    assert sorted(refreshed.scan().to_arrow().to_pylist(), key=str) == [
+        {"x": 2, "p": 6, "q": 60},
+        {"x": 3, "p": 7, "q": 70},
+    ]
+    assert refreshed.scan(row_filter="p == 7").to_arrow()["x"].to_pylist() == [3]
+
+
 def test_retry_exhaustion_raises_commit_failed(catalog: Catalog) -> None:
     """When retries are exhausted, CommitFailedException should be raised."""
     catalog.create_namespace("default")
@@ -1370,3 +1427,149 @@ def test_negative_wait_properties_do_not_mask_commit_failure(catalog: Catalog) -
 
     result = catalog.load_table("default.negative_wait_test").scan().to_arrow()
     assert len(result) == 6
+
+
+def _commit_outcomes(catalog: Catalog, *outcomes: str) -> Any:
+    """Simulate a commit failing before ("conflict") or after ("lost") the catalog applied it."""
+    real_commit = catalog.commit_table
+    remaining = iter(outcomes)
+
+    def commit(*args: Any, **kwargs: Any) -> Any:
+        outcome = next(remaining, "ok")
+        if outcome == "conflict":
+            raise CommitFailedException("concurrent update")
+        result = real_commit(*args, **kwargs)
+        if outcome == "lost":
+            raise CommitFailedException("response lost after the commit landed")
+        return result
+
+    return patch.object(catalog, "commit_table", side_effect=commit)
+
+
+def _assert_single_readable_snapshot(catalog: Catalog, identifier: str, expected: list[dict[str, Any]]) -> None:
+    table = catalog.load_table(identifier)
+    assert len(table.snapshots()) == 1
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert table.io.new_input(snapshot.manifest_list).exists()
+    assert table.scan().to_arrow().to_pylist() == expected
+
+
+def test_lost_response_on_the_last_attempt_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """A commit that lands but reports failure on the last attempt is not cleaned up."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.lost_response_last_attempt",
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_NUM_RETRIES: "0"},
+    )
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"):
+        table.append(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_last_attempt", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_lost_response_on_the_final_retry_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """A landed retry is detected even when the retry budget is exhausted."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.lost_response_final_retry",
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_NUM_RETRIES: "1"},
+    )
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "conflict", "lost"):
+        table.append(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_final_retry", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_unreadable_commit_outcome_raises_commit_state_unknown(catalog: Catalog) -> None:
+    """When the table cannot be refreshed, the outcome is unknown and no file is deleted."""
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.unknown_commit_outcome", schema=_test_schema())
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"):
+        with patch.object(Table, "refresh", side_effect=RuntimeError("catalog unavailable")):
+            with pytest.raises(CommitStateUnknownException):
+                table.append(pa.table({"x": [1, 2, 3]}))
+
+
+def test_transaction_writing_two_branches_detects_concurrent_change_to_either(catalog: Catalog) -> None:
+    """A transaction writing two branches must assert the base snapshot of both refs.
+
+    Writing the branch first used to drop the assertion for main, so a concurrent change to main was
+    overwritten (rollback undone, or an append lost on v1) instead of being caught and retried.
+    """
+    import pyarrow as pa
+
+    from pyiceberg.table import Table
+
+    def rollback_main(table: Table, rollback_to: int) -> None:
+        table.manage_snapshots().rollback_to_snapshot(rollback_to).commit()
+
+    def append_to_main(table: Table, _: int) -> None:
+        table.append(pa.table({"x": [4]}))
+
+    catalog.create_namespace("default")
+    for format_version in (1, 2):
+        for concurrent_change, expected_main in ((rollback_main, [1, 3]), (append_to_main, [1, 2, 3, 4])):
+            identifier = f"default.two_branches_v{format_version}_{concurrent_change.__name__}"
+            tbl = catalog.create_table(
+                identifier,
+                schema=_test_schema(),
+                properties={
+                    "format-version": str(format_version),
+                    TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                    TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
+                },
+            )
+            tbl.append(pa.table({"x": [1]}))
+            first_snapshot_id = tbl.metadata.current_snapshot_id
+            assert first_snapshot_id is not None
+            tbl.append(pa.table({"x": [2]}))
+            second_snapshot_id = tbl.metadata.current_snapshot_id
+            assert second_snapshot_id is not None
+            tbl.manage_snapshots().create_branch(snapshot_id=second_snapshot_id, branch_name="b").commit()
+
+            # Lands after `tbl` was loaded, so the transaction below starts from a stale main.
+            concurrent_change(catalog.load_table(identifier), first_snapshot_id)
+
+            with tbl.transaction() as tx:
+                tx.append(pa.table({"x": [3]}), branch="b")
+                tx.append(pa.table({"x": [3]}))
+
+            refreshed = catalog.load_table(identifier)
+            assert sorted(refreshed.scan().to_arrow()["x"].to_pylist()) == expected_main, identifier
+            assert sorted(refreshed.scan().use_ref("b").to_arrow()["x"].to_pylist()) == [1, 2, 3], identifier
+
+
+def test_transaction_stages_one_ref_assertion_per_ref(catalog: Catalog) -> None:
+    """Each ref written in a transaction keeps exactly one assertion, holding its base snapshot id."""
+    import pyarrow as pa
+
+    from pyiceberg.table.update import AssertRefSnapshotId
+
+    catalog.create_namespace("default")
+    tbl = catalog.create_table("default.ref_assertions", schema=_test_schema())
+    tbl.append(pa.table({"x": [1]}))
+    base_snapshot_id = tbl.metadata.current_snapshot_id
+    assert base_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=base_snapshot_id, branch_name="b").commit()
+
+    tx = tbl.transaction()
+    tx.append(pa.table({"x": [2]}), branch="b")
+    tx.append(pa.table({"x": [3]}))
+    # A second write to main asserts the snapshot staged above; only the base assertion must be kept.
+    tx.append(pa.table({"x": [4]}))
+
+    ref_assertions = {r.ref: r.snapshot_id for r in tx._requirements if isinstance(r, AssertRefSnapshotId)}
+    assert ref_assertions == {"b": base_snapshot_id, "main": base_snapshot_id}
+    assert len([r for r in tx._requirements if isinstance(r, AssertRefSnapshotId)]) == 2
