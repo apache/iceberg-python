@@ -235,20 +235,24 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _manifests(self) -> list[ManifestFile]:
         def _write_added_manifest() -> list[ManifestFile]:
             if self._added_data_files:
-                with self.new_manifest_writer(
-                    spec=self._transaction.table_metadata.spec(),
-                ) as writer:
-                    for data_file in self._added_data_files:
-                        writer.add(
-                            ManifestEntry.from_args(
-                                status=ManifestEntryStatus.ADDED,
-                                snapshot_id=self._snapshot_id,
-                                sequence_number=None,
-                                file_sequence_number=None,
-                                data_file=data_file,
+                added_manifests = []
+                partition_groups: dict[int, list[DataFile]] = defaultdict(list)
+                for data_file in self._added_data_files:
+                    partition_groups[data_file.spec_id].append(data_file)
+                for spec_id, data_files in partition_groups.items():
+                    with self.new_manifest_writer(self.spec(spec_id)) as writer:
+                        for data_file in data_files:
+                            writer.add(
+                                ManifestEntry.from_args(
+                                    status=ManifestEntryStatus.ADDED,
+                                    snapshot_id=self._snapshot_id,
+                                    sequence_number=None,
+                                    file_sequence_number=None,
+                                    data_file=data_file,
+                                )
                             )
-                        )
-                return [writer.to_manifest_file()]
+                    added_manifests.append(writer.to_manifest_file())
+                return added_manifests
             else:
                 return []
 
@@ -286,7 +290,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         # avoid copying metadata for each data file
         table_metadata = self._transaction.table_metadata
         schema = table_metadata.schema()
-        default_spec = table_metadata.spec()
+        specs = table_metadata.specs()
 
         partition_summary_limit = int(
             table_metadata.properties.get(
@@ -298,12 +302,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         for data_file in self._added_data_files:
             ssc.add_file(
                 data_file=data_file,
-                partition_spec=default_spec,
+                partition_spec=specs[data_file.spec_id],
                 schema=schema,
             )
 
         if len(self._deleted_data_files) > 0:
-            specs = table_metadata.specs()
             for data_file in self._deleted_data_files:
                 ssc.remove_file(
                     data_file=data_file,

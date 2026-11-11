@@ -247,6 +247,63 @@ def test_concurrent_delete_append_retries_successfully(catalog: Catalog) -> None
     assert len(result) == 5
 
 
+def test_retried_append_records_the_spec_it_was_planned_with(catalog: Catalog) -> None:
+    """A retried append keeps the partition spec of the files it planned, not the refreshed default."""
+    catalog.create_namespace("default")
+
+    import pyarrow as pa
+
+    def row(x: int, p: int, q: int) -> pa.Table:
+        return pa.table({"x": [x], "p": [p], "q": [q]})
+
+    table = catalog.create_table("default.spec_retry_test", schema=row(1, 5, 50).schema)
+    with table.update_spec() as update:
+        update.add_identity("p")
+
+    other = catalog.load_table("default.spec_retry_test")
+    with other.update_spec() as update:
+        update.remove_field("p")
+        update.add_identity("q")
+    other.append(row(2, 6, 60))
+
+    table.append(row(3, 7, 70))
+
+    refreshed = catalog.load_table("default.spec_retry_test")
+    assert refreshed.scan(row_filter="q == 70").to_arrow()["x"].to_pylist() == [3]
+
+    snapshot = refreshed.current_snapshot()
+    assert snapshot is not None
+    assert {manifest.partition_spec_id for manifest in snapshot.manifests(io=refreshed.io)} == {1, 2}
+
+
+def test_retried_append_with_a_spec_that_has_more_fields(catalog: Catalog) -> None:
+    """A retried append does not index the planned partitions with the refreshed spec's fields."""
+    catalog.create_namespace("default")
+
+    import pyarrow as pa
+
+    def row(x: int, p: int, q: int) -> pa.Table:
+        return pa.table({"x": [x], "p": [p], "q": [q]})
+
+    table = catalog.create_table("default.spec_retry_more_fields_test", schema=row(1, 5, 50).schema)
+    with table.update_spec() as update:
+        update.add_identity("p")
+
+    other = catalog.load_table("default.spec_retry_more_fields_test")
+    with other.update_spec() as update:
+        update.add_identity("q")
+    other.append(row(2, 6, 60))
+
+    table.append(row(3, 7, 70))
+
+    refreshed = catalog.load_table("default.spec_retry_more_fields_test")
+    assert sorted(refreshed.scan().to_arrow().to_pylist(), key=str) == [
+        {"x": 2, "p": 6, "q": 60},
+        {"x": 3, "p": 7, "q": 70},
+    ]
+    assert refreshed.scan(row_filter="p == 7").to_arrow()["x"].to_pylist() == [3]
+
+
 def test_retry_exhaustion_raises_commit_failed(catalog: Catalog) -> None:
     """When retries are exhausted, CommitFailedException should be raised."""
     catalog.create_namespace("default")
