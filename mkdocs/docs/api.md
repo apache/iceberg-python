@@ -1746,6 +1746,17 @@ To list views in the `default` namespace:
 catalog.list_views("default")
 ```
 
+## Rename a view
+
+To rename a view:
+
+```python
+catalog.rename_view(
+    from_identifier="default.some_view",
+    to_identifier="default.some_view_renamed"
+)
+```
+
 ## Drop a view
 
 To drop a view:

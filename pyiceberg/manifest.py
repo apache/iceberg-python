@@ -21,7 +21,7 @@ import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 from copy import copy
-from enum import Enum
+from enum import Enum, StrEnum
 from types import TracebackType
 from typing import (
     Any,
@@ -34,6 +34,8 @@ from pydantic_core import to_json
 from pyiceberg.avro.codecs import AVRO_CODEC_KEY, AvroCompressionCodec
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.conversions import to_bytes
+from pyiceberg.encryption.io import EncryptedInputFile
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
@@ -111,7 +113,7 @@ class ManifestEntryStatus(int, Enum):
         return f"ManifestEntryStatus.{self.name}"
 
 
-class FileFormat(str, Enum):
+class FileFormat(StrEnum):
     AVRO = "AVRO"
     PARQUET = "PARQUET"
     ORC = "ORC"
@@ -734,6 +736,12 @@ class PartitionFieldStats:
             else:
                 self._max = max(self._max, value)
                 self._min = min(self._min, value)
+                if isinstance(value, float) and value == 0.0:
+                    # min and max keep whichever zero came first, but bounds must order -0.0 below 0.0
+                    if math.copysign(1.0, value) < 0 and self._min == 0.0:
+                        self._min = value
+                    elif math.copysign(1.0, value) > 0 and self._max == 0.0:
+                        self._max = value
 
 
 def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partitions: list[Record]) -> list[PartitionFieldSummary]:
@@ -898,7 +906,7 @@ class ManifestFile(Record):
         entry_filter: Callable[[ManifestEntry], bool] | None = None,
     ) -> list[ManifestEntry]:
         """
-        Read the manifest entries from the manifest file.
+        Read the manifest entries from the manifest file, decrypting it when it has key metadata.
 
         Args:
             io: The FileIO to fetch the file.
@@ -909,6 +917,8 @@ class ManifestFile(Record):
             An Iterator of manifest entries.
         """
         input_file = io.new_input(self.manifest_path)
+        if self.key_metadata is not None:
+            input_file = EncryptedInputFile(input_file, StandardKeyMetadata.from_bytes(self.key_metadata))
         with AvroFile[ManifestEntry](
             input_file,
             MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
@@ -998,7 +1008,7 @@ def clear_manifest_cache() -> None:
     _manifest_cache.clear()
 
 
-def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
+def _manifests(io: FileIO, manifest_list: str, key_metadata: StandardKeyMetadata | None = None) -> tuple[ManifestFile, ...]:
     """Read manifests from a manifest list, reusing cached ManifestFile objects.
 
     Caches individual ManifestFile objects by manifest_path. This is memory-efficient
@@ -1018,11 +1028,14 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     Args:
         io: FileIO instance for reading the manifest list.
         manifest_list: Path to the manifest list file.
+        key_metadata: Decrypts the manifest list, if it is encrypted.
 
     Returns:
         A tuple of ManifestFile objects.
     """
     file = io.new_input(manifest_list)
+    if key_metadata is not None:
+        file = EncryptedInputFile(file, key_metadata)
     manifest_files = list(read_manifest_list(file))
 
     return tuple(_manifest_cache.get_or_cache(manifest_file) for manifest_file in manifest_files)

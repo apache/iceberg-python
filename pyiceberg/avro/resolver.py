@@ -272,7 +272,7 @@ class EnumReader(Reader):
         return self.enum(self.reader.read(decoder))
 
     def skip(self, decoder: BinaryDecoder) -> None:
-        pass
+        self.reader.skip(decoder)
 
 
 class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):

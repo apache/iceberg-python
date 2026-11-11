@@ -23,11 +23,11 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from fastavro import reader, writer
+from fastavro import block_reader, reader, writer
 
 import pyiceberg.avro.file as avro
 from pyiceberg.avro.codecs.deflate import DeflateCodec
-from pyiceberg.avro.file import AvroFileHeader
+from pyiceberg.avro.file import DEFAULT_SYNC_INTERVAL, AvroFileHeader
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
     DEFAULT_BLOCK_SIZE,
@@ -51,7 +51,9 @@ from pyiceberg.types import (
     LongType,
     NestedField,
     StringType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -66,6 +68,12 @@ def get_deflate_compressor() -> None:
 
 def get_null_compressor() -> None:
     header = AvroFileHeader(bytes(0), {"avro.codec": "null"}, bytes(16))
+    assert header.compression_codec() is None
+
+
+def test_missing_codec_is_null() -> None:
+    # the Avro specification: a file without avro.codec is uncompressed (iceberg-rust writes such manifests)
+    header = AvroFileHeader(bytes(0), {}, bytes(16))
     assert header.compression_codec() is None
 
 
@@ -453,3 +461,150 @@ def test_all_primitive_types(is_required: bool) -> None:
     for idx, field in enumerate(all_primitives_schema.as_struct()):
         assert record[idx] == avro_entry[idx], f"Invalid {field}"
         assert record[idx] == avro_entry_read_with_fastavro[idx], f"Invalid {field} read with fastavro"
+
+
+def test_timestamp_nanos_round_trip() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="ts_ns", field_type=TimestampNanoType(), required=True),
+        NestedField(field_id=2, name="tstz_ns", field_type=TimestamptzNanoType(), required=False),
+        schema_id=1,
+    )
+    records = [
+        Record(1677629965123456789, 1677629965123456789),
+        Record(-1, None),
+    ]
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/timestamp_nanos.avro"
+        with avro.AvroOutputFile[Record](PyArrowFileIO().new_output(tmp_avro_file), schema, "timestamp_nanos") as out:
+            out.write_block(records)
+
+        with avro.AvroFile[Record](
+            PyArrowFileIO().new_input(tmp_avro_file),
+            schema,
+            {-1: Record},
+        ) as avro_reader:
+            assert avro_reader.schema == schema
+            assert list(avro_reader) == records
+
+
+@pytest.mark.parametrize("codec", ["null", "deflate", "bzip2", "snappy"])
+def test_compression_codec_interop_with_fastavro(codec: str) -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=True),
+        schema_id=1,
+    )
+    rows = [{"id": idx, "data": f"value-{idx}"} for idx in range(100)]
+    records = [Record(row["id"], row["data"]) for row in rows]
+
+    with TemporaryDirectory() as tmpdir:
+        # fastavro frames each block as the Avro spec defines, e.g. snappy blocks end with a CRC32 of the uncompressed data
+        fastavro_file = tmpdir + "/fastavro.avro"
+        with open(fastavro_file, "wb") as out:
+            writer(out, AvroSchemaConversion().iceberg_to_avro(schema, schema_name="compressed"), rows, codec=codec)
+
+        with avro.AvroFile[Record](PyArrowFileIO().new_input(fastavro_file), schema, {-1: Record}) as avro_reader:
+            assert list(avro_reader) == records
+
+        iceberg_file = tmpdir + "/iceberg.avro"
+        with avro.AvroOutputFile[Record](
+            PyArrowFileIO().new_output(iceberg_file), schema, "compressed", metadata={"avro.codec": codec}
+        ) as out:
+            out.write_block(records)
+
+        with open(iceberg_file, "rb") as fo:
+            fastavro_reader = reader(fo)
+            assert fastavro_reader.codec == codec
+            assert list(fastavro_reader) == rows
+
+
+def manifest_entry(index: int) -> ManifestEntry:
+    return ManifestEntry.from_args(
+        status=ManifestEntryStatus.ADDED,
+        snapshot_id=8638475580105682862,
+        sequence_number=0,
+        file_sequence_number=0,
+        data_file=DataFile.from_args(
+            content=DataFileContent.DATA,
+            file_path=f"s3://some-path/some-file-{index}.parquet",
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=131327,
+            file_size_in_bytes=220669226,
+        ),
+    )
+
+
+@pytest.mark.parametrize("sync_interval", [0, -1])
+def test_avro_output_file_rejects_non_positive_sync_interval(sync_interval: int) -> None:
+    with TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="Sync interval must be positive"):
+            avro.AvroOutputFile[ManifestEntry](
+                output_file=PyArrowFileIO().new_output(tmpdir + "/manifest_entry.avro"),
+                file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+                schema_name="manifest_entry",
+                sync_interval=sync_interval,
+            )
+
+
+def test_avro_output_file_writes_no_block_without_records() -> None:
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/manifest_entry.avro"
+
+        with avro.AvroOutputFile[ManifestEntry](
+            output_file=PyArrowFileIO().new_output(tmp_avro_file),
+            file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            schema_name="manifest_entry",
+        ):
+            pass
+
+        with open(tmp_avro_file, "rb") as fo:
+            assert list(block_reader(fo)) == []
+
+
+@pytest.mark.parametrize("sync_interval", [1, DEFAULT_SYNC_INTERVAL])
+def test_avro_output_file_round_trips_across_blocks(sync_interval: int) -> None:
+    entries = [manifest_entry(index) for index in range(10)]
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/manifest_entry.avro"
+
+        with avro.AvroOutputFile[ManifestEntry](
+            output_file=PyArrowFileIO().new_output(tmp_avro_file),
+            file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            schema_name="manifest_entry",
+            sync_interval=sync_interval,
+        ) as out:
+            for entry in entries:
+                out.write_block([entry])
+
+        with open(tmp_avro_file, "rb") as fo:
+            blocks = [block.num_records for block in block_reader(fo)]
+
+        with avro.AvroFile[ManifestEntry](
+            input_file=PyArrowFileIO().new_input(tmp_avro_file),
+            read_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            read_types={-1: ManifestEntry, 2: DataFile},
+        ) as avro_reader:
+            read_entries = list(avro_reader)
+
+    if sync_interval == 1:
+        # A record that on its own reaches the sync interval is flushed as its own block
+        assert blocks == [1] * len(entries)
+    else:
+        assert blocks == [len(entries)]
+    assert [entry.data_file.file_path for entry in read_entries] == [entry.data_file.file_path for entry in entries]
+
+
+def test_avro_output_file_tell_includes_buffered_records() -> None:
+    with TemporaryDirectory() as tmpdir:
+        with avro.AvroOutputFile[ManifestEntry](
+            output_file=PyArrowFileIO().new_output(tmpdir + "/manifest_entry.avro"),
+            file_schema=MANIFEST_ENTRY_SCHEMAS[2],
+            schema_name="manifest_entry",
+        ) as out:
+            after_header = out.tell()
+            out.write_block([manifest_entry(0)])
+
+            assert out.tell() > after_header

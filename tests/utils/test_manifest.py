@@ -16,6 +16,7 @@
 # under the License.
 # pylint: disable=redefined-outer-name,arguments-renamed,fixme
 import importlib
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -25,7 +26,11 @@ import pytest
 
 import pyiceberg.manifest as manifest_module
 from pyiceberg.avro.codecs import AvroCompressionCodec
-from pyiceberg.avro.file import AvroFile, AvroOutputFile
+from pyiceberg.avro.file import DEFAULT_SYNC_INTERVAL, AvroFile, AvroOutputFile
+from pyiceberg.conversions import to_bytes
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
+from pyiceberg.encryption.manager import EncryptionManager
+from pyiceberg.encryption.stream import _encrypt_ags1
 from pyiceberg.io import load_file_io
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
@@ -43,15 +48,18 @@ from pyiceberg.manifest import (
     _inherit_from_manifest,
     _manifests,
     clear_manifest_cache,
+    construct_partition_summaries,
     read_manifest_list,
     write_manifest,
     write_manifest_list,
 )
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.snapshots import Operation, Snapshot, Summary
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record, TableVersion
-from pyiceberg.types import IntegerType, ListType, LongType, NestedField, StructType
+from pyiceberg.types import DoubleType, FloatType, IntegerType, ListType, LongType, NestedField, StructType
+from tests.encryption.memory_kms import MemoryKeyManagementClient
 
 
 @pytest.fixture(autouse=True)
@@ -504,6 +512,97 @@ def test_read_manifest_v2(generated_manifest_file_file_v2: str) -> None:
     assert entry.file_sequence_number == 3
     assert entry.snapshot_id == 8744736658442914487
     assert entry.status == ManifestEntryStatus.ADDED
+
+
+def test_read_encrypted_manifest_list(generated_manifest_file_file_v2: str, tmp_path: Path) -> None:
+    io = load_file_io()
+    kms = MemoryKeyManagementClient()
+    kms.add_master_key("master-1")
+    encryption_manager = EncryptionManager(kms, "master-1")
+
+    key_metadata = encryption_manager.generate_key_metadata()
+    encrypted = _encrypt_ags1(Path(generated_manifest_file_file_v2).read_bytes(), key_metadata)
+    manifest_list = tmp_path / "manifest-list.avro"
+    manifest_list.write_bytes(encrypted)
+    key_id = encryption_manager.encrypt_manifest_list_key_metadata(replace(key_metadata, file_length=len(encrypted)))
+
+    plaintext = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        timestamp_ms=1602638573590,
+        manifest_list=generated_manifest_file_file_v2,
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+    snapshot = plaintext.model_copy(update={"manifest_list": str(manifest_list), "key_id": key_id})
+
+    assert snapshot.manifests(io, encryption_manager) == plaintext.manifests(io)
+
+
+def test_read_encrypted_manifest_list_without_encryption_manager(generated_manifest_file_file_v2: str) -> None:
+    snapshot = Snapshot(
+        snapshot_id=25,
+        timestamp_ms=1602638573590,
+        manifest_list=generated_manifest_file_file_v2,
+        summary=Summary(Operation.APPEND),
+        key_id="key",
+    )
+
+    with pytest.raises(ValueError, match="Snapshot 25 is encrypted, but no encryption manager was provided"):
+        snapshot.manifests(load_file_io())
+
+
+def test_read_encrypted_manifest(generated_manifest_entry_file: str, tmp_path: Path) -> None:
+    io = load_file_io()
+    key_metadata = StandardKeyMetadata.generate()
+    encrypted = _encrypt_ags1(Path(generated_manifest_entry_file).read_bytes(), key_metadata)
+    encrypted_path = tmp_path / "manifest.avro"
+    encrypted_path.write_bytes(encrypted)
+    key_metadata = replace(key_metadata, file_length=len(encrypted))
+
+    def manifest(path: str, key_metadata: bytes | None) -> ManifestFile:
+        return ManifestFile.from_args(
+            manifest_path=path,
+            manifest_length=0,
+            partition_spec_id=0,
+            added_snapshot_id=0,
+            sequence_number=0,
+            partitions=[],
+            key_metadata=key_metadata,
+        )
+
+    expected = manifest(generated_manifest_entry_file, None).fetch_manifest_entry(io, discard_deleted=False)
+    assert manifest(str(encrypted_path), key_metadata.to_bytes()).fetch_manifest_entry(io, discard_deleted=False) == expected
+
+    wrong_key = replace(key_metadata, encryption_key=bytes(16))
+    with pytest.raises(ValueError, match="GCM tag check failed"):
+        manifest(str(encrypted_path), wrong_key.to_bytes()).fetch_manifest_entry(io)
+
+    with pytest.raises(ValueError, match="No schema found in Avro file headers"):
+        manifest(str(encrypted_path), None).fetch_manifest_entry(io)
+
+
+def test_read_manifest_encrypted_by_iceberg_rust() -> None:
+    """The manifest was encrypted by iceberg-rust, see tests/table/encryption/README.md."""
+    manifest = ManifestFile.from_args(
+        manifest_path=str(Path(__file__).parent.parent / "table" / "encryption" / "manifest-v3-encrypted.avro"),
+        manifest_length=3444,
+        partition_spec_id=0,
+        content=ManifestContent.DATA,
+        sequence_number=1,
+        min_sequence_number=1,
+        added_snapshot_id=1,
+        partitions=[],
+        key_metadata=bytes.fromhex("01203031323334353637383961626364656602206665646362613938373635343332313002e835"),
+    )
+
+    entries = manifest.fetch_manifest_entry(load_file_io())
+
+    assert [(entry.data_file.file_path, entry.data_file.record_count) for entry in entries] == [
+        ("s3://bucket/table/data/00000.parquet", 3),
+        ("s3://bucket/table/data/00001.parquet", 5),
+    ]
+    assert all(entry.status == ManifestEntryStatus.ADDED and entry.snapshot_id == 1 for entry in entries)
 
 
 def test_read_manifest_cache(generated_manifest_file_file_v2: str) -> None:
@@ -1127,6 +1226,107 @@ def test_manifest_writer_tell(format_version: TableVersion) -> None:
 
 
 @pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("compression", ["null", "deflate"])
+def test_write_manifest_fills_blocks(format_version: TableVersion, compression: AvroCompressionCodec) -> None:
+    io = load_file_io()
+    test_schema = Schema(NestedField(1, "foo", IntegerType(), False))
+    entry_count = 2000
+
+    with TemporaryDirectory() as tmpdir:
+        manifest_path = f"{tmpdir}/test-manifest.avro"
+        with write_manifest(
+            format_version=format_version,
+            spec=UNPARTITIONED_PARTITION_SPEC,
+            schema=test_schema,
+            output_file=io.new_output(manifest_path),
+            snapshot_id=1,
+            avro_compression=compression,
+        ) as writer:
+            for i in range(entry_count):
+                writer.add_entry(
+                    ManifestEntry.from_args(
+                        status=ManifestEntryStatus.ADDED,
+                        snapshot_id=1,
+                        data_file=DataFile.from_args(
+                            content=DataFileContent.DATA,
+                            file_path=f"{tmpdir}/data-{i}.parquet",
+                            file_format=FileFormat.PARQUET,
+                            partition=Record(),
+                            record_count=100,
+                            file_size_in_bytes=1000,
+                        ),
+                    )
+                )
+
+        with open(manifest_path, "rb") as f:
+            blocks = [(block.num_records, block.size) for block in fastavro.block_reader(f)]
+
+        manifest = ManifestFile.from_args(
+            manifest_path=manifest_path,
+            manifest_length=0,
+            partition_spec_id=0,
+            added_snapshot_id=1,
+            sequence_number=0,
+            partitions=[],
+        )
+        read_entries = manifest.fetch_manifest_entry(io)
+
+    assert sum(num_records for num_records, _ in blocks) == entry_count
+    assert len(blocks) < entry_count
+    if compression == "null":
+        # Only an uncompressed block reports the buffered size that triggers a flush
+        assert all(size >= DEFAULT_SYNC_INTERVAL for _, size in blocks[:-1])
+    assert [entry.data_file.file_path for entry in read_entries] == [f"{tmpdir}/data-{i}.parquet" for i in range(entry_count)]
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_write_manifest_list_fills_blocks(format_version: TableVersion) -> None:
+    io = load_file_io()
+    manifest_count = 2000
+
+    with TemporaryDirectory() as tmpdir:
+        manifest_list_path = f"{tmpdir}/manifest-list.avro"
+        manifests = [
+            ManifestFile.from_args(
+                manifest_path=f"{tmpdir}/manifest-{i}.avro",
+                manifest_length=100,
+                partition_spec_id=0,
+                content=ManifestContent.DATA,
+                sequence_number=0,
+                min_sequence_number=0,
+                added_snapshot_id=1,
+                added_files_count=1,
+                existing_files_count=0,
+                deleted_files_count=0,
+                added_rows_count=1,
+                existing_rows_count=0,
+                deleted_rows_count=0,
+                partitions=[],
+            )
+            for i in range(manifest_count)
+        ]
+        with write_manifest_list(
+            format_version=format_version,
+            output_file=io.new_output(manifest_list_path),
+            snapshot_id=1,
+            parent_snapshot_id=None,
+            sequence_number=0,
+            avro_compression="null",
+        ) as writer:
+            writer.add_manifests(manifests)
+
+        with open(manifest_list_path, "rb") as f:
+            blocks = [(block.num_records, block.size) for block in fastavro.block_reader(f)]
+
+        read_manifests = list(read_manifest_list(io.new_input(manifest_list_path)))
+
+    assert sum(num_records for num_records, _ in blocks) == manifest_count
+    assert all(size >= DEFAULT_SYNC_INTERVAL for _, size in blocks[:-1])
+    assert len(blocks) > 1
+    assert [manifest.manifest_path for manifest in read_manifests] == [manifest.manifest_path for manifest in manifests]
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
 def test_write_manifest_min_sequence_number_zero(format_version: TableVersion) -> None:
     # A data sequence number of 0 is a legitimate min for a live file (e.g. files from a
     # v1 table or the initial commit of a v2 table). It must be preserved in the manifest,
@@ -1166,6 +1366,21 @@ def test_write_manifest_min_sequence_number_zero(format_version: TableVersion) -
             manifest_file = writer.to_manifest_file()
 
     assert manifest_file.min_sequence_number == 0
+
+
+def test_construct_partition_summaries_orders_negative_zero_below_zero() -> None:
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"))
+    for field_type in (FloatType(), DoubleType()):
+        schema = Schema(NestedField(1, "x", field_type, required=False))
+        expected = PartitionFieldSummary.from_args(
+            contains_null=False,
+            contains_nan=False,
+            lower_bound=to_bytes(field_type, -0.0),
+            upper_bound=to_bytes(field_type, 0.0),
+        )
+        for values in ([0.0, -0.0], [-0.0, 0.0]):
+            summaries = construct_partition_summaries(spec, schema, [Record(value) for value in values])
+            assert summaries == [expected], (field_type, values)
 
 
 def test_inherit_from_manifest_snapshot_id() -> None:

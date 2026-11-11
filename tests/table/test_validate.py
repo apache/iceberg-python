@@ -30,11 +30,13 @@ from pyiceberg.table.update.validate import (
     _added_delete_files,
     _deleted_data_files,
     _validate_added_data_files,
+    _validate_data_files_exist,
     _validate_deleted_data_files,
     _validate_no_new_delete_files,
     _validate_no_new_deletes_for_data_files,
     _validation_history,
 )
+from pyiceberg.typedef import Record
 
 
 @pytest.fixture
@@ -231,6 +233,37 @@ def test_validate_deleted_data_files_raises_on_conflict(
                 table=table,
                 starting_snapshot=newest_snapshot,
                 data_filter=None,
+                parent_snapshot=oldest_snapshot,
+            )
+
+
+def test_validate_data_files_exist_raises_on_conflict_in_nan_partition(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+    oldest_snapshot = table.snapshots()[0]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    snapshots = table.snapshots()
+    snapshots[-2] = snapshots[-2].model_copy(update={"summary": Summary(operation=Operation.DELETE)})
+    table.metadata = table.metadata.model_copy(update={"snapshots": snapshots})
+
+    def data_file() -> DataFile:
+        return DataFile.from_args(file_path="s3://bucket/data.parquet", partition=Record(float("nan")), spec_id=0)
+
+    deleted_entry = ManifestEntry.from_args(
+        status=ManifestEntryStatus.DELETED, snapshot_id=snapshots[-2].snapshot_id, data_file=data_file()
+    )
+
+    with (
+        patch("pyiceberg.table.snapshots.Snapshot.manifests", new=lambda self, io: mock_manifests.get(self.snapshot_id, [])),
+        patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", return_value=[deleted_entry]),
+    ):
+        with pytest.raises(ValidationException, match="Data files were concurrently deleted"):
+            _validate_data_files_exist(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_files={data_file()},
                 parent_snapshot=oldest_snapshot,
             )
 

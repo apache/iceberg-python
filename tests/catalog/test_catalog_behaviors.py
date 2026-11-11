@@ -19,6 +19,7 @@
 Consolidated behavior tests for InMemoryCatalog and SqlCatalog.
 """
 
+import json
 import os
 from collections.abc import Generator
 from pathlib import Path
@@ -48,7 +49,7 @@ from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrd
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Identifier
-from pyiceberg.types import BooleanType, IntegerType, LongType, NestedField, StringType
+from pyiceberg.types import BooleanType, DoubleType, IntegerType, LongType, NestedField, StringType
 
 
 # Name parsing tests
@@ -207,6 +208,22 @@ def test_create_v1_table(catalog: Catalog, table_schema_nested: Schema, test_tab
     assert table.format_version == 1
     assert table.spec() == UNPARTITIONED_PARTITION_SPEC
     catalog.drop_table(test_table_identifier)
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_create_table_rejects_encryption_properties_before_v3(
+    catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier, format_version: int
+) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+
+    with pytest.raises(ValueError, match=rf"Invalid properties for v{format_version}: \['encryption.key-id'\]"):
+        catalog.create_table(
+            test_table_identifier,
+            table_schema_nested,
+            properties={"format-version": str(format_version), "encryption.key-id": "key"},
+        )
+
+    assert not catalog.table_exists(test_table_identifier)
 
 
 def test_create_table_custom_sort_order(catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier) -> None:
@@ -503,6 +520,20 @@ def test_purge_table(catalog: Catalog, table_schema_simple: Schema, test_table_i
     catalog.purge_table(test_table_identifier)
     with pytest.raises(NoSuchTableError, match=f"Table does not exist: {'.'.join(test_table_identifier)}"):
         catalog.load_table(test_table_identifier)
+
+
+def test_purge_encrypted_table_without_kms_client(
+    catalog: Catalog, test_table_identifier: Identifier, example_table_metadata_v3_encrypted: dict[str, Any], tmp_path: Path
+) -> None:
+    metadata_location = tmp_path / "00000-encrypted.metadata.json"
+    metadata_location.write_text(json.dumps(example_table_metadata_v3_encrypted))
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    catalog.register_table(test_table_identifier, str(metadata_location))
+
+    with pytest.raises(ValueError, match="no key management client was provided"):
+        catalog.purge_table(test_table_identifier)
+
+    assert catalog.table_exists(test_table_identifier)
 
 
 # List tables tests
@@ -1320,6 +1351,43 @@ def test_append_invalid_input_type_raises(catalog: Catalog) -> None:
     tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema)
     with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader"):
         tbl.append("not an arrow object")
+
+
+def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.append_nan_identity_partition_{catalog.name}"
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"),
+    )
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema, partition_spec=partition_spec)
+
+    tbl.append(
+        pa.Table.from_pydict(
+            {"id": [1, 2, 3, 4], "value": [1.0, float("nan"), None, float("nan")]},
+            schema=schema_to_pyarrow(iceberg_schema),
+        )
+    )
+
+    assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 3, 4]
+    assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
+
+
+def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.scan_integer_decimal_literal_{catalog.name}"
+    tbl = catalog.create_table(identifier=identifier, schema=pa.schema([pa.field("x", pa.int32())]))
+    tbl.append(pa.table({"x": pa.array([1, 2, 3, 4], pa.int32())}))
+
+    # A literal with no fractional part, such as 2.0, still filters exactly
+    assert sorted(tbl.scan(row_filter="x > 2.0").to_arrow()["x"].to_pylist()) == [3, 4]
+    assert tbl.scan(row_filter="x = 2.0").to_arrow()["x"].to_pylist() == [2]
+    # Rounding 2.6 to 3 would turn x > 2.6 into x > 3 and silently drop x = 3
+    with pytest.raises(ValueError, match="Could not convert 2.6 into a int"):
+        tbl.scan(row_filter="x > 2.6").to_arrow()
 
 
 def test_record_batch_reader_consumed_exactly_once(catalog: Catalog) -> None:

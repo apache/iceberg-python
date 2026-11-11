@@ -187,7 +187,7 @@ class DeleteFileIndex:
         seq = manifest_entry.sequence_number or INITIAL_SEQUENCE_NUMBER
 
         if delete_file.content == DataFileContent.POSITION_DELETES:
-            target_path = _referenced_data_file_path(delete_file)
+            target_path = delete_file.referenced_data_file or _referenced_data_file_path(delete_file)
             if target_path:
                 deletes = self._by_path.setdefault(target_path, PositionDeletes())
                 deletes.add(delete_file, seq)
@@ -204,6 +204,7 @@ class DeleteFileIndex:
         if self.is_empty():
             return set()
 
+        # DVs are indexed by target path; a valid snapshot has at most one DV per data file.
         deletes: set[DataFile] = set()
         spec_id = data_file.spec_id or 0
         key = _partition_key(spec_id, partition_key)

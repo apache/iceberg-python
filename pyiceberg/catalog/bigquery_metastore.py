@@ -334,6 +334,10 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     @override
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        raise NotImplementedError
+
+    @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
         dataset_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
 
@@ -404,7 +408,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             identifier=(dataset_name, table_name),
             metadata=metadata,
             metadata_location=metadata_location,
-            io=self._load_file_io(metadata.properties, metadata_location),
+            io=self._load_file_io(location=metadata_location, table_properties=metadata.properties),
             catalog=self,
         )
 

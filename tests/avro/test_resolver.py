@@ -15,11 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from collections.abc import Callable
 from tempfile import TemporaryDirectory
 
 import pytest
 from pydantic import Field
 
+from pyiceberg.avro.decoder import BinaryDecoder, StreamingBinaryDecoder
+from pyiceberg.avro.decoder_fast import CythonBinaryDecoder
 from pyiceberg.avro.file import AvroFile
 from pyiceberg.avro.reader import (
     DecimalReader,
@@ -32,7 +35,7 @@ from pyiceberg.avro.reader import (
     StringReader,
     StructReader,
 )
-from pyiceberg.avro.resolver import resolve_reader, resolve_writer
+from pyiceberg.avro.resolver import EnumReader, resolve_reader, resolve_writer
 from pyiceberg.avro.writer import (
     BinaryWriter,
     DefaultWriter,
@@ -46,7 +49,7 @@ from pyiceberg.avro.writer import (
 )
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.io.pyarrow import PyArrowFileIO
-from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMAS
+from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMAS, ManifestEntryStatus
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
@@ -63,6 +66,8 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
+
+AVAILABLE_DECODERS = [StreamingBinaryDecoder, CythonBinaryDecoder]
 
 
 def test_resolver() -> None:
@@ -418,3 +423,30 @@ def test_writer_missing_optional_in_read_schema() -> None:
     expected = StructWriter(field_writers=((None, OptionWriter(option=StringWriter())),))
 
     assert actual == expected
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+def test_enum_reader_skip_advances_the_decoder(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
+    """Skipping an enum field must consume its bytes, or the next field is read from them."""
+    # Two ints, zigzag encoded: the enum's ordinal 1, then the next field's value 12.
+    decoder = decoder_class(b"\x02\x18")
+    reader = EnumReader(ManifestEntryStatus, IntegerReader())
+
+    reader.skip(decoder)
+
+    assert IntegerReader().read(decoder) == 12
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+def test_enum_reader_skip_matches_read(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
+    """Reading and skipping must leave the decoder at the same position."""
+    encoded = b"\x02\x18"
+    reader = EnumReader(ManifestEntryStatus, IntegerReader())
+
+    read_decoder = decoder_class(encoded)
+    assert reader.read(read_decoder) == ManifestEntryStatus.ADDED
+
+    skip_decoder = decoder_class(encoded)
+    reader.skip(skip_decoder)
+
+    assert IntegerReader().read(read_decoder) == IntegerReader().read(skip_decoder)

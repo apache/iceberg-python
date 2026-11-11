@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -1110,8 +1110,8 @@ def test_add_required_column(catalog: Catalog) -> None:
         (TimestampType(), datetime(1990, 5, 1, 22, 1, 1), datetime(2000, 5, 1, 22, 1, 1)),
         (
             TimestamptzType(),
-            datetime(1990, 5, 1, 22, 1, 1, tzinfo=timezone.utc),
-            datetime(2000, 5, 1, 22, 1, 1, tzinfo=timezone.utc),
+            datetime(1990, 5, 1, 22, 1, 1, tzinfo=UTC),
+            datetime(2000, 5, 1, 22, 1, 1, tzinfo=UTC),
         ),
         (BinaryType(), b"123", b"456"),
         (FixedType(4), b"1234", b"5678"),

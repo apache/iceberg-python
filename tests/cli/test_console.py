@@ -1209,7 +1209,11 @@ TEST_VIEW_METADATA: dict[str, Any] = {
 
 @pytest.fixture(name="catalog_with_view")
 def fixture_catalog_with_view(mocker: MockFixture, catalog: InMemoryCatalog) -> tuple[InMemoryCatalog, View]:
-    view = View(TEST_VIEW_IDENTIFIER, ViewMetadata.model_validate(TEST_VIEW_METADATA))
+    view = View(
+        TEST_VIEW_IDENTIFIER,
+        ViewMetadata.model_validate(TEST_VIEW_METADATA),
+        metadata_location="s3://warehouse/default/my_view/metadata/metadata.json",
+    )
     catalog.list_views = MagicMock(return_value=[TEST_VIEW_IDENTIFIER])  # type: ignore
     catalog.load_view = MagicMock(return_value=view)  # type: ignore
     catalog.drop_view = MagicMock()  # type: ignore
@@ -1238,8 +1242,20 @@ def test_describe_view(catalog_with_view: tuple[InMemoryCatalog, View]) -> None:
     runner = CliRunner()
     result = runner.invoke(run, ["describe", "--entity=view", "default.my_view"])
     assert result.exit_code == 0
-    assert "b30125c8-7284-442c-9aea-15fee620737c" in result.output
-    assert "spark: SELECT * FROM my_table" in result.output
+    assert (
+        "\n".join([line.rstrip() for line in result.output.split("\n")])
+        == """View format version  1
+Metadata location    s3://warehouse/default/my_view/metadata/metadata.json
+View UUID            b30125c8-7284-442c-9aea-15fee620737c
+Location             s3://warehouse/default/my_view
+Current version      1
+Current schema       Schema, id=1
+                     └── 1: x: required long
+SQL                  SQL representations
+                     └── spark: SELECT * FROM my_table
+Properties
+"""
+    )
 
 
 def test_describe_view_does_not_exist(catalog: InMemoryCatalog) -> None:
