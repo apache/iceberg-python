@@ -1363,3 +1363,76 @@ def test_unreadable_commit_outcome_raises_commit_state_unknown(catalog: Catalog)
         with patch.object(Table, "refresh", side_effect=RuntimeError("catalog unavailable")):
             with pytest.raises(CommitStateUnknownException):
                 table.append(pa.table({"x": [1, 2, 3]}))
+
+
+def test_transaction_writing_two_branches_detects_concurrent_change_to_either(catalog: Catalog) -> None:
+    """A transaction writing two branches must assert the base snapshot of both refs.
+
+    Writing the branch first used to drop the assertion for main, so a concurrent change to main was
+    overwritten (rollback undone, or an append lost on v1) instead of being caught and retried.
+    """
+    import pyarrow as pa
+
+    from pyiceberg.table import Table
+
+    def rollback_main(table: Table, rollback_to: int) -> None:
+        table.manage_snapshots().rollback_to_snapshot(rollback_to).commit()
+
+    def append_to_main(table: Table, _: int) -> None:
+        table.append(pa.table({"x": [4]}))
+
+    catalog.create_namespace("default")
+    for format_version in (1, 2):
+        for concurrent_change, expected_main in ((rollback_main, [1, 3]), (append_to_main, [1, 2, 3, 4])):
+            identifier = f"default.two_branches_v{format_version}_{concurrent_change.__name__}"
+            tbl = catalog.create_table(
+                identifier,
+                schema=_test_schema(),
+                properties={
+                    "format-version": str(format_version),
+                    TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1",
+                    TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2",
+                },
+            )
+            tbl.append(pa.table({"x": [1]}))
+            first_snapshot_id = tbl.metadata.current_snapshot_id
+            assert first_snapshot_id is not None
+            tbl.append(pa.table({"x": [2]}))
+            second_snapshot_id = tbl.metadata.current_snapshot_id
+            assert second_snapshot_id is not None
+            tbl.manage_snapshots().create_branch(snapshot_id=second_snapshot_id, branch_name="b").commit()
+
+            # Lands after `tbl` was loaded, so the transaction below starts from a stale main.
+            concurrent_change(catalog.load_table(identifier), first_snapshot_id)
+
+            with tbl.transaction() as tx:
+                tx.append(pa.table({"x": [3]}), branch="b")
+                tx.append(pa.table({"x": [3]}))
+
+            refreshed = catalog.load_table(identifier)
+            assert sorted(refreshed.scan().to_arrow()["x"].to_pylist()) == expected_main, identifier
+            assert sorted(refreshed.scan().use_ref("b").to_arrow()["x"].to_pylist()) == [1, 2, 3], identifier
+
+
+def test_transaction_stages_one_ref_assertion_per_ref(catalog: Catalog) -> None:
+    """Each ref written in a transaction keeps exactly one assertion, holding its base snapshot id."""
+    import pyarrow as pa
+
+    from pyiceberg.table.update import AssertRefSnapshotId
+
+    catalog.create_namespace("default")
+    tbl = catalog.create_table("default.ref_assertions", schema=_test_schema())
+    tbl.append(pa.table({"x": [1]}))
+    base_snapshot_id = tbl.metadata.current_snapshot_id
+    assert base_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=base_snapshot_id, branch_name="b").commit()
+
+    tx = tbl.transaction()
+    tx.append(pa.table({"x": [2]}), branch="b")
+    tx.append(pa.table({"x": [3]}))
+    # A second write to main asserts the snapshot staged above; only the base assertion must be kept.
+    tx.append(pa.table({"x": [4]}))
+
+    ref_assertions = {r.ref: r.snapshot_id for r in tx._requirements if isinstance(r, AssertRefSnapshotId)}
+    assert ref_assertions == {"b": base_snapshot_id, "main": base_snapshot_id}
+    assert len([r for r in tx._requirements if isinstance(r, AssertRefSnapshotId)]) == 2
