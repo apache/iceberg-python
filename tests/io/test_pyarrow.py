@@ -27,6 +27,7 @@ import zlib
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, date, datetime, time
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import MagicMock, patch
@@ -938,6 +939,49 @@ def test_always_true_to_pyarrow(bound_reference: BoundReference) -> None:
 
 def test_always_false_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
+
+
+def test_decimal_literal_wider_than_column_to_pyarrow() -> None:
+    schema = Schema(NestedField(1, "amt", DecimalType(5, 2), required=False))
+    ref = BoundReference(schema.find_field(1), schema.accessor_for_field(1))
+    wide = literal(Decimal("1000.00")).to(DecimalType(5, 2))
+    narrow = literal(Decimal("1.25")).to(DecimalType(5, 2))
+    arrow_table = pa.table({"amt": pa.array([Decimal("1.25"), Decimal("99.99")], pa.decimal128(5, 2))})
+    for bound_expr, expected in [
+        (BoundLessThan(term=ref, literal=wide), [Decimal("1.25"), Decimal("99.99")]),
+        (BoundNotEqualTo(term=ref, literal=wide), [Decimal("1.25"), Decimal("99.99")]),
+        (BoundIn(term=ref, literals={wide, narrow}), [Decimal("1.25")]),
+        (BoundNotIn(term=ref, literals={wide, narrow}), [Decimal("99.99")]),
+    ]:
+        assert arrow_table.filter(expression_to_pyarrow(bound_expr))["amt"].to_pylist() == expected, bound_expr
+
+
+def test_row_filter_decimal_literal_wider_than_column(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_decimal_literal_wider_than_column",
+        schema=Schema(
+            NestedField(1, "id", IntegerType(), required=False),
+            NestedField(2, "amt", DecimalType(5, 2), required=False),
+        ),
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3], pa.int32()),
+                "amt": pa.array([Decimal("1.25"), Decimal("99.99"), None], pa.decimal128(5, 2)),
+            }
+        )
+    )
+
+    # 1000.00 needs one more digit than decimal(5, 2) holds, but every value is below it
+    for row_filter, expected in [
+        ("amt < 1000.00", [1, 2]),
+        ("amt > -1000.00", [1, 2]),
+        ("amt < 50.00", [1]),
+        ("amt IN (1.25, 1000.00)", [1]),
+    ]:
+        assert sorted(table.scan(row_filter=row_filter).to_arrow()["id"].to_pylist()) == expected, row_filter
 
 
 @pytest.fixture

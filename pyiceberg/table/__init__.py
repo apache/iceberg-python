@@ -34,7 +34,7 @@ from cachetools import LRUCache
 from pydantic import Field
 
 from pyiceberg.encryption.kms import KeyManagementClient
-from pyiceberg.exceptions import CommitFailedException, ValidationException
+from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
 from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
@@ -59,6 +59,7 @@ from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTI
 from pyiceberg.schema import Schema
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
@@ -1150,6 +1151,12 @@ class Transaction:
                         except CommitFailedException:
                             elapsed_ms = (time.monotonic() - start_time) * 1000
                             if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
+                                # The catalog can apply a commit and still report failure, for example
+                                # when the response is lost. Check before cleaning up, since cleaning
+                                # up a snapshot that landed would leave the table unreadable.
+                                if self._snapshot_producers and self._attempt_landed():
+                                    self._cleanup_uncommitted_manifests()
+                                    break
                                 raise
 
                             wait = min(min_wait_ms * (2**attempt), max_wait_ms)
@@ -1162,11 +1169,7 @@ class Transaction:
                             )
                             time.sleep((wait + jitter) / 1000.0)
 
-                            self._table.refresh()
-                            if all(
-                                self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None
-                                for producer in self._snapshot_producers
-                            ):
+                            if self._attempt_landed():
                                 # A previous attempt actually landed even though it was reported as
                                 # failed (for example a lost response that the transport layer retried).
                                 # The snapshot id is stable across attempts, so finding it in the
@@ -1194,17 +1197,10 @@ class Transaction:
         elif self._snapshot_producers:
             # An empty staged output (e.g. a delete whose plan matched nothing) skips the
             # commit loop above, so run concurrency validation explicitly before reporting success.
-            from pyiceberg.table.update.snapshot import CommitWindow
-
             try:
                 self._table.refresh()
-                commit_window = CommitWindow.resolve(
-                    self._table.metadata,
-                    self._snapshot_producers[0]._starting_snapshot_id,
-                    self._snapshot_producers[0]._target_branch,
-                )
+                self._resolve_commit_windows()
                 for producer in self._snapshot_producers:
-                    producer._commit_window = commit_window
                     producer._validate_concurrency()
             except Exception:
                 for producer in self._snapshot_producers:
@@ -1219,25 +1215,53 @@ class Transaction:
 
         return self._table
 
+    def _attempt_landed(self) -> bool:
+        """Refresh the table and return whether a snapshot written by this transaction is present.
+
+        Raises:
+            CommitStateUnknownException: If the table cannot be refreshed, the outcome is unknown and
+                the files written for the attempt must not be deleted.
+        """
+        try:
+            self._table.refresh()
+        except Exception as e:
+            raise CommitStateUnknownException(
+                f"Commit failed and the table could not be refreshed to check whether it landed: {e}"
+            ) from e
+
+        return all(
+            self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None for producer in self._snapshot_producers
+        )
+
     def _cleanup_uncommitted_manifests(self) -> None:
         """Clean up manifests from failed retry attempts after a successful commit."""
         for producer in self._snapshot_producers:
             producer._cleanup_uncommitted()
 
+    def _resolve_commit_windows(self) -> None:
+        """Resolve each producer's commit window against the refreshed metadata of its own branch.
+
+        The window starts where the transaction first wrote to the branch. Later producers on the same
+        branch start from a snapshot staged by this transaction, which the catalog has never seen.
+        """
+        from pyiceberg.table.update.snapshot import CommitWindow
+
+        windows: dict[str | None, CommitWindow] = {}
+        for producer in self._snapshot_producers:
+            branch = producer._target_branch
+            if branch not in windows:
+                windows[branch] = CommitWindow.resolve(self._table.metadata, producer._starting_snapshot_id, branch)
+            producer._commit_window = windows[branch]
+
     def _rebuild_snapshot_updates(self) -> None:
         """Rebuild snapshot updates for retry by re-executing registered producers."""
         from pyiceberg.table.update import AddSnapshotUpdate, AssertRefSnapshotId, SetSnapshotRefUpdate
-        from pyiceberg.table.update.snapshot import CommitWindow
 
         self._updates = tuple(u for u in self._updates if not isinstance(u, (AddSnapshotUpdate, SetSnapshotRefUpdate)))
         self._requirements = tuple(r for r in self._requirements if not isinstance(r, AssertRefSnapshotId))
 
-        starting_id = self._snapshot_producers[0]._starting_snapshot_id if self._snapshot_producers else None
-        target_branch = self._snapshot_producers[0]._target_branch if self._snapshot_producers else None
-        commit_window = CommitWindow.resolve(self._table.metadata, starting_id, target_branch)
-
+        self._resolve_commit_windows()
         for producer in self._snapshot_producers:
-            producer._commit_window = commit_window
             producer._refresh_for_retry()
             producer._validate_concurrency()
             updates, requirements = producer._commit()
@@ -1349,6 +1373,8 @@ class Table:
     io: FileIO
     catalog: Catalog
     config: dict[str, str]
+    # Catalog-provided labels, set when the catalog loads the table. They are not table state, so refresh() and commits keep them.
+    labels: Labels
 
     def __init__(
         self,
@@ -1359,6 +1385,7 @@ class Table:
         catalog: Catalog,
         config: dict[str, str] = EMPTY_DICT,
         kms_client: KeyManagementClient | None = None,
+        labels: Labels | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
@@ -1367,6 +1394,7 @@ class Table:
         self.catalog = catalog
         self.config = config
         self._kms_client = kms_client
+        self.labels = labels if labels is not None else Labels()
         self._encryption_manager: _CachedEncryptionManager | None = None
 
     @property

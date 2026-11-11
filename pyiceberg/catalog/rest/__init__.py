@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
 import sys
 import time
 import uuid
@@ -1192,6 +1193,7 @@ class RestCatalog(Catalog):
             ),
             catalog=self,
             config=table_response.config,
+            labels=table_response.labels,
         )
 
     def _response_to_staged_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> StagedTable:
@@ -1231,7 +1233,9 @@ class RestCatalog(Catalog):
         header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
-        session.headers["User-Agent"] = f"PyIceberg/{__version__}"
+        session.headers["User-Agent"] = (
+            f"pyiceberg/{__version__} ({platform.python_implementation().lower()} {platform.python_version()})"
+        )
         session.headers["X-Client-Version"] = f"PyIceberg {__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
@@ -1518,7 +1522,7 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_DELETE_TABLE)
         response = self._session.delete(
             self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
-            params={"purgeRequested": purge_requested},
+            params={"purgeRequested": "true" if purge_requested else "false"},
             headers=self._mutation_headers(),
         )
         try:
@@ -1842,6 +1846,14 @@ class RestCatalog(Catalog):
         Returns:
             bool: True if the view exists, False otherwise.
         """
+        # fallback in order to work with older rest catalog implementations
+        if Capability.V1_VIEW_EXISTS not in self._supported_endpoints:
+            try:
+                self.load_view(identifier)
+                return True
+            except NoSuchViewError:
+                return False
+
         response = self._session.head(
             self.url(Endpoints.view_exists, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
         )
