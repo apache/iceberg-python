@@ -16,6 +16,7 @@
 # under the License.
 import functools
 import operator
+from collections import Counter
 
 import pyarrow as pa
 from pyarrow import Table as pyarrow_table
@@ -28,6 +29,75 @@ from pyiceberg.expressions import (
     In,
     Or,
 )
+
+
+def validate_join_cols(df: pyarrow_table, join_cols: list[str], table_schema: pa.Schema) -> None:
+    """Validate join-key presence and types before Arrow comparison or hashing."""
+    if not isinstance(join_cols, (list, tuple)):
+        raise ValueError(f"join_cols must be a list of column names, got {type(join_cols).__name__}.")
+
+    duplicates = sorted(col for col, count in Counter(join_cols).items() if count > 1)
+    if duplicates:
+        raise ValueError(f"join_cols contains duplicates: {', '.join(duplicates)}.")
+
+    for col in join_cols:
+        _validate_table_join_col(col, table_schema)
+        _validate_input_join_col(col, df)
+
+
+def _validate_table_join_col(col: str, table_schema: pa.Schema) -> None:
+    """Reject types that are unreliable or unsupported as join keys regardless of the input."""
+    if col not in table_schema.names:
+        parent = col.split(".", 1)[0]
+        if "." in col and parent in table_schema.names and pa.types.is_nested(table_schema.field(parent).type):
+            raise ValueError(f"Join column '{col}' is a field inside struct '{parent}' and cannot be used as a join key.")
+        raise ValueError(f"Join column '{col}' does not exist in the table. Available columns: {', '.join(table_schema.names)}.")
+
+    field_type = table_schema.field(col).type
+
+    if pa.types.is_floating(field_type):
+        raise ValueError(
+            f"Join column '{col}' is floating point and cannot be used as a join key "
+            "because floating point equality is unreliable."
+        )
+
+    if pa.types.is_nested(field_type):
+        raise ValueError(f"Join column '{col}' has nested type '{field_type}'; only primitive columns can be join keys.")
+
+    if isinstance(field_type, pa.BaseExtensionType):
+        raise NotImplementedError(f"Join column '{col}' has type '{field_type}', which is not yet supported as a join key.")
+
+
+def _validate_input_join_col(col: str, df: pyarrow_table) -> None:
+    """Reject input representations that are unsupported even when the table type is valid."""
+    # Schema compatibility permits missing optional fields, but upsert needs every join key.
+    if col not in df.schema.names:
+        raise ValueError(f"Join column '{col}' is missing from the input.")
+
+    arr = df.column(col)
+
+    if pa.types.is_dictionary(arr.type):
+        raise NotImplementedError(
+            f"Input column '{col}' is dictionary-encoded, which is not yet supported for join keys. Decode it first."
+        )
+
+    if pa.types.is_null(arr.type):
+        raise ValueError(f"Input column '{col}' has the null type and cannot be used as a join key.")
+
+    if pa.types.is_string_view(arr.type) or pa.types.is_binary_view(arr.type):
+        plain = "string" if pa.types.is_string_view(arr.type) else "binary"
+        raise NotImplementedError(
+            f"Input column '{col}' has type '{arr.type}', which is not yet supported for join keys. Cast it to '{plain}' first."
+        )
+
+    if isinstance(arr.type, pa.BaseExtensionType):
+        raise NotImplementedError(
+            f"Input column '{col}' has extension type '{arr.type}', which is not yet supported for join keys."
+        )
+
+    # Null keys cannot be expressed as Iceberg literals in the match filter.
+    if arr.null_count > 0:
+        raise ValueError(f"Input column '{col}' contains null values, which cannot be join keys.")
 
 
 def create_match_filter(df: pyarrow_table, join_cols: list[str]) -> BooleanExpression:
