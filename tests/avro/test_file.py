@@ -71,6 +71,12 @@ def get_null_compressor() -> None:
     assert header.compression_codec() is None
 
 
+def test_missing_codec_is_null() -> None:
+    # the Avro specification: a file without avro.codec is uncompressed (iceberg-rust writes such manifests)
+    header = AvroFileHeader(bytes(0), {}, bytes(16))
+    assert header.compression_codec() is None
+
+
 def test_unknown_codec() -> None:
     header = AvroFileHeader(bytes(0), {"avro.codec": "unknown"}, bytes(16))
 
@@ -480,6 +486,37 @@ def test_timestamp_nanos_round_trip() -> None:
         ) as avro_reader:
             assert avro_reader.schema == schema
             assert list(avro_reader) == records
+
+
+@pytest.mark.parametrize("codec", ["null", "deflate", "bzip2", "snappy"])
+def test_compression_codec_interop_with_fastavro(codec: str) -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=True),
+        schema_id=1,
+    )
+    rows = [{"id": idx, "data": f"value-{idx}"} for idx in range(100)]
+    records = [Record(row["id"], row["data"]) for row in rows]
+
+    with TemporaryDirectory() as tmpdir:
+        # fastavro frames each block as the Avro spec defines, e.g. snappy blocks end with a CRC32 of the uncompressed data
+        fastavro_file = tmpdir + "/fastavro.avro"
+        with open(fastavro_file, "wb") as out:
+            writer(out, AvroSchemaConversion().iceberg_to_avro(schema, schema_name="compressed"), rows, codec=codec)
+
+        with avro.AvroFile[Record](PyArrowFileIO().new_input(fastavro_file), schema, {-1: Record}) as avro_reader:
+            assert list(avro_reader) == records
+
+        iceberg_file = tmpdir + "/iceberg.avro"
+        with avro.AvroOutputFile[Record](
+            PyArrowFileIO().new_output(iceberg_file), schema, "compressed", metadata={"avro.codec": codec}
+        ) as out:
+            out.write_block(records)
+
+        with open(iceberg_file, "rb") as fo:
+            fastavro_reader = reader(fo)
+            assert fastavro_reader.codec == codec
+            assert list(fastavro_reader) == rows
 
 
 def manifest_entry(index: int) -> ManifestEntry:

@@ -28,12 +28,13 @@ from dataclasses import dataclass
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from cachetools import LRUCache
 from pydantic import Field
 
-from pyiceberg.exceptions import CommitFailedException, ValidationException
+from pyiceberg.encryption.kms import KeyManagementClient
+from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
 from pyiceberg.expressions import (
     AlwaysFalse,
     AlwaysTrue,
@@ -71,6 +72,7 @@ from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTI
 from pyiceberg.schema import Schema
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
@@ -139,6 +141,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.catalog import Catalog
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
+    from pyiceberg.encryption.manager import EncryptionManager
     from pyiceberg.table.update.snapshot import _SnapshotProducer
 
 logger = logging.getLogger(__name__)
@@ -317,10 +320,14 @@ class Transaction:
         self._updates += updates
 
         # For the requirements, it does not make sense to add a requirement more than once
-        # For example, you cannot assert that the current schema has two different IDs
-        existing_requirements = {type(requirement) for requirement in self._requirements}
+        # For example, you cannot assert that the current schema has two different IDs.
+        # Ref assertions are the exception: they apply per ref, so each ref keeps its own first assertion.
+        def _requirement_key(requirement: TableRequirement) -> tuple[type[TableRequirement], str | None]:
+            return type(requirement), requirement.ref if isinstance(requirement, AssertRefSnapshotId) else None
+
+        existing_requirements = {_requirement_key(requirement) for requirement in self._requirements}
         for new_requirement in requirements:
-            if type(new_requirement) not in existing_requirements:
+            if _requirement_key(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
 
         return self
@@ -1157,6 +1164,12 @@ class Transaction:
                         except CommitFailedException:
                             elapsed_ms = (time.monotonic() - start_time) * 1000
                             if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
+                                # The catalog can apply a commit and still report failure, for example
+                                # when the response is lost. Check before cleaning up, since cleaning
+                                # up a snapshot that landed would leave the table unreadable.
+                                if self._snapshot_producers and self._attempt_landed():
+                                    self._cleanup_uncommitted_manifests()
+                                    break
                                 raise
 
                             wait = min(min_wait_ms * (2**attempt), max_wait_ms)
@@ -1169,11 +1182,7 @@ class Transaction:
                             )
                             time.sleep((wait + jitter) / 1000.0)
 
-                            self._table.refresh()
-                            if all(
-                                self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None
-                                for producer in self._snapshot_producers
-                            ):
+                            if self._attempt_landed():
                                 # A previous attempt actually landed even though it was reported as
                                 # failed (for example a lost response that the transport layer retried).
                                 # The snapshot id is stable across attempts, so finding it in the
@@ -1225,6 +1234,24 @@ class Transaction:
         self._requirements = ()
 
         return self._table
+
+    def _attempt_landed(self) -> bool:
+        """Refresh the table and return whether a snapshot written by this transaction is present.
+
+        Raises:
+            CommitStateUnknownException: If the table cannot be refreshed, the outcome is unknown and
+                the files written for the attempt must not be deleted.
+        """
+        try:
+            self._table.refresh()
+        except Exception as e:
+            raise CommitStateUnknownException(
+                f"Commit failed and the table could not be refreshed to check whether it landed: {e}"
+            ) from e
+
+        return all(
+            self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None for producer in self._snapshot_producers
+        )
 
     def _cleanup_uncommitted_manifests(self) -> None:
         """Clean up manifests from failed retry attempts after a successful commit."""
@@ -1340,6 +1367,13 @@ class CommitTableResponse(IcebergBaseModel):
     metadata_location: str = Field(alias="metadata-location")
 
 
+class _CachedEncryptionManager(NamedTuple):
+    """An encryption manager, reused with its unwrapped KEKs until the table metadata it was built from changes."""
+
+    metadata: TableMetadata
+    manager: EncryptionManager | None
+
+
 class Table:
     """An Iceberg table."""
 
@@ -1349,6 +1383,8 @@ class Table:
     io: FileIO
     catalog: Catalog
     config: dict[str, str]
+    # Catalog-provided labels, set when the catalog loads the table. They are not table state, so refresh() and commits keep them.
+    labels: Labels
 
     def __init__(
         self,
@@ -1358,6 +1394,8 @@ class Table:
         io: FileIO,
         catalog: Catalog,
         config: dict[str, str] = EMPTY_DICT,
+        kms_client: KeyManagementClient | None = None,
+        labels: Labels | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
@@ -1365,6 +1403,27 @@ class Table:
         self.io = io
         self.catalog = catalog
         self.config = config
+        self._kms_client = kms_client
+        self.labels = labels if labels is not None else Labels()
+        self._encryption_manager: _CachedEncryptionManager | None = None
+
+    @property
+    def encryption_manager(self) -> EncryptionManager | None:
+        """The table's encryption manager, or None if the table is not encrypted.
+
+        The manager is built from the current metadata, and rebuilt when the metadata changes.
+
+        Raises:
+            ValueError: If the table is encrypted but no key management client was provided.
+        """
+        from pyiceberg.encryption.manager import EncryptionManager
+
+        cached = self._encryption_manager
+        if cached is None or cached.metadata is not self.metadata:
+            cached = self._encryption_manager = _CachedEncryptionManager(
+                self.metadata, EncryptionManager.from_table_metadata(self._kms_client, self.metadata)
+            )
+        return cached.manager
 
     def transaction(self) -> Transaction:
         """Create a new transaction object to first stage the changes, and then commit them to the catalog.
@@ -1464,6 +1523,7 @@ class Table:
             catalog=self.catalog,
             table_identifier=self._identifier,
             table_config=self.config,
+            encryption_manager=self.encryption_manager,
         )
 
     def incremental_append_scan(
@@ -1519,6 +1579,7 @@ class Table:
             to_snapshot_id=to_snapshot_id_inclusive,
             options=options,
             limit=limit,
+            encryption_manager=self.encryption_manager,
         )
 
     @property
@@ -2086,6 +2147,7 @@ class BaseScan(ABC):
     case_sensitive: bool
     options: Properties
     limit: int | None
+    encryption_manager: EncryptionManager | None
 
     def __init__(
         self,
@@ -2096,6 +2158,7 @@ class BaseScan(ABC):
         case_sensitive: bool = True,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        encryption_manager: EncryptionManager | None = None,
     ):
         self.table_metadata = table_metadata
         self.io = io
@@ -2104,6 +2167,7 @@ class BaseScan(ABC):
         self.case_sensitive = case_sensitive
         self.options = options
         self.limit = limit
+        self.encryption_manager = encryption_manager
 
     @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]: ...
@@ -2203,6 +2267,7 @@ class TableScan(BaseScan):
         catalog: Catalog | None = None,
         table_identifier: Identifier | None = None,
         table_config: Properties = EMPTY_DICT,
+        encryption_manager: EncryptionManager | None = None,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2212,6 +2277,7 @@ class TableScan(BaseScan):
             case_sensitive=case_sensitive,
             options=options,
             limit=limit,
+            encryption_manager=encryption_manager,
         )
         self.snapshot_id = snapshot_id
         self.catalog = catalog
@@ -2475,7 +2541,7 @@ class DataScan(TableScan):
         if not snapshot:
             return iter([])
 
-        return self._manifest_planner.plan_manifest_entries(snapshot.manifests(self.io))
+        return self._manifest_planner.plan_manifest_entries(snapshot.manifests(self.io, self.encryption_manager))
 
     def _should_use_server_side_planning(self) -> bool:
         """Check if server-side scan planning should be used for this scan."""
@@ -2514,7 +2580,7 @@ class DataScan(TableScan):
             if self.snapshot_id is not None:
                 raise ValueError(f"Snapshot not found: {self.snapshot_id}")
             return []
-        return self._manifest_planner.plan_files(snapshot.manifests(self.io))
+        return self._manifest_planner.plan_files(snapshot.manifests(self.io, self.encryption_manager))
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files by filtering on the PartitionSpecs.
@@ -2649,6 +2715,8 @@ class IncrementalAppendScan(BaseScan):
             An integer representing the number of rows to
             return in the scan result. If None, fetches all
             matching rows.
+        encryption_manager:
+            Decrypts the manifest lists of encrypted snapshots.
     """
 
     from_snapshot_id: int | None
@@ -2667,6 +2735,7 @@ class IncrementalAppendScan(BaseScan):
         to_snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        encryption_manager: EncryptionManager | None = None,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2676,6 +2745,7 @@ class IncrementalAppendScan(BaseScan):
             case_sensitive=case_sensitive,
             options=options,
             limit=limit,
+            encryption_manager=encryption_manager,
         )
         self.from_snapshot_id = from_snapshot_id
         self.from_snapshot_inclusive = from_snapshot_inclusive
@@ -2725,7 +2795,7 @@ class IncrementalAppendScan(BaseScan):
             {
                 manifest_file
                 for snapshot in append_snapshots
-                for manifest_file in snapshot.manifests(self.io)
+                for manifest_file in snapshot.manifests(self.io, self.encryption_manager)
                 if manifest_file.content == ManifestContent.DATA and manifest_file.added_snapshot_id in append_snapshot_ids
             }
         )
@@ -2738,8 +2808,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:
