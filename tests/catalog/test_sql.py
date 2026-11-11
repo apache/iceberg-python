@@ -135,6 +135,29 @@ def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Pat
         )
 
 
+def test_creation_with_existing_engine(catalog_name: str, warehouse: Path) -> None:
+    engine = create_engine(f"sqlite:///{warehouse.as_posix()}/sql-catalog-engine")
+
+    catalog = SqlCatalog(catalog_name, engine=engine, warehouse=f"file://{warehouse}")
+
+    assert catalog.engine is engine
+    confirm_all_tables_exist(catalog)
+
+    catalog.create_namespace("default")
+    catalog.create_table("default.t", Schema(NestedField(1, "x", StringType())))
+    assert catalog.table_exists("default.t")
+
+
+def test_creation_with_existing_engine_without_uri(catalog_name: str, warehouse: Path) -> None:
+    engine = create_engine(f"sqlite:///{warehouse.as_posix()}/sql-catalog-engine-no-uri")
+
+    catalog = SqlCatalog(catalog_name, engine=engine, warehouse=f"file://{warehouse}")
+
+    catalog.create_namespace("default")
+    catalog.create_table("default.t2", Schema(NestedField(1, "x", StringType())))
+    assert catalog.table_exists("default.t2")
+
+
 def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
     assert isinstance(
         load_catalog(
