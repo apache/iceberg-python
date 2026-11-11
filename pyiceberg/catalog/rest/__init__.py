@@ -17,7 +17,10 @@
 from __future__ import annotations
 
 import logging
+import os
+import sys
 import time
+import uuid
 from collections import deque
 from collections.abc import Mapping
 from enum import Enum, StrEnum
@@ -88,6 +91,7 @@ from pyiceberg.table import (
     TableIdentifier,
     TableProperties,
 )
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.table.update import (
@@ -298,6 +302,7 @@ REST_CLIENT_RETRY_BACKOFF_FACTOR = "rest.client.retry-backoff-factor"
 # (e.g. setting raise_on_status=False would swallow 4xx errors silently).
 _CONNECTION_RETRY_STATUS_FORCELIST = (429, 500, 502, 503, 504)
 _CONNECTION_RETRY_ALLOWED_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
+IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
 EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
@@ -339,6 +344,17 @@ def _parse_scan_planning_mode(properties: Properties, *, strict: bool = True) ->
         return None
 
 
+if sys.version_info >= (3, 14):
+    from uuid import uuid7 as _uuid7
+else:
+
+    def _uuid7() -> uuid.UUID:
+        value = (time.time_ns() // 1_000_000) << 80 | int.from_bytes(os.urandom(10))
+        value = (value & ~(0xF << 76)) | (0x7 << 76)
+        value = (value & ~(0x3 << 62)) | (0x2 << 62)
+        return uuid.UUID(int=value)
+
+
 def _retry_hook(retry_state: RetryCallState) -> None:
     rest_catalog: RestCatalog = retry_state.args[0]
     rest_catalog._refresh_token()  # pylint: disable=protected-access
@@ -357,6 +373,7 @@ class TableResponse(IcebergBaseModel):
     metadata: TableMetadata
     config: Properties = Field(default_factory=dict)
     storage_credentials: list[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
+    labels: Labels = Field(default_factory=Labels)
 
 
 class LoadCredentialsResponse(IcebergBaseModel):
@@ -367,6 +384,7 @@ class ViewResponse(IcebergBaseModel):
     metadata_location: str = Field(..., alias="metadata-location")
     metadata: ViewMetadata
     config: Properties = Field(default_factory=dict)
+    labels: Labels = Field(default_factory=Labels)
 
 
 class CreateTableRequest(IcebergBaseModel):
@@ -421,6 +439,7 @@ class ConfigResponse(IcebergBaseModel):
     defaults: Properties | None = Field(default_factory=dict)
     overrides: Properties | None = Field(default_factory=dict)
     endpoints: set[Endpoint] | None = Field(default=None)
+    idempotency_key_lifetime: str | None = Field(alias="idempotency-key-lifetime", default=None)
 
     @field_validator("endpoints", mode="before")
     @classmethod
@@ -502,11 +521,12 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
         return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
 
 
-def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapter | None:
+def _create_connection_adapter(properties: Properties, retry_post: bool = False) -> _RetryTimeoutHTTPAdapter | None:
     """Build a connection adapter from the optional `rest.client.*` properties.
 
     Returns None when no connection properties are supplied, leaving the default
-    Session behavior unchanged. Raises ValueError on invalid input.
+    Session behavior unchanged. POST requests are retried only when `retry_post` is set.
+    Raises ValueError on invalid input.
     """
     connection_timeout_ms = property_as_int(properties, REST_CLIENT_CONNECTION_TIMEOUT_MS)
     if connection_timeout_ms is not None and connection_timeout_ms <= 0:
@@ -541,7 +561,7 @@ def _create_connection_adapter(properties: Properties) -> _RetryTimeoutHTTPAdapt
             total=retries if retries is not None else DEFAULT_RETRIES,
             backoff_factor=backoff_factor if backoff_factor is not None else 0.0,
             status_forcelist=list(_CONNECTION_RETRY_STATUS_FORCELIST),
-            allowed_methods=_CONNECTION_RETRY_ALLOWED_METHODS,
+            allowed_methods=_CONNECTION_RETRY_ALLOWED_METHODS | {"POST"} if retry_post else _CONNECTION_RETRY_ALLOWED_METHODS,
             # Return the final response on retry exhaustion (instead of raising MaxRetryError)
             # so `_handle_non_200_response` can map the 5xx status to a typed exception
             # (ServiceUnavailableError, etc.). 4xx codes are not in status_forcelist and are
@@ -557,6 +577,7 @@ class RestCatalog(Catalog):
     _auth_manager: AuthManager | None
     _supported_endpoints: set[Endpoint]
     _namespace_separator: str
+    _idempotency_enabled: bool = False
 
     def __init__(self, name: str, **properties: str):
         """Rest Catalog.
@@ -579,7 +600,7 @@ class RestCatalog(Catalog):
 
         # Mount the retry/timeout adapter when `connection.*` properties are set.
         # SigV4's adapter mounted below at `self.uri` is a longer prefix and still wins for that host.
-        if (connection_adapter := _create_connection_adapter(self.properties)) is not None:
+        if (connection_adapter := _create_connection_adapter(self.properties, self._idempotency_enabled)) is not None:
             session.mount("http://", connection_adapter)
             session.mount("https://", connection_adapter)
 
@@ -1052,6 +1073,8 @@ class RestCatalog(Catalog):
         # Update URI based on overrides
         self.uri = config[URI]
 
+        self._idempotency_enabled = config_response.idempotency_key_lifetime is not None
+
         # Determine supported endpoints
         endpoints = config_response.endpoints
         if endpoints:
@@ -1067,6 +1090,9 @@ class RestCatalog(Catalog):
         if not separator_from_properties:
             raise ValueError("Namespace separator cannot be an empty string")
         self._namespace_separator = unquote(separator_from_properties)
+
+    def _mutation_headers(self) -> dict[str, str]:
+        return {IDEMPOTENCY_KEY_HEADER: str(_uuid7())} if self._idempotency_enabled else {}
 
     def _identifier_to_validated_tuple(self, identifier: str | Identifier) -> Identifier:
         identifier_tuple = self.identifier_to_tuple(identifier)
@@ -1244,6 +1270,7 @@ class RestCatalog(Catalog):
         response = self._session.post(
             self.url(Endpoints.create_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
+            headers=self._mutation_headers(),
         )
         try:
             response.raise_for_status()
@@ -1326,6 +1353,7 @@ class RestCatalog(Catalog):
         response = self._session.post(
             self.url(Endpoints.create_view, namespace=namespace_and_view["namespace"]),
             data=serialized_json,
+            headers=self._mutation_headers(),
         )
 
         try:
@@ -1363,6 +1391,7 @@ class RestCatalog(Catalog):
         response = self._session.post(
             self.url(Endpoints.register_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
+            headers=self._mutation_headers(),
         )
         try:
             response.raise_for_status()
@@ -1389,6 +1418,7 @@ class RestCatalog(Catalog):
         namespace_and_table = self._split_identifier_for_path(identifier)
         response = self._session.post(
             self.url(Endpoints.unregister_table, prefixed=True, **namespace_and_table),
+            headers=self._mutation_headers(),
         )
         try:
             response.raise_for_status()
@@ -1489,6 +1519,7 @@ class RestCatalog(Catalog):
         response = self._session.delete(
             self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
             params={"purgeRequested": purge_requested},
+            headers=self._mutation_headers(),
         )
         try:
             response.raise_for_status()
@@ -1518,7 +1549,7 @@ class RestCatalog(Catalog):
         if not self.namespace_exists(destination_namespace):
             raise NoSuchNamespaceError(f"Destination namespace does not exist: {destination_namespace}")
 
-        response = self._session.post(self.url(Endpoints.rename_table), json=payload)
+        response = self._session.post(self.url(Endpoints.rename_table), json=payload, headers=self._mutation_headers())
         try:
             response.raise_for_status()
         except HTTPError as exc:
@@ -1622,7 +1653,7 @@ class RestCatalog(Catalog):
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
             data=table_request.model_dump_json().encode(UTF8),
-            headers=headers,
+            headers={**headers, **self._mutation_headers()},
         )
         try:
             response.raise_for_status()
@@ -1644,7 +1675,7 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_CREATE_NAMESPACE)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         payload = {"namespace": namespace_tuple, "properties": properties}
-        response = self._session.post(self.url(Endpoints.create_namespace), json=payload)
+        response = self._session.post(self.url(Endpoints.create_namespace), json=payload, headers=self._mutation_headers())
         try:
             response.raise_for_status()
         except HTTPError as exc:
@@ -1656,7 +1687,7 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_DELETE_NAMESPACE)
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = self._encode_namespace_path(namespace_tuple)
-        response = self._session.delete(self.url(Endpoints.drop_namespace, namespace=namespace))
+        response = self._session.delete(self.url(Endpoints.drop_namespace, namespace=namespace), headers=self._mutation_headers())
         try:
             response.raise_for_status()
         except HTTPError as exc:
@@ -1723,7 +1754,9 @@ class RestCatalog(Catalog):
         namespace_tuple = self._check_valid_namespace_identifier(namespace)
         namespace = self._encode_namespace_path(namespace_tuple)
         payload = {"removals": list(removals or []), "updates": updates}
-        response = self._session.post(self.url(Endpoints.update_namespace_properties, namespace=namespace), json=payload)
+        response = self._session.post(
+            self.url(Endpoints.update_namespace_properties, namespace=namespace), json=payload, headers=self._mutation_headers()
+        )
         try:
             response.raise_for_status()
         except HTTPError as exc:
@@ -1838,6 +1871,7 @@ class RestCatalog(Catalog):
         response = self._session.post(
             self.url(Endpoints.register_view, namespace=namespace_and_view["namespace"]),
             data=serialized_json,
+            headers=self._mutation_headers(),
         )
         try:
             response.raise_for_status()
@@ -1853,6 +1887,7 @@ class RestCatalog(Catalog):
         self._check_endpoint(Capability.V1_DELETE_VIEW)
         response = self._session.delete(
             self.url(Endpoints.drop_view, prefixed=True, **self._split_identifier_for_path(identifier, IdentifierKind.VIEW)),
+            headers=self._mutation_headers(),
         )
         try:
             response.raise_for_status()
@@ -1876,7 +1911,7 @@ class RestCatalog(Catalog):
             raise NoSuchNamespaceError(f"Destination namespace does not exist: {destination_namespace}")
 
         payload = {"source": source, "destination": destination}
-        response = self._session.post(self.url(Endpoints.rename_view), json=payload)
+        response = self._session.post(self.url(Endpoints.rename_view), json=payload, headers=self._mutation_headers())
         try:
             response.raise_for_status()
         except HTTPError as exc:
