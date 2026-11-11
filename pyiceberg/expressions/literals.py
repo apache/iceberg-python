@@ -26,7 +26,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
-from math import isnan
+from math import isfinite, isnan
 from typing import Any, Generic
 from uuid import UUID
 
@@ -414,6 +414,8 @@ class FloatLiteral(Literal[float]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
+        if not isfinite(self.value):
+            raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
         return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
 
 
@@ -439,6 +441,8 @@ class DoubleLiteral(Literal[float]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
+        if not isfinite(self.value):
+            raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
         return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
 
 
