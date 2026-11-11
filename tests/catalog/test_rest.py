@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import os
 import pickle
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, cast
@@ -38,6 +39,7 @@ from pyiceberg.catalog import PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
+    IDEMPOTENCY_KEY_HEADER,
     OAUTH2_SERVER_URI,
     PAGE_SIZE,
     REST_CLIENT_CONNECTION_TIMEOUT_MS,
@@ -2464,28 +2466,38 @@ def test_session_with_socket_timeout_only(rest_mock: Mocker) -> None:
 
 
 @contextmanager
-def _local_rest_server_503_then_200(num_failures: int) -> Iterator[dict[str, Any]]:
+def _local_rest_server_503_then_200(num_failures: int, idempotency_key_lifetime: str | None = None) -> Iterator[dict[str, Any]]:
     """Stand up a loopback HTTP server that returns `num_failures` 503s for `/v1/namespaces` then a 200.
 
     Used in place of `requests_mock`, which replaces the HTTPAdapter and would bypass the retry logic.
 
-    Yields a dict with `port` and `namespace_calls` keys (the latter is updated in-place as requests arrive).
+    Yields a dict with `port`, `namespace_calls` and `idempotency_keys` keys, updated in-place as requests arrive.
     """
     import json
     import threading
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
-    state: dict[str, Any] = {"namespace_calls": 0}
-    config_body = json.dumps(
-        {"defaults": {}, "overrides": {}, "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS]}
-    ).encode()
+    state: dict[str, Any] = {"namespace_calls": 0, "idempotency_keys": []}
+    config: dict[str, Any] = {
+        "defaults": {},
+        "overrides": {},
+        "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS],
+    }
+    if idempotency_key_lifetime is not None:
+        config["idempotency-key-lifetime"] = idempotency_key_lifetime
+    config_body = json.dumps(config).encode()
 
     class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self.do_GET()
+
         def do_GET(self) -> None:
             if self.path.endswith("/v1/config"):
                 self._respond(200, config_body)
             elif self.path.endswith("/v1/namespaces"):
                 state["namespace_calls"] += 1
+                state["idempotency_keys"].append(self.headers.get(IDEMPOTENCY_KEY_HEADER))
                 if state["namespace_calls"] <= num_failures:
                     self._respond(503, b"")
                 else:
@@ -2550,6 +2562,48 @@ def test_session_exhausted_retries_surfaces_typed_exception() -> None:
             catalog.list_namespaces()
         # retries=2 means 1 initial attempt + 2 retries = 3 calls
         assert server["namespace_calls"] == 3
+
+
+def test_session_retries_keyed_post_with_the_same_key() -> None:
+    with _local_rest_server_503_then_200(num_failures=1, idempotency_key_lifetime="PT30M") as server:
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                REST_CLIENT_MAX_RETRIES: "1",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+            },
+        )
+        catalog.create_namespace("foo")
+
+        key = server["idempotency_keys"][0]
+        assert key is not None
+        assert server["idempotency_keys"] == [key, key]
+
+
+def test_mutations_send_idempotency_key_when_advertised(requests_mock: Mocker) -> None:
+    requests_mock.get(f"{TEST_URI}v1/config", json={"defaults": {}, "overrides": {}, "idempotency-key-lifetime": "PT30M"})
+    requests_mock.post(f"{TEST_URI}v1/namespaces", json={"namespace": ["foo"], "properties": {}})
+    requests_mock.get(f"{TEST_URI}v1/namespaces", json={"namespaces": []})
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    catalog.create_namespace("foo")
+    catalog.create_namespace("foo")
+    catalog.list_namespaces()
+
+    first, second, listed = (request.headers.get(IDEMPOTENCY_KEY_HEADER) for request in requests_mock.request_history[1:])
+    assert uuid.UUID(first).version == 7
+    assert first != second
+    assert listed is None
+
+
+def test_mutations_omit_idempotency_key_when_not_advertised(rest_mock: Mocker) -> None:
+    rest_mock.post(f"{TEST_URI}v1/namespaces", json={"namespace": ["foo"], "properties": {}})
+
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_namespace("foo")
+
+    assert IDEMPOTENCY_KEY_HEADER not in rest_mock.last_request.headers
 
 
 def test_session_with_invalid_connection_timeout_raises(rest_mock: Mocker) -> None:
