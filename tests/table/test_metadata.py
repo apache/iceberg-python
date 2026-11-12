@@ -992,3 +992,53 @@ def test_v3_metadata_with_encryption_keys_serializes_them(example_table_metadata
     assert table_metadata.model_dump(mode="json")["encryption-keys"] == [
         {"key-id": "a", "encrypted-key-metadata": "a2V5", "properties": {}}
     ]
+
+
+def test_specs_struct_resolves_dropped_partition_source_from_historical_schemas() -> None:
+    initial_schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "p", StringType()),
+        NestedField(3, "v", IntegerType()),
+        schema_id=0,
+    )
+    promoted_schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "p", StringType()),
+        NestedField(3, "v", LongType()),
+        schema_id=1,
+    )
+    dropped_schema = Schema(NestedField(1, "id", LongType()), schema_id=2)
+
+    spec_p = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p"), spec_id=0)
+    spec_v = PartitionSpec(PartitionField(3, 1001, IdentityTransform(), "v"), spec_id=1)
+
+    table_metadata = TableMetadataV2(
+        location="s3://bucket/test/location",
+        schemas=[initial_schema, promoted_schema, dropped_schema],
+        current_schema_id=2,
+        partition_specs=[spec_p, spec_v, PartitionSpec(spec_id=2)],
+        default_spec_id=2,
+        last_column_id=3,
+        last_partition_id=1001,
+    )
+
+    assert table_metadata.specs_struct() == StructType(
+        NestedField(1000, "p", StringType(), required=False),
+        NestedField(1001, "v", LongType(), required=False),
+    )
+
+
+def test_specs_struct_falls_back_to_unknown_when_source_missing_from_all_schemas() -> None:
+    table_metadata = TableMetadataV2(
+        location="s3://bucket/test/location",
+        schemas=[Schema(NestedField(1, "id", LongType()), schema_id=0)],
+        current_schema_id=0,
+        partition_specs=[PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p"), spec_id=0)],
+        default_spec_id=0,
+        last_column_id=2,
+        last_partition_id=1000,
+    )
+
+    assert table_metadata.specs_struct() == StructType(
+        NestedField(1000, "p", UnknownType(), required=False),
+    )

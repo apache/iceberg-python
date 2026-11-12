@@ -45,7 +45,7 @@ from pyiceberg.typedef import (
     IcebergRootModel,
     Properties,
 )
-from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
+from pyiceberg.types import IcebergType, NestedField, StructType, UnknownType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 
@@ -298,6 +298,16 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return a dict the partition specs this table."""
         return {spec.spec_id: spec for spec in self.partition_specs}
 
+    def _resolve_field_type(self, field_id: int) -> IcebergType:
+        """Resolve a field's type from the current schema or historical schemas."""
+        if field := self.schema()._lazy_id_to_field.get(field_id):
+            return field.field_type
+        # Historical partition specs may reference columns dropped in later schema evolutions.
+        for schema in reversed(self.schemas):
+            if field := schema._lazy_id_to_field.get(field_id):
+                return field.field_type
+        return UnknownType()
+
     def specs_struct(self, spec_ids: Iterable[int] | None = None) -> StructType:
         """Produce a struct of the combined PartitionSpecs.
 
@@ -316,13 +326,11 @@ class TableMetadataCommonFields(IcebergBaseModel):
         # Collect all the fields
         struct_fields = {field.field_id: field for spec in selected_specs for field in spec.fields}
 
-        schema = self.schema()
-
         nested_fields = []
         # Sort them by field_id in order to get a deterministic output
         for field_id in sorted(struct_fields):
             field = struct_fields[field_id]
-            source_type = schema.find_type(field.source_id)
+            source_type = self._resolve_field_type(field.source_id)
             result_type = field.transform.result_type(source_type)
             nested_fields.append(NestedField(field_id=field.field_id, name=field.name, type=result_type, required=False))
 

@@ -138,3 +138,72 @@ def test_inspect_bounds_after_type_promotion(catalog: InMemoryCatalog) -> None:
         partition_summaries = tbl.inspect.manifests().to_pydict()["partition_summaries"][0]
         assert partition_summaries[0]["lower_bound"] == str(values[0]), name
         assert partition_summaries[0]["upper_bound"] == str(values[-1]), name
+
+
+def test_inspect_after_dropping_old_partition_column(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "p", StringType(), required=False),
+        NestedField(3, "q", StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p"))
+    tbl = catalog.create_table("default.dropped_partition_col", schema, partition_spec=spec)
+    tbl.append(pa.table({"id": [1, 2], "p": ["a", "b"], "q": ["x", "y"]}))
+
+    with tbl.update_spec() as spec_update:
+        spec_update.remove_field("p")
+    with tbl.update_schema() as schema_update:
+        schema_update.delete_column("p")
+
+    assert tbl.inspect.partitions().to_pydict()["partition"] == [{"p": "a"}, {"p": "b"}]
+    for table_view in [
+        tbl.inspect.entries(),
+        tbl.inspect.files(),
+        tbl.inspect.data_files(),
+        tbl.inspect.all_files(),
+        tbl.inspect.all_data_files(),
+    ]:
+        assert table_view.num_rows == 2
+    assert tbl.inspect.delete_files().num_rows == 0
+    assert tbl.inspect.all_delete_files().num_rows == 0
+
+    for manifest_table in [tbl.inspect.manifests(), tbl.inspect.all_manifests()]:
+        assert manifest_table.to_pydict()["partition_summaries"][0] == [
+            {"contains_null": False, "contains_nan": False, "lower_bound": "a", "upper_bound": "b"}
+        ]
+
+    # Appending under an unpartitioned spec and a newly evolved partition column also stays readable
+    tbl.append(pa.table({"id": [3], "q": ["z"]}))
+    with tbl.update_spec() as spec_update:
+        spec_update.add_identity("q")
+    tbl.append(pa.table({"id": [4], "q": ["w"]}))
+
+    assert sorted(
+        [(row["p"], row["q"]) for row in tbl.inspect.partitions().to_pydict()["partition"]],
+        key=lambda item: (item[0] or "", item[1] or ""),
+    ) == [(None, None), (None, "w"), ("a", None), ("b", None)]
+    assert tbl.inspect.entries().num_rows == 4
+    assert tbl.inspect.files().num_rows == 4
+    assert tbl.inspect.all_files().num_rows == 4
+
+
+def test_inspect_after_promoting_then_dropping_partition_column(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "v", IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "v"))
+    tbl = catalog.create_table("default.promoted_then_dropped", schema, partition_spec=spec)
+    tbl.append(pa.table({"id": pa.array([1, 2], pa.int64()), "v": pa.array([10, 20], pa.int32())}))
+
+    with tbl.update_schema() as schema_update:
+        schema_update.update_column("v", field_type=LongType())
+    with tbl.update_spec() as spec_update:
+        spec_update.remove_field("v")
+    with tbl.update_schema() as schema_update:
+        schema_update.delete_column("v")
+
+    assert sorted(row["v"] for row in tbl.inspect.partitions().to_pydict()["partition"]) == [10, 20]
+    assert tbl.inspect.manifests().to_pydict()["partition_summaries"][0] == [
+        {"contains_null": False, "contains_nan": False, "lower_bound": "10", "upper_bound": "20"}
+    ]
