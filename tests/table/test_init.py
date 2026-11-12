@@ -33,6 +33,8 @@ from pyiceberg.expressions import (
     And,
     EqualTo,
     In,
+    IsNaN,
+    IsNull,
 )
 from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
@@ -2251,6 +2253,40 @@ def test_add_snapshot_update_updates_next_row_id(table_v3: Table) -> None:
     assert new_metadata.next_row_id == 11
 
 
+def test_add_snapshot_update_fails_without_added_rows(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        first_row_id=2,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add snapshot without added rows",
+    ):
+        update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_add_snapshot_update_keeps_next_row_id_unset_below_v3(table_v2: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=3055729675574597004,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    new_metadata = update_table_metadata(table_v2.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+    assert "next-row-id" not in json.loads(new_metadata.model_dump_json())
+
+
 def model_roundtrips(model: BaseModel) -> bool:
     """Helper assertion that tests if a pydantic model roundtrips
     successfully.
@@ -2290,6 +2326,16 @@ def test_build_large_partition_predicate(table_v2: Table) -> None:
         )
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
+
+
+def test_build_partition_predicate_with_nan_and_null(table_v2: Table) -> None:
+    with table_v2.transaction() as tx:
+        expr = tx._build_partition_predicate(
+            partition_records={Record(float("nan"), None, 1.0)},
+            partition_fields=["a", "b", "c"],
+        )
+
+    assert expr == And(IsNaN("a"), IsNull("b"), EqualTo("c", 1.0))
 
 
 def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> None:

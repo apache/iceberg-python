@@ -23,9 +23,10 @@ import pytest
 from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties, Transaction
+from pyiceberg.table import Table, TableProperties, Transaction
 from pyiceberg.table.snapshots import IsolationLevel, Operation
-from pyiceberg.types import LongType, NestedField, StringType
+from pyiceberg.typedef import Record
+from pyiceberg.types import DoubleType, LongType, NestedField, StringType
 
 
 def test_isolation_level_enum() -> None:
@@ -247,6 +248,63 @@ def test_concurrent_delete_append_retries_successfully(catalog: Catalog) -> None
     assert len(result) == 5
 
 
+def test_retried_append_records_the_spec_it_was_planned_with(catalog: Catalog) -> None:
+    """A retried append keeps the partition spec of the files it planned, not the refreshed default."""
+    catalog.create_namespace("default")
+
+    import pyarrow as pa
+
+    def row(x: int, p: int, q: int) -> pa.Table:
+        return pa.table({"x": [x], "p": [p], "q": [q]})
+
+    table = catalog.create_table("default.spec_retry_test", schema=row(1, 5, 50).schema)
+    with table.update_spec() as update:
+        update.add_identity("p")
+
+    other = catalog.load_table("default.spec_retry_test")
+    with other.update_spec() as update:
+        update.remove_field("p")
+        update.add_identity("q")
+    other.append(row(2, 6, 60))
+
+    table.append(row(3, 7, 70))
+
+    refreshed = catalog.load_table("default.spec_retry_test")
+    assert refreshed.scan(row_filter="q == 70").to_arrow()["x"].to_pylist() == [3]
+
+    snapshot = refreshed.current_snapshot()
+    assert snapshot is not None
+    assert {manifest.partition_spec_id for manifest in snapshot.manifests(io=refreshed.io)} == {1, 2}
+
+
+def test_retried_append_with_a_spec_that_has_more_fields(catalog: Catalog) -> None:
+    """A retried append does not index the planned partitions with the refreshed spec's fields."""
+    catalog.create_namespace("default")
+
+    import pyarrow as pa
+
+    def row(x: int, p: int, q: int) -> pa.Table:
+        return pa.table({"x": [x], "p": [p], "q": [q]})
+
+    table = catalog.create_table("default.spec_retry_more_fields_test", schema=row(1, 5, 50).schema)
+    with table.update_spec() as update:
+        update.add_identity("p")
+
+    other = catalog.load_table("default.spec_retry_more_fields_test")
+    with other.update_spec() as update:
+        update.add_identity("q")
+    other.append(row(2, 6, 60))
+
+    table.append(row(3, 7, 70))
+
+    refreshed = catalog.load_table("default.spec_retry_more_fields_test")
+    assert sorted(refreshed.scan().to_arrow().to_pylist(), key=str) == [
+        {"x": 2, "p": 6, "q": 60},
+        {"x": 3, "p": 7, "q": 70},
+    ]
+    assert refreshed.scan(row_filter="p == 7").to_arrow()["x"].to_pylist() == [3]
+
+
 def test_retry_exhaustion_raises_commit_failed(catalog: Catalog) -> None:
     """When retries are exhausted, CommitFailedException should be raised."""
     catalog.create_namespace("default")
@@ -393,6 +451,85 @@ def test_file_overwrite_validates_concurrent_file_delete(
 
     result = catalog.load_table(identifier).scan().to_arrow()
     assert sorted(result["value"].to_pylist()) == expected_values
+
+
+def _commit_partition_position_delete(table: Table, partition: Record, file_path: str, pos: int) -> None:
+    """PyIceberg cannot write delete files, so commit one without path bounds, as other engines write them."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestContent, ManifestWriter, ManifestWriterV2
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.table.update.snapshot import _OverwriteFiles
+
+    class DeleteManifestWriter(ManifestWriterV2):
+        def content(self) -> ManifestContent:
+            return ManifestContent.DELETES
+
+        @property
+        def _meta(self) -> dict[str, str]:
+            return {**super()._meta, "content": "deletes"}
+
+    def new_delete_manifest_writer(producer: _OverwriteFiles, spec: PartitionSpec) -> ManifestWriter:
+        return DeleteManifestWriter(
+            spec, producer.schema(), producer.new_manifest_output(), producer._snapshot_id, producer._compression
+        )
+
+    delete_path = table.location_provider().new_data_location(f"pos-delete-{uuid.uuid4()}.parquet")
+    with table.io.new_output(delete_path).create() as output:
+        pq.write_table(pa.table({"file_path": [file_path], "pos": [pos]}), output)
+    delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_path,
+        file_format=FileFormat.PARQUET,
+        partition=partition,
+        record_count=1,
+        file_size_in_bytes=len(table.io.new_input(delete_path)),
+        spec_id=table.spec().spec_id,
+    )
+
+    with patch.object(_OverwriteFiles, "new_manifest_writer", new_delete_manifest_writer):
+        with table.transaction() as transaction, transaction.update_snapshot().overwrite() as overwrite:
+            overwrite.append_data_file(delete_file)
+
+
+def test_file_overwrite_validates_concurrent_position_delete_in_nan_partition(catalog: Catalog) -> None:
+    """A file replacement in a NaN partition must fail when a delete for that file was committed concurrently."""
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import _dataframe_to_data_files
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"))
+    identifier = "default.concurrent_nan_position_delete"
+    table = catalog.create_table(identifier, schema=schema, partition_spec=spec, properties={"format-version": "2"})
+    rows = pa.table({"id": pa.array([1, 2], pa.int64()), "value": [float("nan"), float("nan")]})
+    table.append(rows)
+    file_to_replace = next(task.file for task in table.scan().plan_files())
+
+    replacing_table = catalog.load_table(identifier)
+    deleting_table = catalog.load_table(identifier)
+
+    replacement_file = list(
+        _dataframe_to_data_files(table_metadata=replacing_table.metadata, df=rows, io=replacing_table.io, write_uuid=uuid.uuid4())
+    )[0]
+    replacing_transaction = replacing_table.transaction()
+    with replacing_transaction.update_snapshot().overwrite() as overwrite:
+        overwrite.delete_data_file(file_to_replace)
+        overwrite.append_data_file(replacement_file)
+
+    _commit_partition_position_delete(deleting_table, Record(float("nan")), file_to_replace.file_path, pos=0)
+
+    with pytest.raises(ValidationException, match="found new delete for replace data file"):
+        replacing_transaction.commit_transaction()
+
+    assert catalog.load_table(identifier).scan().to_arrow()["id"].to_pylist() == [2]
 
 
 def test_concurrent_overwrite_append_retries_successfully(catalog: Catalog) -> None:
@@ -1292,6 +1429,79 @@ def test_negative_wait_properties_do_not_mask_commit_failure(catalog: Catalog) -
     assert len(result) == 6
 
 
+def _commit_outcomes(catalog: Catalog, *outcomes: str) -> Any:
+    """Simulate a commit failing before ("conflict") or after ("lost") the catalog applied it."""
+    real_commit = catalog.commit_table
+    remaining = iter(outcomes)
+
+    def commit(*args: Any, **kwargs: Any) -> Any:
+        outcome = next(remaining, "ok")
+        if outcome == "conflict":
+            raise CommitFailedException("concurrent update")
+        result = real_commit(*args, **kwargs)
+        if outcome == "lost":
+            raise CommitFailedException("response lost after the commit landed")
+        return result
+
+    return patch.object(catalog, "commit_table", side_effect=commit)
+
+
+def _assert_single_readable_snapshot(catalog: Catalog, identifier: str, expected: list[dict[str, Any]]) -> None:
+    table = catalog.load_table(identifier)
+    assert len(table.snapshots()) == 1
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert table.io.new_input(snapshot.manifest_list).exists()
+    assert table.scan().to_arrow().to_pylist() == expected
+
+
+def test_lost_response_on_the_last_attempt_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """A commit that lands but reports failure on the last attempt is not cleaned up."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.lost_response_last_attempt",
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_NUM_RETRIES: "0"},
+    )
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"):
+        table.append(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_last_attempt", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_lost_response_on_the_final_retry_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """A landed retry is detected even when the retry budget is exhausted."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.lost_response_final_retry",
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_NUM_RETRIES: "1"},
+    )
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "conflict", "lost"):
+        table.append(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_final_retry", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_unreadable_commit_outcome_raises_commit_state_unknown(catalog: Catalog) -> None:
+    """When the table cannot be refreshed, the outcome is unknown and no file is deleted."""
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.unknown_commit_outcome", schema=_test_schema())
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"):
+        with patch.object(Table, "refresh", side_effect=RuntimeError("catalog unavailable")):
+            with pytest.raises(CommitStateUnknownException):
+                table.append(pa.table({"x": [1, 2, 3]}))
+
+
 def test_transaction_writing_two_branches_detects_concurrent_change_to_either(catalog: Catalog) -> None:
     """A transaction writing two branches must assert the base snapshot of both refs.
 
@@ -1363,3 +1573,72 @@ def test_transaction_stages_one_ref_assertion_per_ref(catalog: Catalog) -> None:
     ref_assertions = {r.ref: r.snapshot_id for r in tx._requirements if isinstance(r, AssertRefSnapshotId)}
     assert ref_assertions == {"b": base_snapshot_id, "main": base_snapshot_id}
     assert len([r for r in tx._requirements if isinstance(r, AssertRefSnapshotId)]) == 2
+
+
+def _table_with_branch(catalog: Catalog, identifier: str) -> Any:
+    import pyarrow as pa
+
+    tbl = catalog.create_table(
+        identifier,
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_MIN_RETRY_WAIT_MS: "1", TableProperties.COMMIT_MAX_RETRY_WAIT_MS: "2"},
+    )
+    tbl.append(pa.table({"x": [0, 1]}))
+    snapshot_id = tbl.metadata.current_snapshot_id
+    assert snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=snapshot_id, branch_name="b").commit()
+    return tbl
+
+
+def test_retry_validates_each_branch_against_its_own_commits(catalog: Catalog) -> None:
+    """A retried delete on a second branch is validated against that branch, not the first producer's branch."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    tx = _table_with_branch(catalog, "default.retry_window_per_branch").transaction()
+    tx.append(pa.table({"x": [9]}))
+    tx.delete("x == 1", branch="b")
+
+    # A row matching the delete lands on b after the delete was planned; main is untouched.
+    catalog.load_table("default.retry_window_per_branch").append(pa.table({"x": [1]}), branch="b")
+
+    with pytest.raises(ValidationException):
+        tx.commit_transaction()
+
+    refreshed = catalog.load_table("default.retry_window_per_branch")
+    assert sorted(refreshed.scan().use_ref("b").to_arrow()["x"].to_pylist()) == [0, 1, 1]
+    assert sorted(refreshed.scan().to_arrow()["x"].to_pylist()) == [0, 1]
+
+
+def test_empty_plan_validation_checks_each_branch_against_its_own_commits(catalog: Catalog) -> None:
+    """Empty-plan deletes on two branches are each validated against their own branch."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    tx = _table_with_branch(catalog, "default.empty_plan_window_per_branch").transaction()
+    with pytest.warns(UserWarning):  # neither delete matches anything at staging time
+        tx.delete("x > 45")
+        tx.delete("x > 45", branch="b")
+
+    catalog.load_table("default.empty_plan_window_per_branch").append(pa.table({"x": [50]}), branch="b")
+
+    with pytest.raises(ValidationException):
+        tx.commit_transaction()
+
+
+def test_retry_with_two_writes_to_one_branch_succeeds(catalog: Catalog) -> None:
+    """The second write to a branch starts from a staged snapshot; its retry window must use the committed base."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    tx = _table_with_branch(catalog, "default.retry_two_writes_one_branch").transaction()
+    tx.append(pa.table({"x": [9]}))
+    tx.delete("x == 0")
+
+    # Non-conflicting concurrent append to the same branch forces a retry.
+    catalog.load_table("default.retry_two_writes_one_branch").append(pa.table({"x": [5]}))
+
+    tx.commit_transaction()
+
+    rows = sorted(catalog.load_table("default.retry_two_writes_one_branch").scan().to_arrow()["x"].to_pylist())
+    assert rows == [1, 5, 9]
