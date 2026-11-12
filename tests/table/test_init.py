@@ -1433,6 +1433,20 @@ def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:
     assert len(base_metadata.partition_specs) == 1
 
 
+def test_update_metadata_shares_unchanged_models(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    new_metadata = update_table_metadata(base_metadata, (SetPropertiesUpdate(updates={"test_a": "test_a"}),))
+
+    # The containers are copied, so a list append or dict assignment cannot reach the base metadata
+    assert new_metadata.snapshots is not base_metadata.snapshots
+    assert new_metadata.refs is not base_metadata.refs
+    assert new_metadata.properties is not base_metadata.properties
+    # The frozen models they hold are shared, so the cost does not grow with the table history
+    assert all(new is base for new, base in zip(new_metadata.snapshots, base_metadata.snapshots, strict=True))
+    assert all(new is base for new, base in zip(new_metadata.schemas, base_metadata.schemas, strict=True))
+    assert "test_a" not in base_metadata.properties
+
+
 def test_generate_snapshot_id(table_v2: Table) -> None:
     assert isinstance(_generate_snapshot_id(), int)
     assert isinstance(table_v2.metadata.new_snapshot_id(), int)

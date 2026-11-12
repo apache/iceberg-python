@@ -764,7 +764,9 @@ def update_table_metadata(
     if enforce_validation:
         return TableMetadataUtil.parse_obj(new_metadata.model_dump())
     else:
-        return new_metadata.model_copy(deep=True)
+        return new_metadata.model_copy(
+            update={name: value.copy() for name, value in new_metadata if isinstance(value, (list, dict))}
+        )
 
 
 def _update_table_metadata_log(base_metadata: TableMetadata, metadata_location: str, last_updated_ms: int) -> TableMetadata:
