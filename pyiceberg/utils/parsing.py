@@ -28,7 +28,8 @@ class ParseNumberFromBrackets:
 
     def __init__(self, prefix: str):
         self.prefix = prefix
-        self.regex = re.compile(rf"{prefix}\[(\d+)\]")
+        # anchored: a name such as truncate[8]v2 is a different transform, not truncate[8]
+        self.regex = re.compile(rf"^{prefix}\[(\d+)\]$")
 
     def match(self, str_repr: str) -> int:
         matches = self.regex.search(str_repr)
