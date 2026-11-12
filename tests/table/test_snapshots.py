@@ -676,6 +676,8 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
         )
 
     txn = table_v2.transaction()
+    # Stage an update, so every read calls update_table_metadata
+    txn.set_properties(test_a="test_a")
 
     with mock.patch("pyiceberg.table.update_table_metadata", wraps=update_table_metadata) as spy:
         # _summary() cost must not scale with the number of data files
