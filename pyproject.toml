@@ -109,12 +109,12 @@ dev = [
     "setuptools>=83.0.0",
     "prek>=0.2.1",
     "pytest-lazy-fixtures==1.4.1",
-    "fastavro==1.12.2",
+    "fastavro==1.13.1",
     "coverage[toml]>=7.4.2",
     "requests-mock==1.12.1",
     "moto[server]>=5.0.2",
     "typing-extensions==4.16.0",
-    "pytest-mock==3.15.1",
+    "pytest-mock==3.17.0",
     "pyspark[connect]==4.1.3",
     "protobuf==7.36.2", # match Spark Connect's gencode
     "cython>=3.0.0",
@@ -128,19 +128,19 @@ dev = [
     "papermill>=2.6.0",
     "nbformat>=5.10.0",
     "ipykernel>=6.29.0",
-    "ty==0.0.84",
+    "ty==0.0.92",
 ]
 # for mkdocs
 docs = [
     "mkdocs==1.6.1",
-    "griffe==2.3.0",
+    "griffe==2.4.1",
     "jinja2==3.1.6",
-    "mkdocstrings==1.0.6",
+    "mkdocstrings==1.0.8",
     "mkdocstrings-python==2.0.9",
     "mkdocs-literate-nav==0.6.3",
-    "mkdocs-autorefs==1.4.4",
+    "mkdocs-autorefs==1.4.5",
     "mkdocs-gen-files==0.6.1",
-    "mkdocs-material==9.7.7",
+    "mkdocs-material==9.8.0",
     "mkdocs-material-extensions==1.3.1",
     "mkdocs-section-index==0.3.12",
 ]
@@ -259,6 +259,8 @@ filterwarnings = [
   "ignore:As the c extension couldn't be imported:RuntimeWarning:google_crc32c",
   # Ignore Spark pandas conversion warning under pandas 3.0
   "ignore:The copy keyword is deprecated and will be removed in a future version.*",
+  # Ignore pyarrow's use of Series.values on tz-aware data under pandas 3.1
+  "ignore:Series.values returning an ndarray that drops timezone information.*",
 ]
 
 [tool.mypy]
@@ -287,3 +289,6 @@ allowed-unresolved-imports = ["pyiceberg_core.datafusion", "griffe", "mkdocs_gen
 
 [tool.coverage.run]
 source = ['pyiceberg/']
+
+[tool.codespell]
+ignore-words-list = "BoundIn,fo,MoR,NotIn,notIn,oT"

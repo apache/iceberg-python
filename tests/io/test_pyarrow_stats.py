@@ -651,6 +651,54 @@ def test_metrics_invalid_upper_bound() -> None:
     assert datafile.upper_bounds[3] == "".join([chr(0x10FFFF), chr(0x10FFFF)]).encode()
 
 
+def test_bounds_absent_when_a_row_group_with_values_has_no_min_max() -> None:
+    table_metadata = TableMetadataUtil.parse_obj(
+        {
+            "format-version": 2,
+            "location": "s3://bucket/test/location",
+            "last-column-id": 2,
+            "current-schema-id": 0,
+            "schemas": [
+                {
+                    "type": "struct",
+                    "schema-id": 0,
+                    "fields": [
+                        {"id": 1, "name": "long_value", "required": False, "type": "string"},
+                        {"id": 2, "name": "null_group", "required": False, "type": "string"},
+                    ],
+                },
+            ],
+            "default-spec-id": 0,
+            "partition-specs": [{"spec-id": 0, "fields": []}],
+            "properties": {},
+        }
+    )
+    table = pa.Table.from_pydict(
+        {"long_value": ["a", "b", "c", "z" * 5000], "null_group": [None, None, "b", "c"]},
+        schema=schema_to_pyarrow(table_metadata.schemas[0]),
+    )
+    metadata_collector: list[Any] = []
+    with pa.BufferOutputStream() as f:
+        with pq.ParquetWriter(f, table.schema, metadata_collector=metadata_collector) as writer:
+            writer.write_table(table, row_group_size=2)
+    metadata = metadata_collector[0]
+
+    # Parquet writes no min/max for a row group holding a value over 4 KB
+    assert [metadata.row_group(r).column(0).statistics.has_min_max for r in range(2)] == [True, False]
+
+    schema = get_current_schema(table_metadata)
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata,
+        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
+    datafile = DataFile.from_args(**statistics.to_serialized_dict())
+
+    assert datafile.null_value_counts == {1: 0, 2: 2}
+    assert datafile.lower_bounds == {2: b"b"}
+    assert datafile.upper_bounds == {2: b"c"}
+
+
 def test_offsets() -> None:
     metadata, table_metadata = construct_test_table()
 

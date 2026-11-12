@@ -277,6 +277,22 @@ def test_double_to_decimal_conversion(decimal_type: DecimalType, decimal_value: 
     assert lit.to(decimal_type).value.as_tuple() == Decimal(decimal_value).as_tuple()  # type: ignore
 
 
+def test_float_to_decimal_conversion_with_infinity() -> None:
+    lit = FloatLiteral(float("inf"))
+
+    with pytest.raises(ValueError) as e:
+        _ = lit.to(DecimalType(9, 2))
+    assert "Could not convert inf into a decimal(9, 2), value is not finite" in str(e.value)
+
+
+def test_double_to_decimal_conversion_with_infinity() -> None:
+    lit = DoubleLiteral(float("inf"))
+
+    with pytest.raises(ValueError) as e:
+        _ = lit.to(DecimalType(9, 2))
+    assert "Could not convert inf into a decimal(9, 2), value is not finite" in str(e.value)
+
+
 def test_decimal_to_decimal_conversion() -> None:
     lit = literal(Decimal("34.11").quantize(Decimal(".01")))
 
@@ -998,6 +1014,24 @@ def test_decimal_literal_decrement() -> None:
     assert dec.decrement() == DecimalLiteral(Decimal("10.122"))
     # To check that the scale is still the same
     assert dec.decrement().value.as_tuple() == Decimal("10.122").as_tuple()
+
+
+def test_decimal_literal_increment_negative_scale() -> None:
+    dec = DecimalLiteral(Decimal("1E+2"))
+    # Twice to check that we don't mutate the value
+    assert dec.increment() == DecimalLiteral(Decimal("2E+2"))
+    assert dec.increment() == DecimalLiteral(Decimal("2E+2"))
+    # To check that the scale is still the same (a non-negative exponent means a negative scale)
+    assert dec.increment().value.as_tuple() == Decimal("2E+2").as_tuple()
+
+
+def test_decimal_literal_decrement_negative_scale() -> None:
+    dec = DecimalLiteral(Decimal("1E+2"))
+    # Twice to check that we don't mutate the value
+    assert dec.decrement() == DecimalLiteral(Decimal("0E+2"))
+    assert dec.decrement() == DecimalLiteral(Decimal("0E+2"))
+    # To check that the scale is still the same, also when stepping below zero
+    assert dec.decrement().decrement() == DecimalLiteral(Decimal("-1E+2"))
 
 
 def test_uuid_literal_initialization() -> None:

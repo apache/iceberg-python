@@ -33,6 +33,8 @@ from pyiceberg.expressions import (
     And,
     EqualTo,
     In,
+    IsNaN,
+    IsNull,
 )
 from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
@@ -46,6 +48,7 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.metadata import EncryptedKey, TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
@@ -97,6 +100,7 @@ from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
+    VoidTransform,
 )
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
@@ -191,6 +195,10 @@ def test_sort_orders(table_v2: Table) -> None:
 
 def test_location(table_v2: Table) -> None:
     assert table_v2.location() == "s3://bucket/test/location"
+
+
+def test_labels_default_to_empty(table_v2: Table) -> None:
+    assert table_v2.labels == Labels()
 
 
 def test_current_snapshot(table_v2: Table) -> None:
@@ -312,6 +320,17 @@ def test_table_scan_snapshot(table_v2: Table, snapshot_id: int | None, expected_
 
 def test_table_scan_missing_snapshot_zero(table_v2: Table) -> None:
     assert table_v2.scan(snapshot_id=0).snapshot() is None
+
+
+def test_table_scan_plan_files_missing_snapshot(table_v2: Table) -> None:
+    # table_v2 has no snapshot with id 0, so planning raises the same error as projection() and to_arrow()
+    scan = table_v2.scan(snapshot_id=0)
+
+    with pytest.raises(ValueError, match="Snapshot not found: 0"):
+        scan.plan_files()
+
+    with pytest.raises(ValueError, match="Snapshot not found: 0"):
+        scan.count()
 
 
 @pytest.mark.parametrize("snapshot_id", [0, 3051729675574597004])
@@ -1025,6 +1044,38 @@ def test_apply_set_properties_update(table_v2: Table) -> None:
     assert new_metadata_add_only.last_updated_ms > base_metadata.last_updated_ms
 
 
+@pytest.mark.parametrize("table_fixture", ["table_v1", "table_v2"])
+@pytest.mark.parametrize("property_name", ["encryption.key-id", "encryption.data-key-length"])
+def test_apply_set_properties_update_rejects_encryption_before_v3(
+    table_fixture: str, property_name: str, request: pytest.FixtureRequest
+) -> None:
+    table: Table = request.getfixturevalue(table_fixture)
+
+    with pytest.raises(ValueError, match=rf"Invalid properties for v{table.format_version}: \['{property_name}'\]"):
+        update_table_metadata(table.metadata, (SetPropertiesUpdate(updates={property_name: "value"}),))
+
+
+def test_apply_set_properties_update_allows_encryption_on_v3(table_v3: Table) -> None:
+    new_metadata = update_table_metadata(
+        table_v3.metadata,
+        (SetPropertiesUpdate(updates={"encryption.key-id": "key", "encryption.data-key-length": "32"}),),
+    )
+
+    assert new_metadata.properties["encryption.key-id"] == "key"
+    assert new_metadata.properties["encryption.data-key-length"] == "32"
+
+
+def test_apply_remove_encryption_property_before_v3(table_v2: Table) -> None:
+    # A pre-v3 table that already has encryption.key-id must be repairable
+    base_metadata = table_v2.metadata.model_copy(
+        update={"properties": {**table_v2.metadata.properties, "encryption.key-id": "key"}}
+    )
+
+    new_metadata = update_table_metadata(base_metadata, (RemovePropertiesUpdate(removals=["encryption.key-id"]),))
+
+    assert "encryption.key-id" not in new_metadata.properties
+
+
 def test_apply_remove_properties_update(table_v2: Table) -> None:
     base_metadata = update_table_metadata(
         table_v2.metadata,
@@ -1501,6 +1552,25 @@ def test_update_spec_remove_and_add_same_field_reuses_id(table: Table) -> None:
         PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
     )
     assert txn.table_metadata.last_partition_id == 1000
+
+
+def test_update_spec_remove_and_add_field_with_same_name(table_v1: Table, table_v2: Table) -> None:
+    for table in [table_v1, table_v2]:
+        txn = table.transaction()
+        txn.update_spec().add_field("y", BucketTransform(16), "y_shard").commit()
+        txn.update_spec().remove_field("y_shard").add_field("y", BucketTransform(32), "y_shard").commit()
+
+        if table.format_version == 1:
+            assert txn.table_metadata.spec().fields == (
+                PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+                PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+                PartitionField(source_id=2, field_id=1002, transform=BucketTransform(32), name="y_shard"),
+            )
+        else:
+            assert txn.table_metadata.spec().fields == (
+                PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+                PartitionField(source_id=2, field_id=1002, transform=BucketTransform(32), name="y_shard"),
+            )
 
 
 def test_assert_default_spec_id(table_v2: Table) -> None:
@@ -2047,6 +2117,64 @@ def test_serialize_encryption_key_updates() -> None:
     assert TypeAdapter(TableUpdate).validate_json(remove.model_dump_json()) == remove
 
 
+def test_encryption_manager_of_unencrypted_table(table_v3: Table) -> None:
+    assert table_v3.encryption_manager is None
+
+
+def test_encryption_manager_requires_kms_client(example_table_metadata_v3_encrypted: dict[str, Any]) -> None:
+    table_metadata = TableMetadataUtil.parse_obj(example_table_metadata_v3_encrypted)
+    table = Table(("database", "table"), table_metadata, "s3://bucket/metadata.json", load_file_io(), NoopCatalog("noop"))
+
+    with pytest.raises(ValueError, match="no key management client was provided"):
+        table.scan()
+
+
+def test_encryption_manager_follows_current_metadata(table_v3_encrypted: Table) -> None:
+    assert table_v3_encrypted.encryption_manager is not None
+
+    # Catalogs must not let encryption.key-id be removed, but removing it shows the manager follows the current metadata
+    table_v3_encrypted.metadata = table_v3_encrypted.metadata.model_copy(update={"properties": {}})
+
+    assert table_v3_encrypted.encryption_manager is None
+
+
+def test_encryption_manager_is_reused_until_metadata_changes(table_v3_encrypted: Table, monkeypatch: pytest.MonkeyPatch) -> None:
+    kms = table_v3_encrypted._kms_client
+    assert kms is not None
+    unwrap_key = kms.unwrap_key
+    calls = []
+
+    def _spy(wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        calls.append(wrapping_key_id)
+        return unwrap_key(wrapped_key, wrapping_key_id)
+
+    monkeypatch.setattr(kms, "unwrap_key", _spy)
+
+    for _ in range(3):
+        list(table_v3_encrypted.scan().plan_files())
+    table_v3_encrypted.inspect.manifests()
+    table_v3_encrypted.inspect.all_manifests()
+    assert len(calls) == 1
+
+    table_v3_encrypted.metadata = table_v3_encrypted.metadata.model_copy()
+    list(table_v3_encrypted.scan().plan_files())
+    assert len(calls) == 2
+
+
+def test_scan_encrypted_table(table_v3_encrypted: Table) -> None:
+    """The manifest list was encrypted by iceberg-rust, and lists no manifests."""
+    assert list(table_v3_encrypted.scan().plan_files()) == []
+    assert list(table_v3_encrypted.incremental_append_scan().plan_files()) == []
+    assert table_v3_encrypted.scan().to_arrow().num_rows == 0
+
+
+def test_inspect_encrypted_table(table_v3_encrypted: Table) -> None:
+    assert table_v3_encrypted.inspect.manifests().num_rows == 0
+    assert table_v3_encrypted.inspect.all_manifests().num_rows == 0
+    assert table_v3_encrypted.inspect.entries().num_rows == 0
+    assert table_v3_encrypted.inspect.partitions().num_rows == 0
+
+
 def test_add_snapshot_update_fails_without_first_row_id(table_v3: Table) -> None:
     new_snapshot = Snapshot(
         snapshot_id=25,
@@ -2125,6 +2253,40 @@ def test_add_snapshot_update_updates_next_row_id(table_v3: Table) -> None:
     assert new_metadata.next_row_id == 11
 
 
+def test_add_snapshot_update_fails_without_added_rows(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        first_row_id=2,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add snapshot without added rows",
+    ):
+        update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_add_snapshot_update_keeps_next_row_id_unset_below_v3(table_v2: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=3055729675574597004,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    new_metadata = update_table_metadata(table_v2.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+    assert "next-row-id" not in json.loads(new_metadata.model_dump_json())
+
+
 def model_roundtrips(model: BaseModel) -> bool:
     """Helper assertion that tests if a pydantic model roundtrips
     successfully.
@@ -2164,6 +2326,16 @@ def test_build_large_partition_predicate(table_v2: Table) -> None:
         )
 
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
+
+
+def test_build_partition_predicate_with_nan_and_null(table_v2: Table) -> None:
+    with table_v2.transaction() as tx:
+        expr = tx._build_partition_predicate(
+            partition_records={Record(float("nan"), None, 1.0)},
+            partition_fields=["a", "b", "c"],
+        )
+
+    assert expr == And(IsNaN("a"), IsNull("b"), EqualTo("c", 1.0))
 
 
 def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> None:

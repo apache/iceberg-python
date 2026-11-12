@@ -25,7 +25,9 @@ import uuid
 import warnings
 import zlib
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import MagicMock, patch
@@ -42,6 +44,8 @@ from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3F
 from pyroaring import BitMap
 
 from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTDeleteFile, RESTFileScanTask, RESTPositionDeleteFile
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
+from pyiceberg.encryption.stream import _encrypt_ags1
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import (
     AlwaysFalse,
@@ -80,6 +84,7 @@ from pyiceberg.io.pyarrow import (
     StatsAggregator,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
+    _create_arrow_read_format,
     _determine_partitions,
     _primitive_to_physical,
     _read_all_delete_files,
@@ -934,6 +939,49 @@ def test_always_true_to_pyarrow(bound_reference: BoundReference) -> None:
 
 def test_always_false_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
+
+
+def test_decimal_literal_wider_than_column_to_pyarrow() -> None:
+    schema = Schema(NestedField(1, "amt", DecimalType(5, 2), required=False))
+    ref = BoundReference(schema.find_field(1), schema.accessor_for_field(1))
+    wide = literal(Decimal("1000.00")).to(DecimalType(5, 2))
+    narrow = literal(Decimal("1.25")).to(DecimalType(5, 2))
+    arrow_table = pa.table({"amt": pa.array([Decimal("1.25"), Decimal("99.99")], pa.decimal128(5, 2))})
+    for bound_expr, expected in [
+        (BoundLessThan(term=ref, literal=wide), [Decimal("1.25"), Decimal("99.99")]),
+        (BoundNotEqualTo(term=ref, literal=wide), [Decimal("1.25"), Decimal("99.99")]),
+        (BoundIn(term=ref, literals={wide, narrow}), [Decimal("1.25")]),
+        (BoundNotIn(term=ref, literals={wide, narrow}), [Decimal("99.99")]),
+    ]:
+        assert arrow_table.filter(expression_to_pyarrow(bound_expr))["amt"].to_pylist() == expected, bound_expr
+
+
+def test_row_filter_decimal_literal_wider_than_column(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_decimal_literal_wider_than_column",
+        schema=Schema(
+            NestedField(1, "id", IntegerType(), required=False),
+            NestedField(2, "amt", DecimalType(5, 2), required=False),
+        ),
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3], pa.int32()),
+                "amt": pa.array([Decimal("1.25"), Decimal("99.99"), None], pa.decimal128(5, 2)),
+            }
+        )
+    )
+
+    # 1000.00 needs one more digit than decimal(5, 2) holds, but every value is below it
+    for row_filter, expected in [
+        ("amt < 1000.00", [1, 2]),
+        ("amt > -1000.00", [1, 2]),
+        ("amt < 50.00", [1]),
+        ("amt IN (1.25, 1000.00)", [1]),
+    ]:
+        assert sorted(table.scan(row_filter=row_filter).to_arrow()["id"].to_pylist()) == expected, row_filter
 
 
 @pytest.fixture
@@ -2078,6 +2126,68 @@ def test_read_deletion_vector_blob_from_content_range(tmp_path: Path) -> None:
     )
 
     assert deletes == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+
+def _puffin_delete_file(file_path: str, **kwargs: Any) -> DataFile:
+    return DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=file_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=3,
+        **kwargs,
+    )
+
+
+def test_read_deletes_from_puffin_file_encrypted_by_iceberg_rust() -> None:
+    """The deletion vector was encrypted by iceberg-rust, see tests/table/encryption/README.md."""
+    file_path = str(Path(__file__).parent.parent / "table" / "encryption" / "dv-v3-encrypted.puffin")
+    referenced_data_file = "s3://bucket/table/data/00000.parquet"
+    key_metadata = bytes.fromhex("01203031323334353637383961626364656602206665646362613938373635343332313002ea04")
+
+    for dv in [
+        _puffin_delete_file(file_path, key_metadata=key_metadata),
+        _puffin_delete_file(
+            file_path,
+            key_metadata=key_metadata,
+            referenced_data_file=referenced_data_file,
+            content_offset=4,
+            content_size_in_bytes=46,
+        ),
+    ]:
+        assert _read_deletes(PyArrowFileIO(), dv) == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+
+def test_read_deletes_from_encrypted_puffin_file(tmp_path: Path) -> None:
+    referenced_data_file = f"{tmp_path}/data.parquet"
+    delete_file_path = f"{tmp_path}/deletes.puffin"
+    puffin_payload = _deletion_vector_puffin_payload(referenced_data_file)
+    blob = PuffinFile(puffin_payload).footer.blobs[0]
+    key_metadata = StandardKeyMetadata.generate()
+    encrypted = _encrypt_ags1(puffin_payload, key_metadata)
+    key_metadata = replace(key_metadata, file_length=len(encrypted))
+    wrong_key = replace(key_metadata, encryption_key=bytes(16))
+
+    with open(delete_file_path, "wb") as f:
+        f.write(encrypted)
+
+    for content_reference, plaintext_error in [
+        ({}, "Incorrect magic bytes"),
+        (
+            {"referenced_data_file": referenced_data_file, "content_offset": blob.offset, "content_size_in_bytes": blob.length},
+            "Invalid bitmap data length",
+        ),
+    ]:
+        dv = _puffin_delete_file(delete_file_path, key_metadata=key_metadata.to_bytes(), **content_reference)
+        assert _read_deletes(PyArrowFileIO(), dv) == {referenced_data_file: pa.chunked_array([[1, 3, 5]])}
+
+        with pytest.raises(ValueError, match="GCM tag check failed"):
+            _read_deletes(
+                PyArrowFileIO(), _puffin_delete_file(delete_file_path, key_metadata=wrong_key.to_bytes(), **content_reference)
+            )
+
+        with pytest.raises(ValueError, match=plaintext_error):
+            _read_deletes(PyArrowFileIO(), _puffin_delete_file(delete_file_path, **content_reference))
 
 
 def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tmp_path: Path) -> None:
@@ -3287,6 +3397,32 @@ def test_determine_partitions_identity_nan() -> None:
     assert rows_by_partition == {"1.0": [1], "nan": [2, 4], "None": [3]}
 
 
+def test_determine_partitions_with_column_named_like_partition_helper() -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="_partition_region", field_type=StringType(), required=False),
+        NestedField(id=3, name="region", field_type=StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="region"))
+    arrow_table = pa.Table.from_pydict(
+        {"id": [1, 2, 3], "_partition_region": ["a", "b", "c"], "region": ["us", "eu", "us"]},
+        schema=schema.as_arrow(),
+    )
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    rows_by_partition = {
+        p.partition_key.partition[0]: sorted(p.arrow_table_partition.to_pylist(), key=lambda row: row["id"]) for p in partitions
+    }
+    assert rows_by_partition == {
+        "us": [
+            {"id": 1, "_partition_region": "a", "region": "us"},
+            {"id": 3, "_partition_region": "c", "region": "us"},
+        ],
+        "eu": [{"id": 2, "_partition_region": "b", "region": "eu"}],
+    }
+
+
 @pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(4), TruncateTransform(1)])
 def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) -> None:
     schema = Schema(
@@ -3841,6 +3977,41 @@ def test__to_requested_schema_float_promotion(
     assert result.column(0).to_pylist() == [1.5, 2.25, 3.0, None]
 
 
+@pytest.mark.parametrize("list_type", [pa.list_, pa.large_list])
+def test__to_requested_schema_null_list_of_structs(list_type: Callable[[pa.DataType], pa.DataType]) -> None:
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_list_with_struct",
+            ListType(11, StructType(NestedField(111, "test", IntegerType(), required=False)), element_required=False),
+            required=False,
+        ),
+        NestedField(2, "col_list", ListType(21, IntegerType(), element_required=False), required=False),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("col_list_with_struct", list_type(pa.struct([pa.field("test", pa.int32())]))),
+            pa.field("col_list", list_type(pa.int32())),
+        ]
+    )
+    batch = pa.RecordBatch.from_arrays(
+        [
+            pa.array([[{"test": 1}], [], None, [{"test": 2}, None]], type=arrow_schema.field(0).type),
+            pa.array([[1], [], None, [2, None]], type=arrow_schema.field(1).type),
+        ],
+        schema=arrow_schema,
+    )
+
+    result = _to_requested_schema(requested_schema, requested_schema, batch)
+    assert result.column(0).to_pylist() == [[{"test": 1}], [], None, [{"test": 2}, None]]
+    assert result.column(1).to_pylist() == [[1], [], None, [2, None]]
+
+    # A sliced batch has to keep the nulls as well
+    result = _to_requested_schema(requested_schema, requested_schema, batch.slice(1, 3))
+    assert result.column(0).to_pylist() == [[], None, [{"test": 2}, None]]
+    assert result.column(1).to_pylist() == [[], None, [2, None]]
+
+
 @skip_if_pyarrow_too_old
 @pytest.mark.parametrize("scheme", ["abfs", "abfss", "wasb", "wasbs"])
 def test_adls_account_name_from_location(scheme: str) -> None:
@@ -4161,6 +4332,110 @@ def test_task_to_record_batches_filter_after_positional_deletes_empty_result(tmp
     )
 
     assert result_batches == []
+
+
+def test_task_to_record_batches_encrypted_by_iceberg_rust() -> None:
+    """The data file was encrypted by iceberg-rust, see tests/table/encryption/README.md."""
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=str(Path(__file__).parent.parent / "table" / "encryption" / "data-v3-encrypted.parquet"),
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=3,
+        file_size_in_bytes=1407,
+        key_metadata=bytes.fromhex("01207d30accaf199ff6f49ae7f3d65cbd8c6022033a904147e53c08d6f71c21c6638852a00"),
+    )
+    table_schema = Schema(NestedField(1, "id", LongType(), required=True), NestedField(2, "data", StringType(), required=False))
+
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=AlwaysTrue(),
+        projected_schema=table_schema,
+        table_schema=table_schema,
+        projected_field_ids={1, 2},
+        positional_deletes=None,
+        case_sensitive=True,
+    )
+
+    assert pa.Table.from_batches(batches).to_pylist() == [{"id": 1, "data": "a"}, {"id": 2, "data": None}, {"id": 3, "data": "c"}]
+
+
+def test_read_encrypted_parquet_with_position_deletes(tmp_path: Path) -> None:
+    from pyarrow.parquet import encryption
+
+    def write_encrypted(path: str, table: pa.Table, content: DataFileContent) -> DataFile:
+        key_metadata = StandardKeyMetadata.generate()
+        # Java does not store the AAD prefix in the file, so it must come from key metadata
+        encryption_properties = encryption.create_encryption_properties(
+            key_metadata.encryption_key, aad_prefix=key_metadata.aad_prefix, store_aad_prefix=False
+        )
+        pq.write_table(table, path, encryption_properties=encryption_properties)
+        return DataFile.from_args(
+            content=content,
+            file_path=path,
+            file_format=FileFormat.PARQUET,
+            partition={},
+            record_count=len(table),
+            file_size_in_bytes=os.path.getsize(path),
+            key_metadata=key_metadata.to_bytes(),
+        )
+
+    arrow_schema = pa.schema((pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),))
+    data_path = str(tmp_path / "data.parquet")
+    data_file = write_encrypted(
+        data_path, pa.table([pa.array([1, 2, 3, 4], type=pa.int32())], schema=arrow_schema), DataFileContent.DATA
+    )
+    delete_file = write_encrypted(
+        str(tmp_path / "deletes.parquet"),
+        pa.table({"file_path": [data_path], "pos": pa.array([2], type=pa.int64())}),
+        DataFileContent.POSITION_DELETES,
+    )
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    deletes = _read_deletes(PyArrowFileIO(), delete_file)
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=AlwaysTrue(),
+        projected_schema=table_schema,
+        table_schema=table_schema,
+        projected_field_ids={1},
+        positional_deletes=[deletes[data_path]],
+        case_sensitive=True,
+    )
+
+    assert pa.Table.from_batches(batches).column("id").to_pylist() == [1, 2, 4]
+
+
+def test_read_encrypted_parquet_fails_closed(tmp_path: Path) -> None:
+    from pyarrow.parquet import encryption
+
+    key_metadata = StandardKeyMetadata.generate()
+    encrypted_path = str(tmp_path / "encrypted.parquet")
+    pq.write_table(
+        pa.table({"id": [1]}),
+        encrypted_path,
+        encryption_properties=encryption.create_encryption_properties(
+            key_metadata.encryption_key, aad_prefix=key_metadata.aad_prefix, store_aad_prefix=False
+        ),
+    )
+    plaintext_path = str(tmp_path / "plaintext.parquet")
+    pq.write_table(pa.table({"id": [1]}), plaintext_path)
+
+    for path, key, error in [
+        (encrypted_path, replace(key_metadata, encryption_key=bytes(16)).to_bytes(), "Failed decryption finalization"),
+        (encrypted_path, replace(key_metadata, aad_prefix=bytes(16)).to_bytes(), "Failed decryption finalization"),
+        (encrypted_path, None, "no decryption found in reader's properties"),
+        (plaintext_path, key_metadata.to_bytes(), "Applying decryption properties on plaintext file"),
+    ]:
+        with pytest.raises(OSError, match=error):
+            with open(path, "rb") as f:
+                _create_arrow_read_format(FileFormat.PARQUET, key).make_fragment(f).to_table()
+
+    delete_file = DataFile.from_args(file_path="deletes", file_format=FileFormat.ORC, key_metadata=key_metadata.to_bytes())
+    with pytest.raises(ValueError, match="file deletes: only Parquet and Puffin are supported"):
+        _read_deletes(PyArrowFileIO(), delete_file)
 
 
 def test_parse_location_defaults() -> None:

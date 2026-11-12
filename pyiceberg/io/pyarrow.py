@@ -41,6 +41,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
 from copy import copy
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
 from functools import lru_cache, singledispatch
 from typing import (
@@ -68,6 +69,7 @@ from pyarrow.fs import (
 from typing_extensions import override
 
 from pyiceberg.conversions import to_bytes
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
 from pyiceberg.expressions.literals import Literal
@@ -885,10 +887,22 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             return pa.large_binary()
 
 
+def _literal_arrow_type(iceberg_type: IcebergType, values: Iterable[Any]) -> pa.DataType:
+    """Return the Arrow type for literals compared with a column of the given type.
+
+    A decimal literal can have more digits than the column, e.g. 1000.00 for decimal(5, 2),
+    so the precision is widened to hold every literal. The scale always stays the column's.
+    """
+    if isinstance(iceberg_type, DecimalType):
+        digits = [len(value.as_tuple().digits) for value in values if isinstance(value, Decimal)]
+        return pa.decimal128(max([iceberg_type.precision, *digits]), iceberg_type.scale)
+    return visit(iceberg_type, _ConvertToArrowSchema())
+
+
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
     if not isinstance(iceberg_type, PrimitiveType):
         raise ValueError(f"Expected primitive type, got: {iceberg_type}")
-    return pa.scalar(value=value, type=schema_to_pyarrow(iceberg_type))
+    return pa.scalar(value=value, type=_literal_arrow_type(iceberg_type, [value]))
 
 
 class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
@@ -925,11 +939,11 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return term.ref().field.name
 
     def visit_in(self, term: BoundTerm, literals: set[Any]) -> pc.Expression:
-        pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
+        pyarrow_literals = pa.array(literals, type=_literal_arrow_type(term.ref().field.field_type, literals))
         return pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_not_in(self, term: BoundTerm, literals: set[Any]) -> pc.Expression:
-        pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
+        pyarrow_literals = pa.array(literals, type=_literal_arrow_type(term.ref().field.field_type, literals))
         return ~pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_is_nan(self, term: BoundTerm) -> pc.Expression:
@@ -1146,9 +1160,10 @@ def _expression_to_complementary_pyarrow(expr: BooleanExpression, schema: Schema
     return expression_to_pyarrow(preserve_expr, schema)
 
 
-@lru_cache
-def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.FileFormat:
+def _create_arrow_read_format(file_format: FileFormat, key_metadata: bytes | None, **kwargs: Any) -> ds.FileFormat:
     if file_format == FileFormat.PARQUET:
+        if key_metadata is not None:
+            kwargs["decryption_properties"] = _parquet_decryption_properties(key_metadata)
         return ds.ParquetFileFormat(**kwargs)
     elif file_format == FileFormat.ORC:
         # ORC doesn't support pre_buffer and buffer_size parameters
@@ -1158,11 +1173,33 @@ def _get_file_format(file_format: FileFormat, **kwargs: dict[str, Any]) -> ds.Fi
         raise ValueError(f"Unsupported file format: {file_format}")
 
 
+def _check_encryption_supported(data_file: DataFile) -> None:
+    if data_file.key_metadata is not None and data_file.file_format not in (FileFormat.PARQUET, FileFormat.PUFFIN):
+        raise ValueError(
+            f"Cannot read encrypted {data_file.file_format} file {data_file.file_path}: only Parquet and Puffin are supported"
+        )
+
+
+def _parquet_decryption_properties(key_metadata: bytes) -> pq.FileDecryptionProperties:
+    try:
+        from pyarrow.parquet.encryption import create_decryption_properties
+    except ImportError as e:
+        raise ImportError(f"pyarrow >= 25.0.0 required to read encrypted Parquet files, found {pyarrow.__version__}") from e
+
+    metadata = StandardKeyMetadata.from_bytes(key_metadata)
+    return create_decryption_properties(metadata.encryption_key, aad_prefix=metadata.aad_prefix)
+
+
 def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]:
+    _check_encryption_supported(data_file)
     if data_file.file_format == FileFormat.PARQUET:
         with io.new_input(data_file.file_path).open() as fi:
-            delete_fragment = _get_file_format(
-                data_file.file_format, dictionary_columns=("file_path",), pre_buffer=True, buffer_size=ONE_MEGABYTE
+            delete_fragment = _create_arrow_read_format(
+                data_file.file_format,
+                data_file.key_metadata,
+                dictionary_columns=("file_path",),
+                pre_buffer=True,
+                buffer_size=ONE_MEGABYTE,
             ).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
         table = table.unify_dictionaries()
@@ -1172,7 +1209,7 @@ def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]
         }
     elif data_file.file_format == FileFormat.ORC:
         with io.new_input(data_file.file_path).open() as fi:
-            delete_fragment = _get_file_format(data_file.file_format).make_fragment(fi)
+            delete_fragment = _create_arrow_read_format(data_file.file_format, data_file.key_metadata).make_fragment(fi)
             table = ds.Scanner.from_fragment(fragment=delete_fragment).to_table()
             # For ORC, file_path columns are not dictionary-encoded, so we use unique() directly
             return {
@@ -1712,10 +1749,11 @@ def _task_to_record_batches(
     downcast_ns_timestamp_to_us: bool | None = None,
     dictionary_columns: tuple[str, ...] = (),
 ) -> Iterator[pa.RecordBatch]:
+    _check_encryption_supported(task.file)
     format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
     if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
         format_kwargs["dictionary_columns"] = dictionary_columns
-    arrow_format = _get_file_format(task.file.file_format, **format_kwargs)
+    arrow_format = _create_arrow_read_format(task.file.file_format, task.file.key_metadata, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
         physical_schema = fragment.physical_schema
@@ -2160,13 +2198,14 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             if isinstance(value_array, pa.StructArray):
                 # This can be removed once this has been fixed:
                 # https://github.com/apache/arrow/issues/38809
-                # Pass the validity mask, otherwise null lists become empty lists. Arrow refuses a mask
-                # with sliced offsets, so rebase the offsets onto the values the list covers.
-                start, end = list_array.offsets[0].as_py(), list_array.offsets[-1].as_py()
-                list_array = pa.LargeListArray.from_arrays(
-                    pc.subtract(list_array.offsets, start),
-                    value_array.slice(start, end - start),
-                    mask=list_array.is_null(),
+                # Keep the validity and offsets buffers of the original array, otherwise null lists become empty lists
+                list_array = pa.Array.from_buffers(
+                    list_initializer(value_array.type),
+                    len(list_array),
+                    list_array.buffers()[:2],
+                    list_array.null_count,
+                    list_array.offset,
+                    [value_array],
                 )
             value_array = self._cast_if_needed(list_type.element_field, value_array)
             arrow_field = list_initializer(self._construct_field(list_type.element_field, value_array.type))
@@ -2658,6 +2697,7 @@ def data_file_statistics_from_parquet_metadata(
     col_aggs = {}
 
     invalidate_col: set[int] = set()
+    without_bounds: set[int] = set()
     for r in range(parquet_metadata.num_row_groups):
         # References:
         # https://github.com/apache/iceberg/blob/fc381a81a1fdb8f51a0637ca27cd30673bd7aad3/parquet/src/main/java/org/apache/iceberg/parquet/ParquetUtil.java#L232
@@ -2697,6 +2737,11 @@ def data_file_statistics_from_parquet_metadata(
                     if stats_col.mode == MetricsMode(MetricModeTypes.COUNTS):
                         continue
 
+                    if not statistics.has_min_max:
+                        if not (statistics.has_null_count and statistics.null_count == column.num_values):
+                            without_bounds.add(field_id)
+                        continue
+
                     if field_id not in col_aggs:
                         try:
                             col_aggs[field_id] = StatsAggregator(
@@ -2733,6 +2778,9 @@ def data_file_statistics_from_parquet_metadata(
     for field_id in invalidate_col:
         col_aggs.pop(field_id, None)
         null_value_counts.pop(field_id, None)
+
+    for field_id in without_bounds:
+        col_aggs.pop(field_id, None)
 
     return DataFileStatistics(
         record_count=parquet_metadata.num_rows,
@@ -3178,8 +3226,13 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         arrow_table = arrow_table.cast(arrow_schema)
 
     # Assign unique names to columns where the partition transform has been applied
-    # to avoid conflicts
-    partition_fields = [f"_partition_{field.name}" for field in spec.fields]
+    # to avoid conflicts with the data columns
+    partition_fields: list[str] = []
+    for field in spec.fields:
+        name = f"_partition_{field.name}"
+        while name in arrow_table.column_names or name in partition_fields:
+            name = f"_{name}"
+        partition_fields.append(name)
 
     for partition, name in zip(spec.fields, partition_fields, strict=True):
         source_field = schema.find_field(partition.source_id)
