@@ -17,7 +17,7 @@
 import time
 import uuid
 from collections.abc import Generator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pyarrow as pa
 import pytest
@@ -434,7 +434,7 @@ def test_remove_expired_refs(catalog: Catalog) -> None:
     assert "audit" in tbl.metadata.refs
     time.sleep(0.05)
 
-    tbl.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(timezone.utc) + timedelta(days=1)).commit()
+    tbl.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(UTC) + timedelta(days=1)).commit()
 
     tbl = catalog.load_table(identifier)
     assert "audit" not in tbl.metadata.refs
@@ -464,7 +464,7 @@ def test_remove_expired_refs_keeps_unexpired_branch(catalog: Catalog) -> None:
     ).commit()
 
     tbl = catalog.load_table(identifier)
-    tbl.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(timezone.utc) + timedelta(days=1)).commit()
+    tbl.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(UTC) + timedelta(days=1)).commit()
 
     tbl = catalog.load_table(identifier)
     assert "audit" in tbl.metadata.refs

@@ -23,7 +23,7 @@ from abc import abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
@@ -1448,7 +1448,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             TableProperties.MAX_REF_AGE_MS,
             TableProperties.MAX_REF_AGE_MS_DEFAULT,
         )
-        now_ms = datetime_to_millis(datetime.now(timezone.utc))
+        now_ms = datetime_to_millis(datetime.now(UTC))
 
         for ref_name, ref in metadata.refs.items():
             if ref_name == MAIN_BRANCH:

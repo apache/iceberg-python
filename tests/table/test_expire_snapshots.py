@@ -16,7 +16,7 @@
 # under the License.
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
@@ -359,7 +359,7 @@ def test_remove_expired_refs_removes_expired_branch(catalog_with_warehouse: Cata
     table, pinned_snapshot_id = _table_with_expired_branch(catalog_with_warehouse, namespace="ns_removes", max_ref_age_ms=1)
     assert "audit" in table.metadata.refs
 
-    table.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(timezone.utc) + timedelta(days=1)).commit()
+    table.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(UTC) + timedelta(days=1)).commit()
 
     table = catalog_with_warehouse.load_table("ns_removes.tbl")
     assert "audit" not in table.metadata.refs
@@ -370,7 +370,7 @@ def test_remove_expired_refs_removes_expired_branch(catalog_with_warehouse: Cata
 def test_remove_expired_refs_is_order_independent(catalog_with_warehouse: Catalog, refs_first: bool) -> None:
     """Snapshots released by an expired ref are reclaimed whichever order the builder is chained in."""
     table, pinned_snapshot_id = _table_with_expired_branch(catalog_with_warehouse, namespace="ns_order", max_ref_age_ms=1)
-    cutoff = datetime.now(timezone.utc) + timedelta(days=1)
+    cutoff = datetime.now(UTC) + timedelta(days=1)
 
     expire = table.maintenance.expire_snapshots()
     if refs_first:
@@ -387,7 +387,7 @@ def test_remove_expired_refs_is_opt_in(catalog_with_warehouse: Catalog) -> None:
     """Without remove_expired_refs(), an expired branch survives and keeps pinning its snapshot."""
     table, pinned_snapshot_id = _table_with_expired_branch(catalog_with_warehouse, namespace="ns_optin", max_ref_age_ms=1)
 
-    table.maintenance.expire_snapshots().older_than(datetime.now(timezone.utc) + timedelta(days=1)).commit()
+    table.maintenance.expire_snapshots().older_than(datetime.now(UTC) + timedelta(days=1)).commit()
 
     table = catalog_with_warehouse.load_table("ns_optin.tbl")
     assert "audit" in table.metadata.refs
@@ -400,7 +400,7 @@ def test_remove_expired_refs_keeps_unexpired_branch(catalog_with_warehouse: Cata
         catalog_with_warehouse, namespace="ns_keeps", max_ref_age_ms=7 * 24 * 60 * 60 * 1000
     )
 
-    table.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(timezone.utc) + timedelta(days=1)).commit()
+    table.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(UTC) + timedelta(days=1)).commit()
 
     table = catalog_with_warehouse.load_table("ns_keeps.tbl")
     assert "audit" in table.metadata.refs
