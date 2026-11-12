@@ -399,6 +399,13 @@ class PyArrowFile(InputFile, OutputFile):
         return self
 
 
+def _require_pyarrow_version(min_version: str, feature: str) -> None:
+    from packaging import version
+
+    if version.parse(pyarrow.__version__) < version.parse(min_version):
+        raise ImportError(f"pyarrow version >= {min_version} required for {feature}, but found version {pyarrow.__version__}.")
+
+
 class PyArrowFileIO(FileIO):
     fs_by_scheme: Callable[[str, str | None], FileSystem]
 
@@ -564,14 +571,7 @@ class PyArrowFileIO(FileIO):
 
     def _initialize_azure_fs(self, netloc: str | None = None) -> FileSystem:
         # https://arrow.apache.org/docs/python/generated/pyarrow.fs.AzureFileSystem.html
-        from packaging import version
-
-        MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS = "20.0.0"
-        if version.parse(pyarrow.__version__) < version.parse(MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS):
-            raise ImportError(
-                f"pyarrow version >= {MIN_PYARROW_VERSION_SUPPORTING_AZURE_FS} required for AzureFileSystem support, "
-                f"but found version {pyarrow.__version__}."
-            )
+        _require_pyarrow_version("20.0.0", "AzureFileSystem support")
 
         from pyarrow.fs import AzureFileSystem
 
@@ -3113,6 +3113,32 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
         )
     elif TableProperties.PARQUET_PAGE_ROW_LIMIT in table_properties:
         warnings.warn(f"{TableProperties.PARQUET_PAGE_ROW_LIMIT} requires pyarrow >= 23.0.0", stacklevel=2)
+
+    if property_as_bool(
+        properties=table_properties,
+        property_name=TableProperties.PARQUET_CDC_ENABLED,
+        default=TableProperties.PARQUET_CDC_ENABLED_DEFAULT,
+    ):
+        _require_pyarrow_version("21.0.0", "Parquet content-defined chunking")
+        # PyArrow validates these values itself (e.g. max-chunk-size > min-chunk-size).
+        kwargs["use_content_defined_chunking"] = {
+            "min_chunk_size": property_as_int(
+                properties=table_properties,
+                property_name=TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE,
+                default=TableProperties.PARQUET_CDC_MIN_CHUNK_SIZE_DEFAULT,
+            ),
+            "max_chunk_size": property_as_int(
+                properties=table_properties,
+                property_name=TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE,
+                default=TableProperties.PARQUET_CDC_MAX_CHUNK_SIZE_DEFAULT,
+            ),
+            "norm_level": property_as_int(
+                properties=table_properties,
+                property_name=TableProperties.PARQUET_CDC_NORM_LEVEL,
+                default=TableProperties.PARQUET_CDC_NORM_LEVEL_DEFAULT,
+            ),
+        }
+
     return kwargs
 
 
