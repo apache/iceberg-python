@@ -453,11 +453,17 @@ def test_file_overwrite_validates_concurrent_file_delete(
     assert sorted(result["value"].to_pylist()) == expected_values
 
 
-def _commit_partition_position_delete(table: Table, partition: Record, file_path: str, pos: int) -> None:
-    """PyIceberg cannot write delete files, so commit one without path bounds, as other engines write them."""
+def commit_partition_position_delete(
+    table: Table, partition: Record, file_path: str, pos: int, row: dict[str, Any] | None = None
+) -> None:
+    """PyIceberg cannot write delete files, so commit one without path bounds, as other engines write them.
+
+    If ``row`` is given, it is stored as the deleted row, which gives the delete file bounds on the data columns.
+    """
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from pyiceberg.conversions import to_bytes
     from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestContent, ManifestWriter, ManifestWriterV2
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.table.update.snapshot import _OverwriteFiles
@@ -475,9 +481,15 @@ def _commit_partition_position_delete(table: Table, partition: Record, file_path
             spec, producer.schema(), producer.new_manifest_output(), producer._snapshot_id, producer._compression
         )
 
+    columns: dict[str, list[Any]] = {"file_path": [file_path], "pos": [pos]}
+    bounds = None
+    if row is not None:
+        columns["row"] = [row]
+        bounds = {field.field_id: to_bytes(field.field_type, row[field.name]) for field in table.schema().fields}
+
     delete_path = table.location_provider().new_data_location(f"pos-delete-{uuid.uuid4()}.parquet")
     with table.io.new_output(delete_path).create() as output:
-        pq.write_table(pa.table({"file_path": [file_path], "pos": [pos]}), output)
+        pq.write_table(pa.table(columns), output)
     delete_file = DataFile.from_args(
         content=DataFileContent.POSITION_DELETES,
         file_path=delete_path,
@@ -485,6 +497,8 @@ def _commit_partition_position_delete(table: Table, partition: Record, file_path
         partition=partition,
         record_count=1,
         file_size_in_bytes=len(table.io.new_input(delete_path)),
+        lower_bounds=bounds,
+        upper_bounds=bounds,
         spec_id=table.spec().spec_id,
     )
 
@@ -524,7 +538,7 @@ def test_file_overwrite_validates_concurrent_position_delete_in_nan_partition(ca
         overwrite.delete_data_file(file_to_replace)
         overwrite.append_data_file(replacement_file)
 
-    _commit_partition_position_delete(deleting_table, Record(float("nan")), file_to_replace.file_path, pos=0)
+    commit_partition_position_delete(deleting_table, Record(float("nan")), file_to_replace.file_path, pos=0)
 
     with pytest.raises(ValidationException, match="found new delete for replace data file"):
         replacing_transaction.commit_transaction()

@@ -124,6 +124,7 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+from tests.table.test_commit_retry import commit_partition_position_delete
 
 
 def test_schema(table_v2: Table) -> None:
@@ -2388,6 +2389,25 @@ def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> Non
             overwrite.delete_data_file(data_file)
 
     assert table.scan().to_arrow().num_rows == 0
+
+
+def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalog) -> None:
+    """Rewriting a file applies all of its delete files, not only those whose bounds can match the delete filter."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "k", LongType(), required=False), NestedField(2, "v", StringType(), required=False))
+    table = catalog.create_table("default.partial_delete", schema=schema, properties={"format-version": "2"})
+    table.append(pa.table({"k": [1, 2, 3], "v": ["a", "b", "c"]}))
+    data_file = next(iter(table.scan().plan_files())).file
+
+    # The delete file stores the deleted row (2, 'b'), so a scan for k = 1 skips it.
+    commit_partition_position_delete(table, Record(), data_file.file_path, pos=1, row={"k": 2, "v": "b"})
+    assert [task.delete_files for task in table.scan(row_filter="k = 1").plan_files()] == [set()]
+
+    table.delete("k = 1")
+
+    assert table.scan().to_arrow()["k"].to_pylist() == [3]
 
 
 def test_static_table_forwards_location_to_table_file_io(metadata_location: str, monkeypatch: pytest.MonkeyPatch) -> None:
