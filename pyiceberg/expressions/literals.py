@@ -26,7 +26,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
-from math import isnan
+from math import isfinite, isnan
 from typing import Any, Generic
 from uuid import UUID
 
@@ -73,6 +73,13 @@ def _parse_numeric_string(value: str) -> Decimal:
     if not number.is_finite():
         raise ValueError(f"Cannot convert non-finite numeric string: {value}")
     return number
+
+
+def _to_integral(value: Decimal, type_var: IcebergType) -> int:
+    """Convert a Decimal to an int, rejecting values with a fractional part instead of rounding them."""
+    if value != value.to_integral_value():
+        raise ValueError(f"Could not convert {value} into a {type_var}, value has a fractional part")
+    return int(value)
 
 
 class Literal(IcebergRootModel[L], Generic[L], ABC):  # type: ignore
@@ -174,6 +181,9 @@ def literal(value: L) -> Literal[L]:
 
 
 class AboveMax(Literal[L]):
+    def __init__(self, value: L, value_type: type[L], /, **data: Any) -> None:
+        Literal.__init__(self, value, value_type, **data)
+
     def __repr__(self) -> str:
         """Return the string representation of the AboveMax class."""
         return f"{self.__class__.__name__}()"
@@ -184,6 +194,9 @@ class AboveMax(Literal[L]):
 
 
 class BelowMin(Literal[L]):
+    def __init__(self, value: L, value_type: type[L], /, **data: Any) -> None:
+        Literal.__init__(self, value, value_type, **data)
+
     def __repr__(self) -> str:
         """Return the string representation of the BelowMin class."""
         return f"{self.__class__.__name__}()"
@@ -401,6 +414,8 @@ class FloatLiteral(Literal[float]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
+        if not isfinite(self.value):
+            raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
         return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
 
 
@@ -426,6 +441,8 @@ class DoubleLiteral(Literal[float]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
+        if not isfinite(self.value):
+            raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
         return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
 
 
@@ -501,12 +518,14 @@ class DecimalLiteral(Literal[Decimal]):
         super().__init__(value, Decimal)
 
     def increment(self) -> Literal[Decimal]:
-        original_scale = abs(int(self.value.as_tuple().exponent))
+        # A Decimal carries the negated scale as its exponent, so a value with a
+        # non-negative exponent (1E+2) has a negative scale and abs() would read it wrong
+        original_scale = -int(self.value.as_tuple().exponent)
         unscaled = decimal_to_unscaled(self.value)
         return DecimalLiteral(unscaled_to_decimal(unscaled + 1, original_scale))
 
     def decrement(self) -> Literal[Decimal]:
-        original_scale = abs(int(self.value.as_tuple().exponent))
+        original_scale = -int(self.value.as_tuple().exponent)
         unscaled = decimal_to_unscaled(self.value)
         return DecimalLiteral(unscaled_to_decimal(unscaled - 1, original_scale))
 
@@ -516,13 +535,13 @@ class DecimalLiteral(Literal[Decimal]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
-        if type_var.scale == abs(int(self.value.as_tuple().exponent)):
+        if type_var.scale == -int(self.value.as_tuple().exponent):
             return self
         raise ValueError(f"Could not convert {self.value} into a {type_var}")
 
     @to.register(IntegerType)
-    def _(self, _: IntegerType) -> Literal[int]:
-        value_int = int(self.value.to_integral_value())
+    def _(self, type_var: IntegerType) -> Literal[int]:
+        value_int = _to_integral(self.value, type_var)
         if value_int > IntegerType.max:
             return IntAboveMax()
         elif value_int < IntegerType.min:
@@ -531,8 +550,8 @@ class DecimalLiteral(Literal[Decimal]):
             return LongLiteral(value_int)
 
     @to.register(LongType)
-    def _(self, _: LongType) -> Literal[int]:
-        value_int = int(self.value.to_integral_value())
+    def _(self, type_var: LongType) -> Literal[int]:
+        value_int = _to_integral(self.value, type_var)
         if value_int > LongType.max:
             return LongAboveMax()
         elif value_int < LongType.min:
@@ -622,7 +641,7 @@ class StringLiteral(Literal[str]):
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
         dec = Decimal(self.value)
-        scale = abs(int(dec.as_tuple().exponent))
+        scale = -int(dec.as_tuple().exponent)
         if type_var.scale == scale:
             return DecimalLiteral(dec)
         else:

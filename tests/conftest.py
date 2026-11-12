@@ -31,7 +31,7 @@ import string
 import time
 import uuid
 from collections.abc import Generator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from random import choice, randint
 from tempfile import TemporaryDirectory
@@ -48,6 +48,7 @@ from pydantic_core import to_json
 from pytest_lazy_fixtures import lf
 
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.expressions import BoundReference
 from pyiceberg.io import (
     ADLS_ACCOUNT_KEY,
@@ -103,11 +104,31 @@ if TYPE_CHECKING:
 
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
+# Markers for suites that run separately from the unit tests
+NON_UNIT_TEST_MARKERS = {"integration", "s3", "adls", "gcs", "notebook", "benchmark"}
+
+
+_original_environment_context_get = EnvironmentContext.get
+
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
-        if not any(item.iter_markers()):
-            item.add_marker("unmarked")
+        if not any(marker.name in NON_UNIT_TEST_MARKERS for marker in item.iter_markers()):
+            item.add_marker("unit")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _disable_environment_context() -> Generator[None, None, None]:
+    """Disable engine metadata for existing tests, including session-scoped fixtures."""
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(EnvironmentContext, "get", staticmethod(dict))
+        yield
+
+
+@pytest.fixture
+def enable_environment_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restore real engine metadata for tests that explicitly request it."""
+    monkeypatch.setattr(EnvironmentContext, "get", staticmethod(_original_environment_context_get))
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -646,7 +667,7 @@ def all_avro_types() -> dict[str, Any]:
     }
 
 
-EXAMPLE_TABLE_METADATA_V1 = {
+EXAMPLE_TABLE_METADATA_V1: dict[str, Any] = {
     "format-version": 1,
     "table-uuid": "d20125c8-7284-442c-9aea-15fee620737c",
     "location": "s3://bucket/test/location",
@@ -672,7 +693,7 @@ def example_table_metadata_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_V1
 
 
-EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1 = {
+EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1: dict[str, Any] = {
     "format-version": 1,
     "table-uuid": "b55d9dda-6561-423a-8bfc-787980ce421f",
     "location": "s3://warehouse/database/table",
@@ -746,7 +767,7 @@ def example_table_metadata_with_snapshot_v1() -> dict[str, Any]:
     return EXAMPLE_TABLE_METADATA_WITH_SNAPSHOT_V1
 
 
-EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1 = {
+EXAMPLE_TABLE_METADATA_NO_SNAPSHOT_V1: dict[str, Any] = {
     "format-version": 1,
     "table-uuid": "bf289591-dcc0-4234-ad4f-5c3eed811a29",
     "location": "s3://warehouse/database/table",
@@ -870,7 +891,7 @@ def example_table_metadata_v2_with_extensive_snapshots() -> dict[str, Any]:
     }
 
 
-EXAMPLE_TABLE_METADATA_V2 = {
+EXAMPLE_TABLE_METADATA_V2: dict[str, Any] = {
     "format-version": 2,
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
     "location": "s3://bucket/test/location",
@@ -932,7 +953,7 @@ EXAMPLE_TABLE_METADATA_V2 = {
     "refs": {"test": {"snapshot-id": 3051729675574597004, "type": "tag", "max-ref-age-ms": 10000000}},
 }
 
-EXAMPLE_TABLE_METADATA_V3 = {
+EXAMPLE_TABLE_METADATA_V3: dict[str, Any] = {
     "format-version": 3,
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
     "location": "s3://bucket/test/location",
@@ -2632,6 +2653,79 @@ def table_v3(example_table_metadata_v3: dict[str, Any]) -> Table:
 
 
 @pytest.fixture
+def example_table_metadata_v3_encrypted() -> dict[str, Any]:
+    """Metadata of an encrypted table written by iceberg-rust, whose manifest list is in tests/table/encryption."""
+    manifest_list = Path(__file__).parent / "table" / "encryption" / "manifest-list-v3-encrypted.avro"
+    return {
+        "format-version": 3,
+        "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+        "location": "memory:///table",
+        "last-sequence-number": 0,
+        "last-updated-ms": 1602638573590,
+        "last-column-id": 1,
+        "current-schema-id": 0,
+        "schemas": [{"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]}],
+        "default-spec-id": 0,
+        "partition-specs": [{"spec-id": 0, "fields": []}],
+        "last-partition-id": 1000,
+        "default-sort-order-id": 0,
+        "sort-orders": [{"order-id": 0, "fields": []}],
+        "properties": {"encryption.key-id": "master-1"},
+        "current-snapshot-id": 1,
+        "snapshots": [
+            {
+                "snapshot-id": 1,
+                "sequence-number": 0,
+                "timestamp-ms": 0,
+                "manifest-list": str(manifest_list),
+                "summary": {"operation": "append"},
+                "schema-id": 0,
+                "key-id": "1fb95f04-7f98-4b1f-a08f-e810cfb907ff",
+            }
+        ],
+        "encryption-keys": [
+            {
+                "key-id": "5b29941b-b3b4-4d57-8758-a9d1bf340b39",
+                "encrypted-key-metadata": "WVMIPwafypGJRgXOICFKcL+m8K4B40gEIJFsgC7rlitqN9PUpDeT19OZPs8=",
+                "encrypted-by-id": "master-1",
+                "properties": {"KEY_TIMESTAMP": "1781172301703"},
+            },
+            {
+                "key-id": "1fb95f04-7f98-4b1f-a08f-e810cfb907ff",
+                "encrypted-key-metadata": (
+                    "XcrqLxxyf9a7FAFXM63u3MEH8CSWqh6g1H8fJD2/6zx0EjcPzPaP/5AtRpO2s6p2isV8s7a4m77zj+GIqNmIpbA2Xw=="
+                ),
+                "encrypted-by-id": "5b29941b-b3b4-4d57-8758-a9d1bf340b39",
+            },
+        ],
+        "snapshot-log": [{"snapshot-id": 1, "timestamp-ms": 0}],
+        "metadata-log": [],
+        "refs": {"main": {"snapshot-id": 1, "type": "branch"}},
+        "next-row-id": 0,
+    }
+
+
+@pytest.fixture
+def table_v3_encrypted(example_table_metadata_v3_encrypted: dict[str, Any]) -> Table:
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.encryption.ciphers import SecureKey
+    from tests.encryption.memory_kms import MemoryKeyManagementClient
+
+    kms = MemoryKeyManagementClient()
+    kms.add_master_key("master-1", SecureKey(bytes(range(16))))
+
+    table_metadata = TableMetadataV3(**example_table_metadata_v3_encrypted)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+        kms_client=kms,
+    )
+
+
+@pytest.fixture
 def table_v2_orc(example_table_metadata_v2: dict[str, Any]) -> Table:
     import copy
 
@@ -2762,9 +2856,9 @@ TEST_DATA_WITH_NULL = {
     # 'time': [1_000_000, None, 3_000_000],  # Example times: 1s, none, and 3s past midnight #Spark does not support time fields
     "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
     "timestamptz": [
-        datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+        datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
         None,
-        datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+        datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
     ],
     "date": [date(2023, 1, 1), None, date(2023, 3, 1)],
     # Not supported by Spark
@@ -2828,9 +2922,9 @@ def arrow_table_with_null(pa_schema: "pa.Schema") -> "pa.Table":
             # Spark does not support time fields
             "timestamp": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "date": [date(2023, 1, 1), None, date(2023, 3, 1)],
             # Not supported by Spark
@@ -2882,11 +2976,11 @@ def arrow_table_date_timestamps() -> "pa.Table":
                 None,
             ],
             "timestamptz": [
-                datetime(2023, 12, 31, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 1, 31, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 2, 1, 0, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 2, 1, 6, 0, 0, tzinfo=timezone.utc),
+                datetime(2023, 12, 31, 0, 0, 0, tzinfo=UTC),
+                datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC),
+                datetime(2024, 1, 31, 0, 0, 0, tzinfo=UTC),
+                datetime(2024, 2, 1, 0, 0, 0, tzinfo=UTC),
+                datetime(2024, 2, 1, 6, 0, 0, tzinfo=UTC),
                 None,
             ],
         },
@@ -2942,21 +3036,21 @@ def arrow_table_with_all_timestamp_precisions(arrow_table_schema_with_all_timest
         {
             "timestamp_s": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz_s": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamp_ms": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz_ms": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamp_us": [datetime(2023, 1, 1, 19, 25, 00), None, datetime(2023, 3, 1, 19, 25, 00)],
             "timestamptz_us": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamp_ns": [
                 pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6),
@@ -2964,14 +3058,14 @@ def arrow_table_with_all_timestamp_precisions(arrow_table_schema_with_all_timest
                 pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7),
             ],
             "timestamptz_ns": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamptz_us_etc_utc": [
-                datetime(2023, 1, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 00, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 00, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 00, tzinfo=UTC),
             ],
             "timestamptz_ns_z": [
                 pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=6, tz="UTC"),
@@ -2979,9 +3073,9 @@ def arrow_table_with_all_timestamp_precisions(arrow_table_schema_with_all_timest
                 pd.Timestamp(year=2024, month=7, day=11, hour=3, minute=30, second=0, microsecond=12, nanosecond=7, tz="UTC"),
             ],
             "timestamptz_s_0000": [
-                datetime(2023, 1, 1, 19, 25, 1, tzinfo=timezone.utc),
+                datetime(2023, 1, 1, 19, 25, 1, tzinfo=UTC),
                 None,
-                datetime(2023, 3, 1, 19, 25, 1, tzinfo=timezone.utc),
+                datetime(2023, 3, 1, 19, 25, 1, tzinfo=UTC),
             ],
         }
     )

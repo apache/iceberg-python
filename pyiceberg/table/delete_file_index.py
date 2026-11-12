@@ -115,7 +115,7 @@ class DeleteFileIndex:
     def add_delete_file(self, manifest_entry: ManifestEntry, partition_key: Record | None = None) -> None:
         delete_file = manifest_entry.data_file
         seq = manifest_entry.sequence_number or INITIAL_SEQUENCE_NUMBER
-        target_path = _referenced_data_file_path(delete_file)
+        target_path = delete_file.referenced_data_file or _referenced_data_file_path(delete_file)
 
         if target_path:
             deletes = self._by_path.setdefault(target_path, PositionDeletes())
@@ -129,6 +129,7 @@ class DeleteFileIndex:
         if self.is_empty():
             return set()
 
+        # DVs are indexed by target path; a valid snapshot has at most one DV per data file.
         deletes: set[DataFile] = set()
         spec_id = data_file.spec_id or 0
 

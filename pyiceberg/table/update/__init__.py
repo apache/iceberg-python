@@ -29,7 +29,15 @@ from pydantic import Field, field_validator, model_serializer, model_validator
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.metadata import SUPPORTED_TABLE_FORMAT_VERSION, TableMetadata, TableMetadataUtil
+from pyiceberg.table.metadata import (
+    INITIAL_ROW_ID,
+    SUPPORTED_TABLE_FORMAT_VERSION,
+    EncryptedKey,
+    TableMetadata,
+    TableMetadataUtil,
+    TableMetadataV3,
+    _check_properties_format_version_compatibility,
+)
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -222,6 +230,16 @@ class RemovePartitionStatisticsUpdate(IcebergBaseModel):
     snapshot_id: int = Field(alias="snapshot-id")
 
 
+class AddEncryptionKeyUpdate(IcebergBaseModel):
+    action: Literal["add-encryption-key"] = Field(default="add-encryption-key")
+    encryption_key: EncryptedKey = Field(alias="encryption-key")
+
+
+class RemoveEncryptionKeyUpdate(IcebergBaseModel):
+    action: Literal["remove-encryption-key"] = Field(default="remove-encryption-key")
+    key_id: str = Field(alias="key-id")
+
+
 TableUpdate = Annotated[
     AssignUUIDUpdate
     | UpgradeFormatVersionUpdate
@@ -243,7 +261,9 @@ TableUpdate = Annotated[
     | RemovePartitionSpecsUpdate
     | RemoveSchemasUpdate
     | SetPartitionStatisticsUpdate
-    | RemovePartitionStatisticsUpdate,
+    | RemovePartitionStatisticsUpdate
+    | AddEncryptionKeyUpdate
+    | RemoveEncryptionKeyUpdate,
     Field(discriminator="action"),
 ]
 
@@ -331,6 +351,8 @@ def _(
 def _(update: SetPropertiesUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
     if len(update.updates) == 0:
         return base_metadata
+
+    _check_properties_format_version_compatibility(update.updates, base_metadata.format_version)
 
     properties = dict(base_metadata.properties)
     properties.update(update.updates)
@@ -435,7 +457,7 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
     elif base_metadata.snapshot_by_id(update.snapshot.snapshot_id) is not None:
         raise ValueError(f"Snapshot with id {update.snapshot.snapshot_id} already exists")
     elif (
-        base_metadata.format_version == 2
+        base_metadata.format_version >= 2
         and update.snapshot.sequence_number is not None
         and update.snapshot.sequence_number <= base_metadata.last_sequence_number
         and update.snapshot.parent_snapshot_id is not None
@@ -458,18 +480,18 @@ def _(update: AddSnapshotUpdate, base_metadata: TableMetadata, context: _TableMe
         )
 
     context.add_update(update)
-    return base_metadata.model_copy(
-        update={
-            "last_updated_ms": update.snapshot.timestamp_ms,
-            "last_sequence_number": update.snapshot.sequence_number,
-            "snapshots": base_metadata.snapshots + [update.snapshot],
-            "next_row_id": base_metadata.next_row_id + update.snapshot.added_rows
-            if base_metadata.format_version >= 3
-            and base_metadata.next_row_id is not None
-            and update.snapshot.added_rows is not None
-            else None,
-        }
-    )
+    metadata_updates: dict[str, Any] = {
+        "last_updated_ms": update.snapshot.timestamp_ms,
+        "last_sequence_number": update.snapshot.sequence_number,
+        "snapshots": base_metadata.snapshots + [update.snapshot],
+    }
+
+    if base_metadata.format_version >= 3:
+        if update.snapshot.added_rows is None:
+            raise ValueError("Cannot add snapshot without added rows")
+        metadata_updates["next_row_id"] = (base_metadata.next_row_id or INITIAL_ROW_ID) + update.snapshot.added_rows
+
+    return base_metadata.model_copy(update=metadata_updates)
 
 
 @_apply_table_update.register(SetSnapshotRefUpdate)
@@ -678,6 +700,31 @@ def _(
     context.add_update(update)
 
     return base_metadata.model_copy(update={"partition_statistics": statistics})
+
+
+@_apply_table_update.register(AddEncryptionKeyUpdate)
+def _(update: AddEncryptionKeyUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if not isinstance(base_metadata, TableMetadataV3):
+        raise ValueError(f"Encryption keys are not supported in format version {base_metadata.format_version}")
+
+    if any(key.key_id == update.encryption_key.key_id for key in base_metadata.encryption_keys):
+        return base_metadata
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"encryption_keys": base_metadata.encryption_keys + [update.encryption_key]})
+
+
+@_apply_table_update.register(RemoveEncryptionKeyUpdate)
+def _(update: RemoveEncryptionKeyUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
+    if not isinstance(base_metadata, TableMetadataV3):
+        raise ValueError(f"Encryption keys are not supported in format version {base_metadata.format_version}")
+
+    encryption_keys = [key for key in base_metadata.encryption_keys if key.key_id != update.key_id]
+    if len(encryption_keys) == len(base_metadata.encryption_keys):
+        return base_metadata
+
+    context.add_update(update)
+    return base_metadata.model_copy(update={"encryption_keys": encryption_keys})
 
 
 def update_table_metadata(

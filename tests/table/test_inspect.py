@@ -23,11 +23,13 @@ import pytest
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.manifest import DataFile, DataFileContent
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable, _readable_bound
 from pyiceberg.table.snapshots import Snapshot
+from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import NestedField, StringType
+from pyiceberg.types import DoubleType, FloatType, IntegerType, LongType, NestedField, PrimitiveType, StringType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -93,3 +95,46 @@ def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest
     (partition_row,) = partitions_map.values()
     assert partition_row["last_updated_at"] == newer.timestamp_ms
     assert partition_row["last_updated_snapshot_id"] == newer.snapshot_id
+
+
+def test_inspect_manifests_preserves_empty_string_bounds(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "s", StringType()))
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "s"))
+    tbl = catalog.create_table("default.empty_string_partition", schema, partition_spec=spec)
+    tbl.append(pa.table({"s": [""]}, schema=pa.schema([pa.field("s", pa.large_string())])))
+
+    partition_summary = tbl.inspect.manifests().to_pydict()["partition_summaries"][0][0]
+    assert partition_summary["lower_bound"] == ""
+    assert partition_summary["upper_bound"] == ""
+
+
+def test_inspect_bounds_after_type_promotion(catalog: InMemoryCatalog) -> None:
+    # Promotion does not rewrite existing files, so their bounds keep the narrower 4-byte encoding
+    # while the current schema type is the 8-byte one.
+    cases: list[tuple[str, PrimitiveType, PrimitiveType, pa.DataType, list[float]]] = [
+        ("int_to_long", IntegerType(), LongType(), pa.int32(), [1, 2]),
+        ("float_to_double", FloatType(), DoubleType(), pa.float32(), [1.5, 2.5]),
+    ]
+    for name, file_type, promoted_type, arrow_type, values in cases:
+        schema = Schema(NestedField(1, "v", file_type, required=False))
+        spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "v"))
+        tbl = catalog.create_table(f"default.{name}", schema, partition_spec=spec)
+        tbl.append(pa.table({"v": values}, schema=pa.schema([pa.field("v", arrow_type, nullable=True)])))
+
+        with tbl.update_schema() as update:
+            update.update_column("v", field_type=promoted_type)
+
+        for files_table in [
+            tbl.inspect.entries(),
+            tbl.inspect.files(),
+            tbl.inspect.data_files(),
+            tbl.inspect.all_files(),
+            tbl.inspect.all_data_files(),
+        ]:
+            metrics = [m["v"] for m in files_table.to_pydict()["readable_metrics"]]
+            assert sorted(m["lower_bound"] for m in metrics) == values, name
+            assert sorted(m["upper_bound"] for m in metrics) == values, name
+
+        partition_summaries = tbl.inspect.manifests().to_pydict()["partition_summaries"][0]
+        assert partition_summaries[0]["lower_bound"] == str(values[0]), name
+        assert partition_summaries[0]["upper_bound"] == str(values[-1]), name

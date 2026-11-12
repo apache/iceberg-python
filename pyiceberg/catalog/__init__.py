@@ -74,6 +74,7 @@ from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewVersion
 
 if TYPE_CHECKING:
+    import boto3
     import pyarrow as pa
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,54 @@ URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
 BOTOCORE_SESSION = "botocore_session"
+
+DEFAULT_ROLE_SESSION_NAME = "pyiceberg"
+
+
+def _get_aws_session_with_assumed_role(
+    session: boto3.Session,
+    role_arn: str,
+    role_session_name: str | None,
+    region_name: str | None,
+) -> boto3.Session:
+    """Return a boto3 session whose credentials come from assuming an IAM role via STS.
+
+    This mirrors the assume-role behavior already available for the S3 FileIO (``client.role-arn`` /
+    ``client.role-session-name``) so that the AWS catalog clients (Glue, DynamoDB) can honor the same
+    properties. The role is assumed on first use and again before the temporary credentials expire,
+    so a long-lived catalog keeps working past the role session duration.
+
+    Args:
+        session: The base boto3 session whose credentials are used to call STS.
+        role_arn: The ARN of the role to assume.
+        role_session_name: An identifier for the assumed-role session. Defaults to ``pyiceberg``.
+        region_name: The region for the returned session.
+
+    Returns:
+        A new boto3 session authenticated with refreshable assumed-role credentials.
+    """
+    import boto3
+    import botocore.session
+    from botocore.credentials import AssumeRoleCredentialFetcher, DeferredRefreshableCredentials
+
+    source_credentials = session.get_credentials()
+    if source_credentials is None:
+        raise ValueError(f"No AWS credentials found to assume role {role_arn}")
+
+    fetcher = AssumeRoleCredentialFetcher(
+        client_creator=session.client,
+        source_credentials=source_credentials,
+        role_arn=role_arn,
+        extra_args={"RoleSessionName": role_session_name or DEFAULT_ROLE_SESSION_NAME},
+    )
+    botocore_session = botocore.session.Session()
+    # botocore has no public setter for refreshable credentials on a session.
+    botocore_session._credentials = DeferredRefreshableCredentials(
+        refresh_using=fetcher.fetch_credentials,
+        method="assume-role",
+    )
+    return boto3.Session(botocore_session=botocore_session, region_name=region_name)
+
 
 TABLE_METADATA_FILE_NAME_REGEX = re.compile(
     r"""
@@ -744,6 +793,20 @@ class Catalog(ABC):
             ViewAlreadyExistsError: If a view with the name already exists.
         """
 
+    @abstractmethod
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        """Rename a fully qualified view name.
+
+        Args:
+            from_identifier (str | Identifier): Existing view identifier.
+            to_identifier (str | Identifier): New view identifier.
+
+        Raises:
+            NoSuchViewError: If a view with the name does not exist.
+            ViewAlreadyExistsError: If a table or view with the target name already exists.
+            NoSuchNamespaceError: If the source or destination namespace does not exist.
+        """
+
     @staticmethod
     def identifier_to_tuple(identifier: str | Identifier) -> Identifier:
         """Parse an identifier to a tuple.
@@ -833,8 +896,15 @@ class Catalog(ABC):
 
         return tuple_identifier[0], tuple_identifier[1]
 
-    def _load_file_io(self, properties: Properties = EMPTY_DICT, location: str | None = None) -> FileIO:
-        return load_file_io({**self.properties, **properties}, location)
+    def _load_file_io(
+        self,
+        properties: Properties = EMPTY_DICT,
+        location: str | None = None,
+        table_properties: Properties = EMPTY_DICT,
+    ) -> FileIO:
+        # table_properties ranks lowest: a principal who can commit to a table must not
+        # be able to redirect its readers.
+        return load_file_io({**table_properties, **self.properties, **properties}, location)
 
     @staticmethod
     def _convert_schema_if_needed(
@@ -956,13 +1026,14 @@ class MetastoreCatalog(Catalog, ABC):
     @override
     def purge_table(self, identifier: str | Identifier) -> None:
         table = self.load_table(identifier)
+        encryption_manager = table.encryption_manager
         self.drop_table(identifier)
         io = load_file_io(self.properties, table.metadata_location)
         metadata = table.metadata
         manifest_lists_to_delete = set()
         manifests_to_delete: list[ManifestFile] = []
         for snapshot in metadata.snapshots:
-            manifests_to_delete += snapshot.manifests(io)
+            manifests_to_delete += snapshot.manifests(io, encryption_manager)
             manifest_lists_to_delete.add(snapshot.manifest_list)
 
         manifest_paths_to_delete = {manifest.manifest_path for manifest in manifests_to_delete}
@@ -1020,7 +1091,7 @@ class MetastoreCatalog(Catalog, ABC):
         metadata = new_table_metadata(
             location=location, schema=schema, partition_spec=partition_spec, sort_order=sort_order, properties=properties
         )
-        io = self._load_file_io(properties=properties, location=metadata_location)
+        io = self._load_file_io(location=metadata_location, table_properties=properties)
         return StagedTable(
             identifier=(database_name, table_name),
             metadata=metadata,
@@ -1054,7 +1125,7 @@ class MetastoreCatalog(Catalog, ABC):
             identifier=table_identifier,
             metadata=updated_metadata,
             metadata_location=new_metadata_location,
-            io=self._load_file_io(properties=updated_metadata.properties, location=new_metadata_location),
+            io=self._load_file_io(location=new_metadata_location, table_properties=updated_metadata.properties),
             catalog=self,
         )
 

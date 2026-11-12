@@ -111,13 +111,18 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         self._transform_to_added_field[transform_key] = new_field
 
         existing_partition_field = self._name_to_field.get(new_field.name)
-        if existing_partition_field and new_field.field_id not in self._deletes:
+        if existing_partition_field and existing_partition_field.field_id not in self._deletes:
             if isinstance(existing_partition_field.transform, VoidTransform):
                 self.rename_field(
                     existing_partition_field.name, existing_partition_field.name + "_" + str(existing_partition_field.field_id)
                 )
             else:
                 raise ValueError(f"Cannot add duplicate partition field name: {existing_partition_field.name}")
+        elif existing_partition_field:
+            # The removed field becomes a void field on v1 tables, so it gives up its name
+            self._renames[existing_partition_field.name] = (
+                existing_partition_field.name + "_" + str(existing_partition_field.field_id)
+            )
 
         self._name_to_added_field[new_field.name] = new_field
         self._adds.append(new_field)
@@ -268,7 +273,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         return PartitionSpec(*partition_fields, spec_id=new_spec_id)
 
     def _partition_field(self, transform_key: tuple[int, Transform[Any, Any]], name: str | None) -> PartitionField:
-        if self._transaction.table_metadata.format_version == 2:
+        if self._transaction.table_metadata.format_version >= 2:
             source_id, transform = transform_key
             historical_fields = []
             for spec in self._transaction.table_metadata.specs().values():

@@ -16,13 +16,14 @@
 # under the License.
 from __future__ import annotations
 
+import base64
 import datetime
 import uuid
 from collections.abc import Iterable
 from copy import copy
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from pydantic import Field, field_serializer, field_validator, model_validator
+from pydantic import Field, field_serializer, field_validator, model_serializer, model_validator
 from pydantic import ValidationError as PydanticValidationError
 
 from pyiceberg.exceptions import ValidationError
@@ -48,6 +49,9 @@ from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 
+if TYPE_CHECKING:
+    from pydantic.functional_serializers import ModelWrapSerializerWithoutInfo
+
 CURRENT_SNAPSHOT_ID = "current-snapshot-id"
 CURRENT_SCHEMA_ID = "current-schema-id"
 SCHEMAS = "schemas"
@@ -64,6 +68,7 @@ FIELDS = "fields"
 
 INITIAL_SEQUENCE_NUMBER = 0
 INITIAL_SPEC_ID = 0
+INITIAL_ROW_ID = 0
 DEFAULT_SCHEMA_ID = 0
 
 SUPPORTED_TABLE_FORMAT_VERSION = 2
@@ -123,6 +128,36 @@ def construct_refs(table_metadata: TableMetadata) -> TableMetadata:
                 snapshot_id=table_metadata.current_snapshot_id, snapshot_ref_type=SnapshotRefType.BRANCH
             )
     return table_metadata
+
+
+class EncryptedKey(IcebergBaseModel):
+    """A key used for table encryption, tracked in v3 metadata under `encryption-keys`.
+
+    https://iceberg.apache.org/spec/#encryption-keys
+    """
+
+    key_id: str = Field(alias="key-id")
+    """ID of the encryption key."""
+
+    encrypted_key_metadata: bytes = Field(alias="encrypted-key-metadata")
+    """The encrypted key and metadata, base64 encoded in JSON."""
+
+    encrypted_by_id: str | None = Field(alias="encrypted-by-id", default=None)
+    """ID of the key used to encrypt or wrap `encrypted-key-metadata`."""
+
+    properties: dict[str, str] = Field(default_factory=dict)
+    """Additional metadata used by the table's encryption scheme."""
+
+    @field_validator("encrypted_key_metadata", mode="before")
+    def decode_encrypted_key_metadata(cls, encrypted_key_metadata: Any) -> Any:
+        # validate=True so that malformed base64 raises instead of silently discarding characters
+        if isinstance(encrypted_key_metadata, str):
+            return base64.b64decode(encrypted_key_metadata, validate=True)
+        return encrypted_key_metadata
+
+    @field_serializer("encrypted_key_metadata")
+    def serialize_encrypted_key_metadata(self, encrypted_key_metadata: bytes) -> str:
+        return base64.b64encode(encrypted_key_metadata).decode("utf-8")
 
 
 class TableMetadataCommonFields(IcebergBaseModel):
@@ -584,11 +619,44 @@ class TableMetadataV3(TableMetadataCommonFields, IcebergBaseModel):
     next_row_id: int | None = Field(alias="next-row-id", default=None)
     """A long higher than all assigned row IDs; the next snapshot's `first-row-id`."""
 
+    encryption_keys: list[EncryptedKey] = Field(alias="encryption-keys", default_factory=list)
+    """An optional list of encryption keys used for table encryption."""
+
+    @model_serializer(mode="wrap")
+    def serialize_model(self, handler: ModelWrapSerializerWithoutInfo) -> dict[str, Any]:
+        """Set custom serializer to leave out `encryption-keys` when it is empty."""
+        serialized: dict[str, Any] = handler(self)
+        if not self.encryption_keys:
+            serialized.pop("encryption-keys", None)
+        return serialized
+
     def model_dump_json(self, exclude_none: bool = True, exclude: Any | None = None, by_alias: bool = True, **kwargs: Any) -> str:
         raise NotImplementedError("Writing V3 is not yet supported, see: https://github.com/apache/iceberg-python/issues/1551")
 
 
 TableMetadata = Annotated[TableMetadataV1 | TableMetadataV2 | TableMetadataV3, Field(discriminator="format_version")]
+
+
+def _check_properties_format_version_compatibility(properties: Properties, format_version: int) -> None:
+    """Check that the table properties are compatible for the given table format version.
+
+    Args:
+      properties: The table properties to check.
+      format_version: The Iceberg table format version.
+
+    Raises:
+      ValueError: If the properties are not compatible for the format version.
+    """
+    from pyiceberg.table import TableProperties
+
+    if format_version >= 3:
+        return
+
+    encryption_properties = sorted(
+        {TableProperties.ENCRYPTION_KEY_ID, TableProperties.ENCRYPTION_DATA_KEY_LENGTH} & properties.keys()
+    )
+    if encryption_properties:
+        raise ValueError(f"Invalid properties for v{format_version}: {encryption_properties}")
 
 
 def new_table_metadata(
@@ -605,6 +673,7 @@ def new_table_metadata(
     format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
 
     schema.check_format_version_compatibility(format_version)
+    _check_properties_format_version_compatibility(properties, format_version)
 
     fresh_schema = assign_fresh_schema_ids(schema)
     fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, schema, fresh_schema)

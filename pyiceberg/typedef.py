@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+import math
 from abc import abstractmethod
 from collections.abc import Callable
 from datetime import date, datetime, time
@@ -26,6 +27,7 @@ from typing import (
     Generic,
     Literal,
     Protocol,
+    Self,
     TypeAlias,
     TypeVar,
     Union,
@@ -34,7 +36,6 @@ from typing import (
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, RootModel
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     from pyiceberg.expressions.literals import Literal as IcebergLiteral
@@ -173,12 +174,23 @@ class IcebergRootModel(RootModel[T], Generic[T]):
     model_config = ConfigDict(frozen=True)
 
 
+def _is_nan(value: Any) -> bool:
+    return isinstance(value, float) and math.isnan(value)
+
+
+def _same_value(a: Any, b: Any) -> bool:
+    return a is b or a == b or (_is_nan(a) and _is_nan(b))
+
+
 class Record(StructProtocol):
     __slots__ = ("_data",)
     _data: list[Any]
 
     @classmethod
     def _bind(cls, struct: StructType, **arguments: Any) -> Self:
+        field_names = {field.name for field in struct.fields}
+        if unknown_fields := arguments.keys() - field_names:
+            raise TypeError(f"Unexpected {cls.__name__} fields: {', '.join(sorted(unknown_fields))}")
         return cls(*[arguments[field.name] if field.name in arguments else field.initial_default for field in struct.fields])
 
     def __init__(self, *data: Any) -> None:
@@ -193,8 +205,10 @@ class Record(StructProtocol):
         return self._data[pos]
 
     def __eq__(self, other: Any) -> bool:
-        """Return the equality of two instances of the Record class."""
-        return self._data == other._data if isinstance(other, Record) else False
+        """Compare records, treating NaN floats at the same position as equal."""
+        if not isinstance(other, Record) or len(self._data) != len(other._data):
+            return False
+        return all(_same_value(a, b) for a, b in zip(self._data, other._data, strict=True))
 
     def __repr__(self) -> str:
         """Return the string representation of the Record class."""

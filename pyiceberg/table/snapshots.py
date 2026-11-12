@@ -20,17 +20,20 @@ import time
 import warnings
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, PrivateAttr, model_serializer
 
+from pyiceberg.environment_context import EnvironmentContext
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestFile, _manifests
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
 from pyiceberg.schema import Schema
 
 if TYPE_CHECKING:
+    from pyiceberg.encryption.key_metadata import StandardKeyMetadata
+    from pyiceberg.encryption.manager import EncryptionManager
     from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.typedef import IcebergBaseModel
 
@@ -86,7 +89,7 @@ class Operation(Enum):
         return f"Operation.{self.name}"
 
 
-class IsolationLevel(str, Enum):
+class IsolationLevel(StrEnum):
     """Transaction isolation level for concurrent write validation."""
 
     SERIALIZABLE = "serializable"
@@ -259,6 +262,9 @@ class Snapshot(IcebergBaseModel):
     added_rows: int | None = Field(
         alias="added-rows", default=None, description="The upper bound of the number of rows with assigned row IDs"
     )
+    key_id: str | None = Field(
+        alias="key-id", default=None, description="ID of the encryption key that encrypts the manifest list key metadata"
+    )
 
     def __str__(self) -> str:
         """Return the string representation of the Snapshot class."""
@@ -280,13 +286,25 @@ class Snapshot(IcebergBaseModel):
             f"schema_id={self.schema_id}" if self.schema_id is not None else None,
             f"first_row_id={self.first_row_id}" if self.first_row_id is not None else None,
             f"added_rows={self.added_rows}" if self.added_rows is not None else None,
+            f"key_id='{self.key_id}'" if self.key_id is not None else None,
         ]
         filtered_fields = [field for field in fields if field is not None]
         return f"Snapshot({', '.join(filtered_fields)})"
 
-    def manifests(self, io: FileIO) -> list[ManifestFile]:
-        """Return the manifests for the given snapshot."""
-        return list(_manifests(io, self.manifest_list))
+    def manifests(self, io: FileIO, encryption_manager: EncryptionManager | None = None) -> list[ManifestFile]:
+        """Return the manifests for the given snapshot.
+
+        Args:
+            io: Reads the manifest list.
+            encryption_manager: Decrypts the manifest list, required when the snapshot has a `key-id`.
+        """
+        key_metadata: StandardKeyMetadata | None = None
+        if self.key_id is not None:
+            if encryption_manager is None:
+                raise ValueError(f"Snapshot {self.snapshot_id} is encrypted, but no encryption manager was provided")
+            key_metadata = encryption_manager.decrypt_manifest_list_key_metadata(self.key_id)
+
+        return list(_manifests(io, self.manifest_list, key_metadata))
 
 
 class MetadataLogEntry(IcebergBaseModel):
@@ -408,6 +426,11 @@ def update_snapshot_summaries(summary: Summary, previous_summary: Mapping[str, s
         added_property=ADDED_EQUALITY_DELETES,
         removed_property=REMOVED_EQUALITY_DELETES,
     )
+
+    if context := EnvironmentContext.get():
+        # Defensively select only engine fields so future context additions cannot overwrite snapshot metadata.
+        summary["engine-name"] = context["engine-name"]
+        summary["engine-version"] = context["engine-version"]
 
     return summary
 

@@ -66,6 +66,7 @@ from pyiceberg.expressions import (
 )
 from pyiceberg.expressions.literals import Literal, literal
 from pyiceberg.expressions.visitors import (
+    MAX_DNF_TERMS,
     BindVisitor,
     BooleanExpressionVisitor,
     BoundBooleanExpressionVisitor,
@@ -1592,6 +1593,23 @@ def test_to_dnf_and() -> None:
 def test_to_dnf_not_and() -> None:
     expr = Not(And(Not(EqualTo("Q", "b")), EqualTo("R", "c")))
     assert rewrite_to_dnf(expr) == (EqualTo("Q", "b"), NotEqualTo("R", "c"))
+
+
+def _chained_or_pairs(groups: int) -> BooleanExpression:
+    # (a_0 = x OR b_0 = y) AND ... AND (a_n = x OR b_n = y), which expands to 2**groups DNF terms
+    expr: BooleanExpression = Or(EqualTo("a0", "x"), EqualTo("b0", "y"))
+    for idx in range(1, groups):
+        expr = And(expr, Or(EqualTo(f"a{idx}", "x"), EqualTo(f"b{idx}", "y")))
+    return expr
+
+
+def test_to_dnf_at_expansion_limit() -> None:
+    assert len(rewrite_to_dnf(_chained_or_pairs(14))) == MAX_DNF_TERMS
+
+
+def test_to_dnf_rejects_unbounded_expansion() -> None:
+    with pytest.raises(ValueError, match=f"maximum of {MAX_DNF_TERMS} DNF terms"):
+        rewrite_to_dnf(_chained_or_pairs(20))
 
 
 def test_dnf_to_dask(table_schema_simple: Schema) -> None:

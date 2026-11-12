@@ -14,5 +14,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-[codespell]
-ignore-words-list = BoundIn,fo,MoR,NotIn,notIn,oT
+
+from pyiceberg import __version__
+
+
+class EnvironmentContext:
+    """Environment context carrying the engine name and version for snapshot summaries."""
+
+    @staticmethod
+    def get() -> dict[str, str]:
+        """Return a new dictionary containing only the engine name and version."""
+        return {
+            "engine-name": "pyiceberg",
+            "engine-version": __version__,
+        }

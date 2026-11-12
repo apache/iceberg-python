@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import itertools
 import logging
-import os
+import math
 import random
 import time
 import uuid
@@ -29,27 +29,38 @@ from dataclasses import dataclass
 from functools import cached_property
 from itertools import chain
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
+from cachetools import LRUCache
 from pydantic import Field
 
-import pyiceberg.expressions.parser as parser
-from pyiceberg.exceptions import CommitFailedException, ValidationException
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
+from pyiceberg.encryption.kms import KeyManagementClient
+from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNaN, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
     _InclusiveMetricsEvaluator,
     bind,
     expression_evaluator,
+    extract_field_ids,
     inclusive_projection,
     manifest_evaluator,
 )
 from pyiceberg.io import FileIO, load_file_io
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
+from pyiceberg.manifest import (
+    DataFile,
+    DataFileContent,
+    FileFormat,
+    ManifestContent,
+    ManifestEntry,
+    ManifestEntryStatus,
+    ManifestFile,
+)
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
@@ -118,6 +129,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.catalog import Catalog
     from pyiceberg.catalog.rest.scan_planning import RESTContentFile, RESTDeleteFile, RESTFileScanTask
+    from pyiceberg.encryption.manager import EncryptionManager
     from pyiceberg.table.update.snapshot import _SnapshotProducer
 
 logger = logging.getLogger(__name__)
@@ -135,6 +147,9 @@ class UpsertResult:
 
 
 class TableProperties:
+    RESIDUAL_CACHE_MAX_SIZE = "read.residual-cache.max-size"
+    RESIDUAL_CACHE_MAX_SIZE_DEFAULT = 128
+
     PARQUET_ROW_GROUP_SIZE_BYTES = "write.parquet.row-group-size-bytes"
     PARQUET_ROW_GROUP_SIZE_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
 
@@ -197,6 +212,10 @@ class TableProperties:
     DEFAULT_NAME_MAPPING = "schema.name-mapping.default"
     FORMAT_VERSION = "format-version"
     DEFAULT_FORMAT_VERSION: TableVersion = 2
+
+    ENCRYPTION_KEY_ID = "encryption.key-id"
+    ENCRYPTION_DATA_KEY_LENGTH = "encryption.data-key-length"
+    ENCRYPTION_DATA_KEY_LENGTH_DEFAULT = 16
 
     MANIFEST_TARGET_SIZE_BYTES = "commit.manifest.target-size-bytes"
     MANIFEST_TARGET_SIZE_BYTES_DEFAULT = 8 * 1024 * 1024  # 8 MB
@@ -293,10 +312,14 @@ class Transaction:
         self._updates += updates
 
         # For the requirements, it does not make sense to add a requirement more than once
-        # For example, you cannot assert that the current schema has two different IDs
-        existing_requirements = {type(requirement) for requirement in self._requirements}
+        # For example, you cannot assert that the current schema has two different IDs.
+        # Ref assertions are the exception: they apply per ref, so each ref keeps its own first assertion.
+        def _requirement_key(requirement: TableRequirement) -> tuple[type[TableRequirement], str | None]:
+            return type(requirement), requirement.ref if isinstance(requirement, AssertRefSnapshotId) else None
+
+        existing_requirements = {_requirement_key(requirement) for requirement in self._requirements}
         for new_requirement in requirements:
-            if type(new_requirement) not in existing_requirements:
+            if _requirement_key(new_requirement) not in existing_requirements:
                 self._requirements = self._requirements + (new_requirement,)
 
         return self
@@ -409,12 +432,16 @@ class Transaction:
 
         per_record_exprs: list[BooleanExpression] = []
         for partition_record in partition_records:
-            predicates: list[BooleanExpression] = [
-                EqualTo(Reference(partition_field), partition_record[pos])
-                if partition_record[pos] is not None
-                else IsNull(Reference(partition_field))
-                for pos, partition_field in enumerate(partition_fields)
-            ]
+            predicates: list[BooleanExpression] = []
+            for pos, partition_field in enumerate(partition_fields):
+                ref = Reference(partition_field)
+                value = partition_record[pos]
+                if value is None:
+                    predicates.append(IsNull(ref))
+                elif isinstance(value, float) and math.isnan(value):
+                    predicates.append(IsNaN(ref))
+                else:
+                    predicates.append(EqualTo(ref, value))
             per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
 
         return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
@@ -856,7 +883,6 @@ class Transaction:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
@@ -867,26 +893,25 @@ class Transaction:
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
-            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+        To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
-                Example Use Cases:
-                    Case 1: Both Parameters = True (Full Upsert)
-                    Existing row found → Update it
-                    New row found → Insert it
+            Example Use Cases:
+                Case 1: Both Parameters = True (Full Upsert)
+                Existing row found → Update it
+                New row found → Insert it
 
-                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
-                    Existing row found → Do nothing (no updates)
-                    New row found → Insert it
+                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                Existing row found → Do nothing (no updates)
+                New row found → Insert it
 
-                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
-                    Existing row found → Update it
-                    New row found → Do nothing (no inserts)
+                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                Existing row found → Update it
+                New row found → Do nothing (no inserts)
 
-                    Case 4: Both Parameters = False (No Merge Effect)
-                    Existing row found → Do nothing
-                    New row found → Do nothing
-                    (Function effectively does nothing)
-
+                Case 4: Both Parameters = False (No Merge Effect)
+                Existing row found → Do nothing
+                New row found → Do nothing
+                (Function effectively does nothing)
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
@@ -1135,6 +1160,12 @@ class Transaction:
                         except CommitFailedException:
                             elapsed_ms = (time.monotonic() - start_time) * 1000
                             if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
+                                # The catalog can apply a commit and still report failure, for example
+                                # when the response is lost. Check before cleaning up, since cleaning
+                                # up a snapshot that landed would leave the table unreadable.
+                                if self._snapshot_producers and self._attempt_landed():
+                                    self._cleanup_uncommitted_manifests()
+                                    break
                                 raise
 
                             wait = min(min_wait_ms * (2**attempt), max_wait_ms)
@@ -1147,11 +1178,7 @@ class Transaction:
                             )
                             time.sleep((wait + jitter) / 1000.0)
 
-                            self._table.refresh()
-                            if all(
-                                self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None
-                                for producer in self._snapshot_producers
-                            ):
+                            if self._attempt_landed():
                                 # A previous attempt actually landed even though it was reported as
                                 # failed (for example a lost response that the transport layer retried).
                                 # The snapshot id is stable across attempts, so finding it in the
@@ -1179,17 +1206,10 @@ class Transaction:
         elif self._snapshot_producers:
             # An empty staged output (e.g. a delete whose plan matched nothing) skips the
             # commit loop above, so run concurrency validation explicitly before reporting success.
-            from pyiceberg.table.update.snapshot import CommitWindow
-
             try:
                 self._table.refresh()
-                commit_window = CommitWindow.resolve(
-                    self._table.metadata,
-                    self._snapshot_producers[0]._starting_snapshot_id,
-                    self._snapshot_producers[0]._target_branch,
-                )
+                self._resolve_commit_windows()
                 for producer in self._snapshot_producers:
-                    producer._commit_window = commit_window
                     producer._validate_concurrency()
             except Exception:
                 for producer in self._snapshot_producers:
@@ -1204,25 +1224,53 @@ class Transaction:
 
         return self._table
 
+    def _attempt_landed(self) -> bool:
+        """Refresh the table and return whether a snapshot written by this transaction is present.
+
+        Raises:
+            CommitStateUnknownException: If the table cannot be refreshed, the outcome is unknown and
+                the files written for the attempt must not be deleted.
+        """
+        try:
+            self._table.refresh()
+        except Exception as e:
+            raise CommitStateUnknownException(
+                f"Commit failed and the table could not be refreshed to check whether it landed: {e}"
+            ) from e
+
+        return all(
+            self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None for producer in self._snapshot_producers
+        )
+
     def _cleanup_uncommitted_manifests(self) -> None:
         """Clean up manifests from failed retry attempts after a successful commit."""
         for producer in self._snapshot_producers:
             producer._cleanup_uncommitted()
 
+    def _resolve_commit_windows(self) -> None:
+        """Resolve each producer's commit window against the refreshed metadata of its own branch.
+
+        The window starts where the transaction first wrote to the branch. Later producers on the same
+        branch start from a snapshot staged by this transaction, which the catalog has never seen.
+        """
+        from pyiceberg.table.update.snapshot import CommitWindow
+
+        windows: dict[str | None, CommitWindow] = {}
+        for producer in self._snapshot_producers:
+            branch = producer._target_branch
+            if branch not in windows:
+                windows[branch] = CommitWindow.resolve(self._table.metadata, producer._starting_snapshot_id, branch)
+            producer._commit_window = windows[branch]
+
     def _rebuild_snapshot_updates(self) -> None:
         """Rebuild snapshot updates for retry by re-executing registered producers."""
         from pyiceberg.table.update import AddSnapshotUpdate, AssertRefSnapshotId, SetSnapshotRefUpdate
-        from pyiceberg.table.update.snapshot import CommitWindow
 
         self._updates = tuple(u for u in self._updates if not isinstance(u, (AddSnapshotUpdate, SetSnapshotRefUpdate)))
         self._requirements = tuple(r for r in self._requirements if not isinstance(r, AssertRefSnapshotId))
 
-        starting_id = self._snapshot_producers[0]._starting_snapshot_id if self._snapshot_producers else None
-        target_branch = self._snapshot_producers[0]._target_branch if self._snapshot_producers else None
-        commit_window = CommitWindow.resolve(self._table.metadata, starting_id, target_branch)
-
+        self._resolve_commit_windows()
         for producer in self._snapshot_producers:
-            producer._commit_window = commit_window
             producer._refresh_for_retry()
             producer._validate_concurrency()
             updates, requirements = producer._commit()
@@ -1318,6 +1366,13 @@ class CommitTableResponse(IcebergBaseModel):
     metadata_location: str = Field(alias="metadata-location")
 
 
+class _CachedEncryptionManager(NamedTuple):
+    """An encryption manager, reused with its unwrapped KEKs until the table metadata it was built from changes."""
+
+    metadata: TableMetadata
+    manager: EncryptionManager | None
+
+
 class Table:
     """An Iceberg table."""
 
@@ -1327,6 +1382,8 @@ class Table:
     io: FileIO
     catalog: Catalog
     config: dict[str, str]
+    # Catalog-provided labels, set when the catalog loads the table. They are not table state, so refresh() and commits keep them.
+    labels: Labels
 
     def __init__(
         self,
@@ -1336,6 +1393,8 @@ class Table:
         io: FileIO,
         catalog: Catalog,
         config: dict[str, str] = EMPTY_DICT,
+        kms_client: KeyManagementClient | None = None,
+        labels: Labels | None = None,
     ) -> None:
         self._identifier = identifier
         self.metadata = metadata
@@ -1343,6 +1402,27 @@ class Table:
         self.io = io
         self.catalog = catalog
         self.config = config
+        self._kms_client = kms_client
+        self.labels = labels if labels is not None else Labels()
+        self._encryption_manager: _CachedEncryptionManager | None = None
+
+    @property
+    def encryption_manager(self) -> EncryptionManager | None:
+        """The table's encryption manager, or None if the table is not encrypted.
+
+        The manager is built from the current metadata, and rebuilt when the metadata changes.
+
+        Raises:
+            ValueError: If the table is encrypted but no key management client was provided.
+        """
+        from pyiceberg.encryption.manager import EncryptionManager
+
+        cached = self._encryption_manager
+        if cached is None or cached.metadata is not self.metadata:
+            cached = self._encryption_manager = _CachedEncryptionManager(
+                self.metadata, EncryptionManager.from_table_metadata(self._kms_client, self.metadata)
+            )
+        return cached.manager
 
     def transaction(self) -> Transaction:
         """Create a new transaction object to first stage the changes, and then commit them to the catalog.
@@ -1442,6 +1522,7 @@ class Table:
             catalog=self.catalog,
             table_identifier=self._identifier,
             table_config=self.config,
+            encryption_manager=self.encryption_manager,
         )
 
     def incremental_append_scan(
@@ -1497,6 +1578,7 @@ class Table:
             to_snapshot_id=to_snapshot_id_inclusive,
             options=options,
             limit=limit,
+            encryption_manager=self.encryption_manager,
         )
 
     @property
@@ -1661,7 +1743,6 @@ class Table:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
-
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
@@ -1672,26 +1753,25 @@ class Table:
             branch: Branch Reference to run the upsert operation
             snapshot_properties: Custom properties to be added to the snapshot summary
 
-            To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
+        To learn more about the identifier-field-ids: https://iceberg.apache.org/spec/#identifier-field-ids
 
-                Example Use Cases:
-                    Case 1: Both Parameters = True (Full Upsert)
-                    Existing row found → Update it
-                    New row found → Insert it
+            Example Use Cases:
+                Case 1: Both Parameters = True (Full Upsert)
+                Existing row found → Update it
+                New row found → Insert it
 
-                    Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
-                    Existing row found → Do nothing (no updates)
-                    New row found → Insert it
+                Case 2: when_matched_update_all = False, when_not_matched_insert_all = True
+                Existing row found → Do nothing (no updates)
+                New row found → Insert it
 
-                    Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
-                    Existing row found → Update it
-                    New row found → Do nothing (no inserts)
+                Case 3: when_matched_update_all = True, when_not_matched_insert_all = False
+                Existing row found → Update it
+                New row found → Do nothing (no inserts)
 
-                    Case 4: Both Parameters = False (No Merge Effect)
-                    Existing row found → Do nothing
-                    New row found → Do nothing
-                    (Function effectively does nothing)
-
+                Case 4: Both Parameters = False (No Merge Effect)
+                Existing row found → Do nothing
+                New row found → Do nothing
+                (Function effectively does nothing)
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
@@ -1897,15 +1977,19 @@ class Table:
 
         return bd.read_iceberg_table(self)
 
-    def to_polars(self) -> pl.LazyFrame:
+    def to_polars(self, **kwargs: Any) -> pl.LazyFrame:
         """Lazily read from this Apache Iceberg table.
 
+        Args:
+            **kwargs: Additional keyword arguments to forward to :func:`polars.scan_iceberg`
+                (e.g. ``storage_options``, ``snapshot_id``, ``reader_override``).
+
         Returns:
-            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table
+            pl.LazyFrame: Unmaterialized Polars LazyFrame created from the Iceberg table.
         """
         import polars as pl
 
-        return pl.scan_iceberg(self)
+        return pl.scan_iceberg(self, **kwargs)
 
     def __datafusion_table_provider__(self, session: Any | None = None) -> IcebergDataFusionTable:
         """Return the DataFusion table provider PyCapsule interface.
@@ -1963,7 +2047,9 @@ class StaticTable(Table):
 
     @classmethod
     def _metadata_location_from_version_hint(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> str:
-        version_hint_location = os.path.join(metadata_location, "metadata", "version-hint.text")
+        # Using os.path.join here would produce "\" separators on Windows, breaking URI locations
+        metadata_dir = f"{metadata_location.rstrip('/')}/metadata"
+        version_hint_location = f"{metadata_dir}/version-hint.text"
         io = load_file_io(properties=properties, location=version_hint_location)
         file = io.new_input(version_hint_location)
 
@@ -1971,11 +2057,11 @@ class StaticTable(Table):
             content = stream.read().decode("utf-8")
 
         if content.endswith(".metadata.json"):
-            return os.path.join(metadata_location, "metadata", content)
+            return f"{metadata_dir}/{content}"
         elif content.isnumeric():
-            return os.path.join(metadata_location, "metadata", f"v{content}.metadata.json")
+            return f"{metadata_dir}/v{content}.metadata.json"
         else:
-            return os.path.join(metadata_location, "metadata", f"{content}.metadata.json")
+            return f"{metadata_dir}/{content}.metadata.json"
 
     @classmethod
     def from_metadata(cls, metadata_location: str, properties: Properties = EMPTY_DICT) -> StaticTable:
@@ -1995,7 +2081,7 @@ class StaticTable(Table):
             identifier=("static-table", metadata_location),
             metadata_location=metadata_location,
             metadata=metadata,
-            io=load_file_io({**properties, **metadata.properties}, location=metadata_location),
+            io=load_file_io({**metadata.properties, **properties}, location=metadata_location),
             catalog=NoopCatalog("static-table"),
         )
 
@@ -2042,6 +2128,8 @@ def _parse_row_filter(expr: str | BooleanExpression) -> BooleanExpression:
 
     Returns: An unbound BooleanExpression.
     """
+    from pyiceberg.expressions import parser
+
     return parser.parse(expr) if isinstance(expr, str) else expr
 
 
@@ -2058,6 +2146,7 @@ class BaseScan(ABC):
     case_sensitive: bool
     options: Properties
     limit: int | None
+    encryption_manager: EncryptionManager | None
 
     def __init__(
         self,
@@ -2068,6 +2157,7 @@ class BaseScan(ABC):
         case_sensitive: bool = True,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        encryption_manager: EncryptionManager | None = None,
     ):
         self.table_metadata = table_metadata
         self.io = io
@@ -2076,6 +2166,7 @@ class BaseScan(ABC):
         self.case_sensitive = case_sensitive
         self.options = options
         self.limit = limit
+        self.encryption_manager = encryption_manager
 
     @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]: ...
@@ -2175,6 +2266,7 @@ class TableScan(BaseScan):
         catalog: Catalog | None = None,
         table_identifier: Identifier | None = None,
         table_config: Properties = EMPTY_DICT,
+        encryption_manager: EncryptionManager | None = None,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2184,6 +2276,7 @@ class TableScan(BaseScan):
             case_sensitive=case_sensitive,
             options=options,
             limit=limit,
+            encryption_manager=encryption_manager,
         )
         self.snapshot_id = snapshot_id
         self.catalog = catalog
@@ -2191,7 +2284,7 @@ class TableScan(BaseScan):
         self.table_config = table_config
 
     def snapshot(self) -> Snapshot | None:
-        if self.snapshot_id:
+        if self.snapshot_id is not None:
             return self.table_metadata.snapshot_by_id(self.snapshot_id)
         return self.table_metadata.current_snapshot()
 
@@ -2216,7 +2309,7 @@ class TableScan(BaseScan):
         return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
 
     def use_ref(self: S, name: str) -> S:
-        if self.snapshot_id:
+        if self.snapshot_id is not None:
             raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
         if snapshot := self.table_metadata.snapshot_by_name(name):
             return self.update(snapshot_id=snapshot.snapshot_id)
@@ -2276,7 +2369,7 @@ class FileScanTask(ScanTask):
                 delete_file = delete_files[idx]
                 if isinstance(delete_file, RESTEqualityDeleteFile):
                     raise NotImplementedError(f"PyIceberg does not yet support equality deletes: {delete_file.file_path}")
-                resolved_deletes.add(_rest_file_to_data_file(delete_file))
+                resolved_deletes.add(_rest_file_to_data_file(delete_file, default_referenced_data_file=data_file.file_path))
 
         return FileScanTask(
             data_file=data_file,
@@ -2285,9 +2378,9 @@ class FileScanTask(ScanTask):
         )
 
 
-def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
+def _rest_file_to_data_file(rest_file: RESTContentFile, default_referenced_data_file: str | None = None) -> DataFile:
     """Convert a REST content file to a manifest DataFile."""
-    from pyiceberg.catalog.rest.scan_planning import RESTDataFile
+    from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTPositionDeleteFile
 
     if isinstance(rest_file, RESTDataFile):
         column_sizes = rest_file.column_sizes.to_dict() if rest_file.column_sizes else None
@@ -2299,6 +2392,17 @@ def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
         value_counts = None
         null_value_counts = None
         nan_value_counts = None
+
+    referenced_data_file = None
+    if isinstance(rest_file, RESTPositionDeleteFile):
+        referenced_data_file = rest_file.referenced_data_file
+        # Infer the DV target from its task only for range reads, preserving whole-Puffin fallback.
+        if (
+            referenced_data_file is None
+            and rest_file.file_format == FileFormat.PUFFIN
+            and (rest_file.content_offset is not None or rest_file.content_size_in_bytes is not None)
+        ):
+            referenced_data_file = default_referenced_data_file
 
     data_file = DataFile.from_args(
         content=DataFileContent.from_rest_type(rest_file.content),
@@ -2313,6 +2417,9 @@ def _rest_file_to_data_file(rest_file: RESTContentFile) -> DataFile:
         nan_value_counts=nan_value_counts,
         split_offsets=rest_file.split_offsets,
         sort_order_id=rest_file.sort_order_id,
+        referenced_data_file=referenced_data_file,
+        content_offset=rest_file.content_offset if isinstance(rest_file, RESTPositionDeleteFile) else None,
+        content_size_in_bytes=rest_file.content_size_in_bytes if isinstance(rest_file, RESTPositionDeleteFile) else None,
     )
     data_file.spec_id = rest_file.spec_id
     return data_file
@@ -2329,11 +2436,9 @@ def _open_manifest(
     Returns:
         A list of ManifestEntry that matches the provided filters.
     """
-    return [
-        manifest_entry
-        for manifest_entry in manifest.fetch_manifest_entry(io, discard_deleted=True)
-        if partition_filter(manifest_entry.data_file) and metrics_evaluator(manifest_entry.data_file)
-    ]
+    return manifest.fetch_manifest_entry(
+        io, discard_deleted=True, entry_filter=lambda e: partition_filter(e.data_file) and metrics_evaluator(e.data_file)
+    )
 
 
 def _min_sequence_number(manifests: list[ManifestFile]) -> int:
@@ -2427,7 +2532,7 @@ class DataScan(TableScan):
         if not snapshot:
             return iter([])
 
-        return self._manifest_planner.plan_manifest_entries(snapshot.manifests(self.io))
+        return self._manifest_planner.plan_manifest_entries(snapshot.manifests(self.io, self.encryption_manager))
 
     def _should_use_server_side_planning(self) -> bool:
         """Check if server-side scan planning should be used for this scan."""
@@ -2463,8 +2568,10 @@ class DataScan(TableScan):
         """Plan files locally by reading manifests."""
         snapshot = self.snapshot()
         if not snapshot:
+            if self.snapshot_id is not None:
+                raise ValueError(f"Snapshot not found: {self.snapshot_id}")
             return []
-        return self._manifest_planner.plan_files(snapshot.manifests(self.io))
+        return self._manifest_planner.plan_files(snapshot.manifests(self.io, self.encryption_manager))
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files by filtering on the PartitionSpecs.
@@ -2580,6 +2687,8 @@ class IncrementalAppendScan(BaseScan):
             An integer representing the number of rows to
             return in the scan result. If None, fetches all
             matching rows.
+        encryption_manager:
+            Decrypts the manifest lists of encrypted snapshots.
     """
 
     from_snapshot_id: int | None
@@ -2598,6 +2707,7 @@ class IncrementalAppendScan(BaseScan):
         to_snapshot_id: int | None = None,
         options: Properties = EMPTY_DICT,
         limit: int | None = None,
+        encryption_manager: EncryptionManager | None = None,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2607,6 +2717,7 @@ class IncrementalAppendScan(BaseScan):
             case_sensitive=case_sensitive,
             options=options,
             limit=limit,
+            encryption_manager=encryption_manager,
         )
         self.from_snapshot_id = from_snapshot_id
         self.from_snapshot_inclusive = from_snapshot_inclusive
@@ -2656,7 +2767,7 @@ class IncrementalAppendScan(BaseScan):
             {
                 manifest_file
                 for snapshot in append_snapshots
-                for manifest_file in snapshot.manifests(self.io)
+                for manifest_file in snapshot.manifests(self.io, self.encryption_manager)
                 if manifest_file.content == ManifestContent.DATA and manifest_file.added_snapshot_id in append_snapshot_ids
             }
         )
@@ -2669,8 +2780,9 @@ class IncrementalAppendScan(BaseScan):
             options=self.options,
         ).plan_files(
             manifests=manifests,
-            manifest_entry_filter=lambda manifest_entry: manifest_entry.snapshot_id in append_snapshot_ids
-            and manifest_entry.status == ManifestEntryStatus.ADDED,
+            manifest_entry_filter=lambda manifest_entry: (
+                manifest_entry.snapshot_id in append_snapshot_ids and manifest_entry.status == ManifestEntryStatus.ADDED
+            ),
         )
 
     def to_arrow(self) -> pa.Table:
@@ -2819,7 +2931,39 @@ class ManifestGroupPlanner:
         data_entries: list[ManifestEntry] = []
         delete_index = DeleteFileIndex()
 
-        residual_evaluators: dict[int, Callable[[DataFile], ResidualEvaluator]] = KeyDefaultDict(self._build_residual_evaluator)
+        residual_evaluators: dict[int, ResidualEvaluator] = KeyDefaultDict(self._build_residual_evaluator)
+        referenced_field_ids = extract_field_ids(
+            bind(self.table_metadata.schema(), self.row_filter, case_sensitive=self.case_sensitive)
+        )
+        partition_specs = self.table_metadata.specs()
+        residual_cache_key_positions: dict[int, tuple[int, ...]] = KeyDefaultDict(
+            lambda spec_id: tuple(
+                pos
+                for pos, partition_field in enumerate(partition_specs[spec_id].fields)
+                if partition_field.source_id in referenced_field_ids
+            )
+        )
+        # A residual can only depend on partition fields derived from source columns
+        # referenced by the scan filter. Keep the cache local and bounded.
+        residual_cache_max_size = property_as_int(
+            self.options,
+            TableProperties.RESIDUAL_CACHE_MAX_SIZE,
+            TableProperties.RESIDUAL_CACHE_MAX_SIZE_DEFAULT,
+        )
+        if residual_cache_max_size is None or residual_cache_max_size <= 0:
+            raise ValueError(f"{TableProperties.RESIDUAL_CACHE_MAX_SIZE} must be a positive integer")
+        residual_cache: LRUCache[tuple[int, tuple[Any, ...]], BooleanExpression] = LRUCache(maxsize=residual_cache_max_size)
+
+        def residual_for(data_file: DataFile) -> BooleanExpression:
+            partition = data_file.partition
+            partition_values = tuple(partition[pos] for pos in residual_cache_key_positions[data_file.spec_id])
+            cache_key = data_file.spec_id, partition_values
+            try:
+                return residual_cache[cache_key]
+            except KeyError:
+                residual = residual_evaluators[data_file.spec_id].residual_for(partition)
+                residual_cache[cache_key] = residual
+                return residual
 
         for manifest_entry in chain.from_iterable(self.plan_manifest_entries(manifests)):
             if not manifest_entry_filter(manifest_entry):
@@ -2843,9 +2987,7 @@ class ManifestGroupPlanner:
                     data_entry.data_file,
                     partition_key=data_entry.data_file.partition,
                 ),
-                residual=residual_evaluators[data_entry.data_file.spec_id](data_entry.data_file).residual_for(
-                    data_entry.data_file.partition
-                ),
+                residual=residual_for(data_entry.data_file),
             )
             for data_entry in data_entries
         ]
@@ -2882,15 +3024,12 @@ class ManifestGroupPlanner:
             include_empty_files,
         ).eval
 
-    def _build_residual_evaluator(self, spec_id: int) -> Callable[[DataFile], ResidualEvaluator]:
+    def _build_residual_evaluator(self, spec_id: int) -> ResidualEvaluator:
         spec = self.table_metadata.specs()[spec_id]
 
         from pyiceberg.expressions.visitors import residual_evaluator_of
 
-        # The lambda created here is run in multiple threads.
-        # So we avoid creating _EvaluatorExpression methods bound to a single
-        # shared instance across multiple threads.
-        return lambda datafile: residual_evaluator_of(
+        return residual_evaluator_of(
             spec=spec,
             expr=self.row_filter,
             case_sensitive=self.case_sensitive,

@@ -17,13 +17,14 @@
 import os
 from unittest.mock import MagicMock
 
+import pytest
 from google.api_core.exceptions import NotFound
 from google.cloud.bigquery import Dataset, DatasetReference, Table, TableReference
 from google.cloud.bigquery.external_config import ExternalCatalogDatasetOptions, ExternalCatalogTableOptions
 from pytest_mock import MockFixture
 
 from pyiceberg.catalog.bigquery_metastore import ICEBERG_TABLE_TYPE_VALUE, TABLE_TYPE_PROP, BigQueryMetastoreCatalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.schema import Schema
 
 
@@ -178,3 +179,15 @@ def test_list_namespaces(mocker: MockFixture) -> None:
     assert ("dataset1",) in namespaces
     assert ("dataset2",) in namespaces
     client_mock.list_datasets.assert_called_once()
+
+
+def test_load_namespace_properties_rejects_multipart_namespace(mocker: MockFixture) -> None:
+    client_mock = MagicMock()
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+    catalog = BigQueryMetastoreCatalog("test_catalog", **{"gcp.bigquery.project-id": "my-project"})
+
+    with pytest.raises(NoSuchNamespaceError, match="hierarchical namespaces are not supported"):
+        catalog.load_namespace_properties(("dataset", "table"))
+
+    client_mock.get_dataset.assert_not_called()

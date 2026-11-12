@@ -119,6 +119,18 @@ def test_schema_repr_two_fields() -> None:
     assert expected == actual
 
 
+def test_empty_schema_equality() -> None:
+    assert Schema() == Schema()
+
+
+def test_schema_equality_ignores_identifier_field_order() -> None:
+    fields = (
+        NestedField(field_id=1, name="foo", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=LongType(), required=True),
+    )
+    assert Schema(*fields, identifier_field_ids=[1, 2]) == Schema(*fields, identifier_field_ids=[2, 1])
+
+
 def test_schema_raise_on_duplicate_names() -> None:
     """Test schema representation"""
     with pytest.raises(ValueError) as exc_info:
@@ -868,6 +880,10 @@ def test_schema_select_cant_be_found(table_schema_nested: Schema) -> None:
     assert "Could not find column: 'BAZ'" in str(exc_info.value)
 
 
+def can_promote_decimal(file_type: DecimalType, read_type: DecimalType) -> bool:
+    return file_type.precision <= read_type.precision and file_type.scale == read_type.scale
+
+
 def should_promote(file_type: IcebergType, read_type: IcebergType) -> bool:
     if isinstance(file_type, IntegerType) and isinstance(read_type, LongType):
         return True
@@ -878,7 +894,7 @@ def should_promote(file_type: IcebergType, read_type: IcebergType) -> bool:
     if isinstance(file_type, BinaryType) and isinstance(read_type, StringType):
         return True
     if isinstance(file_type, DecimalType) and isinstance(read_type, DecimalType):
-        return file_type.precision <= read_type.precision and file_type.scale == file_type.scale
+        return can_promote_decimal(file_type, read_type)
     if isinstance(file_type, FixedType) and isinstance(read_type, UUIDType) and len(file_type) == 16:
         return True
     return False
@@ -943,6 +959,19 @@ def test_promotion(file_type: IcebergType, read_type: IcebergType) -> None:
     else:
         with pytest.raises(ResolveError):
             promote(file_type, read_type)
+
+
+def test_decimal_promotion() -> None:
+    # Widening precision while keeping the scale fixed is allowed.
+    assert promote(DecimalType(9, 2), DecimalType(18, 2)) == DecimalType(18, 2)
+    # Equal precision and scale resolves to the read type.
+    assert promote(DecimalType(9, 2), DecimalType(9, 2)) == DecimalType(9, 2)
+    # Changing the scale is never allowed, even when the precision widens.
+    with pytest.raises(ResolveError):
+        promote(DecimalType(9, 2), DecimalType(18, 4))
+    # Reducing the precision is not allowed.
+    with pytest.raises(ResolveError):
+        promote(DecimalType(18, 2), DecimalType(9, 2))
 
 
 def test_unknown_type_promotion_to_primitive() -> None:
@@ -1088,7 +1117,7 @@ def test_add_nested_lists(primitive_fields: NestedField, table_v2: Table) -> Non
                                     element_id=7,
                                     element_type=ListType(
                                         element_id=8,
-                                        element_type=ListType(element_id=9, element_type=DecimalType(precision=11, scale=20)),
+                                        element_type=ListType(element_id=9, element_type=DecimalType(precision=20, scale=11)),
                                         element_required=False,
                                     ),
                                     element_required=False,

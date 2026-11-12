@@ -81,6 +81,19 @@ def test_view_properties(view: View) -> None:
     assert view.properties == {"comment": "this is a test view"}
 
 
+def test_view_config_defaults_to_empty(view: View) -> None:
+    assert view.config == {}
+
+
+def test_view_config(view: View) -> None:
+    config = {"token": "view-token"}
+    configured_view = View(view.name(), view.metadata, config=config)
+
+    assert configured_view.config == config
+    assert configured_view.properties == view.properties
+    assert configured_view == view
+
+
 def test_view_location(view: View) -> None:
     assert view.location() == "s3://bucket/test/location/test_view"
 

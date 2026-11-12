@@ -272,7 +272,7 @@ class EnumReader(Reader):
         return self.enum(self.reader.read(decoder))
 
     def skip(self, decoder: BinaryDecoder) -> None:
-        pass
+        self.reader.skip(decoder)
 
 
 class WriteSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Writer]):
@@ -461,9 +461,24 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
 
             # ensure that the type can be projected to the expected
             if primitive != expected_primitive:
+                if self._is_legacy_long_equality_ids(primitive, expected_primitive):
+                    return IntegerReader()
                 promote(primitive, expected_primitive)
 
         return super().primitive(primitive, expected_primitive)
+
+    def _is_legacy_long_equality_ids(self, primitive: PrimitiveType, expected_primitive: PrimitiveType) -> bool:
+        # PyIceberg previously wrote the wrong schema, list<long>, for equality_ids; the Iceberg spec requires list<int>.
+        # The default schema now uses list<int>, but the schema promotion rules do not allow reading long as int.
+        # Ints and longs share the same Avro encoding, so allow this exact mismatch for the equality_ids element (136)
+        # when reading existing files.
+        # See: https://github.com/apache/iceberg-python/issues/3840
+        # See: https://iceberg.apache.org/spec/#manifests
+        return (
+            self.context == [2, 135, 136]  # field id path from manifest_entry: data_file (2), equality_ids (135), element (136)
+            and isinstance(primitive, LongType)
+            and isinstance(expected_primitive, IntegerType)
+        )
 
     def visit_boolean(self, boolean_type: BooleanType, partner: IcebergType | None) -> Reader:
         return BooleanReader()
@@ -533,6 +548,10 @@ class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):
         raise ResolveError(f"File/read schema are not aligned for schema, got {partner}")
 
     def field_partner(self, partner: IcebergType | None, field_id: int, field_name: str) -> IcebergType | None:
+        # A file-only field has no partner; its nested fields are read and dropped
+        if partner is None:
+            return None
+
         if isinstance(partner, StructType):
             field = partner.field(field_id)
         else:
@@ -541,18 +560,27 @@ class SchemaPartnerAccessor(PartnerAccessor[IcebergType]):
         return field.field_type if field else None
 
     def list_element_partner(self, partner_list: IcebergType | None) -> IcebergType | None:
+        if partner_list is None:
+            return None
+
         if isinstance(partner_list, ListType):
             return partner_list.element_type
 
         raise ResolveError(f"File/read schema are not aligned for list, got {partner_list}")
 
     def map_key_partner(self, partner_map: IcebergType | None) -> IcebergType | None:
+        if partner_map is None:
+            return None
+
         if isinstance(partner_map, MapType):
             return partner_map.key_type
 
         raise ResolveError(f"File/read schema are not aligned for map, got {partner_map}")
 
     def map_value_partner(self, partner_map: IcebergType | None) -> IcebergType | None:
+        if partner_map is None:
+            return None
+
         if isinstance(partner_map, MapType):
             return partner_map.value_type
 

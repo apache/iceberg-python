@@ -42,8 +42,9 @@ def merge_config(lhs: RecursiveDict, rhs: RecursiveDict) -> RecursiveDict:
                 # If they are both dicts, then we have to go deeper
                 new_config[rhs_key] = merge_config(lhs_value, rhs_value)
             else:
-                # Take the non-null value, with precedence on rhs
-                new_config[rhs_key] = rhs_value or lhs_value
+                # Take the non-null value, with precedence on rhs. `None` means "not set",
+                # while a falsy value such as `False` or `0` is an explicit setting and wins.
+                new_config[rhs_key] = rhs_value if rhs_value is not None else lhs_value
         else:
             # New key
             new_config[rhs_key] = rhs_value
@@ -79,6 +80,9 @@ class Config:
                     with open(path, encoding=UTF8) as f:
                         yml_str = f.read()
                     file_config = strictyaml.load(yml_str).data
+                    if not isinstance(file_config, dict):
+                        # An empty or comment-only document parses as a string
+                        return None
                     file_config_lowercase = _lowercase_dictionary_keys(file_config)
                     return file_config_lowercase
             return None

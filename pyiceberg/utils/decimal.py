@@ -76,6 +76,7 @@ def decimal_to_bytes(value: Decimal, byte_length: int | None = None) -> bytes:
     Args:
         value (Decimal): a decimal value.
         byte_length (int): The number of bytes.
+
     Returns:
         bytes: the unscaled value of the Decimal as bytes.
     """
@@ -105,12 +106,15 @@ def truncate_decimal(value: Decimal, width: int) -> Decimal:
     Args:
         value (Decimal): a decimal value.
         width (int): A width for the returned Decimal instance.
+
     Returns:
         Decimal: A truncated Decimal instance.
     """
     unscaled_value = decimal_to_unscaled(value)
     applied_value = unscaled_value - (((unscaled_value % width) + width) % width)
-    return unscaled_to_decimal(applied_value, abs(int(value.as_tuple().exponent)))
+    # A Decimal carries the negated scale as its exponent, so a value with a
+    # non-negative exponent (1E+2) has a negative scale and abs() would read it wrong
+    return unscaled_to_decimal(applied_value, -int(value.as_tuple().exponent))
 
 
 MAX_PRECISION = tuple(math.floor(math.log10(math.fabs(math.pow(2, 8 * pos - 1) - 1))) for pos in range(24))

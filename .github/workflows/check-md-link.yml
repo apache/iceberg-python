@@ -20,24 +20,20 @@
 name: Check Markdown links
 
 on:
-  push:
-    paths:
-      - '.github/workflows/check-md-link.yml'
-      - 'mkdocs/**'
-    branches:
-    - 'main'
   pull_request:
-    paths:
-      - '.github/workflows/check-md-link.yml'
-      - 'mkdocs/**'
+  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   markdown-link-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:

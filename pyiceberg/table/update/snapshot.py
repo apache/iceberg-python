@@ -28,7 +28,12 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
-from pyiceberg.exceptions import ValidationException
+from pyiceberg.exceptions import (
+    NoSuchSnapshotRefError,
+    NotAncestorError,
+    SnapshotRefTypeError,
+    ValidationException,
+)
 from pyiceberg.expressions import AlwaysFalse, BooleanExpression, Or
 from pyiceberg.expressions.visitors import (
     ROWS_MIGHT_NOT_MATCH,
@@ -52,13 +57,14 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRefType
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
     SnapshotSummaryCollector,
     Summary,
     ancestors_of,
+    is_ancestor_of,
     latest_ancestor_before_timestamp,
     update_snapshot_summaries,
 )
@@ -229,20 +235,24 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _manifests(self) -> list[ManifestFile]:
         def _write_added_manifest() -> list[ManifestFile]:
             if self._added_data_files:
-                with self.new_manifest_writer(
-                    spec=self._transaction.table_metadata.spec(),
-                ) as writer:
-                    for data_file in self._added_data_files:
-                        writer.add(
-                            ManifestEntry.from_args(
-                                status=ManifestEntryStatus.ADDED,
-                                snapshot_id=self._snapshot_id,
-                                sequence_number=None,
-                                file_sequence_number=None,
-                                data_file=data_file,
+                added_manifests = []
+                partition_groups: dict[int, list[DataFile]] = defaultdict(list)
+                for data_file in self._added_data_files:
+                    partition_groups[data_file.spec_id].append(data_file)
+                for spec_id, data_files in partition_groups.items():
+                    with self.new_manifest_writer(self.spec(spec_id)) as writer:
+                        for data_file in data_files:
+                            writer.add(
+                                ManifestEntry.from_args(
+                                    status=ManifestEntryStatus.ADDED,
+                                    snapshot_id=self._snapshot_id,
+                                    sequence_number=None,
+                                    file_sequence_number=None,
+                                    data_file=data_file,
+                                )
                             )
-                        )
-                return [writer.to_manifest_file()]
+                    added_manifests.append(writer.to_manifest_file())
+                return added_manifests
             else:
                 return []
 
@@ -280,7 +290,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         # avoid copying metadata for each data file
         table_metadata = self._transaction.table_metadata
         schema = table_metadata.schema()
-        default_spec = table_metadata.spec()
+        specs = table_metadata.specs()
 
         partition_summary_limit = int(
             table_metadata.properties.get(
@@ -292,12 +302,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         for data_file in self._added_data_files:
             ssc.add_file(
                 data_file=data_file,
-                partition_spec=default_spec,
+                partition_spec=specs[data_file.spec_id],
                 schema=schema,
             )
 
         if len(self._deleted_data_files) > 0:
-            specs = table_metadata.specs()
             for data_file in self._deleted_data_files:
                 ssc.remove_file(
                     data_file=data_file,
@@ -1002,7 +1011,7 @@ class _ManifestMergeManager(Generic[U]):
         groups = self._group_by_spec(manifests)
 
         merged_manifests = []
-        for spec_id in reversed(groups.keys()):
+        for spec_id in reversed(groups):
             merged_manifests.extend(self._merge_group(first_manifest, spec_id, groups[spec_id]))
 
         return merged_manifests
@@ -1043,13 +1052,43 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             self._updates = ()
             self._requirements = ()
 
+    def _effective_refs(self) -> dict[str, SnapshotRef]:
+        """Return refs as they would appear after all currently-staged updates.
+
+        Committed refs from ``table_metadata.refs`` overlaid with the effects
+        of every ``SetSnapshotRefUpdate`` / ``RemoveSnapshotRefUpdate`` that has
+        been accumulated onto ``self._updates`` in this chain, in order. Later
+        stages win. Callers use this instead of ``table_metadata.refs`` when a
+        decision needs to observe the results of earlier operations in the
+        same ``manage_snapshots()`` chain.
+
+        Note that this projection is for *decision-making* only. Requirements
+        emitted via ``_set_ref_snapshot`` continue to reference committed
+        state, which is what the catalog checks at commit time and what makes
+        concurrent-write detection correct.
+        """
+        refs: dict[str, SnapshotRef] = dict(self._transaction.table_metadata.refs)
+        for update in self._updates:
+            if isinstance(update, SetSnapshotRefUpdate):
+                refs[update.ref_name] = SnapshotRef(
+                    snapshot_id=update.snapshot_id,
+                    snapshot_ref_type=update.type,
+                    max_ref_age_ms=update.max_ref_age_ms,
+                    max_snapshot_age_ms=update.max_snapshot_age_ms,
+                    min_snapshots_to_keep=update.min_snapshots_to_keep,
+                )
+            elif isinstance(update, RemoveSnapshotRefUpdate):
+                refs.pop(update.ref_name, None)
+        return refs
+
     def _remove_ref_snapshot(self, ref_name: str) -> ManageSnapshots:
         """Remove a snapshot ref.
 
         Args:
             ref_name: branch / tag name to remove
         Stages the updates and requirements for the remove-snapshot-ref.
-        Returns
+
+        Returns:
             This method for chaining
         """
         updates = (RemoveSnapshotRefUpdate(ref_name=ref_name),)
@@ -1076,7 +1115,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
         Returns:
             This for method chaining
+
+        Raises:
+            ValueError: If a branch or tag with this name already exists.
         """
+        if tag_name in self._effective_refs():
+            raise ValueError(f"Ref {tag_name} already exists")
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
@@ -1095,7 +1139,16 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             tag_name (str): name of tag to remove
         Returns:
             This for method chaining
+
+        Raises:
+            NoSuchSnapshotRefError: If the tag does not exist.
+            SnapshotRefTypeError: If the name belongs to a branch.
         """
+        ref = self._effective_refs().get(tag_name)
+        if ref is None:
+            raise NoSuchSnapshotRefError(f"Tag does not exist: {tag_name}")
+        if ref.snapshot_ref_type != SnapshotRefType.TAG:
+            raise SnapshotRefTypeError(f"Ref {tag_name} is a branch, not a tag")
         return self._remove_ref_snapshot(ref_name=tag_name)
 
     def create_branch(
@@ -1117,7 +1170,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             min_snapshots_to_keep (Optional[int]): min number of snapshots to keep for the branch
         Returns:
             This for method chaining
+
+        Raises:
+            ValueError: If a branch or tag with this name already exists.
         """
+        if branch_name in self._effective_refs():
+            raise ValueError(f"Ref {branch_name} already exists")
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=branch_name,
@@ -1138,7 +1196,19 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             branch_name (str): name of branch to remove
         Returns:
             This for method chaining
+
+        Raises:
+            ValueError: If the branch is main.
+            NoSuchSnapshotRefError: If the branch does not exist.
+            SnapshotRefTypeError: If the name belongs to a tag.
         """
+        if branch_name == MAIN_BRANCH:
+            raise ValueError("Cannot remove main branch")
+        ref = self._effective_refs().get(branch_name)
+        if ref is None:
+            raise NoSuchSnapshotRefError(f"Branch does not exist: {branch_name}")
+        if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+            raise SnapshotRefTypeError(f"Ref {branch_name} is a tag, not a branch")
         return self._remove_ref_snapshot(ref_name=branch_name)
 
     def set_current_snapshot(self, snapshot_id: int | None = None, ref_name: str | None = None) -> ManageSnapshots:
@@ -1231,6 +1301,61 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
                 self._transaction.table_metadata,
             )
         }
+
+    def fast_forward_branch(self, from_branch: str, to_ref: str) -> ManageSnapshots:
+        """Fast-forward ``from_branch`` to the snapshot referenced by ``to_ref``.
+
+        * If ``from_branch`` does not exist, it is created pointing at ``to_ref``'s snapshot (Java/Spark parity).
+        * If both refs already point to the same snapshot the call is a no-op.
+        * Otherwise ``from_branch`` must be a branch (not a tag) and its current snapshot
+        must be an ancestor of ``to_ref``'s snapshot.
+
+        Within a single ``manage_snapshots()`` chain, ref lookups observe earlier staged
+        operations via :meth:`_effective_refs`. This means that `create_branch(...)` followed
+        by `fast_forward_branch(...)` on the same ref works as expected.
+
+        Args:
+            from_branch: name of the branch to advance.
+            to_ref: name of the branch or tag whose snapshot ``from_branch`` will point to.
+
+        Returns:
+            This for method chaining.
+
+        Raises:
+            NoSuchSnapshotRefError: ``to_ref`` does not exist.
+            SnapshotRefTypeError: ``from_branch`` exists but is a tag.
+            NotAncestorError: ``from_branch``'s snapshot is not an ancestor of ``to_ref``'s snapshot.
+        """
+        refs = self._effective_refs()
+
+        if (to_snapshot_ref := refs.get(to_ref)) is None:
+            raise NoSuchSnapshotRefError(f"Ref does not exist: {to_ref}")
+        to_snapshot_id = to_snapshot_ref.snapshot_id
+
+        if from_branch not in refs:
+            return self.create_branch(snapshot_id=to_snapshot_id, branch_name=from_branch)
+
+        from_ref = refs[from_branch]
+        if from_ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+            raise SnapshotRefTypeError(f"Ref {from_branch} is a tag, not a branch")
+
+        if from_ref.snapshot_id == to_snapshot_id:
+            return self
+
+        if not is_ancestor_of(to_snapshot_id, from_ref.snapshot_id, self._transaction.table_metadata):
+            raise NotAncestorError(f"Cannot fast-forward: {from_branch} is not an ancestor of {to_ref}")
+
+        update, requirement = self._transaction._set_ref_snapshot(
+            snapshot_id=to_snapshot_id,
+            ref_name=from_branch,
+            type=SnapshotRefType.BRANCH,
+            max_ref_age_ms=from_ref.max_ref_age_ms,
+            max_snapshot_age_ms=from_ref.max_snapshot_age_ms,
+            min_snapshots_to_keep=from_ref.min_snapshots_to_keep,
+        )
+        self._updates += update
+        self._requirements += requirement
+        return self
 
 
 class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
@@ -1348,6 +1473,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         Args:
             snapshot_id (int): The ID of the snapshot to expire.
+
         Returns:
             This for method chaining.
         """
@@ -1369,6 +1495,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         Args:
             snapshot_ids (List[int]): List of snapshot IDs to expire.
+
         Returns:
             This for method chaining.
         """

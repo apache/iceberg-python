@@ -66,6 +66,7 @@ You can mix and match optional dependencies depending on your needs:
 | hf            | Support for Hugging Face Hub                                              |
 | gcp-auth      | Support for Google Cloud authentication                                   |
 | entra-auth    | Support for Azure Entra authentication                                    |
+| encryption    | Support for table encryption                                              |
 
 You either need to install `s3fs`, `adlfs`, `gcsfs`, or `pyarrow` to be able to fetch files from an object store.
 

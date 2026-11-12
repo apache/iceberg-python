@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import os
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -85,6 +85,28 @@ def test_merge_config() -> None:
     rhs: RecursiveDict = {"common_key": "xyz789"}
     result = merge_config(lhs, rhs)
     assert result["common_key"] == rhs["common_key"]
+
+
+@pytest.mark.parametrize("falsy_value", [False, "", 0])
+def test_merge_config_rhs_wins_for_falsy_values(falsy_value: Any) -> None:
+    """A value set explicitly on the right-hand side wins even when it is falsy.
+
+    `load_catalog(name, **properties)` merges the configuration file into the properties
+    passed by the caller, so turning an option off explicitly must not fall back to the
+    value coming from the file.
+    """
+    lhs: RecursiveDict = {"s3.path-style-access": "true"}
+    rhs: RecursiveDict = {"s3.path-style-access": falsy_value}
+    result = merge_config(lhs, rhs)
+    assert result["s3.path-style-access"] == falsy_value
+
+
+def test_merge_config_lhs_wins_when_rhs_is_none() -> None:
+    """`None` on the right-hand side means "not set", so the left-hand side survives."""
+    lhs: RecursiveDict = {"uri": "https://example.com"}
+    rhs = cast(RecursiveDict, {"uri": None})
+    result = merge_config(lhs, rhs)
+    assert result["uri"] == "https://example.com"
 
 
 def test_from_configuration_files_get_typed_value(tmp_path_factory: pytest.TempPathFactory) -> None:
@@ -183,3 +205,20 @@ def test_config_lookup_order(
     assert (
         result["catalog"]["default"]["uri"] if result else None  # type: ignore
     ) == expected_result, f"Unexpected configuration result. Expected: {expected_result}, Actual: {result}"
+
+
+@pytest.mark.parametrize("content", ["", "\n", "# only a comment\n"])
+def test_from_configuration_files_without_a_mapping(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory, content: str
+) -> None:
+    """A file that holds no mapping should be treated as absent."""
+    pyiceberg_home = str(tmp_path_factory.mktemp("pyiceberg_home"))
+    empty_dir = str(tmp_path_factory.mktemp("empty"))
+    with open(os.path.join(pyiceberg_home, ".pyiceberg.yaml"), "w", encoding=UTF8) as file:
+        file.write(content)
+
+    monkeypatch.setenv("PYICEBERG_HOME", pyiceberg_home)
+    monkeypatch.setattr(os.path, "expanduser", lambda _: empty_dir)
+    monkeypatch.chdir(empty_dir)
+
+    assert Config()._from_configuration_files() is None

@@ -15,11 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from collections.abc import Callable
 from tempfile import TemporaryDirectory
 
 import pytest
 from pydantic import Field
 
+from pyiceberg.avro.decoder import BinaryDecoder, StreamingBinaryDecoder
+from pyiceberg.avro.decoder_fast import CythonBinaryDecoder
 from pyiceberg.avro.file import AvroFile
 from pyiceberg.avro.reader import (
     DecimalReader,
@@ -32,7 +35,7 @@ from pyiceberg.avro.reader import (
     StringReader,
     StructReader,
 )
-from pyiceberg.avro.resolver import resolve_reader, resolve_writer
+from pyiceberg.avro.resolver import EnumReader, resolve_reader, resolve_writer
 from pyiceberg.avro.writer import (
     BinaryWriter,
     DefaultWriter,
@@ -46,7 +49,7 @@ from pyiceberg.avro.writer import (
 )
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.io.pyarrow import PyArrowFileIO
-from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMAS
+from pyiceberg.manifest import MANIFEST_ENTRY_SCHEMAS, ManifestEntryStatus
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
@@ -63,6 +66,8 @@ from pyiceberg.types import (
     StringType,
     StructType,
 )
+
+AVAILABLE_DECODERS = [StreamingBinaryDecoder, CythonBinaryDecoder]
 
 
 def test_resolver() -> None:
@@ -205,7 +210,7 @@ def test_resolve_float_to_double() -> None:
 
 def test_resolve_decimal_to_decimal() -> None:
     # DecimalType(P, S) to DecimalType(P2, S) where P2 > P
-    assert resolve_reader(DecimalType(19, 25), DecimalType(22, 25)) == DecimalReader(19, 25)
+    assert resolve_reader(DecimalType(19, 10), DecimalType(22, 10)) == DecimalReader(19, 10)
 
 
 def test_struct_not_aligned() -> None:
@@ -251,9 +256,18 @@ def test_decimal_not_aligned() -> None:
 def test_resolve_decimal_to_decimal_reduce_precision() -> None:
     # DecimalType(P, S) to DecimalType(P2, S) where P2 > P
     with pytest.raises(ResolveError) as exc_info:
-        _ = resolve_reader(DecimalType(19, 25), DecimalType(10, 25)) == DecimalReader(22, 25)
+        _ = resolve_reader(DecimalType(19, 10), DecimalType(10, 10)) == DecimalReader(22, 10)
 
-    assert "Cannot reduce precision from decimal(19, 25) to decimal(10, 25)" in str(exc_info.value)
+    assert "Cannot reduce precision from decimal(19, 10) to decimal(10, 10)" in str(exc_info.value)
+
+
+def test_resolve_decimal_to_decimal_change_scale() -> None:
+    # Changing the scale is not a valid promotion, even when the precision widens.
+    # Allowing it would reinterpret the file's unscaled integers at the wrong scale.
+    with pytest.raises(ResolveError) as exc_info:
+        _ = resolve_reader(DecimalType(9, 2), DecimalType(18, 4))
+
+    assert "Cannot reduce precision from decimal(9, 2) to decimal(18, 4)" in str(exc_info.value)
 
 
 def test_column_assignment() -> None:
@@ -409,3 +423,30 @@ def test_writer_missing_optional_in_read_schema() -> None:
     expected = StructWriter(field_writers=((None, OptionWriter(option=StringWriter())),))
 
     assert actual == expected
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+def test_enum_reader_skip_advances_the_decoder(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
+    """Skipping an enum field must consume its bytes, or the next field is read from them."""
+    # Two ints, zigzag encoded: the enum's ordinal 1, then the next field's value 12.
+    decoder = decoder_class(b"\x02\x18")
+    reader = EnumReader(ManifestEntryStatus, IntegerReader())
+
+    reader.skip(decoder)
+
+    assert IntegerReader().read(decoder) == 12
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+def test_enum_reader_skip_matches_read(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
+    """Reading and skipping must leave the decoder at the same position."""
+    encoded = b"\x02\x18"
+    reader = EnumReader(ManifestEntryStatus, IntegerReader())
+
+    read_decoder = decoder_class(encoded)
+    assert reader.read(read_decoder) == ManifestEntryStatus.ADDED
+
+    skip_decoder = decoder_class(encoded)
+    reader.skip(skip_decoder)
+
+    assert IntegerReader().read(read_decoder) == IntegerReader().read(skip_decoder)

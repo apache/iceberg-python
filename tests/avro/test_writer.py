@@ -81,7 +81,7 @@ def test_fixed_writer() -> None:
 
 
 def test_decimal_writer() -> None:
-    assert construct_writer(DecimalType(19, 25)) == DecimalWriter(19, 25)
+    assert construct_writer(DecimalType(25, 19)) == DecimalWriter(25, 19)
 
 
 def test_boolean_writer() -> None:
