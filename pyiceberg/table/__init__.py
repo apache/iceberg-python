@@ -819,7 +819,7 @@ class Transaction:
                     io=self._table.io,
                     row_filter=delete_filter,
                     case_sensitive=case_sensitive,
-                    prune_delete_files=False,
+                    ignore_residuals=True,
                 ).plan_files(snapshot.manifests(self._table.io))
                 if snapshot is not None
                 else []
@@ -2876,20 +2876,20 @@ class ManifestGroupPlanner:
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         case_sensitive: bool = True,
         options: Properties = EMPTY_DICT,
-        prune_delete_files: bool = True,
+        ignore_residuals: bool = False,
     ):
         """Create a planner for a group of manifests.
 
         Args:
-            prune_delete_files: Leave out delete files whose column bounds cannot match the row filter.
-                This is only correct when the planned data files are read with the row filter applied.
+            ignore_residuals: The planned data files are read in full, without the row filter, so keep
+                every delete file that applies to them instead of pruning by the row filter.
         """
         self.table_metadata = table_metadata
         self.io = io
         self.row_filter = _parse_row_filter(row_filter)
         self.case_sensitive = case_sensitive
         self.options = options
-        self.prune_delete_files = prune_delete_files
+        self.ignore_residuals = ignore_residuals
 
     @cached_property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
@@ -2927,7 +2927,9 @@ class ManifestGroupPlanner:
                     self.io,
                     manifest,
                     partition_evaluators[manifest.partition_spec_id],
-                    metrics_evaluator if self.prune_delete_files or manifest.content == ManifestContent.DATA else lambda _: True,
+                    metrics_evaluator
+                    if not self.ignore_residuals or manifest.content == ManifestContent.DATA
+                    else lambda _: True,
                 )
                 for manifest in manifests
                 if self._check_sequence_number(min_sequence_number, manifest)
