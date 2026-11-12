@@ -21,6 +21,7 @@ from unittest.mock import patch
 import pytest
 
 from pyiceberg.exceptions import ValidationException
+from pyiceberg.expressions import EqualTo
 from pyiceberg.io import FileIO
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestEntry, ManifestEntryStatus, ManifestFile
 from pyiceberg.table import Table
@@ -506,6 +507,78 @@ def test_added_delete_files_conflicting_count(
 
         assert not dfi.is_empty()
         assert dfi.referenced_delete_files()[0] == mock_delete_file
+
+
+def test_added_delete_files_case_insensitive_filter(
+    table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
+) -> None:
+    table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
+
+    snapshot_history = 100
+    snapshots = table.snapshots()
+    for i in range(1, snapshot_history + 1):
+        snapshots[-i] = snapshots[-i].model_copy(update={"summary": Summary(operation=Operation.DELETE)})
+    table.metadata = table.metadata.model_copy(update={"snapshots": snapshots})
+
+    oldest_snapshot = table.snapshots()[-snapshot_history]
+    newest_snapshot = cast(Snapshot, table.current_snapshot())
+
+    mock_delete_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path="s3://dummy/path",
+        record_count=1,
+    )
+    mock_delete_file.spec_id = 0
+
+    def mock_read_manifest_side_effect(self: Snapshot, io: FileIO) -> list[ManifestFile]:
+        """Mock the manifests method to use the snapshot_id for lookup."""
+        return mock_manifests.get(self.snapshot_id, [])
+
+    def mock_fetch_manifest_entry(self: ManifestFile, io: FileIO, discard_deleted: bool = True) -> list[ManifestEntry]:
+        return [
+            ManifestEntry.from_args(
+                status=ManifestEntryStatus.ADDED,
+                snapshot_id=self.added_snapshot_id,
+                sequence_number=self.min_sequence_number,
+                data_file=mock_delete_file,
+            )
+        ]
+
+    # The table's column is "x", so this filter only binds case-insensitively
+    data_filter = EqualTo("X", 1)
+    with (
+        patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect),
+        patch("pyiceberg.manifest.ManifestFile.fetch_manifest_entry", new=mock_fetch_manifest_entry),
+    ):
+        dfi = _added_delete_files(
+            table=table,
+            starting_snapshot=newest_snapshot,
+            data_filter=data_filter,
+            partition_set=None,
+            parent_snapshot=oldest_snapshot,
+            case_sensitive=False,
+        )
+        assert not dfi.is_empty()
+        assert dfi.referenced_delete_files()[0] == mock_delete_file
+
+        with pytest.raises(ValidationException):
+            _validate_no_new_delete_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=data_filter,
+                partition_set=None,
+                parent_snapshot=oldest_snapshot,
+                case_sensitive=False,
+            )
+
+        with pytest.raises(ValueError, match="Could not find field with name X"):
+            _added_delete_files(
+                table=table,
+                starting_snapshot=newest_snapshot,
+                data_filter=data_filter,
+                partition_set=None,
+                parent_snapshot=oldest_snapshot,
+            )
 
 
 def test_validate_no_new_delete_files_raises_on_conflict(
