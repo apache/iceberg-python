@@ -1754,9 +1754,9 @@ def _has_nan_sensitive_predicate(expr: BooleanExpression) -> bool:
     """
     if isinstance(expr, (And, Or)):
         return _has_nan_sensitive_predicate(expr.left) or _has_nan_sensitive_predicate(expr.right)
-    if isinstance(expr, (BoundIsNaN, BoundNotEqualTo, BoundNotIn)):
-        return isinstance(expr.term.ref().field.field_type, (FloatType, DoubleType))
-    return False
+    return isinstance(expr, (BoundIsNaN, BoundNotEqualTo, BoundNotIn)) and isinstance(
+        expr.term.ref().field.field_type, (FloatType, DoubleType)
+    )
 
 
 def _nan_safe_conjuncts(expr: BooleanExpression) -> BooleanExpression:
