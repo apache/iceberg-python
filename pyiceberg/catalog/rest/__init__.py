@@ -75,6 +75,7 @@ from pyiceberg.exceptions import (
 )
 from pyiceberg.io import (
     ADLS_SAS_TOKEN,
+    ADLS_TOKEN,
     AWS_ACCESS_KEY_ID,
     AWS_PROFILE_NAME,
     AWS_REGION,
@@ -368,7 +369,7 @@ else:
 def _is_short_lived_credential(key: str) -> bool:
     """Whether a loadTable config key carries a short-lived storage credential."""
     key = key.lower()
-    return key in (S3_SESSION_TOKEN, GCS_TOKEN) or key.startswith(ADLS_SAS_TOKEN)
+    return key in (S3_SESSION_TOKEN, AWS_SESSION_TOKEN, GCS_TOKEN, ADLS_TOKEN, TOKEN) or key.startswith(ADLS_SAS_TOKEN)
 
 
 def _retry_hook(retry_state: RetryCallState) -> None:
@@ -616,6 +617,19 @@ class RestCatalog(Catalog):
         if ttl_ms <= 0:
             raise ValueError(f"Invalid value for {REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS}: {ttl_ms} (must be positive)")
         self._table_cache = TTLCache(maxsize=max_entries, ttl=ttl_ms / 1000) if max_entries > 0 else None
+        self._table_cache_lock = threading.Lock()
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Create a dictionary of the RestCatalog fields used when pickling, with an empty table cache."""
+        state = self.__dict__.copy()
+        if (cache := state["_table_cache"]) is not None:
+            state["_table_cache"] = TTLCache(maxsize=cache.maxsize, ttl=cache.ttl)
+        del state["_table_cache_lock"]
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Deserialize the state into a RestCatalog instance."""
+        self.__dict__ = state
         self._table_cache_lock = threading.Lock()
 
     def _invalidate_cached_table(self, identifier: str | Identifier) -> None:

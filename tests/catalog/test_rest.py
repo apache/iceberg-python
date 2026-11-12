@@ -1632,8 +1632,11 @@ def test_load_table_vending_credentials_evicts_cached_table(
     "key, expected",
     [
         ("S3.Session-Token", True),
+        ("client.session-token", True),
         ("gcs.oauth2.token", True),
+        ("adls.token", True),
         ("adls.sas-token.account", True),
+        ("token", True),
         ("s3.sse.key", False),
         ("s3.access-key-id", False),
         ("encryption.key-id", False),
