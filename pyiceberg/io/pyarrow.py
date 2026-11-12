@@ -2402,13 +2402,19 @@ class StatsAggregator:
         if self.current_min is None:
             self.current_min = val
         elif val is not None:
-            self.current_min = min(val, self.current_min)
+            self.current_min = min(self.current_min, val)
+            if isinstance(val, float) and val == 0.0 and math.copysign(1.0, val) < 0 and self.current_min == 0.0:
+                # min keeps the existing zero on a tie, but bounds must order -0.0 below 0.0
+                self.current_min = val
 
     def update_max(self, val: Any | None) -> None:
         if self.current_max is None:
             self.current_max = val
         elif val is not None:
-            self.current_max = max(val, self.current_max)
+            self.current_max = max(self.current_max, val)
+            if isinstance(val, float) and val == 0.0 and math.copysign(1.0, val) > 0 and self.current_max == 0.0:
+                # max keeps the existing zero on a tie, but bounds must order -0.0 below 0.0
+                self.current_max = val
 
     def min_as_bytes(self) -> bytes | None:
         if self.current_min is None:

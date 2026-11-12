@@ -44,6 +44,7 @@ from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3F
 from pyroaring import BitMap
 
 from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTDeleteFile, RESTFileScanTask, RESTPositionDeleteFile
+from pyiceberg.conversions import to_bytes
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.stream import _encrypt_ags1
 from pyiceberg.exceptions import ResolveError
@@ -2952,6 +2953,29 @@ def test_stats_aggregator_update_max(vals: list[Any], primitive_type: PrimitiveT
         stats.update_max(val)
 
     assert stats.current_max == expected_result
+
+
+@pytest.mark.parametrize(
+    "vals, primitive_type",
+    [
+        ([0.0, -0.0], DoubleType()),
+        ([-0.0, 0.0], DoubleType()),
+        ([0.0, -0.0], FloatType()),
+        ([-0.0, 0.0], FloatType()),
+    ],
+)
+def test_stats_aggregator_orders_negative_zero_below_zero(vals: list[float], primitive_type: PrimitiveType) -> None:
+    # min/max keep whichever zero came first, but the serialized bounds must
+    # order -0.0 below 0.0, whichever order the values arrive in
+    stats_min = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+    stats_max = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+
+    for val in vals:
+        stats_min.update_min(val)
+        stats_max.update_max(val)
+
+    assert stats_min.min_as_bytes() == to_bytes(primitive_type, -0.0)
+    assert stats_max.max_as_bytes() == to_bytes(primitive_type, 0.0)
 
 
 @pytest.mark.parametrize(
