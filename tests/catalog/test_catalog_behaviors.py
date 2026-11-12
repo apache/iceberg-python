@@ -21,7 +21,7 @@ Consolidated behavior tests for InMemoryCatalog and SqlCatalog.
 
 import json
 import os
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
@@ -1441,6 +1441,45 @@ def test_count_reads_null_partition_only_when_filter_compares_it(catalog: Catalo
         for task in tbl.scan(row_filter=metadata_only_filter).plan_files():
             tbl.io.delete(task.file.file_path)
         assert tbl.scan(row_filter=row_filter).count() == expected, row_filter
+
+
+def _nan_partitioned_table(catalog: Catalog, name: str) -> Table:
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"),
+    )
+    tbl = catalog.create_table(f"default.{name}_{catalog.name}", schema=iceberg_schema, partition_spec=partition_spec)
+    tbl.append(_id_value_rows(tbl, [1, 2, 3, 4], [1.0, 1.0, float("nan"), float("nan")]))
+    return tbl
+
+
+def _id_value_rows(tbl: Table, ids: list[int], values: list[float]) -> pa.Table:
+    return pa.Table.from_pydict({"id": ids, "value": values}, schema=schema_to_pyarrow(tbl.schema()))
+
+
+def test_replace_files_in_nan_identity_partition(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    cases: list[tuple[str, Callable[[Table], None], list[int], list[int]]] = [
+        ("delete_nan_file", lambda t: t.delete("value is nan"), [1, 2], []),
+        ("rewrite_nan_file", lambda t: t.delete("id = 3"), [1, 2, 4], [4]),
+        ("overwrite", lambda t: t.overwrite(_id_value_rows(t, [9], [2.0])), [9], []),
+        (
+            "dynamic_overwrite",
+            lambda t: t.dynamic_partition_overwrite(_id_value_rows(t, [9], [float("nan")])),
+            [1, 2, 9],
+            [9],
+        ),
+    ]
+    for name, operation, expected_ids, expected_nan_ids in cases:
+        tbl = _nan_partitioned_table(catalog, name)
+
+        operation(tbl)
+
+        assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == expected_ids, name
+        assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == expected_nan_ids, name
 
 
 def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:

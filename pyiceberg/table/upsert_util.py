@@ -53,6 +53,25 @@ def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
     return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
 
 
+def _values_differ(
+    source_values: pa.Array | pa.ChunkedArray, target_values: pa.Array | pa.ChunkedArray
+) -> pa.Array | pa.ChunkedArray:
+    """Return a mask of the positions where the values are not equal, treating two nulls as equal."""
+    try:
+        equal = pc.fill_null(pc.equal(source_values, target_values), False)
+    except (pa.ArrowNotImplementedError, pa.ArrowInvalid, pa.ArrowTypeError):
+        # PyArrow has no comparison kernel for nested types
+        source_list = source_values.to_pylist()
+        target_list = target_values.to_pylist()
+        return pa.array(
+            [source_value != target_value for source_value, target_value in zip(source_list, target_list, strict=True)],
+            type=pa.bool_(),
+        )
+
+    both_null = pc.and_(pc.is_null(source_values), pc.is_null(target_values))
+    return pc.invert(pc.or_(equal, both_null))
+
+
 def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
     """
     Return a table with rows that need to be updated in the target table based on the join columns.
@@ -72,7 +91,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         # When the target table is empty, there is nothing to update :)
         return source_table.schema.empty_table()
 
-    # We need to compare non_key_cols in Python as PyArrow
+    # We need to compare non_key_cols without a join as PyArrow
     # 1. Cannot do a join when non-join columns have complex types
     # 2. Cannot compare columns with complex types
     # See: https://github.com/apache/arrow/issues/35785
@@ -100,25 +119,20 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     # Step 3: Perform an inner join to find which rows from source exist in target
     matching_indices = source_index.join(target_index, keys=list(join_cols_set), join_type="inner")
 
-    # Step 4: Compare all rows using Python
-    to_update_indices = []
-    for source_idx, target_idx in zip(
-        matching_indices[SOURCE_INDEX_COLUMN_NAME].to_pylist(),
-        matching_indices[TARGET_INDEX_COLUMN_NAME].to_pylist(),
-        strict=True,
-    ):
-        source_row = source_table.slice(source_idx, 1)
-        target_row = target_table.slice(target_idx, 1)
+    # Step 4: Compare the matched rows column by column
+    source_indices = matching_indices[SOURCE_INDEX_COLUMN_NAME]
+    target_indices = matching_indices[TARGET_INDEX_COLUMN_NAME]
 
-        for key in non_key_cols:
-            source_val = source_row.column(key)[0].as_py()
-            target_val = target_row.column(key)[0].as_py()
-            if source_val != target_val:
-                to_update_indices.append(source_idx)
-                break
+    changed: pa.Array | pa.ChunkedArray | None = None
+    for key in non_key_cols:
+        column_changed = _values_differ(
+            source_table.column(key).take(source_indices),
+            target_table.column(key).take(target_indices),
+        )
+        changed = column_changed if changed is None else pc.or_(changed, column_changed)
 
     # Step 5: Take rows from source table using the indices and cast to target schema
-    if to_update_indices:
-        return source_table.take(to_update_indices)
+    if changed is not None and pc.any(changed).as_py():
+        return source_table.take(pc.filter(source_indices, changed))
     else:
         return source_table.schema.empty_table()

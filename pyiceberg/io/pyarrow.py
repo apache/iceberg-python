@@ -41,6 +41,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
 from copy import copy
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
 from functools import lru_cache, singledispatch
 from typing import (
@@ -886,10 +887,22 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             return pa.large_binary()
 
 
+def _literal_arrow_type(iceberg_type: IcebergType, values: Iterable[Any]) -> pa.DataType:
+    """Return the Arrow type for literals compared with a column of the given type.
+
+    A decimal literal can have more digits than the column, e.g. 1000.00 for decimal(5, 2),
+    so the precision is widened to hold every literal. The scale always stays the column's.
+    """
+    if isinstance(iceberg_type, DecimalType):
+        digits = [len(value.as_tuple().digits) for value in values if isinstance(value, Decimal)]
+        return pa.decimal128(max([iceberg_type.precision, *digits]), iceberg_type.scale)
+    return visit(iceberg_type, _ConvertToArrowSchema())
+
+
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
     if not isinstance(iceberg_type, PrimitiveType):
         raise ValueError(f"Expected primitive type, got: {iceberg_type}")
-    return pa.scalar(value=value, type=schema_to_pyarrow(iceberg_type))
+    return pa.scalar(value=value, type=_literal_arrow_type(iceberg_type, [value]))
 
 
 class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
@@ -926,11 +939,11 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return term.ref().field.name
 
     def visit_in(self, term: BoundTerm, literals: set[Any]) -> pc.Expression:
-        pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
+        pyarrow_literals = pa.array(literals, type=_literal_arrow_type(term.ref().field.field_type, literals))
         return pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_not_in(self, term: BoundTerm, literals: set[Any]) -> pc.Expression:
-        pyarrow_literals = pa.array(literals, type=schema_to_pyarrow(term.ref().field.field_type))
+        pyarrow_literals = pa.array(literals, type=_literal_arrow_type(term.ref().field.field_type, literals))
         return ~pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_is_nan(self, term: BoundTerm) -> pc.Expression:
@@ -2185,7 +2198,15 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
             if isinstance(value_array, pa.StructArray):
                 # This can be removed once this has been fixed:
                 # https://github.com/apache/arrow/issues/38809
-                list_array = pa.LargeListArray.from_arrays(list_array.offsets, value_array)
+                # Keep the validity and offsets buffers of the original array, otherwise null lists become empty lists
+                list_array = pa.Array.from_buffers(
+                    list_initializer(value_array.type),
+                    len(list_array),
+                    list_array.buffers()[:2],
+                    list_array.null_count,
+                    list_array.offset,
+                    [value_array],
+                )
             value_array = self._cast_if_needed(list_type.element_field, value_array)
             arrow_field = list_initializer(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
@@ -3205,8 +3226,13 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         arrow_table = arrow_table.cast(arrow_schema)
 
     # Assign unique names to columns where the partition transform has been applied
-    # to avoid conflicts
-    partition_fields = [f"_partition_{field.name}" for field in spec.fields]
+    # to avoid conflicts with the data columns
+    partition_fields: list[str] = []
+    for field in spec.fields:
+        name = f"_partition_{field.name}"
+        while name in arrow_table.column_names or name in partition_fields:
+            name = f"_{name}"
+        partition_fields.append(name)
 
     for partition, name in zip(spec.fields, partition_fields, strict=True):
         source_field = schema.find_field(partition.source_id)

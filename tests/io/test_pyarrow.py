@@ -24,9 +24,10 @@ import tempfile
 import uuid
 import warnings
 import zlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import MagicMock, patch
@@ -938,6 +939,49 @@ def test_always_true_to_pyarrow(bound_reference: BoundReference) -> None:
 
 def test_always_false_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
+
+
+def test_decimal_literal_wider_than_column_to_pyarrow() -> None:
+    schema = Schema(NestedField(1, "amt", DecimalType(5, 2), required=False))
+    ref = BoundReference(schema.find_field(1), schema.accessor_for_field(1))
+    wide = literal(Decimal("1000.00")).to(DecimalType(5, 2))
+    narrow = literal(Decimal("1.25")).to(DecimalType(5, 2))
+    arrow_table = pa.table({"amt": pa.array([Decimal("1.25"), Decimal("99.99")], pa.decimal128(5, 2))})
+    for bound_expr, expected in [
+        (BoundLessThan(term=ref, literal=wide), [Decimal("1.25"), Decimal("99.99")]),
+        (BoundNotEqualTo(term=ref, literal=wide), [Decimal("1.25"), Decimal("99.99")]),
+        (BoundIn(term=ref, literals={wide, narrow}), [Decimal("1.25")]),
+        (BoundNotIn(term=ref, literals={wide, narrow}), [Decimal("99.99")]),
+    ]:
+        assert arrow_table.filter(expression_to_pyarrow(bound_expr))["amt"].to_pylist() == expected, bound_expr
+
+
+def test_row_filter_decimal_literal_wider_than_column(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_decimal_literal_wider_than_column",
+        schema=Schema(
+            NestedField(1, "id", IntegerType(), required=False),
+            NestedField(2, "amt", DecimalType(5, 2), required=False),
+        ),
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3], pa.int32()),
+                "amt": pa.array([Decimal("1.25"), Decimal("99.99"), None], pa.decimal128(5, 2)),
+            }
+        )
+    )
+
+    # 1000.00 needs one more digit than decimal(5, 2) holds, but every value is below it
+    for row_filter, expected in [
+        ("amt < 1000.00", [1, 2]),
+        ("amt > -1000.00", [1, 2]),
+        ("amt < 50.00", [1]),
+        ("amt IN (1.25, 1000.00)", [1]),
+    ]:
+        assert sorted(table.scan(row_filter=row_filter).to_arrow()["id"].to_pylist()) == expected, row_filter
 
 
 @pytest.fixture
@@ -3353,6 +3397,32 @@ def test_determine_partitions_identity_nan() -> None:
     assert rows_by_partition == {"1.0": [1], "nan": [2, 4], "None": [3]}
 
 
+def test_determine_partitions_with_column_named_like_partition_helper() -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="_partition_region", field_type=StringType(), required=False),
+        NestedField(id=3, name="region", field_type=StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="region"))
+    arrow_table = pa.Table.from_pydict(
+        {"id": [1, 2, 3], "_partition_region": ["a", "b", "c"], "region": ["us", "eu", "us"]},
+        schema=schema.as_arrow(),
+    )
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    rows_by_partition = {
+        p.partition_key.partition[0]: sorted(p.arrow_table_partition.to_pylist(), key=lambda row: row["id"]) for p in partitions
+    }
+    assert rows_by_partition == {
+        "us": [
+            {"id": 1, "_partition_region": "a", "region": "us"},
+            {"id": 3, "_partition_region": "c", "region": "us"},
+        ],
+        "eu": [{"id": 2, "_partition_region": "b", "region": "eu"}],
+    }
+
+
 @pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(4), TruncateTransform(1)])
 def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) -> None:
     schema = Schema(
@@ -3874,6 +3944,41 @@ def test__to_requested_schema_float_promotion(
 
     assert result.schema[0].type == expected_arrow_type
     assert result.column(0).to_pylist() == [1.5, 2.25, 3.0, None]
+
+
+@pytest.mark.parametrize("list_type", [pa.list_, pa.large_list])
+def test__to_requested_schema_null_list_of_structs(list_type: Callable[[pa.DataType], pa.DataType]) -> None:
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_list_with_struct",
+            ListType(11, StructType(NestedField(111, "test", IntegerType(), required=False)), element_required=False),
+            required=False,
+        ),
+        NestedField(2, "col_list", ListType(21, IntegerType(), element_required=False), required=False),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("col_list_with_struct", list_type(pa.struct([pa.field("test", pa.int32())]))),
+            pa.field("col_list", list_type(pa.int32())),
+        ]
+    )
+    batch = pa.RecordBatch.from_arrays(
+        [
+            pa.array([[{"test": 1}], [], None, [{"test": 2}, None]], type=arrow_schema.field(0).type),
+            pa.array([[1], [], None, [2, None]], type=arrow_schema.field(1).type),
+        ],
+        schema=arrow_schema,
+    )
+
+    result = _to_requested_schema(requested_schema, requested_schema, batch)
+    assert result.column(0).to_pylist() == [[{"test": 1}], [], None, [{"test": 2}, None]]
+    assert result.column(1).to_pylist() == [[1], [], None, [2, None]]
+
+    # A sliced batch has to keep the nulls as well
+    result = _to_requested_schema(requested_schema, requested_schema, batch.slice(1, 3))
+    assert result.column(0).to_pylist() == [[], None, [{"test": 2}, None]]
+    assert result.column(1).to_pylist() == [[], None, [2, None]]
 
 
 @skip_if_pyarrow_too_old
