@@ -29,6 +29,8 @@ from pyiceberg.expressions import (
     IsNaN,
     IsNull,
     LessThan,
+    Not,
+    NotEqualTo,
     NotIn,
     NotNaN,
     NotNull,
@@ -40,7 +42,7 @@ from pyiceberg.expressions.literals import literal
 from pyiceberg.expressions.visitors import ResidualVisitor, residual_evaluator_of
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
 from pyiceberg.typedef import Record
 from pyiceberg.types import DoubleType, FloatType, IntegerType, NestedField, StringType, TimestampType
 
@@ -233,7 +235,7 @@ def test_is_not_nan() -> None:
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
     residual = res_eval.residual_for(Record(None))
-    assert residual == AlwaysTrue()
+    assert residual == predicate
 
     residual = res_eval.residual_for(Record(float("nan")))
     assert residual == AlwaysFalse()
@@ -248,7 +250,7 @@ def test_is_not_nan() -> None:
     res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
 
     residual = res_eval.residual_for(Record(None))
-    assert residual == AlwaysTrue()
+    assert residual == predicate
 
     residual = res_eval.residual_for(Record(float("nan")))
     assert residual == AlwaysFalse()
@@ -303,3 +305,23 @@ def test_not_starts_with() -> None:
     assert res_eval.residual_for(Record("abc")) == AlwaysFalse()
     assert res_eval.residual_for(Record("a")) == AlwaysFalse()
     assert res_eval.residual_for(Record("zoo")) == AlwaysTrue()
+
+
+def test_null_partition_value_only_decides_null_checks() -> None:
+    schema = Schema(NestedField(1, "x", StringType(), required=False))
+    identity = PartitionSpec(PartitionField(1, 1001, IdentityTransform(), "x_part"))
+    bucket = PartitionSpec(PartitionField(1, 1001, BucketTransform(4), "x_bucket"))
+
+    for spec in [identity, bucket]:
+        for predicate in [NotEqualTo("x", "a"), Not(EqualTo("x", "a")), NotIn("x", ["a", "c"]), NotStartsWith("x", "a")]:
+            res_eval = residual_evaluator_of(spec=spec, expr=predicate, case_sensitive=True, schema=schema)
+            assert res_eval.residual_for(Record(None)) != AlwaysTrue(), (spec, predicate)
+
+        assert (
+            residual_evaluator_of(spec=spec, expr=IsNull("x"), case_sensitive=True, schema=schema).residual_for(Record(None))
+            == AlwaysTrue()
+        )
+        assert (
+            residual_evaluator_of(spec=spec, expr=NotNull("x"), case_sensitive=True, schema=schema).residual_for(Record(None))
+            == AlwaysFalse()
+        )
