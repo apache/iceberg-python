@@ -19,8 +19,9 @@
 Consolidated behavior tests for InMemoryCatalog and SqlCatalog.
 """
 
+import json
 import os
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +43,7 @@ from pyiceberg.exceptions import (
 from pyiceberg.io.pyarrow import _dataframe_to_data_files, schema_to_pyarrow
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import TableProperties
+from pyiceberg.table import Table, TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
@@ -207,6 +208,22 @@ def test_create_v1_table(catalog: Catalog, table_schema_nested: Schema, test_tab
     assert table.format_version == 1
     assert table.spec() == UNPARTITIONED_PARTITION_SPEC
     catalog.drop_table(test_table_identifier)
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_create_table_rejects_encryption_properties_before_v3(
+    catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier, format_version: int
+) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+
+    with pytest.raises(ValueError, match=rf"Invalid properties for v{format_version}: \['encryption.key-id'\]"):
+        catalog.create_table(
+            test_table_identifier,
+            table_schema_nested,
+            properties={"format-version": str(format_version), "encryption.key-id": "key"},
+        )
+
+    assert not catalog.table_exists(test_table_identifier)
 
 
 def test_create_table_custom_sort_order(catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier) -> None:
@@ -503,6 +520,20 @@ def test_purge_table(catalog: Catalog, table_schema_simple: Schema, test_table_i
     catalog.purge_table(test_table_identifier)
     with pytest.raises(NoSuchTableError, match=f"Table does not exist: {'.'.join(test_table_identifier)}"):
         catalog.load_table(test_table_identifier)
+
+
+def test_purge_encrypted_table_without_kms_client(
+    catalog: Catalog, test_table_identifier: Identifier, example_table_metadata_v3_encrypted: dict[str, Any], tmp_path: Path
+) -> None:
+    metadata_location = tmp_path / "00000-encrypted.metadata.json"
+    metadata_location.write_text(json.dumps(example_table_metadata_v3_encrypted))
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    catalog.register_table(test_table_identifier, str(metadata_location))
+
+    with pytest.raises(ValueError, match="no key management client was provided"):
+        catalog.purge_table(test_table_identifier)
+
+    assert catalog.table_exists(test_table_identifier)
 
 
 # List tables tests
@@ -1343,6 +1374,45 @@ def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
 
     assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == [1, 2, 3, 4]
     assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
+
+
+def _nan_partitioned_table(catalog: Catalog, name: str) -> Table:
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"),
+    )
+    tbl = catalog.create_table(f"default.{name}_{catalog.name}", schema=iceberg_schema, partition_spec=partition_spec)
+    tbl.append(_id_value_rows(tbl, [1, 2, 3, 4], [1.0, 1.0, float("nan"), float("nan")]))
+    return tbl
+
+
+def _id_value_rows(tbl: Table, ids: list[int], values: list[float]) -> pa.Table:
+    return pa.Table.from_pydict({"id": ids, "value": values}, schema=schema_to_pyarrow(tbl.schema()))
+
+
+def test_replace_files_in_nan_identity_partition(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    cases: list[tuple[str, Callable[[Table], None], list[int], list[int]]] = [
+        ("delete_nan_file", lambda t: t.delete("value is nan"), [1, 2], []),
+        ("rewrite_nan_file", lambda t: t.delete("id = 3"), [1, 2, 4], [4]),
+        ("overwrite", lambda t: t.overwrite(_id_value_rows(t, [9], [2.0])), [9], []),
+        (
+            "dynamic_overwrite",
+            lambda t: t.dynamic_partition_overwrite(_id_value_rows(t, [9], [float("nan")])),
+            [1, 2, 9],
+            [9],
+        ),
+    ]
+    for name, operation, expected_ids, expected_nan_ids in cases:
+        tbl = _nan_partitioned_table(catalog, name)
+
+        operation(tbl)
+
+        assert sorted(tbl.scan().to_arrow()["id"].to_pylist()) == expected_ids, name
+        assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == expected_nan_ids, name
 
 
 def test_delete_keeps_nan_rows_that_do_not_match_the_filter(catalog: Catalog) -> None:

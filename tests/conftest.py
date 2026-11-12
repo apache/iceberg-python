@@ -2653,6 +2653,79 @@ def table_v3(example_table_metadata_v3: dict[str, Any]) -> Table:
 
 
 @pytest.fixture
+def example_table_metadata_v3_encrypted() -> dict[str, Any]:
+    """Metadata of an encrypted table written by iceberg-rust, whose manifest list is in tests/table/encryption."""
+    manifest_list = Path(__file__).parent / "table" / "encryption" / "manifest-list-v3-encrypted.avro"
+    return {
+        "format-version": 3,
+        "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+        "location": "memory:///table",
+        "last-sequence-number": 0,
+        "last-updated-ms": 1602638573590,
+        "last-column-id": 1,
+        "current-schema-id": 0,
+        "schemas": [{"type": "struct", "schema-id": 0, "fields": [{"id": 1, "name": "x", "required": True, "type": "long"}]}],
+        "default-spec-id": 0,
+        "partition-specs": [{"spec-id": 0, "fields": []}],
+        "last-partition-id": 1000,
+        "default-sort-order-id": 0,
+        "sort-orders": [{"order-id": 0, "fields": []}],
+        "properties": {"encryption.key-id": "master-1"},
+        "current-snapshot-id": 1,
+        "snapshots": [
+            {
+                "snapshot-id": 1,
+                "sequence-number": 0,
+                "timestamp-ms": 0,
+                "manifest-list": str(manifest_list),
+                "summary": {"operation": "append"},
+                "schema-id": 0,
+                "key-id": "1fb95f04-7f98-4b1f-a08f-e810cfb907ff",
+            }
+        ],
+        "encryption-keys": [
+            {
+                "key-id": "5b29941b-b3b4-4d57-8758-a9d1bf340b39",
+                "encrypted-key-metadata": "WVMIPwafypGJRgXOICFKcL+m8K4B40gEIJFsgC7rlitqN9PUpDeT19OZPs8=",
+                "encrypted-by-id": "master-1",
+                "properties": {"KEY_TIMESTAMP": "1781172301703"},
+            },
+            {
+                "key-id": "1fb95f04-7f98-4b1f-a08f-e810cfb907ff",
+                "encrypted-key-metadata": (
+                    "XcrqLxxyf9a7FAFXM63u3MEH8CSWqh6g1H8fJD2/6zx0EjcPzPaP/5AtRpO2s6p2isV8s7a4m77zj+GIqNmIpbA2Xw=="
+                ),
+                "encrypted-by-id": "5b29941b-b3b4-4d57-8758-a9d1bf340b39",
+            },
+        ],
+        "snapshot-log": [{"snapshot-id": 1, "timestamp-ms": 0}],
+        "metadata-log": [],
+        "refs": {"main": {"snapshot-id": 1, "type": "branch"}},
+        "next-row-id": 0,
+    }
+
+
+@pytest.fixture
+def table_v3_encrypted(example_table_metadata_v3_encrypted: dict[str, Any]) -> Table:
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.encryption.ciphers import SecureKey
+    from tests.encryption.memory_kms import MemoryKeyManagementClient
+
+    kms = MemoryKeyManagementClient()
+    kms.add_master_key("master-1", SecureKey(bytes(range(16))))
+
+    table_metadata = TableMetadataV3(**example_table_metadata_v3_encrypted)
+    return Table(
+        identifier=("database", "table"),
+        metadata=table_metadata,
+        metadata_location=f"{table_metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+        kms_client=kms,
+    )
+
+
+@pytest.fixture
 def table_v2_orc(example_table_metadata_v2: dict[str, Any]) -> Table:
     import copy
 
