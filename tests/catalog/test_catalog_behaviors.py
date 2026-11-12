@@ -1429,6 +1429,30 @@ def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
         tbl.scan(row_filter="x > 2.6").to_arrow()
 
 
+def test_scan_negated_comparison_matches_file_pruning_for_nan(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.scan_negated_comparison_nan_{catalog.name}"
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema)
+    arrow_schema = schema_to_pyarrow(iceberg_schema)
+    # value >= 6.0 keeps the first file (upper bound 7.0) and skips the second (upper bound 5.0)
+    tbl.append(pa.Table.from_pydict({"id": [1, 2], "value": [float("nan"), 7.0]}, schema=arrow_schema))
+    tbl.append(pa.Table.from_pydict({"id": [3, 4], "value": [float("nan"), 5.0]}, schema=arrow_schema))
+
+    # NOT is rewritten to the complementary predicate at the file and at the row level, so NaN does not match
+    # value >= 6.0 in either file
+    for row_filter, expected_ids in [
+        ("not value < 6.0", [2]),
+        ("value >= 6.0", [2]),
+        ("not (value < 6.0 and id = 1)", [2, 3, 4]),
+        ("value >= 6.0 or id != 1", [2, 3, 4]),
+    ]:
+        assert tbl.scan(row_filter=row_filter).to_arrow().sort_by("id")["id"].to_pylist() == expected_ids, row_filter
+
+
 def test_record_batch_reader_consumed_exactly_once(catalog: Catalog) -> None:
     """The streaming path must consume the underlying generator exactly once.
     A regression that drained the reader twice (e.g. an extra .schema access
