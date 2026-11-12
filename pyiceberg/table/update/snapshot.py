@@ -1244,7 +1244,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     _updates: tuple[TableUpdate, ...]
     _requirements: tuple[TableRequirement, ...]
     _snapshot_ids_to_expire: set[int]
-    _ref_names_to_remove: set[str]
+    _refs_to_remove: dict[str, int]
     _expire_older_than_ms: int | None
 
     def __init__(self, transaction: Transaction) -> None:
@@ -1252,7 +1252,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         self._updates = ()
         self._requirements = ()
         self._snapshot_ids_to_expire = set()
-        self._ref_names_to_remove = set()
+        self._refs_to_remove = {}
         self._expire_older_than_ms = None
 
     def _commit(self) -> UpdatesAndRequirements:
@@ -1275,8 +1275,11 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         # Remove any protected snapshot IDs from the set to expire, just in case
         self._snapshot_ids_to_expire -= protected_ids
-        for ref_name in self._ref_names_to_remove:
+        # Each removal asserts the snapshot the ref had when it was judged expired, so a ref that
+        # advanced in the meantime fails the commit instead of being removed.
+        for ref_name, snapshot_id in self._refs_to_remove.items():
             self._updates += (RemoveSnapshotRefUpdate(ref_name=ref_name),)
+            self._requirements += (AssertRefSnapshotId(ref=ref_name, snapshot_id=snapshot_id),)
         update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)
         self._updates += (update,)
         return self._updates, self._requirements
@@ -1294,8 +1297,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         return {
             ref.snapshot_id
             for ref_name, ref in self._transaction.table_metadata.refs.items()
-            if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]
-            and ref_name not in self._ref_names_to_remove
+            if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH] and ref_name not in self._refs_to_remove
         }
 
     def remove_expired_refs(self) -> ExpireSnapshots:
@@ -1329,12 +1331,12 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
             snapshot = metadata.snapshot_by_id(ref.snapshot_id)
             if snapshot is None:
-                self._ref_names_to_remove.add(ref_name)
+                self._refs_to_remove[ref_name] = ref.snapshot_id
                 continue
 
             max_ref_age_ms = ref.max_ref_age_ms if ref.max_ref_age_ms is not None else default_max_ref_age_ms
             if max_ref_age_ms is not None and now_ms - snapshot.timestamp_ms > max_ref_age_ms:
-                self._ref_names_to_remove.add(ref_name)
+                self._refs_to_remove[ref_name] = ref.snapshot_id
 
         return self
 

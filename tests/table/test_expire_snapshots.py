@@ -24,6 +24,7 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.catalog import Catalog
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import CommitTableResponse, Table, TableProperties
@@ -426,6 +427,21 @@ def test_remove_expired_refs_falls_back_to_table_property(catalog_with_warehouse
 
     table = catalog_with_warehouse.load_table("ns_prop.tbl")
     assert "release" not in table.metadata.refs
+
+
+def test_remove_expired_refs_fails_if_ref_moved_since_planning(catalog_with_warehouse: Catalog) -> None:
+    """A branch that gained a commit after it was judged expired is not removed."""
+    table, _ = _table_with_expired_branch(catalog_with_warehouse, namespace="ns_race", max_ref_age_ms=1)
+    expire = table.maintenance.expire_snapshots().remove_expired_refs()
+
+    writer = catalog_with_warehouse.load_table("ns_race.tbl")
+    arrow_schema = schema_to_pyarrow(writer.schema(), include_field_ids=False)
+    writer.append(pa.table({"id": pa.array([9], type=pa.int64())}, schema=arrow_schema), branch="audit")
+
+    with pytest.raises(CommitFailedException):
+        expire.commit()
+
+    assert "audit" in catalog_with_warehouse.load_table("ns_race.tbl").metadata.refs
 
 
 def test_remove_expired_refs_never_removes_main(catalog_with_warehouse: Catalog) -> None:
