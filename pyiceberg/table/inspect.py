@@ -195,6 +195,7 @@ class InspectTable:
 
         partition_record = self.tbl.metadata.specs_struct()
         pa_record_struct = schema_to_pyarrow(partition_record)
+        id_to_name = {field.field_id: field.name for field in partition_record.fields}
 
         entries_schema = pa.schema(
             [
@@ -255,7 +256,7 @@ class InspectTable:
 
                 partition = entry.data_file.partition
                 partition_record_dict = {
-                    field.name: partition[pos]
+                    id_to_name.get(field.field_id, field.name): partition[pos]
                     for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
                 }
 
@@ -386,6 +387,7 @@ class InspectTable:
         spec_ids = {manifest.partition_spec_id for manifest in snapshot.manifests(self.tbl.io, self.tbl.encryption_manager)}
         partition_record = self.tbl.metadata.specs_struct(spec_ids=spec_ids)
         has_partitions = len(partition_record.fields) > 0
+        id_to_name = {field.field_id: field.name for field in partition_record.fields}
 
         if has_partitions:
             pa_record_struct = schema_to_pyarrow(partition_record)
@@ -407,13 +409,14 @@ class InspectTable:
             encryption_manager=self.tbl.encryption_manager,
         )
 
-        partitions_map: dict[tuple[str, Any], Any] = {}
+        partitions_map: dict[tuple[int, Any], Any] = {}
         snapshots_by_id = self._get_snapshots_by_id()
 
         for entry in itertools.chain.from_iterable(scan._plan_manifest_entries()):
             partition = entry.data_file.partition
             partition_record_dict = {
-                field.name: partition[pos] for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
+                id_to_name.get(field.field_id, field.name): partition[pos]
+                for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
             }
             entry_snapshot = snapshots_by_id.get(entry.snapshot_id) if entry.snapshot_id is not None else None
             self._update_partitions_map_from_manifest_entry(
@@ -427,7 +430,7 @@ class InspectTable:
 
     def _update_partitions_map_from_manifest_entry(
         self,
-        partitions_map: dict[tuple[str, Any], Any],
+        partitions_map: dict[tuple[int, Any], Any],
         file: DataFile,
         partition_record_dict: dict[str, Any],
         snapshot: Snapshot | None,
@@ -444,7 +447,7 @@ class InspectTable:
             partition_record_dict: Maps partition field names to their values.
             snapshot: The owning snapshot, used to track last-updated timestamps.
         """
-        partition_record_key = _convert_to_hashable_type(partition_record_dict)
+        partition_record_key = (file.spec_id, _convert_to_hashable_type(partition_record_dict))
         if partition_record_key not in partitions_map:
             partitions_map[partition_record_key] = {
                 "partition": partition_record_dict,
@@ -737,6 +740,7 @@ class InspectTable:
 
         files: list[dict[str, Any]] = []
         schema = self.tbl.metadata.schema()
+        id_to_name = {field.field_id: field.name for field in self.tbl.metadata.specs_struct().fields}
         io = self.tbl.io
 
         for manifest_entry in manifest_list.fetch_manifest_entry(io):
@@ -762,7 +766,7 @@ class InspectTable:
             }
             partition = data_file.partition
             partition_record_dict = {
-                field.name: partition[pos]
+                id_to_name.get(field.field_id, field.name): partition[pos]
                 for pos, field in enumerate(self.tbl.metadata.specs()[manifest_list.partition_spec_id].fields)
             }
             files.append(
