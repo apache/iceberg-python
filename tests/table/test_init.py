@@ -1558,6 +1558,22 @@ def test_last_assigned_partition_id(table_v2: Table) -> None:
         AssertLastAssignedPartitionId(last_assigned_partition_id=1).validate(base_metadata)
 
 
+def test_update_spec_rejects_duplicate_partition_name(table_v2: Table) -> None:
+    txn = table_v2.transaction()
+    txn.update_spec().add_field("y", BucketTransform(16), "y_bucket").commit()
+
+    with pytest.raises(ValueError, match="Partition name has to be unique: y_bucket"):
+        txn.update_spec().rename_field("x", "y_bucket").commit()
+
+    with pytest.raises(ValueError, match="Partition name has to be unique: z_bucket"):
+        txn.update_spec().rename_field("y_bucket", "z_bucket").add_field("z", BucketTransform(16), "z_bucket").commit()
+
+
+def test_update_spec_rejects_empty_partition_name(table_v2: Table) -> None:
+    with pytest.raises(ValueError, match="Undefined name"):
+        table_v2.transaction().update_spec().add_field("z", BucketTransform(16), "").commit()
+
+
 @pytest.mark.parametrize("table", [lf("table_v2"), lf("table_v3")])
 def test_update_spec_reuses_removed_partition_field_id(table: Table) -> None:
     txn = table.transaction()
