@@ -3240,7 +3240,11 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         if full_field_name is None:
             raise ValueError(f"Could not find column name for field ID: {partition.source_id}")
         field_array = _get_field_from_arrow_table(arrow_table, full_field_name)
-        arrow_table = arrow_table.append_column(name, partition.transform.pyarrow_transform(source_field.field_type)(field_array))
+        partition_array = partition.transform.pyarrow_transform(source_field.field_type)(field_array)
+        # PyArrow has no group by or equality kernels for extension types such as arrow.uuid, so use their storage type
+        if isinstance(partition_array.type, pa.BaseExtensionType):
+            partition_array = partition_array.cast(partition_array.type.storage_type)
+        arrow_table = arrow_table.append_column(name, partition_array)
 
     unique_partition_fields = arrow_table.select(partition_fields).group_by(partition_fields).aggregate([])
 
