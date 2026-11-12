@@ -34,6 +34,8 @@ from pydantic_core import to_json
 from pyiceberg.avro.codecs import AVRO_CODEC_KEY, AvroCompressionCodec
 from pyiceberg.avro.file import AvroFile, AvroOutputFile
 from pyiceberg.conversions import to_bytes
+from pyiceberg.encryption.io import EncryptedInputFile
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.exceptions import ValidationError
 from pyiceberg.io import FileIO, InputFile, OutputFile
 from pyiceberg.partitioning import PartitionSpec
@@ -548,6 +550,10 @@ class DataFile(Record):
     def first_row_id(self) -> int | None:
         return self._data[16]
 
+    @first_row_id.setter
+    def first_row_id(self, value: int | None) -> None:
+        self._data[16] = value
+
     @property
     def referenced_data_file(self) -> str | None:
         return self._data[17]
@@ -734,6 +740,12 @@ class PartitionFieldStats:
             else:
                 self._max = max(self._max, value)
                 self._min = min(self._min, value)
+                if isinstance(value, float) and value == 0.0:
+                    # min and max keep whichever zero came first, but bounds must order -0.0 below 0.0
+                    if math.copysign(1.0, value) < 0 and self._min == 0.0:
+                        self._min = value
+                    elif math.copysign(1.0, value) > 0 and self._max == 0.0:
+                        self._max = value
 
 
 def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partitions: list[Record]) -> list[PartitionFieldSummary]:
@@ -898,7 +910,7 @@ class ManifestFile(Record):
         entry_filter: Callable[[ManifestEntry], bool] | None = None,
     ) -> list[ManifestEntry]:
         """
-        Read the manifest entries from the manifest file.
+        Read the manifest entries from the manifest file, decrypting it when it has key metadata.
 
         Args:
             io: The FileIO to fetch the file.
@@ -909,6 +921,8 @@ class ManifestFile(Record):
             An Iterator of manifest entries.
         """
         input_file = io.new_input(self.manifest_path)
+        if self.key_metadata is not None:
+            input_file = EncryptedInputFile(input_file, StandardKeyMetadata.from_bytes(self.key_metadata))
         with AvroFile[ManifestEntry](
             input_file,
             MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
@@ -916,11 +930,20 @@ class ManifestFile(Record):
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
             result = []
+            next_row_id = self.first_row_id if self.content == ManifestContent.DATA else None
 
             for entry in reader:
                 if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
                     continue
                 _inherit_from_manifest(entry, self)
+
+                # Inherit first row IDs, which are only valid when a data manifest has a first_row_id
+                data_file = entry.data_file
+                if next_row_id is None:
+                    data_file.first_row_id = None
+                elif entry.status != ManifestEntryStatus.DELETED and data_file.first_row_id is None:
+                    data_file.first_row_id = next_row_id
+                    next_row_id += data_file.record_count
 
                 if entry_filter is None or entry_filter(entry):
                     result.append(entry)
@@ -998,7 +1021,7 @@ def clear_manifest_cache() -> None:
     _manifest_cache.clear()
 
 
-def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
+def _manifests(io: FileIO, manifest_list: str, key_metadata: StandardKeyMetadata | None = None) -> tuple[ManifestFile, ...]:
     """Read manifests from a manifest list, reusing cached ManifestFile objects.
 
     Caches individual ManifestFile objects by manifest_path. This is memory-efficient
@@ -1018,11 +1041,14 @@ def _manifests(io: FileIO, manifest_list: str) -> tuple[ManifestFile, ...]:
     Args:
         io: FileIO instance for reading the manifest list.
         manifest_list: Path to the manifest list file.
+        key_metadata: Decrypts the manifest list, if it is encrypted.
 
     Returns:
         A tuple of ManifestFile objects.
     """
     file = io.new_input(manifest_list)
+    if key_metadata is not None:
+        file = EncryptedInputFile(file, key_metadata)
     manifest_files = list(read_manifest_list(file))
 
     return tuple(_manifest_cache.get_or_cache(manifest_file) for manifest_file in manifest_files)

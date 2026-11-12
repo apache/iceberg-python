@@ -18,7 +18,8 @@ import json
 
 import pytest
 
-from pyiceberg.cli.output import JsonOutput
+from pyiceberg.cli.output import ConsoleOutput, JsonOutput
+from pyiceberg.table import Table
 from pyiceberg.table.refs import SnapshotRefType
 
 
@@ -46,3 +47,9 @@ def test_json_describe_refs_emits_one_object_per_ref(capsys: pytest.CaptureFixtu
             "max_ref_age_ms": "forever",
         }
     ]
+
+
+def test_files_of_encrypted_table(table_v3_encrypted: Table, capsys: pytest.CaptureFixture[str]) -> None:
+    ConsoleOutput().files(table_v3_encrypted, history=True)
+
+    assert "Snapshot 1" in capsys.readouterr().out
