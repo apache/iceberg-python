@@ -980,7 +980,7 @@ class _ManifestMergeManager(Generic[U]):
                     elif entry.status == ManifestEntryStatus.ADDED and entry.snapshot_id == self._snapshot_producer.snapshot_id:
                         # added entries from this snapshot are still added, otherwise they should be existing
                         writer.add(entry)
-                    elif entry.status != ManifestEntryStatus.DELETED:
+                    elif entry.is_live():
                         # add all non-deleted files from the old manifest as existing files
                         writer.existing(entry)
 
