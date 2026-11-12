@@ -23,7 +23,6 @@ import logging
 import os
 import threading
 from collections.abc import Callable
-from copy import copy
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
@@ -96,6 +95,7 @@ from pyiceberg.io import (
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
+from pyiceberg.utils.transient import _TransientStateMixin
 
 logger = logging.getLogger(__name__)
 
@@ -443,13 +443,18 @@ class FsspecOutputFile(OutputFile):
         return FsspecInputFile(location=self.location, fs=self._fs)
 
 
-class FsspecFileIO(FileIO):
+class FsspecFileIO(_TransientStateMixin, FileIO):
     """A FileIO implementation that uses fsspec."""
+
+    _transient_attrs = ("_thread_locals",)
 
     def __init__(self, properties: Properties):
         self._scheme_to_fs: dict[str, Callable[..., AbstractFileSystem]] = dict(SCHEME_TO_FS)
-        self._thread_locals = threading.local()
+        self._init_transient()
         super().__init__(properties=properties)
+
+    def _init_transient(self) -> None:
+        self._thread_locals = threading.local()
 
     @override
     def new_input(self, location: str) -> FsspecInputFile:
@@ -521,14 +526,3 @@ class FsspecFileIO(FileIO):
             return _adls(self.properties, hostname)
 
         return self._scheme_to_fs[scheme](self.properties)
-
-    def __getstate__(self) -> dict[str, Any]:
-        """Create a dictionary of the FsSpecFileIO fields used when pickling."""
-        fileio_copy = copy(self.__dict__)
-        del fileio_copy["_thread_locals"]
-        return fileio_copy
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Deserialize the state into a FsSpecFileIO instance."""
-        self.__dict__ = state
-        self._thread_locals = threading.local()

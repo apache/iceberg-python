@@ -16,13 +16,21 @@
 #  under the License.
 
 import base64
+import pickle
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 from requests_mock import Mocker
 
-from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, EntraAuthManager, GoogleAuthManager, NoopAuthManager
+from pyiceberg.catalog.rest.auth import (
+    AuthManagerAdapter,
+    BasicAuthManager,
+    EntraAuthManager,
+    GoogleAuthManager,
+    NoopAuthManager,
+    OAuth2TokenProvider,
+)
 
 TEST_URI = "https://iceberg-test-catalog/"
 GOOGLE_CREDS_URI = "https://oauth2.googleapis.com/token"
@@ -249,3 +257,19 @@ def test_entra_auth_manager_token_failure(mock_default_cred: MagicMock, rest_moc
     # Verify no requests were made with a blank/missing auth header
     history = rest_mock.request_history
     assert len(history) == 0
+
+
+def test_oauth2_token_provider_pickle_round_trip(requests_mock: Mocker) -> None:
+    token_url = f"{TEST_URI}v1/oauth/tokens"
+    requests_mock.post(
+        token_url,
+        [{"json": {"access_token": "first", "expires_in": 3600}}, {"json": {"access_token": "second", "expires_in": 3600}}],
+    )
+    provider = OAuth2TokenProvider(client_id="client", client_secret="secret", token_url=token_url)
+    assert provider.get_token() == "first"
+
+    unpickled = pickle.loads(pickle.dumps(provider))
+
+    # The cached token is not carried over, since its expiry is relative to the original process' clock
+    assert unpickled.get_token() == "second"
+    assert unpickled.client_id == "client"
