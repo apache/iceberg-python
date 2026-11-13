@@ -30,6 +30,7 @@ from requests.auth import AuthBase
 
 from pyiceberg.catalog.rest.response import TokenResponse, _handle_non_200_response
 from pyiceberg.exceptions import OAuthError
+from pyiceberg.utils.transient import _TransientStateMixin
 
 AUTH_MANAGER = "auth.manager"
 
@@ -127,7 +128,7 @@ class LegacyOAuth2AuthManager(AuthManager):
         return f"Bearer {self._token}"
 
 
-class OAuth2TokenProvider:
+class OAuth2TokenProvider(_TransientStateMixin):
     """Thread-safe OAuth2 token provider with token refresh support."""
 
     client_id: str
@@ -140,6 +141,9 @@ class OAuth2TokenProvider:
     _token: str | None
     _expires_at: int
     _lock: threading.Lock
+
+    # The token expiry is based on time.monotonic(), which is only meaningful within one process.
+    _transient_attrs = ("_token", "_expires_at", "_lock")
 
     def __init__(
         self,
@@ -156,7 +160,9 @@ class OAuth2TokenProvider:
         self.scope = scope
         self.refresh_margin = refresh_margin
         self.expires_in = expires_in
+        self._init_transient()
 
+    def _init_transient(self) -> None:
         self._token = None
         self._expires_at = 0
         self._lock = threading.Lock()
