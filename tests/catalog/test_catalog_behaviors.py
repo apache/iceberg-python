@@ -339,7 +339,7 @@ def test_write_pyarrow_schema(catalog: Catalog, test_table_identifier: Identifie
     table.append(pyarrow_table)
 
 
-def test_add_column_keeps_values_of_renamed_column_without_field_ids(
+def test_add_column_refuses_name_still_used_by_name_mapping(
     catalog_with_warehouse: Catalog,
     tmp_path: Path,
 ) -> None:
@@ -353,10 +353,11 @@ def test_add_column_keeps_values_of_renamed_column_without_field_ids(
     with table.update_schema() as update:
         update.rename_column("a", "b")
 
-    with table.update_schema() as update:
-        update.add_column("a", LongType())
+    with pytest.raises(ValueError, match="name mapping already assigns it to another field"):
+        with table.update_schema() as update:
+            update.add_column("a", LongType())
 
-    assert table.scan().to_arrow().to_pydict() == {"b": [1, 3], "a": [None, None]}
+    assert table.scan().to_arrow().to_pydict() == {"b": [1, 3]}
 
 
 @pytest.mark.parametrize(
