@@ -138,6 +138,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UUIDType,
 )
 from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
@@ -3493,6 +3494,49 @@ def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) ->
     }
     written = pa.concat_tables([p.arrow_table_partition for p in partitions])
     assert sorted(written.to_pylist(), key=str) == sorted(rows, key=str)
+
+
+def test_determine_partitions_with_uuid_column() -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="uuid"))
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3, 4], type=pa.int64()),
+            "uuid": pa.array([uuid.UUID(int=1).bytes, uuid.UUID(int=2).bytes, uuid.UUID(int=1).bytes, None], type=pa.uuid()),
+        }
+    )
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    # The partition values are the 16 bytes of each UUID
+    rows_by_partition = {p.partition_key.partition[0]: sorted(p.arrow_table_partition["id"].to_pylist()) for p in partitions}
+    assert rows_by_partition == {uuid.UUID(int=1).bytes: [1, 3], uuid.UUID(int=2).bytes: [2], None: [4]}
+    # The written data keeps the uuid type
+    assert all(p.arrow_table_partition.schema.field("uuid").type == pa.uuid() for p in partitions)
+
+
+def test_append_uuid_to_table_partitioned_on_uuid(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="uuid"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_uuid_partitioned", schema=schema, partition_spec=spec)
+
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "uuid": pa.array([uuid.UUID(int=1).bytes, uuid.UUID(int=2).bytes, None], type=pa.uuid()),
+        }
+    )
+    table.append(arrow_table)
+
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+    assert {task.file.partition[0] for task in table.scan().plan_files()} == {uuid.UUID(int=1), uuid.UUID(int=2), None}
 
 
 def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
