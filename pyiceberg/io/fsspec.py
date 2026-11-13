@@ -37,6 +37,7 @@ from requests import HTTPError
 from typing_extensions import override
 
 from pyiceberg.catalog import TOKEN, URI
+from pyiceberg.catalog.rest import _user_agent
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
@@ -141,6 +142,7 @@ class S3V4RestSigner(S3RequestSigner):
             signer_headers["Authorization"] = auth_header
 
         signer_headers.update(get_header_properties(self.properties))
+        signer_headers["User-Agent"] = _user_agent()
 
         signer_body = {
             "method": request.method,
