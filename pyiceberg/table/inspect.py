@@ -17,9 +17,10 @@
 from __future__ import annotations
 
 import itertools
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression
@@ -40,6 +41,35 @@ ALWAYS_TRUE = AlwaysTrue()
 
 def _readable_bound(field_type: PrimitiveType, bound: bytes | None) -> Any | None:
     return from_bytes(field_type, bound) if bound is not None else None
+
+
+def _storage_type(data_type: pa.DataType) -> pa.DataType:
+    """Return the storage type of a data type, replacing extension types inside structs."""
+    import pyarrow as pa
+
+    if isinstance(data_type, pa.BaseExtensionType):
+        return data_type.storage_type
+    if pa.types.is_struct(data_type):
+        return pa.struct([pa.field(field.name, _storage_type(field.type), field.nullable) for field in data_type])
+    return data_type
+
+
+def _from_pylist(rows: Iterable[dict[str, Any]], schema: pa.Schema) -> pa.Table:
+    """Build a table from Python rows, typed by the given schema.
+
+    pyarrow cannot convert Python values into an extension type nested in a struct,
+    such as the ``arrow.uuid`` bounds in ``readable_metrics``. The rows are built with
+    the storage types and cast to ``schema``, so the output types are unchanged.
+    """
+    import pyarrow as pa
+
+    storage_schema = pa.schema([pa.field(field.name, _storage_type(field.type), field.nullable) for field in schema])
+    return pa.Table.from_pylist(rows, schema=storage_schema).cast(schema)
+
+
+def _storage_value(value: Any) -> Any:
+    """Return a partition value in its storage form, where a UUID is its 16 bytes."""
+    return value.bytes if isinstance(value, UUID) else value
 
 
 class InspectTable:
@@ -255,7 +285,7 @@ class InspectTable:
 
                 partition = entry.data_file.partition
                 partition_record_dict = {
-                    field.name: partition[pos]
+                    field.name: _storage_value(partition[pos])
                     for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
                 }
 
@@ -288,10 +318,7 @@ class InspectTable:
                     }
                 )
 
-        return pa.Table.from_pylist(
-            entries,
-            schema=entries_schema,
-        )
+        return _from_pylist(entries, entries_schema)
 
     def refs(self) -> pa.Table:
         """Return all snapshot references (branches and tags) as a PyArrow Table.
@@ -413,17 +440,15 @@ class InspectTable:
         for entry in itertools.chain.from_iterable(scan._plan_manifest_entries()):
             partition = entry.data_file.partition
             partition_record_dict = {
-                field.name: partition[pos] for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
+                field.name: _storage_value(partition[pos])
+                for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
             }
             entry_snapshot = snapshots_by_id.get(entry.snapshot_id) if entry.snapshot_id is not None else None
             self._update_partitions_map_from_manifest_entry(
                 partitions_map, entry.data_file, partition_record_dict, entry_snapshot
             )
 
-        return pa.Table.from_pylist(
-            partitions_map.values(),
-            schema=table_schema,
-        )
+        return _from_pylist(partitions_map.values(), table_schema)
 
     def _update_partitions_map_from_manifest_entry(
         self,
@@ -733,8 +758,6 @@ class InspectTable:
             pa.Table: File metadata rows conforming to the files schema.
                 See ``_get_files_schema`` for the full column list.
         """
-        import pyarrow as pa
-
         files: list[dict[str, Any]] = []
         schema = self.tbl.metadata.schema()
         io = self.tbl.io
@@ -762,7 +785,7 @@ class InspectTable:
             }
             partition = data_file.partition
             partition_record_dict = {
-                field.name: partition[pos]
+                field.name: _storage_value(partition[pos])
                 for pos, field in enumerate(self.tbl.metadata.specs()[manifest_list.partition_spec_id].fields)
             }
             files.append(
@@ -787,10 +810,7 @@ class InspectTable:
                     "readable_metrics": readable_metrics,
                 }
             )
-        return pa.Table.from_pylist(
-            files,
-            schema=self._get_files_schema(),
-        )
+        return _from_pylist(files, self._get_files_schema())
 
     def _get_files_schema(self) -> pa.Schema:
         """Return the PyArrow schema for file-level metadata tables.
@@ -875,7 +895,7 @@ class InspectTable:
         import pyarrow as pa
 
         if not snapshot_id and not self.tbl.metadata.current_snapshot():
-            return self._get_files_schema().empty_table()
+            return _from_pylist([], self._get_files_schema())
 
         snapshot = self._get_snapshot(snapshot_id)
         io = self.tbl.io
@@ -969,7 +989,7 @@ class InspectTable:
 
         snapshots = self.tbl.snapshots()
         if not snapshots:
-            return pa.Table.from_pylist([], schema=self._get_files_schema())
+            return _from_pylist([], self._get_files_schema())
 
         executor = ExecutorFactory.get_or_create()
         encryption_manager = self.tbl.encryption_manager

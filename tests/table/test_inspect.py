@@ -15,10 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import uuid
 from pathlib import PosixPath
 from typing import Any
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.conversions import to_bytes
@@ -29,7 +31,7 @@ from pyiceberg.table.inspect import InspectTable, _readable_bound
 from pyiceberg.table.snapshots import Snapshot
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import DoubleType, FloatType, IntegerType, LongType, NestedField, PrimitiveType, StringType
+from pyiceberg.types import DoubleType, FloatType, IntegerType, LongType, NestedField, PrimitiveType, StringType, UUIDType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -106,6 +108,50 @@ def test_inspect_manifests_preserves_empty_string_bounds(catalog: InMemoryCatalo
     partition_summary = tbl.inspect.manifests().to_pydict()["partition_summaries"][0][0]
     assert partition_summary["lower_bound"] == ""
     assert partition_summary["upper_bound"] == ""
+
+
+def test_inspect_files_and_entries_render_uuid_bounds(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "u", UUIDType(), required=False))
+    tbl = catalog.create_table("default.uuid_bounds", schema)
+    value = uuid.UUID(int=1)
+    tbl.append(pa.table({"u": pa.array([value.bytes], pa.uuid())}))
+
+    entries = tbl.inspect.entries()
+    assert entries.schema.field("readable_metrics").type.field("u").type.field("lower_bound").type == pa.uuid()
+    entries_metrics = entries.to_pydict()["readable_metrics"][0]["u"]
+    assert entries_metrics["lower_bound"] == value
+    assert entries_metrics["upper_bound"] == value
+
+    for files_table in [tbl.inspect.files(), tbl.inspect.data_files(), tbl.inspect.all_files(), tbl.inspect.all_data_files()]:
+        files_metrics = files_table.to_pydict()["readable_metrics"][0]["u"]
+        assert files_metrics["lower_bound"] == value
+        assert files_metrics["upper_bound"] == value
+
+    assert tbl.inspect.delete_files().num_rows == 0
+    assert tbl.inspect.all_delete_files().num_rows == 0
+
+
+def test_inspect_files_of_empty_table_with_uuid_column(catalog: InMemoryCatalog) -> None:
+    tbl = catalog.create_table("default.empty_uuid", Schema(NestedField(1, "u", UUIDType(), required=False)))
+
+    assert tbl.inspect.files().num_rows == 0
+    assert tbl.inspect.all_files().num_rows == 0
+
+
+def test_inspect_partitions_and_files_render_uuid_partition(catalog: InMemoryCatalog, tmp_path: PosixPath) -> None:
+    schema = Schema(NestedField(1, "u", UUIDType(), required=False))
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "u"))
+    tbl = catalog.create_table("default.uuid_partition", schema, partition_spec=spec)
+    value = uuid.UUID(int=2)
+    data_file = f"{tmp_path}/uuid-partition.parquet"
+    pq.write_table(pa.table({"u": pa.array([value.bytes], pa.uuid())}), data_file)
+    tbl.add_files([data_file])
+
+    partitions = tbl.inspect.partitions()
+    assert partitions.schema.field("partition").type.field("u").type == pa.uuid()
+    assert partitions.to_pydict()["partition"] == [{"u": value}]
+    assert tbl.inspect.files().to_pydict()["partition"] == [{"u": value}]
+    assert tbl.inspect.entries().to_pydict()["data_file"][0]["partition"] == {"u": value}
 
 
 def test_inspect_bounds_after_type_promotion(catalog: InMemoryCatalog) -> None:
