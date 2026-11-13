@@ -564,6 +564,14 @@ def test_plan_scan_with_shared_dv_file(
     }
 
 
+@pytest.mark.parametrize("first_row_id", [1000, None])
+def test_rest_task_preserves_first_row_id(first_row_id: int | None) -> None:
+    rest_data_file = {**_rest_data_file(), **({"first-row-id": first_row_id} if first_row_id is not None else {})}
+    task = FileScanTask.from_rest_response(RESTFileScanTask.model_validate({"data-file": rest_data_file}), [])
+
+    assert task.file.first_row_id == first_row_id
+
+
 @pytest.mark.parametrize("missing_field", ["content-offset", "content-size-in-bytes"])
 @pytest.mark.parametrize("include_referenced_data_file", [True, False])
 def test_rest_task_preserves_partial_dv_reference(missing_field: str, include_referenced_data_file: bool) -> None:

@@ -2418,6 +2418,7 @@ def _rest_file_to_data_file(rest_file: RESTContentFile, default_referenced_data_
         referenced_data_file=referenced_data_file,
         content_offset=rest_file.content_offset if isinstance(rest_file, RESTPositionDeleteFile) else None,
         content_size_in_bytes=rest_file.content_size_in_bytes if isinstance(rest_file, RESTPositionDeleteFile) else None,
+        first_row_id=rest_file.first_row_id if isinstance(rest_file, RESTDataFile) else None,
     )
     data_file.spec_id = rest_file.spec_id
     return data_file
