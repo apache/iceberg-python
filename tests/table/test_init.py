@@ -1306,7 +1306,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
         snapshot_id=25,
         parent_snapshot_id=19,
         sequence_number=200,
-        timestamp_ms=1602638573590,
+        timestamp_ms=1602638593590,
         manifest_list="s3:/a/b/c.avro",
         summary=Summary(Operation.APPEND),
         schema_id=3,
@@ -1349,7 +1349,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     assert len(new_metadata.snapshot_log) == 1
     assert new_metadata.snapshot_log[0].snapshot_id == 25
     assert new_metadata.current_snapshot_id == 25
-    assert new_metadata.last_updated_ms == 1602638573590
+    assert new_metadata.last_updated_ms == 1602638593590
     assert new_metadata.refs["main"] == SnapshotRef(
         snapshot_id=25,
         snapshot_ref_type="branch",
@@ -1784,6 +1784,23 @@ def test_update_metadata_log(table_v2: Table) -> None:
         table_v2.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),), False, table_v2.metadata_location
     )
     assert len(new_metadata.metadata_log) == 2
+
+
+def test_update_metadata_last_updated_ms_not_before_metadata_log(table_v2: Table) -> None:
+    stale_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=table_v2.metadata.last_updated_ms - 61_000,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2.metadata, (AddSnapshotUpdate(snapshot=stale_snapshot),), False, table_v2.metadata_location
+    )
+    assert new_metadata.last_updated_ms > new_metadata.metadata_log[-1].timestamp_ms
 
 
 def test_update_metadata_log_overflow(table_v2: Table) -> None:
