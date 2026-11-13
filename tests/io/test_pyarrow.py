@@ -3539,6 +3539,36 @@ def test_append_uuid_to_table_partitioned_on_uuid(catalog: InMemoryCatalog) -> N
     assert {task.file.partition[0] for task in table.scan().plan_files()} == {uuid.UUID(int=1), uuid.UUID(int=2), None}
 
 
+def test_scan_plans_uuid_identity_partitions(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="uuid"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_uuid_partitioned", schema=schema, partition_spec=spec)
+    first, second, third = uuid.UUID(int=1), uuid.UUID(int=2), uuid.UUID(int=3)
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3], type=pa.int64()),
+                "uuid": pa.array([first.bytes, second.bytes, third.bytes], type=pa.uuid()),
+            }
+        )
+    )
+
+    # Manifests are read with uuid partition values as uuid.UUID, while a UUID literal holds the 16 bytes
+    for row_filter, expected in [
+        (f"uuid = '{first}'", {first}),
+        (f"uuid in ('{first}', '{second}')", {first, second}),
+        (f"uuid != '{first}'", {second, third}),
+        (f"uuid not in ('{first}', '{second}')", {third}),
+    ]:
+        scan = table.scan(row_filter=row_filter)
+        assert {task.file.partition[0] for task in scan.plan_files()} == expected, row_filter
+        assert scan.count() == len(expected), row_filter
+
+
 def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="id", field_type=LongType(), required=False),

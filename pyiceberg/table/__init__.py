@@ -112,7 +112,7 @@ from pyiceberg.typedef import (
     Record,
     TableVersion,
 )
-from pyiceberg.types import strtobool
+from pyiceberg.types import StructType, UUIDType, strtobool
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.properties import property_as_bool, property_as_int
@@ -2506,6 +2506,26 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
     return pa.RecordBatchReader.from_batches(target_schema, batches).cast(target_schema)
 
 
+def _partition_with_literal_values(partition_type: StructType) -> Callable[[Record], Record]:
+    """Return a function that gives partition values the representation that literals use.
+
+    Manifests are read with uuid partition values as ``uuid.UUID``, while a UUID literal holds the 16 bytes,
+    so the values are converted before partition filters and residuals compare them with literals.
+    """
+    uuid_positions = [pos for pos, field in enumerate(partition_type.fields) if isinstance(field.field_type, UUIDType)]
+    if not uuid_positions:
+        return lambda partition: partition
+
+    def convert(partition: Record) -> Record:
+        values = [partition[pos] for pos in range(len(partition))]
+        for pos in uuid_positions:
+            if isinstance(values[pos], uuid.UUID):
+                values[pos] = values[pos].bytes
+        return Record(*values)
+
+    return convert
+
+
 class DataScan(TableScan):
     @cached_property
     def _manifest_planner(self) -> ManifestGroupPlanner:
@@ -2952,6 +2972,9 @@ class ManifestGroupPlanner:
         if residual_cache_max_size is None or residual_cache_max_size <= 0:
             raise ValueError(f"{TableProperties.RESIDUAL_CACHE_MAX_SIZE} must be a positive integer")
         residual_cache: LRUCache[tuple[int, tuple[Any, ...]], BooleanExpression] = LRUCache(maxsize=residual_cache_max_size)
+        partition_literal_values: dict[int, Callable[[Record], Record]] = KeyDefaultDict(
+            lambda spec_id: _partition_with_literal_values(partition_specs[spec_id].partition_type(self.table_metadata.schema()))
+        )
 
         def residual_for(data_file: DataFile) -> BooleanExpression:
             partition = data_file.partition
@@ -2960,7 +2983,9 @@ class ManifestGroupPlanner:
             try:
                 return residual_cache[cache_key]
             except KeyError:
-                residual = residual_evaluators[data_file.spec_id].residual_for(partition)
+                residual = residual_evaluators[data_file.spec_id].residual_for(
+                    partition_literal_values[data_file.spec_id](partition)
+                )
                 residual_cache[cache_key] = residual
                 return residual
 
@@ -3005,10 +3030,11 @@ class ManifestGroupPlanner:
         partition_schema = Schema(*partition_type.fields)
         partition_expr = self.partition_filters[spec_id]
         evaluator = expression_evaluator(partition_schema, partition_expr, self.case_sensitive)
+        literal_values = _partition_with_literal_values(partition_type)
 
         # Expression evaluators keep input-specific state local to each call, so the
         # prepared evaluator can be shared by every manifest using this spec.
-        return lambda data_file: evaluator(data_file.partition)
+        return lambda data_file: evaluator(literal_values(data_file.partition))
 
     def _build_metrics_evaluator(self) -> Callable[[DataFile], bool]:
         schema = self.table_metadata.schema()
