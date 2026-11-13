@@ -35,7 +35,6 @@ from pyiceberg.table.metadata import (
     EncryptedKey,
     TableMetadata,
     TableMetadataUtil,
-    TableMetadataV3,
     _check_properties_format_version_compatibility,
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
@@ -704,7 +703,7 @@ def _(
 
 @_apply_table_update.register(AddEncryptionKeyUpdate)
 def _(update: AddEncryptionKeyUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if not isinstance(base_metadata, TableMetadataV3):
+    if base_metadata.format_version < 3:
         raise ValueError(f"Encryption keys are not supported in format version {base_metadata.format_version}")
 
     if any(key.key_id == update.encryption_key.key_id for key in base_metadata.encryption_keys):
@@ -716,7 +715,7 @@ def _(update: AddEncryptionKeyUpdate, base_metadata: TableMetadata, context: _Ta
 
 @_apply_table_update.register(RemoveEncryptionKeyUpdate)
 def _(update: RemoveEncryptionKeyUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if not isinstance(base_metadata, TableMetadataV3):
+    if base_metadata.format_version < 3:
         raise ValueError(f"Encryption keys are not supported in format version {base_metadata.format_version}")
 
     encryption_keys = [key for key in base_metadata.encryption_keys if key.key_id != update.key_id]
