@@ -73,7 +73,7 @@ class DeletionVector:
                 last_key += 1
 
             bitmap = BitMap.deserialize(payload_view[offset:])
-            # PyRoaring's __sizeof__ returns the portable serialized size without allocating bytes.
+            # PyRoaring's __sizeof__ returns the portable serialized size.
             offset += bitmap.__sizeof__()
             bitmaps.append(bitmap)
 
