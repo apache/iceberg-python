@@ -29,7 +29,7 @@ from collections.abc import Iterable
 from pyiceberg.encryption.ciphers import AesGcmCipher, AesKeySize, SecureKey
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.kms import KeyManagementClient
-from pyiceberg.table.metadata import EncryptedKey, TableMetadata, TableMetadataV3
+from pyiceberg.table.metadata import EncryptedKey, TableMetadata
 from pyiceberg.utils.properties import property_as_int
 
 KEK_CREATED_AT_PROPERTY = "KEY_TIMESTAMP"
@@ -68,7 +68,7 @@ class EncryptionManager:
         if (table_key_id := metadata.properties.get(TableProperties.ENCRYPTION_KEY_ID)) is None:
             return None
 
-        if not isinstance(metadata, TableMetadataV3):
+        if metadata.format_version < 3:
             raise ValueError(f"Invalid properties for v{metadata.format_version}: {TableProperties.ENCRYPTION_KEY_ID}")
 
         if kms_client is None:
