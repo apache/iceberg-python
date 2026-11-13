@@ -2891,10 +2891,8 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             partition_key=task.partition_key,
         )
         fo = io.new_output(file_path)
-        if (key_metadata := _new_data_file_key_metadata(table_metadata)) is None:
-            writer = format_model.create_writer(fo, file_schema, table_metadata.properties)
-        else:
-            writer = format_model.create_writer(fo, file_schema, table_metadata.properties, key_metadata=key_metadata)
+        key_metadata = _new_data_file_key_metadata(table_metadata)
+        writer = format_model.create_writer(fo, file_schema, table_metadata.properties, key_metadata=key_metadata)
         with writer:
             writer.write(arrow_table)
         statistics = writer.result()
