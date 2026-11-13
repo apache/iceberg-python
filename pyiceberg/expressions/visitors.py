@@ -1564,6 +1564,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
         # if the column has any non-null values, the expression does not match
         field_id = term.ref().field.field_id
 
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
+
         if self._contains_nulls_only(field_id):
             return ROWS_MUST_MATCH
         else:
@@ -1573,6 +1576,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
         # no need to check whether the field is required because binding evaluates that case
         # if the column has any non-null values, the expression does not match
         field_id = term.ref().field.field_id
+
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
 
         if (null_count := self.null_counts.get(field_id)) is not None and null_count == 0:
             return ROWS_MUST_MATCH
@@ -1603,6 +1609,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
 
         field_id = term.ref().field.field_id
 
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
+
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
@@ -1621,6 +1630,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
 
         field_id = term.ref().field.field_id
 
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
+
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
@@ -1638,6 +1650,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
         # Rows must match when: <-------X---Min----Max---------->
 
         field_id = term.ref().field.field_id
+
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
 
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
@@ -1661,6 +1676,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
         # Rows must match when: <-------X---Min----Max---------->
         field_id = term.ref().field.field_id
 
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
+
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
@@ -1683,6 +1701,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
         # Rows must match when Min == X == Max
         field_id = term.ref().field.field_id
 
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
+
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
@@ -1703,6 +1724,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
     def visit_not_equal(self, term: BoundTerm, literal: LiteralValue) -> bool:
         # Rows must match when X < Min or Max < X because it is not in the range
         field_id = term.ref().field.field_id
+
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
 
         # If metrics prove the column contains only nulls or only NaNs, no row can have
         # a value equal to the literal, so every row satisfies NotEqualTo. Partial
@@ -1737,6 +1761,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
     def visit_in(self, term: BoundTerm, literals: set[L]) -> bool:
         field_id = term.ref().field.field_id
 
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
+
         if self._can_contain_nulls(field_id) or self._can_contain_nans(field_id):
             return ROWS_MIGHT_NOT_MATCH
 
@@ -1767,6 +1794,9 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
 
     def visit_not_in(self, term: BoundTerm, literals: set[L]) -> bool:
         field_id = term.ref().field.field_id
+
+        if self._is_nested_column(field_id):
+            return ROWS_MIGHT_NOT_MATCH
 
         # If metrics prove the column contains only nulls or only NaNs, no row can have
         # a value in the literal set, so every row satisfies NotIn. Partial null/NaN
@@ -1813,6 +1843,10 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
             raise ValueError(f"Cannot find field, might be nested or missing: {field_id}")
 
         return field
+
+    def _is_nested_column(self, field_id: int) -> bool:
+        # nested column metrics (e.g. null counts) are not reliable, so they cannot prove that all rows match
+        return self.struct.field(field_id) is None
 
     def _can_contain_nulls(self, field_id: int) -> bool:
         return (null_count := self.null_counts.get(field_id)) is not None and null_count > 0
