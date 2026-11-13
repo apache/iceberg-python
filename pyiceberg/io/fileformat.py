@@ -33,6 +33,7 @@ from pyiceberg.types import NestedField
 if TYPE_CHECKING:
     import pyarrow as pa
 
+    from pyiceberg.encryption.key_metadata import StandardKeyMetadata
     from pyiceberg.io.pyarrow import StatsAggregator
 
 
@@ -159,7 +160,10 @@ class FileFormatModel(Protocol):
         output_file: OutputFile,
         file_schema: Schema,
         properties: Properties,
-    ) -> FileFormatWriter: ...
+        key_metadata: StandardKeyMetadata | None = None,
+    ) -> FileFormatWriter:
+        """Create a writer for one file, encrypting it with `key_metadata` when it is set."""
+        ...
 
     def add_field_metadata(self, field: NestedField, metadata: dict[bytes, bytes], include_field_ids: bool) -> None:
         """Add format-specific Arrow field metadata."""

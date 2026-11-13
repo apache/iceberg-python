@@ -69,6 +69,7 @@ from typing_extensions import override
 
 from pyiceberg.conversions import to_bytes
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
+from pyiceberg.encryption.manager import _new_data_file_key_metadata
 from pyiceberg.exceptions import ResolveError
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression, BoundIsNaN, BoundIsNull, BoundTerm, Not, Or
 from pyiceberg.expressions.literals import Literal
@@ -1182,6 +1183,19 @@ def _parquet_decryption_properties(key_metadata: bytes) -> pq.FileDecryptionProp
 
     metadata = StandardKeyMetadata.from_bytes(key_metadata)
     return create_decryption_properties(metadata.encryption_key, aad_prefix=metadata.aad_prefix)
+
+
+def _parquet_encryption_properties(key_metadata: StandardKeyMetadata | None) -> pq.FileEncryptionProperties | None:
+    if key_metadata is None:
+        return None
+
+    try:
+        from pyarrow.parquet.encryption import create_encryption_properties
+    except ImportError as e:
+        raise ImportError(f"pyarrow >= 25.0.0 required to write encrypted Parquet files, found {pyarrow.__version__}") from e
+
+    # Java does not store the AAD prefix in the file, readers take it from key metadata
+    return create_encryption_properties(key_metadata.encryption_key, aad_prefix=key_metadata.aad_prefix, store_aad_prefix=False)
 
 
 def _read_deletes(io: FileIO, data_file: DataFile) -> dict[str, pa.ChunkedArray]:
@@ -2798,13 +2812,20 @@ def data_file_statistics_from_parquet_metadata(
 class ParquetFormatWriter(FileFormatWriter):
     """Writes Arrow tables to a Parquet file."""
 
-    def __init__(self, output_file: OutputFile, file_schema: Schema, properties: Properties) -> None:
+    def __init__(
+        self,
+        output_file: OutputFile,
+        file_schema: Schema,
+        properties: Properties,
+        key_metadata: StandardKeyMetadata | None = None,
+    ) -> None:
         self._output_file = output_file
         self._file_schema = file_schema
         self._properties = properties
         self._writer: pq.ParquetWriter | None = None
         self._fos: OutputStream | None = None
         self._parquet_writer_kwargs = _get_parquet_writer_kwargs(properties)
+        self._parquet_writer_kwargs["encryption_properties"] = _parquet_encryption_properties(key_metadata)
         self._row_group_size = property_as_int(
             properties=properties,
             property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
@@ -2857,8 +2878,9 @@ class ParquetFormatModel(FileFormatModel):
         output_file: OutputFile,
         file_schema: Schema,
         properties: Properties,
+        key_metadata: StandardKeyMetadata | None = None,
     ) -> ParquetFormatWriter:
-        return ParquetFormatWriter(output_file, file_schema, properties)
+        return ParquetFormatWriter(output_file, file_schema, properties, key_metadata)
 
     def add_field_metadata(self, field: NestedField, metadata: dict[bytes, bytes], include_field_ids: bool) -> None:
         if include_field_ids:
@@ -2905,7 +2927,8 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             partition_key=task.partition_key,
         )
         fo = io.new_output(file_path)
-        writer = format_model.create_writer(fo, file_schema, table_metadata.properties)
+        key_metadata = _new_data_file_key_metadata(table_metadata)
+        writer = format_model.create_writer(fo, file_schema, table_metadata.properties, key_metadata=key_metadata)
         with writer:
             writer.write(arrow_table)
         statistics = writer.result()
@@ -2923,7 +2946,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             # Just copy these from the table for now
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
-            key_metadata=None,
+            key_metadata=key_metadata.to_bytes() if key_metadata is not None else None,
             **statistics.to_serialized_dict(),
         )
 

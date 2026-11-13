@@ -3900,6 +3900,50 @@ def test_write_file_parquet_round_trip(tmp_path: Path, table_schema_simple: Sche
     assert result.column_names == ["foo", "bar", "baz"]
 
 
+def test_write_file_encrypts_parquet_for_encrypted_table(tmp_path: Path, table_schema_simple: Schema) -> None:
+    from pyarrow.parquet import encryption
+
+    _, task = _simple_write_task_and_metadata(tmp_path, table_schema_simple, {})
+    table_metadata = TableMetadataV3(
+        location=f"file://{tmp_path}",
+        last_column_id=3,
+        current_schema_id=1,
+        schemas=[table_schema_simple],
+        partition_specs=[PartitionSpec()],
+        properties={TableProperties.ENCRYPTION_KEY_ID: "master-1", TableProperties.ENCRYPTION_DATA_KEY_LENGTH: "32"},
+        next_row_id=0,
+    )
+
+    data_file, other_data_file = write_file(
+        io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task, replace(task, task_id=1)])
+    )
+
+    assert data_file.key_metadata is not None and other_data_file.key_metadata is not None
+    key_metadata = StandardKeyMetadata.from_bytes(data_file.key_metadata)
+    other_key_metadata = StandardKeyMetadata.from_bytes(other_data_file.key_metadata)
+    assert len(key_metadata.encryption_key) == 32
+    assert key_metadata.encryption_key != other_key_metadata.encryption_key
+    assert key_metadata.aad_prefix != other_key_metadata.aad_prefix
+    file_path = data_file.file_path.removeprefix("file://")
+    with open(file_path, "rb") as f:
+        assert f.read(4) == b"PARE"
+
+    with pytest.raises(OSError, match="AAD prefix used for file encryption, but not stored in file"):
+        pq.read_table(file_path, decryption_properties=encryption.create_decryption_properties(key_metadata.encryption_key))
+
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=AlwaysTrue(),
+        projected_schema=table_schema_simple,
+        table_schema=table_schema_simple,
+        projected_field_ids={1, 2, 3},
+        positional_deletes=None,
+        case_sensitive=True,
+    )
+    assert pa.Table.from_batches(batches).to_pydict() == {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, True]}
+
+
 def test__to_requested_schema_timestamps(
     arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
     arrow_table_with_all_timestamp_precisions: pa.Table,
