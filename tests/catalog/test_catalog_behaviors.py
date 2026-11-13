@@ -47,7 +47,7 @@ from pyiceberg.table import Table, TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import BucketTransform, IdentityTransform
 from pyiceberg.typedef import Identifier
 from pyiceberg.types import BooleanType, DoubleType, IntegerType, LongType, NestedField, StringType
 
@@ -651,6 +651,25 @@ def test_concurrent_commit_table(catalog: Catalog, table_schema_nested: Schema, 
         # This one should fail since it already has been updated
         with table_b.update_schema() as update:
             update.add_column(path="c", field_type=IntegerType())
+
+
+def test_concurrent_update_spec_checks_names_against_current_schema(catalog: Catalog, test_table_identifier: Identifier) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    table_a = catalog.create_table(test_table_identifier, Schema(NestedField(1, "x", LongType(), required=False)))
+    table_b = catalog.load_table(test_table_identifier)
+
+    with table_a.update_schema() as update:
+        update.add_column(path="xb", field_type=LongType())
+
+    # table_b still has the schema without xb, so only the commit can see the conflict
+    with pytest.raises(ValueError, match="Cannot create partition with a name that exists in schema: xb"):
+        with table_b.update_spec() as update:
+            update.add_field("x", BucketTransform(4), "xb")
+
+    table = catalog.load_table(test_table_identifier)
+    assert table.schema().column_names == ["x", "xb"]
+    assert table.spec().is_unpartitioned()
 
 
 def test_delete_metadata_multiple(catalog: Catalog, table_schema_nested: Schema, random_table_identifier: Identifier) -> None:
