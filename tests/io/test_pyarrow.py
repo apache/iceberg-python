@@ -70,8 +70,13 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     EqualTo,
     GreaterThan,
+    IsNaN,
     IsNull,
+    LessThan,
     Not,
+    NotEqualTo,
+    NotIn,
+    NotNaN,
     Or,
 )
 from pyiceberg.expressions.literals import literal
@@ -4392,6 +4397,62 @@ def test_task_to_record_batches_filter_after_positional_deletes_empty_result(tmp
     assert result_batches == []
 
 
+def test_task_to_record_batches_keeps_nan_rows_for_nan_sensitive_filters(tmpdir: str) -> None:
+    """Regression test: pyarrow must not prune a row group that holds NaN rows matching the filter.
+
+    Parquet statistics exclude NaN, so the row group [NaN, 5.0, 5.0] reports min == max == 5.0.
+    pyarrow prunes such a row group for IsNaN, NotEqualTo and NotIn, which drops the NaN row.
+    NotNaN is a control.
+    """
+    from pyiceberg.expressions.visitors import bind
+
+    for arrow_type, iceberg_type in [(pa.float32(), FloatType()), (pa.float64(), DoubleType())]:
+        arrow_schema = pa.schema(
+            (
+                pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+                pa.field("x", arrow_type, nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "2"}),
+            )
+        )
+        arrow_table = pa.table(
+            {"id": pa.array([0, 1, 2], type=pa.int32()), "x": pa.array([float("nan"), 5.0, 5.0], type=arrow_type)},
+            schema=arrow_schema,
+        )
+        data_file = _write_table_to_data_file(
+            f"{tmpdir}/nan_row_group_equal_bounds_{iceberg_type}.parquet", arrow_schema, arrow_table
+        )
+
+        table_schema = Schema(
+            NestedField(1, "id", IntegerType(), required=False),
+            NestedField(2, "x", iceberg_type, required=False),
+        )
+        projected_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+        cases: list[tuple[BooleanExpression, list[int]]] = [
+            (IsNaN("x"), [0]),
+            (NotEqualTo("x", 5.0), [0]),
+            (NotIn("x", {5.0, 6.0}), [0]),
+            (And(IsNaN("x"), EqualTo("id", 0)), [0]),
+            (Or(IsNaN("x"), EqualTo("id", 2)), [0, 2]),
+            (NotNaN("x"), [1, 2]),
+        ]
+        for row_filter, expected_ids in cases:
+            # The filter column is not selected, so the filter must still see it after the read.
+            result_batches = list(
+                _task_to_record_batches(
+                    PyArrowFileIO(),
+                    FileScanTask(data_file),
+                    bound_row_filter=bind(table_schema, row_filter, case_sensitive=True),
+                    projected_schema=projected_schema,
+                    table_schema=table_schema,
+                    projected_field_ids={1, 2},
+                    positional_deletes=None,
+                    case_sensitive=True,
+                )
+            )
+            actual_ids = [value for batch in result_batches for value in batch.column(0).to_pylist()]
+            assert actual_ids == expected_ids, f"{iceberg_type}: {row_filter}"
+
+
 def test_task_to_record_batches_encrypted_by_iceberg_rust() -> None:
     """The data file was encrypted by iceberg-rust, see tests/table/encryption/README.md."""
     data_file = DataFile.from_args(
@@ -4648,7 +4709,7 @@ def test_orc_row_filtering_predicate_pushdown(tmp_path: Path) -> None:
     import pyarrow as pa
     import pyarrow.orc as orc
 
-    from pyiceberg.expressions import And, EqualTo, GreaterThan, In, LessThan, Or
+    from pyiceberg.expressions import And, EqualTo, GreaterThan, In, Or
     from pyiceberg.io.pyarrow import ArrowScan, PyArrowFileIO
     from pyiceberg.manifest import DataFileContent, FileFormat
     from pyiceberg.partitioning import PartitionSpec

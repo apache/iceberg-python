@@ -1415,6 +1415,28 @@ def test_replace_files_in_nan_identity_partition(catalog: Catalog) -> None:
         assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == expected_nan_ids, name
 
 
+def test_scan_nan_row_with_equal_finite_statistics(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.scan_nan_equal_statistics_{catalog.name}"
+    iceberg_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "value", DoubleType(), required=False),
+    )
+    tbl = catalog.create_table(identifier=identifier, schema=iceberg_schema)
+    # Parquet statistics ignore NaN, so the single row group reports min == max == 5.0 for this file.
+    tbl.append(
+        pa.Table.from_pydict(
+            {"id": [1, 2, 3], "value": [float("nan"), 5.0, 5.0]},
+            schema=schema_to_pyarrow(iceberg_schema),
+        )
+    )
+
+    assert tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist() == [1]
+    assert tbl.scan(row_filter="value != 5.0").to_arrow()["id"].to_pylist() == [1]
+    assert tbl.scan(row_filter="value not in (5.0, 6.0)").to_arrow()["id"].to_pylist() == [1]
+    assert tbl.scan(row_filter="value is not nan").to_arrow()["id"].to_pylist() == [2, 3]
+
+
 def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
     catalog.create_namespace("default")
     identifier = f"default.scan_integer_decimal_literal_{catalog.name}"
