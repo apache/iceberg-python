@@ -1728,6 +1728,24 @@ def test_bucket_pyarrow_transforms(
     assert expected == transform.pyarrow_transform(source_type)(input_arr)
 
 
+def test_pyarrow_transform_decodes_dictionary_arrays() -> None:
+    transform: Transform[Any, Any] = BucketTransform(num_buckets=8)
+    plain = pa.array(["a", "b", None])
+    encoded = plain.dictionary_encode()
+
+    assert (
+        transform.pyarrow_transform(StringType())(encoded).to_pylist()
+        == transform.pyarrow_transform(StringType())(plain).to_pylist()
+    )
+
+    chunked_encoded = pa.chunked_array([encoded, pa.array(["c"]).dictionary_encode()])
+    chunked_plain = pa.chunked_array([plain, pa.array(["c"])])
+    assert (
+        transform.pyarrow_transform(StringType())(chunked_encoded).to_pylist()
+        == transform.pyarrow_transform(StringType())(chunked_plain).to_pylist()
+    )
+
+
 def test_bucket_pyarrow_void_transform() -> None:
     input_arr = pa.chunked_array([pa.array([1, 2], type=pa.int32()), pa.array([3, 4], type=pa.int32())])
     output_arr = pa.array([None, None, None, None], type=pa.int32())
