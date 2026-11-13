@@ -105,12 +105,12 @@ def _(result: ParseResults) -> Reference:
 
 boolean = one_of(["true", "false"], caseless=True)
 string = sgl_quoted_string.set_results_name("raw_quoted_string")
-decimal = common.real().set_results_name("decimal")
+decimal = common.sci_real().set_results_name("decimal")
 integer = common.signed_integer().set_results_name("integer")
 literal = Group(string | decimal | integer | boolean).set_results_name("literal")
-literal_set = Group(
-    DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer) | DelimitedList(boolean)
-).set_results_name("literal_set")
+literal_set = Group(DelimitedList(string) | DelimitedList(decimal | integer) | DelimitedList(boolean)).set_results_name(
+    "literal_set"
+)
 
 
 @boolean.set_parse_action
