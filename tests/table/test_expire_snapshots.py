@@ -14,16 +14,53 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import json
 import threading
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
 import pytest
 
+from pyiceberg.catalog import Catalog
 from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.update import RemoveSnapshotsUpdate, update_table_metadata
 from pyiceberg.table.update.snapshot import ExpireSnapshots
+
+
+@pytest.mark.parametrize("expiration", ["by_id", "older_than"])
+def test_expiration_retains_history_after_gap(catalog: Catalog, expiration: str) -> None:
+    import pyarrow as pa
+
+    catalog.create_namespace("history")
+    table = catalog.create_table("history.events", schema=pa.schema([("x", pa.int64())]))
+    for value in (1, 2, 3):
+        table.append(pa.table({"x": [value]}))
+    first, middle, latest = table.history()
+
+    table.manage_snapshots().create_tag(first.snapshot_id, "keep_first").commit()
+    if expiration == "by_id":
+        table.maintenance.expire_snapshots().by_id(middle.snapshot_id).commit()
+    else:
+        # Include all snapshots; the tag and main branch protect the first and latest.
+        cutoff = datetime.fromtimestamp(max(snapshot.timestamp_ms for snapshot in table.snapshots()) / 1000, UTC)
+        cutoff += timedelta(milliseconds=1)
+        table.maintenance.expire_snapshots().older_than(cutoff).commit()
+
+    reloaded = catalog.load_table("history.events")
+    for actual in (table, reloaded):
+        assert actual.history() == [latest]
+        assert actual.snapshot_as_of_timestamp(latest.timestamp_ms, inclusive=False) is None
+        at_latest = actual.snapshot_as_of_timestamp(latest.timestamp_ms)
+        assert at_latest is not None and at_latest.snapshot_id == latest.snapshot_id
+        assert actual.snapshot_by_id(middle.snapshot_id) is None
+        assert actual.refs()["keep_first"].snapshot_id == first.snapshot_id
+        assert actual.scan(snapshot_id=first.snapshot_id).to_arrow()["x"].to_pylist() == [1]
+        assert sorted(actual.scan().to_arrow()["x"].to_pylist()) == [1, 2, 3]
+
+    with reloaded.io.new_input(reloaded.metadata_location).open() as stream:
+        persisted_metadata = json.load(stream)
+    assert persisted_metadata["snapshot-log"] == [{"timestamp-ms": latest.timestamp_ms, "snapshot-id": latest.snapshot_id}]
 
 
 def test_cannot_expire_protected_head_snapshot(table_v2: Table) -> None:
