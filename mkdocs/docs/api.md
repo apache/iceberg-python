@@ -578,6 +578,67 @@ assert upd.rows_inserted == 1
 
 PyIceberg will automatically detect which rows need to be updated, inserted or can simply be ignored.
 
+### Concurrent writes
+
+Several writers can commit to the same table at the same time. Iceberg uses optimistic concurrency: each writer prepares its changes against the table state it loaded, and the catalog only accepts the commit if the table has not changed in the meantime. If another writer committed first, the catalog rejects the commit with a `CommitFailedException`.
+
+What happens next depends on the operation:
+
+| Operation                    | When a concurrent commit is detected                                                                                                                 |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `append`                     | Retried automatically. Appends are not validated against concurrent changes, so the retry succeeds once the commit lands on the latest table state.  |
+| `overwrite`, `delete`        | Retried automatically, but first validated against the commits made since the table was loaded. A real conflict raises `ValidationException` and is not retried. |
+| Metadata-only changes        | Not retried. Transactions that do not write data, for example a schema update on its own, raise `CommitFailedException` on the first conflict.      |
+
+#### How a retry works
+
+After a `CommitFailedException`, PyIceberg waits, refreshes the table metadata, rebuilds the snapshot against the latest table state, and tries again:
+
+- The wait before retry `n` (counting from 0) is `min-wait-ms * 2^n`, capped at `max-wait-ms`, plus up to 10% random jitter.
+- Retrying stops after `commit.retry.num-retries` retries or once `commit.retry.total-timeout-ms` has elapsed, whichever comes first. The last `CommitFailedException` is then raised.
+- The snapshot ID stays the same across attempts. If an earlier attempt actually landed but its response was lost, the refreshed metadata contains that snapshot and PyIceberg stops instead of writing the data twice.
+- When the commit fails with `CommitFailedException` or `ValidationException`, the files written for it are deleted. The transaction is then marked as failed and cannot be reused; create a new one to try again.
+
+The retry settings are described in [Commit retry options](configuration.md#commit-retry-options).
+
+#### Isolation levels for `overwrite` and `delete`
+
+Before retrying an `overwrite` or `delete`, PyIceberg checks the commits made since the table was loaded. Which conflicts count depends on [`write.update.isolation-level` and `write.delete.isolation-level`](configuration.md#isolation-level-options):
+
+- Under `serializable` (the default), data files added concurrently that match the operation's filter cause a `ValidationException`.
+- Under `snapshot`, concurrent appends are accepted and only conflicting deletes are rejected.
+- Under either level, a concurrent delete of the same data files, or delete files added concurrently, is a conflict. Currently, any delete file committed concurrently counts as a conflict for a filtered `overwrite` or `delete`, even in an unrelated partition.
+
+#### Handling failures
+
+```python
+from pyiceberg.exceptions import CommitFailedException, ValidationException
+from pyiceberg.expressions import EqualTo
+
+try:
+    tbl.overwrite(df, overwrite_filter=EqualTo("city", "Paris"))
+except ValidationException:
+    # A concurrent commit conflicts with this overwrite. Reload the table and decide
+    # whether the overwrite is still valid before running it again.
+    tbl = catalog.load_table("default.cities")
+except CommitFailedException:
+    # The table kept changing and the retries were exhausted. Retrying later, or
+    # raising `commit.retry.num-retries`, may help.
+    tbl = catalog.load_table("default.cities")
+```
+
+To change the retry behavior for a table, set the properties on it:
+
+```python
+tbl = tbl.transaction().set_properties(**{"commit.retry.num-retries": "8"}).commit_transaction()
+```
+
+#### Reducing conflicts
+
+- Commit fewer, larger appends instead of many small ones. Every commit is another chance for writers to collide, and each writer has to refresh the table before retrying.
+- Avoid having several writers overwrite or delete in the same partitions. Appends from many writers are cheap to retry; overwrites are validated and can fail.
+- Use `snapshot` isolation if concurrent appends to the partitions you overwrite are acceptable for your workload.
+
 ## Inspecting tables
 
 To explore the table metadata, tables can be inspected.
