@@ -339,12 +339,6 @@ class Transaction:
 
         return self
 
-    def _scan(self, row_filter: str | BooleanExpression = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
-        """Minimal data scan of the table with the current state of the transaction."""
-        return DataScan(
-            table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
-        )
-
     def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
         """Set the table to a certain version.
 
@@ -807,10 +801,17 @@ class Transaction:
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
 
-            file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
-            if branch is not None:
-                file_scan = file_scan.use_ref(branch)
-            files = file_scan.plan_files()
+            # Each file is rewritten in full, so it needs every delete file that applies to it,
+            # not only those whose bounds can match the delete filter.
+            planner = ManifestGroupPlanner(
+                table_metadata=self.table_metadata,
+                io=self._table.io,
+                row_filter=delete_filter,
+                case_sensitive=case_sensitive,
+                _ignore_residuals=True,
+            )
+            snapshot = self.table_metadata.snapshot_by_name(branch)
+            files = planner.plan_files(snapshot.manifests(self._table.io)) if snapshot is not None else []
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -2864,12 +2865,16 @@ class ManifestGroupPlanner:
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         case_sensitive: bool = True,
         options: Properties = EMPTY_DICT,
+        _ignore_residuals: bool = False,
     ):
         self.table_metadata = table_metadata
         self.io = io
         self.row_filter = _parse_row_filter(row_filter)
         self.case_sensitive = case_sensitive
         self.options = options
+        # Set when the planned data files are read in full, as in a rewrite. Residuals are then always true, and delete
+        # files are kept even if their bounds cannot match the row filter, as no residual drops the rows they delete.
+        self._ignore_residuals = _ignore_residuals
 
     @cached_property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
@@ -2907,7 +2912,9 @@ class ManifestGroupPlanner:
                     self.io,
                     manifest,
                     partition_evaluators[manifest.partition_spec_id],
-                    metrics_evaluator,
+                    metrics_evaluator
+                    if manifest.content == ManifestContent.DATA or not self._ignore_residuals
+                    else lambda _: True,
                 )
                 for manifest in manifests
                 if self._check_sequence_number(min_sequence_number, manifest)
@@ -2986,7 +2993,7 @@ class ManifestGroupPlanner:
                     data_entry.data_file,
                     partition_key=data_entry.data_file.partition,
                 ),
-                residual=residual_for(data_entry.data_file),
+                residual=ALWAYS_TRUE if self._ignore_residuals else residual_for(data_entry.data_file),
             )
             for data_entry in data_entries
         ]
