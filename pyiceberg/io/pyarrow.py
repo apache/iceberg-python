@@ -1176,7 +1176,10 @@ def _parquet_decryption_properties(key_metadata: bytes) -> pq.FileDecryptionProp
     return create_decryption_properties(metadata.encryption_key, aad_prefix=metadata.aad_prefix)
 
 
-def _parquet_encryption_properties(key_metadata: StandardKeyMetadata) -> pq.FileEncryptionProperties:
+def _parquet_encryption_properties(key_metadata: StandardKeyMetadata | None) -> pq.FileEncryptionProperties | None:
+    if key_metadata is None:
+        return None
+
     try:
         from pyarrow.parquet.encryption import create_encryption_properties
     except ImportError as e:
@@ -2788,8 +2791,7 @@ class ParquetFormatWriter(FileFormatWriter):
         self._writer: pq.ParquetWriter | None = None
         self._fos: OutputStream | None = None
         self._parquet_writer_kwargs = _get_parquet_writer_kwargs(properties)
-        if key_metadata is not None:
-            self._parquet_writer_kwargs["encryption_properties"] = _parquet_encryption_properties(key_metadata)
+        self._parquet_writer_kwargs["encryption_properties"] = _parquet_encryption_properties(key_metadata)
         self._row_group_size = property_as_int(
             properties=properties,
             property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
