@@ -1016,15 +1016,26 @@ class Transaction:
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
-    def _find_referenced_data_files(self, file_paths: list[str]) -> list[str]:
-        """Return file_paths already referenced by data files in the current snapshot."""
-        snapshot = self.table_metadata.current_snapshot()
-        if snapshot is None:
+    def _find_referenced_data_files(self, file_paths: list[str], branch: str | None) -> list[str]:
+        """Return file_paths already referenced by data files in the current snapshot or the target branch."""
+        # Check both: the current snapshot is always checked, and the target branch is what the append builds on.
+        # A snapshot or manifest shared by both is scanned once.
+        snapshots = {
+            snapshot.snapshot_id: snapshot
+            for snapshot in (self.table_metadata.current_snapshot(), self.table_metadata.snapshot_by_name(branch))
+            if snapshot is not None
+        }
+        if not snapshots:
             return []
 
         candidates = set(file_paths)
         io = self._table.io
-        data_manifests = [m for m in snapshot.manifests(io) if m.content == ManifestContent.DATA]
+        data_manifests = {
+            manifest.manifest_path: manifest
+            for snapshot in snapshots.values()
+            for manifest in snapshot.manifests(io)
+            if manifest.content == ManifestContent.DATA
+        }
 
         def path_filter(data_file: DataFile) -> bool:
             return data_file.file_path in candidates
@@ -1033,7 +1044,7 @@ class Transaction:
         entries = chain.from_iterable(
             executor.map(
                 lambda args: _open_manifest(*args),
-                [(io, manifest, path_filter, lambda _: True) for manifest in data_manifests],
+                [(io, manifest, path_filter, lambda _: True) for manifest in data_manifests.values()],
             )
         )
         return [entry.data_file.file_path for entry in entries]
@@ -1060,7 +1071,7 @@ class Transaction:
             raise ValueError("File paths must be unique")
 
         if check_duplicate_files:
-            referenced_files = self._find_referenced_data_files(file_paths)
+            referenced_files = self._find_referenced_data_files(file_paths, branch)
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
