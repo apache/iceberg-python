@@ -24,7 +24,7 @@ from __future__ import annotations
 import struct
 from abc import ABC, abstractmethod
 from datetime import date, datetime, time
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, getcontext, localcontext
 from functools import singledispatchmethod
 from math import isfinite, isnan
 from typing import Any, Generic
@@ -371,6 +371,15 @@ class LongLiteral(Literal[int]):
             return DecimalLiteral(Decimal((sign, digits + zeros, -type_var.scale)))
 
 
+def _float_to_decimal(value: float, type_var: DecimalType) -> Decimal:
+    if not isfinite(value):
+        raise ValueError(f"Could not convert {value} into a {type_var}, value is not finite")
+    exact = Decimal(value)
+    # Quantize needs a context precision that covers every digit of the result, which can exceed the default 28 digits
+    with localcontext(prec=max(getcontext().prec, exact.adjusted() + type_var.scale + 2)):
+        return exact.quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP)
+
+
 class FloatLiteral(Literal[float]):
     def __init__(self, value: float) -> None:
         super().__init__(value, float)
@@ -414,9 +423,7 @@ class FloatLiteral(Literal[float]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
-        if not isfinite(self.value):
-            raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
-        return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
+        return DecimalLiteral(_float_to_decimal(self.value, type_var))
 
 
 class DoubleLiteral(Literal[float]):
@@ -441,9 +448,7 @@ class DoubleLiteral(Literal[float]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
-        if not isfinite(self.value):
-            raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
-        return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
+        return DecimalLiteral(_float_to_decimal(self.value, type_var))
 
 
 class DateLiteral(Literal[int]):
