@@ -64,6 +64,7 @@ from pyiceberg.table.labels import Labels
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
+from pyiceberg.table.metadata_columns import project_schema, split_selected_fields
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
@@ -2302,10 +2303,7 @@ class TableScan(BaseScan):
             else:
                 raise ValueError(f"Snapshot not found: {self.snapshot_id}")
 
-        if "*" in self.selected_fields:
-            return current_schema
-
-        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+        return project_schema(current_schema, self.selected_fields, self.case_sensitive, self.table_metadata.format_version)
 
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id is not None:
@@ -2550,9 +2548,11 @@ class DataScan(TableScan):
         if self.table_identifier is None:
             raise ValueError("REST scan planning requires a table identifier")
 
+        # Metadata columns are not in the table schema, so the server cannot resolve them
+        schema_fields, _ = split_selected_fields(self.table_metadata.schema(), self.selected_fields, self.case_sensitive)
         request = PlanTableScanRequest(
             snapshot_id=self.snapshot_id,
-            select=list(self.selected_fields) if self.selected_fields != ("*",) else None,
+            select=list(schema_fields) if schema_fields != ("*",) else None,
             filter=self.row_filter if self.row_filter != ALWAYS_TRUE else None,
             case_sensitive=self.case_sensitive,
         )
@@ -2736,10 +2736,9 @@ class IncrementalAppendScan(BaseScan):
         return self.update(to_snapshot_id=to_snapshot_id)
 
     def projection(self) -> Schema:
-        current_schema = self.table_metadata.schema()
-        if "*" in self.selected_fields:
-            return current_schema
-        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+        return project_schema(
+            self.table_metadata.schema(), self.selected_fields, self.case_sensitive, self.table_metadata.format_version
+        )
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files added between the specified snapshots."""

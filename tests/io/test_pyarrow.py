@@ -112,6 +112,7 @@ from pyiceberg.table.deletion_vector import (
     deletion_vectors_from_puffin_file,
 )
 from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
+from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
 from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
@@ -1341,6 +1342,12 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
       child 0, key: large_string not null
       child 1, value: large_string not null"""
     )
+
+
+def test_projection_last_updated_sequence_number_not_supported(file_int: str) -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False), LAST_UPDATED_SEQUENCE_NUMBER)
+    with pytest.raises(NotImplementedError, match="Reading _last_updated_sequence_number is not yet supported"):
+        project(schema, [file_int])
 
 
 def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None:
@@ -4434,6 +4441,64 @@ def test_task_to_record_batches_filter_after_positional_deletes_empty_result(tmp
     )
 
     assert result_batches == []
+
+
+@pytest.mark.parametrize(
+    "stored_row_ids, first_row_id, deleted_positions, row_filter, expected",
+    [
+        # Row IDs are inherited from the first row ID plus the position
+        (None, 100, None, AlwaysTrue(), [(1, 100), (2, 101), (3, 102), (4, 103), (5, 104)]),
+        # Row IDs stored in the file take precedence
+        ([None, 7, None, 9, None], 100, None, AlwaysTrue(), [(1, 100), (2, 7), (3, 102), (4, 9), (5, 104)]),
+        # Positions are counted before positional deletes are applied
+        (None, 100, [1, 3], AlwaysTrue(), [(1, 100), (3, 102), (5, 104)]),
+        # Positions are counted before the row filter is applied
+        (None, 100, None, GreaterThan("id", 2), [(3, 102), (4, 103), (5, 104)]),
+        (None, 100, [1, 3], GreaterThan("id", 2), [(3, 102), (5, 104)]),
+        # Without a first row ID, row IDs are null even when stored in the file
+        ([None, 7, None, 9, None], None, None, AlwaysTrue(), [(1, None), (2, None), (3, None), (4, None), (5, None)]),
+    ],
+)
+def test_task_to_record_batches_row_ids(
+    tmpdir: str,
+    stored_row_ids: list[int | None] | None,
+    first_row_id: int | None,
+    deleted_positions: list[int] | None,
+    row_filter: BooleanExpression,
+    expected: list[tuple[int, int | None]],
+) -> None:
+    from pyiceberg.expressions.visitors import bind
+
+    fields = [pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]
+    columns = [pa.array([1, 2, 3, 4, 5], type=pa.int32())]
+    if stored_row_ids is not None:
+        fields.append(
+            pa.field(ROW_ID.name, pa.int64(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: str(ROW_ID.field_id)})
+        )
+        columns.append(pa.array(stored_row_ids, type=pa.int64()))
+    arrow_schema = pa.schema(fields)
+    data_file = _write_table_to_data_file(f"{tmpdir}/row_ids.parquet", arrow_schema, pa.table(columns, schema=arrow_schema))
+    data_file.first_row_id = first_row_id
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    projected_schema = Schema(*table_schema.fields, ROW_ID)
+    positional_deletes = [pa.chunked_array([pa.array(deleted_positions, type=pa.int64())])] if deleted_positions else None
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, row_filter, case_sensitive=True),
+            projected_schema=projected_schema,
+            table_schema=table_schema,
+            projected_field_ids={1, ROW_ID.field_id},
+            positional_deletes=positional_deletes,
+            case_sensitive=True,
+        )
+    )
+
+    result = pa.Table.from_batches(result_batches)
+    assert result.schema.field(ROW_ID.name).type == pa.int64()
+    assert list(zip(result["id"].to_pylist(), result[ROW_ID.name].to_pylist(), strict=True)) == expected
 
 
 def test_task_to_record_batches_encrypted_by_iceberg_rust() -> None:
