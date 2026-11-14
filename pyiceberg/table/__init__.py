@@ -2343,12 +2343,15 @@ class FileScanTask(ScanTask):
     def from_rest_response(
         rest_task: RESTFileScanTask,
         delete_files: list[RESTDeleteFile],
+        *,
+        fallback_residual: BooleanExpression = ALWAYS_TRUE,
     ) -> FileScanTask:
         """Convert a RESTFileScanTask to a FileScanTask.
 
         Args:
             rest_task: The REST file scan task.
             delete_files: The list of delete files from the ScanTasks response.
+            fallback_residual: The scan filter to use when the server omits the residual.
 
         Returns:
             A FileScanTask with the converted data and delete files.
@@ -2371,7 +2374,7 @@ class FileScanTask(ScanTask):
         return FileScanTask(
             data_file=data_file,
             delete_files=resolved_deletes,
-            residual=rest_task.residual_filter if rest_task.residual_filter else ALWAYS_TRUE,
+            residual=rest_task.residual_filter if rest_task.residual_filter is not None else fallback_residual,
         )
 
 
