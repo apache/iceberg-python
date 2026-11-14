@@ -293,6 +293,16 @@ def test_double_to_decimal_conversion_with_infinity() -> None:
     assert "Could not convert inf into a decimal(9, 2), value is not finite" in str(e.value)
 
 
+def test_float_to_decimal_conversion_beyond_default_context_precision() -> None:
+    # The default decimal context keeps 28 digits, fewer than a decimal(38, s) value can have
+    for value, decimal_type, expected in [
+        (2.0**87, DecimalType(38, 2), "154742504910672534362390528.00"),
+        (0.5, DecimalType(38, 30), "0.500000000000000000000000000000"),
+    ]:
+        for lit in (FloatLiteral(value), DoubleLiteral(value)):
+            assert lit.to(decimal_type).value.as_tuple() == Decimal(expected).as_tuple(), (lit, decimal_type)
+
+
 def test_decimal_to_decimal_conversion() -> None:
     lit = literal(Decimal("34.11").quantize(Decimal(".01")))
 
