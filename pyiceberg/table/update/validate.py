@@ -375,26 +375,23 @@ def _validate_no_new_delete_files(
 def _validate_no_new_deletes_for_data_files(
     table: Table,
     starting_snapshot: Snapshot,
-    data_filter: BooleanExpression | None,
     data_files: set[DataFile],
     parent_snapshot: Snapshot | None,
-    case_sensitive: bool = True,
 ) -> None:
     """Validate no new delete files must be applied for data files that have been added to the table since a starting snapshot.
 
     Args:
         table: Table to validate
         starting_snapshot: Snapshot current at the start of the operation
-        data_filter: Expression used to find added data files
         data_files: data files to validate have no new deletes
         parent_snapshot: Ending snapshot on the branch being validated
-        case_sensitive: Whether the data filter binds column names case-sensitively
     """
     # If there is no current state, or no files has been added
     if table.format_version < 2:
         return
 
-    deletes = _added_delete_files(table, starting_snapshot, data_filter, None, parent_snapshot, case_sensitive)
+    # The data files are rewritten in full, so a delete file outside the operation's filter still applies to them
+    deletes = _added_delete_files(table, starting_snapshot, None, None, parent_snapshot)
     seq_num = _starting_sequence_number(table, starting_snapshot)
 
     # Fail to any delete file found that applies to files written in or before the starting snapshot

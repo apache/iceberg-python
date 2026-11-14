@@ -636,6 +636,28 @@ def test_file_overwrite_validates_concurrent_position_delete_in_nan_partition(ca
     assert catalog.load_table(identifier).scan().to_arrow()["id"].to_pylist() == [2]
 
 
+def test_partial_delete_validates_concurrent_delete_outside_the_filter(catalog: Catalog) -> None:
+    """A retried partial delete must fail when a concurrent delete file applies to a rewritten file, whatever its bounds."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "k", LongType(), required=False), NestedField(2, "v", StringType(), required=False))
+    identifier = "default.concurrent_delete_outside_the_filter"
+    table = catalog.create_table(identifier, schema=schema, properties={"format-version": "2"})
+    table.append(pa.table({"k": [1, 2, 3], "v": ["a", "b", "c"]}))
+    data_file = next(iter(table.scan().plan_files())).file
+
+    deleting_table = catalog.load_table(identifier)
+
+    # The delete file stores the deleted row (2, 'b'), so its bounds can't match k = 1.
+    commit_partition_position_delete(table, Record(), data_file.file_path, pos=1, row={"k": 2, "v": "b"})
+
+    with pytest.raises(ValidationException, match="found new delete for replace data file"):
+        deleting_table.delete("k = 1")
+
+    assert catalog.load_table(identifier).scan().to_arrow()["k"].to_pylist() == [1, 3]
+
+
 def test_concurrent_overwrite_append_retries_successfully(catalog: Catalog) -> None:
     """Append after a concurrent overwrite should succeed via retry."""
     catalog.create_namespace("default")
