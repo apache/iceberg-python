@@ -53,6 +53,18 @@ def has_duplicate_rows(df: pyarrow_table, join_cols: list[str]) -> bool:
     return len(df.select(join_cols).group_by(join_cols).aggregate([([], "count_all")]).filter(pc.field("count_all") > 1)) > 0
 
 
+def _struct_values_differ(source_values: pa.ChunkedArray, target_values: pa.ChunkedArray) -> pa.ChunkedArray:
+    """Compare two struct columns field by field, as PyArrow cannot compare the structs themselves."""
+    # A null struct has null fields, so the struct itself decides those rows
+    changed = pc.not_equal(pc.is_null(source_values), pc.is_null(target_values))
+    for field in source_values.type:
+        changed = pc.or_(
+            changed,
+            _values_differ(pc.struct_field(source_values, field.name), pc.struct_field(target_values, field.name)),
+        )
+    return changed
+
+
 def _values_differ(
     source_values: pa.Array | pa.ChunkedArray, target_values: pa.Array | pa.ChunkedArray
 ) -> pa.Array | pa.ChunkedArray:
@@ -61,6 +73,14 @@ def _values_differ(
         equal = pc.fill_null(pc.equal(source_values, target_values), False)
     except (pa.ArrowNotImplementedError, pa.ArrowInvalid, pa.ArrowTypeError):
         # PyArrow has no comparison kernel for nested types
+        if pa.types.is_struct(source_values.type) and source_values.type == target_values.type:
+            return _struct_values_differ(source_values, target_values)
+
+        # Different types: cast the source to the target type and compare again, e.g. a naive against
+        # a zoned timestamp, or a struct of string against the struct of large_string a scan returns
+        if source_values.type != target_values.type:
+            return _values_differ(source_values.cast(target_values.type), target_values)
+
         source_list = source_values.to_pylist()
         target_list = target_values.to_pylist()
         return pa.array(

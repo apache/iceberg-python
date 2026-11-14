@@ -955,3 +955,102 @@ def test_get_rows_to_update_compares_nested_values() -> None:
     target = pa.table({"pk": [1, 2], "value": pa.array([{"a": 1}, {"a": 3}])})
 
     assert get_rows_to_update(source, target, ["pk"]).to_pydict() == {"pk": [2], "value": [{"a": 2}]}
+
+
+def test_get_rows_to_update_compares_columns_of_a_different_type() -> None:
+    """A naive and a zoned timestamp of the same instant are not a change."""
+    target = pa.table({"id": pa.array([1, 2], pa.int32()), "ts": pa.array([1, 2], pa.timestamp("us", tz="UTC"))})
+    source = pa.table({"id": pa.array([1, 2], pa.int32()), "ts": pa.array([1, 9], pa.timestamp("us"))})
+
+    assert get_rows_to_update(source, target, ["id"]).column("id").to_pylist() == [2]
+
+
+def test_get_rows_to_update_compares_a_struct_that_is_null() -> None:
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("nested", pa.struct([pa.field("a", pa.int32()), pa.field("b", pa.string())])),
+        ]
+    )
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "nested": None},
+            {"id": 2, "nested": None},
+            {"id": 3, "nested": {"a": 1, "b": "x"}},
+            {"id": 4, "nested": {"a": 1, "b": "x"}},
+            {"id": 5, "nested": {"a": 1, "b": None}},
+            {"id": 6, "nested": {"a": None, "b": None}},
+            {"id": 7, "nested": None},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "nested": None},  # unchanged
+            {"id": 2, "nested": {"a": 1, "b": "x"}},  # null to a struct
+            {"id": 3, "nested": None},  # a struct to null
+            {"id": 4, "nested": {"a": 1, "b": "y"}},  # one field differs
+            {"id": 5, "nested": {"a": 1, "b": None}},  # unchanged, with a null field
+            {"id": 6, "nested": None},  # a struct of null fields to null
+            {"id": 7, "nested": {"a": None, "b": None}},  # null to a struct of null fields
+        ],
+        schema=schema,
+    )
+
+    assert get_rows_to_update(source, target, ["id"]).sort_by("id").column("id").to_pylist() == [2, 3, 4, 6, 7]
+
+
+def test_get_rows_to_update_compares_a_struct_whose_fields_are_in_another_order() -> None:
+    source_type = pa.struct([pa.field("a", pa.int64()), pa.field("b", pa.string())])
+    target_type = pa.struct([pa.field("b", pa.string()), pa.field("a", pa.int64())])
+    source = pa.table({"id": pa.array([1, 2]), "nested": pa.array([{"a": 1, "b": "x"}, {"a": 2, "b": "y"}], type=source_type)})
+    target = pa.table({"id": pa.array([1, 2]), "nested": pa.array([{"a": 1, "b": "x"}, {"a": 9, "b": "y"}], type=target_type)})
+
+    assert get_rows_to_update(source, target, ["id"]).column("id").to_pylist() == [2]
+
+
+def test_get_rows_to_update_compares_a_nested_struct() -> None:
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("outer", pa.struct([pa.field("inner", pa.struct([pa.field("value", pa.int32())]))])),
+        ]
+    )
+    target = pa.Table.from_pylist(
+        [
+            {"id": 1, "outer": {"inner": {"value": 1}}},
+            {"id": 2, "outer": {"inner": {"value": 1}}},
+            {"id": 3, "outer": {"inner": None}},
+            {"id": 4, "outer": {"inner": {"value": 1}}},
+        ],
+        schema=schema,
+    )
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "outer": {"inner": {"value": 1}}},  # unchanged
+            {"id": 2, "outer": {"inner": {"value": 2}}},  # the innermost value differs
+            {"id": 3, "outer": {"inner": {"value": 1}}},  # a null inner struct to a struct
+            {"id": 4, "outer": {"inner": None}},  # a struct to a null inner struct
+        ],
+        schema=schema,
+    )
+
+    assert get_rows_to_update(source, target, ["id"]).sort_by("id").column("id").to_pylist() == [2, 3, 4]
+
+
+def test_get_rows_to_update_compares_a_struct_read_as_large_string() -> None:
+    """A scan reads the strings of a struct as large_string, while a dataframe holds them as string."""
+    source = pa.table(
+        {
+            "id": pa.array([1, 2], pa.int32()),
+            "nested": pa.array([{"a": "x"}, {"a": "y"}], type=pa.struct([pa.field("a", pa.string())])),
+        }
+    )
+    target = pa.table(
+        {
+            "id": pa.array([1, 2], pa.int32()),
+            "nested": pa.array([{"a": "x"}, {"a": "z"}], type=pa.struct([pa.field("a", pa.large_string())])),
+        }
+    )
+
+    assert get_rows_to_update(source, target, ["id"]).column("id").to_pylist() == [2]
