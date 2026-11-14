@@ -51,6 +51,7 @@ from pyiceberg.catalog.rest import (
     SIGV4_MAX_RETRIES_DEFAULT,
     SNAPSHOT_LOADING_MODE,
     Capability,
+    ConfigResponse,
     Endpoint,
     HttpMethod,
     RestCatalog,
@@ -3893,6 +3894,31 @@ def test_load_responses_parse_labels(
         assert response_type.model_validate(payload).labels == Labels()
         for invalid in invalid_values:
             assert response_type.model_validate({**payload, "labels": invalid}).labels == Labels()
+
+
+def test_load_responses_with_null_config_and_storage_credentials(
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any], example_view_metadata_rest_json: dict[str, Any]
+) -> None:
+    # Like Java, an explicit null config reads as an empty config
+    table_response = TableResponse.model_validate(
+        {**example_table_metadata_with_snapshot_v1_rest_json, "config": None, "storage-credentials": None}
+    )
+    assert table_response.config == {}
+    assert table_response.storage_credentials == []
+
+    view_response = ViewResponse.model_validate({**example_view_metadata_rest_json, "config": None})
+    assert view_response.config == {}
+
+
+def test_config_response_with_null_defaults_and_overrides() -> None:
+    config_response = ConfigResponse.model_validate({"defaults": None, "overrides": None})
+    assert config_response.defaults == {}
+    assert config_response.overrides == {}
+
+
+def test_catalog_with_null_config_defaults_and_overrides(rest_mock: Mocker) -> None:
+    rest_mock.get(f"{TEST_URI}v1/config", json={"defaults": None, "overrides": None}, status_code=200)
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).uri == TEST_URI
 
 
 def test_table_labels_from_rest_responses(
