@@ -20,6 +20,7 @@ import logging
 import os
 import platform
 import sys
+import threading
 import time
 import uuid
 from collections import deque
@@ -31,6 +32,7 @@ from typing import (
 )
 from urllib.parse import quote, unquote
 
+from cachetools import TTLCache
 from pydantic import ConfigDict, Field, TypeAdapter, field_validator
 from requests import HTTPError, PreparedRequest, Response, Session
 from requests.adapters import DEFAULT_RETRIES, HTTPAdapter
@@ -67,16 +69,21 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
     NoSuchViewError,
     RemotePlanTimeoutError,
+    RESTError,
     TableAlreadyExistsError,
     UnauthorizedError,
     ViewAlreadyExistsError,
 )
 from pyiceberg.io import (
+    ADLS_SAS_TOKEN,
+    ADLS_TOKEN,
     AWS_ACCESS_KEY_ID,
     AWS_PROFILE_NAME,
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
+    GCS_TOKEN,
+    S3_SESSION_TOKEN,
     FileIO,
     load_file_io,
 )
@@ -307,6 +314,10 @@ IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
 EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
+REST_TABLE_CACHE_MAX_ENTRIES = "rest-table-cache.max-entries"
+REST_TABLE_CACHE_MAX_ENTRIES_DEFAULT = 100
+REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS = "rest-table-cache.expire-after-write-ms"
+REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS_DEFAULT = 5 * 60 * 1000  # 5 minutes, matches Java
 AUTH = "auth"
 CUSTOM = "custom"
 SCAN_PLANNING_MODE = "scan-planning-mode"
@@ -354,6 +365,12 @@ else:
         value = (value & ~(0xF << 76)) | (0x7 << 76)
         value = (value & ~(0x3 << 62)) | (0x2 << 62)
         return uuid.UUID(int=value)
+
+
+def _is_short_lived_credential(key: str) -> bool:
+    """Whether a loadTable config key carries a short-lived storage credential."""
+    key = key.lower()
+    return key in (S3_SESSION_TOKEN, AWS_SESSION_TOKEN, GCS_TOKEN, ADLS_TOKEN, TOKEN) or key.startswith(ADLS_SAS_TOKEN)
 
 
 def _retry_hook(retry_state: RetryCallState) -> None:
@@ -584,6 +601,8 @@ class RestCatalog(Catalog):
     _supported_endpoints: set[Endpoint]
     _namespace_separator: str
     _idempotency_enabled: bool = False
+    # Loads that vend short-lived storage credentials are not cached, since a 304 cannot refresh them.
+    _table_cache: TTLCache[Identifier, tuple[str, TableResponse]] | None
 
     def __init__(self, name: str, **properties: str):
         """Rest Catalog.
@@ -599,6 +618,30 @@ class RestCatalog(Catalog):
         self.uri = properties[URI]
         self._fetch_config()
         self._session = self._create_session()
+        max_entries = int(self.properties.get(REST_TABLE_CACHE_MAX_ENTRIES, REST_TABLE_CACHE_MAX_ENTRIES_DEFAULT))
+        ttl_ms = int(self.properties.get(REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS, REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS_DEFAULT))
+        if ttl_ms <= 0:
+            raise ValueError(f"Invalid value for {REST_TABLE_CACHE_EXPIRE_AFTER_WRITE_MS}: {ttl_ms} (must be positive)")
+        self._table_cache = TTLCache(maxsize=max_entries, ttl=ttl_ms / 1000) if max_entries > 0 else None
+        self._table_cache_lock = threading.Lock()
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Create a dictionary of the RestCatalog fields used when pickling, with an empty table cache."""
+        state = self.__dict__.copy()
+        if (cache := state["_table_cache"]) is not None:
+            state["_table_cache"] = TTLCache(maxsize=cache.maxsize, ttl=cache.ttl)
+        del state["_table_cache_lock"]
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Deserialize the state into a RestCatalog instance."""
+        self.__dict__ = state
+        self._table_cache_lock = threading.Lock()
+
+    def _invalidate_cached_table(self, identifier: str | Identifier) -> None:
+        if self._table_cache is not None:
+            with self._table_cache_lock:
+                self._table_cache.pop(self.identifier_to_tuple(identifier), None)
 
     def _create_session(self) -> Session:
         """Create a request session with provided catalog configuration."""
@@ -1394,6 +1437,7 @@ class RestCatalog(Catalog):
             overwrite=overwrite,
         )
         serialized_json = request.model_dump_json().encode(UTF8)
+        self._invalidate_cached_table(identifier)
         response = self._session.post(
             self.url(Endpoints.register_table, namespace=namespace_and_table["namespace"]),
             data=serialized_json,
@@ -1481,16 +1525,37 @@ class RestCatalog(Catalog):
             else:
                 raise ValueError("Invalid snapshot-loading-mode: {}")
 
+        identifier_tuple = self.identifier_to_tuple(identifier)
+        with self._table_cache_lock:
+            cached = self._table_cache.get(identifier_tuple) if self._table_cache is not None else None
         response = self._session.get(
-            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)), params=params
+            self.url(Endpoints.load_table, prefixed=True, **self._split_identifier_for_path(identifier)),
+            params=params,
+            headers={"If-None-Match": cached[0]} if cached else None,
         )
+        if response.status_code == 304:
+            if cached is None:
+                raise RESTError("Received 304 Not Modified for a table load without If-None-Match")
+            return self._response_to_table(identifier_tuple, cached[1])
         try:
             response.raise_for_status()
         except HTTPError as exc:
+            if response.status_code == 404:
+                self._invalidate_cached_table(identifier)
             _handle_non_200_response(exc, {404: NoSuchTableError})
 
         table_response = TableResponse.model_validate_json(response.text)
-        return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
+        if self._table_cache is not None:
+            etag = response.headers.get("ETag")
+            vends_credentials = bool(table_response.storage_credentials) or any(
+                map(_is_short_lived_credential, table_response.config)
+            )
+            with self._table_cache_lock:
+                if etag and not vends_credentials:
+                    self._table_cache[identifier_tuple] = (etag, table_response)
+                else:
+                    self._table_cache.pop(identifier_tuple, None)
+        return self._response_to_table(identifier_tuple, table_response)
 
     @retry(**_RETRY_ARGS)
     def _load_credentials(
@@ -1522,6 +1587,7 @@ class RestCatalog(Catalog):
     @override
     def drop_table(self, identifier: str | Identifier, purge_requested: bool = False) -> None:
         self._check_endpoint(Capability.V1_DELETE_TABLE)
+        self._invalidate_cached_table(identifier)
         response = self._session.delete(
             self.url(Endpoints.drop_table, prefixed=True, **self._split_identifier_for_path(identifier)),
             params={"purgeRequested": "true" if purge_requested else "false"},
@@ -1555,6 +1621,7 @@ class RestCatalog(Catalog):
         if not self.namespace_exists(destination_namespace):
             raise NoSuchNamespaceError(f"Destination namespace does not exist: {destination_namespace}")
 
+        self._invalidate_cached_table(from_identifier)
         response = self._session.post(self.url(Endpoints.rename_table), json=payload, headers=self._mutation_headers())
         try:
             response.raise_for_status()
@@ -1656,6 +1723,7 @@ class RestCatalog(Catalog):
         if table_token := table.config.get(TOKEN):
             headers[AUTHORIZATION_HEADER] = f"{BEARER_PREFIX} {table_token}"
 
+        self._invalidate_cached_table(identifier)
         response = self._session.post(
             self.url(Endpoints.update_table, prefixed=True, **self._split_identifier_for_path(table_request.identifier)),
             data=table_request.model_dump_json().encode(UTF8),
