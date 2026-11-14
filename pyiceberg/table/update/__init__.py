@@ -563,7 +563,12 @@ def _(update: RemoveSnapshotsUpdate, base_metadata: TableMetadata, context: _Tab
         for statistics_file in base_metadata.statistics
         if statistics_file.snapshot_id in update.snapshot_ids
     )
-    updates = itertools.chain(remove_ref_updates, remove_statistics_updates)
+    remove_partition_statistics_updates = (
+        RemovePartitionStatisticsUpdate(snapshot_id=partition_statistics_file.snapshot_id)
+        for partition_statistics_file in base_metadata.partition_statistics
+        if partition_statistics_file.snapshot_id in update.snapshot_ids
+    )
+    updates = itertools.chain(remove_ref_updates, remove_statistics_updates, remove_partition_statistics_updates)
     new_metadata = base_metadata
     for upd in updates:
         new_metadata = _apply_table_update(upd, new_metadata, context)
