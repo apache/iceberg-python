@@ -146,6 +146,26 @@ def test_not_in_different_types() -> None:
         parser.parse("foo not in (5, 'a')")
 
 
+def test_in_mixed_numbers() -> None:
+    for values in ("5, 6.5", "6.5, 5"):
+        result = parser.parse(f"foo in ({values})")
+        assert result == In("foo", {LongLiteral(5), DecimalLiteral(Decimal("6.5"))}), values
+        assert isinstance(result, In)
+        assert {type(value) for value in result.literals} == {LongLiteral, DecimalLiteral}, values
+    assert NotIn("foo", {LongLiteral(5), DecimalLiteral(Decimal("1e3"))}) == parser.parse("foo not in (5, 1e3)")
+
+
+def test_scientific_notation() -> None:
+    for expression, expected in [
+        ("foo > 1e-3", GreaterThan("foo", Decimal("0.001"))),
+        ("1e-3 < foo", GreaterThan("foo", Decimal("0.001"))),
+        ("foo < -1.5E3", LessThan("foo", Decimal("-1500"))),
+        ("foo = 2e2", EqualTo("foo", Decimal("200"))),
+        ("foo between 1e1 and 2.5e1", And(GreaterThanOrEqual("foo", Decimal("10")), LessThanOrEqual("foo", Decimal("25")))),
+    ]:
+        assert parser.parse(expression) == expected, expression
+
+
 def test_simple_and() -> None:
     assert And(GreaterThanOrEqual("foo", 5), LessThan("foo", 10)) == parser.parse("5 <= foo and foo < 10")
 
