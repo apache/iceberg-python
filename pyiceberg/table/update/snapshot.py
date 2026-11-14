@@ -1398,6 +1398,8 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         self._snapshot_ids_to_expire -= protected_ids
         update = RemoveSnapshotsUpdate(snapshot_ids=self._snapshot_ids_to_expire)
         self._updates += (update,)
+        for ref_name, ref in self._transaction.table_metadata.refs.items():
+            self._requirements += (AssertRefSnapshotId(ref=ref_name, snapshot_id=ref.snapshot_id),)
         return self._updates, self._requirements
 
     def _get_protected_snapshot_ids(self) -> set[int]:
