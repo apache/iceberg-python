@@ -1853,6 +1853,8 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
     unique_deletes: dict[_DeleteFileKey, DataFile] = {}
     for task in tasks:
         for delete_file in task.delete_files:
+            if delete_file.content != DataFileContent.POSITION_DELETES:
+                continue
             key = _DeleteFileKey(delete_file.file_path, delete_file.content_offset, delete_file.content_size_in_bytes)
             unique_deletes.setdefault(key, delete_file)
     if len(unique_deletes) > 0:
