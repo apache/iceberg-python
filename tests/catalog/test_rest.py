@@ -3226,6 +3226,7 @@ def test_rest_catalog_with_google_credentials_path(
     mock_load_creds: mock.MagicMock, mock_google_request: mock.MagicMock, rest_mock: Mocker
 ) -> None:
     mock_credentials = mock.MagicMock()
+    mock_credentials.valid = False
     mock_credentials.token = "file_token"
     mock_load_creds.return_value = (mock_credentials, "test_project_file")
 

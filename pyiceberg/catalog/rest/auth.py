@@ -251,7 +251,9 @@ class GoogleAuthManager(AuthManager):
         self._auth_request = google.auth.transport.requests.Request()
 
     def auth_header(self) -> str:
-        self.credentials.refresh(self._auth_request)
+        # Only fetch a new token when there is none yet or the current one is close to expiry
+        if not self.credentials.valid:
+            self.credentials.refresh(self._auth_request)
         return f"Bearer {self.credentials.token}"
 
 
