@@ -110,17 +110,16 @@ class PartitionField(IcebergBaseModel):
     @model_validator(mode="before")
     @classmethod
     def map_source_ids_onto_source_id(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            if "source-ids" in data:
-                if "source-id" in data:
-                    raise ValueError("source-id and source-ids are mutually exclusive")
-                source_ids = data["source-ids"]
-                if isinstance(source_ids, list):
-                    if len(source_ids) == 0:
-                        raise ValueError("Empty source-ids is not allowed")
-                    if len(source_ids) > 1:
-                        raise ValueError("Multi argument transforms are not yet supported")
-                    data["source-id"] = source_ids[0]
+        if isinstance(data, dict) and "source-ids" in data:
+            if "source-id" in data:
+                raise ValueError("source-id and source-ids are mutually exclusive")
+            source_ids = data["source-ids"]
+            if isinstance(source_ids, list):
+                if len(source_ids) == 0:
+                    raise ValueError("Empty source-ids is not allowed")
+                if len(source_ids) > 1:
+                    raise ValueError("Multi argument transforms are not yet supported")
+                data["source-id"] = source_ids[0]
         return data
 
     def __str__(self) -> str:

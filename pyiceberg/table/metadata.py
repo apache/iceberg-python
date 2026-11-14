@@ -435,9 +435,8 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         """
         # When the schema doesn't have an ID
         schema = data.get("schema")
-        if isinstance(schema, dict):
-            if "schema_id" not in schema and "schema-id" not in schema:
-                schema["schema_id"] = DEFAULT_SCHEMA_ID
+        if isinstance(schema, dict) and "schema_id" not in schema and "schema-id" not in schema:
+            schema["schema_id"] = DEFAULT_SCHEMA_ID
 
         return data
 
