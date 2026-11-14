@@ -105,9 +105,13 @@ def test_expire_unprotected_snapshot(table_v2: Table) -> None:
     table_v2.maintenance.expire_snapshots().by_id(EXPIRE_SNAPSHOT).commit()
 
     table_v2.catalog.commit_table.assert_called_once()
-    remaining_snapshots = table_v2.metadata.snapshots
-    assert EXPIRE_SNAPSHOT not in remaining_snapshots
-    assert len(table_v2.metadata.snapshots) == 1
+    # Inspect the RemoveSnapshotsUpdate actually sent to the catalog rather than the
+    # mocked commit response, so the assertion fails if the wrong ids are expired.
+    args, _ = table_v2.catalog.commit_table.call_args
+    updates = args[2] if len(args) > 2 else ()
+    remove_update = next((u for u in updates if getattr(u, "action", None) == "remove-snapshots"), None)
+    assert remove_update is not None
+    assert set(remove_update.snapshot_ids) == {EXPIRE_SNAPSHOT}
 
 
 def test_expire_nonexistent_snapshot_raises(table_v2: Table) -> None:
@@ -222,10 +226,13 @@ def test_expire_snapshots_by_ids(table_v2: Table) -> None:
     table_v2.maintenance.expire_snapshots().by_ids([EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2]).commit()
 
     table_v2.catalog.commit_table.assert_called_once()
-    remaining_snapshots = table_v2.metadata.snapshots
-    assert EXPIRE_SNAPSHOT_1 not in remaining_snapshots
-    assert EXPIRE_SNAPSHOT_2 not in remaining_snapshots
-    assert len(table_v2.metadata.snapshots) == 1
+    # Inspect the RemoveSnapshotsUpdate actually sent to the catalog rather than the
+    # mocked commit response, so the assertion fails if the wrong ids are expired.
+    args, _ = table_v2.catalog.commit_table.call_args
+    updates = args[2] if len(args) > 2 else ()
+    remove_update = next((u for u in updates if getattr(u, "action", None) == "remove-snapshots"), None)
+    assert remove_update is not None
+    assert set(remove_update.snapshot_ids) == {EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2}
 
 
 def test_thread_safety_fix() -> None:
