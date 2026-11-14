@@ -213,6 +213,56 @@ def test_migrate_v1_partition_specs(example_table_metadata_v1: dict[str, Any]) -
     ]
 
 
+def test_v1_partition_fields_without_field_id(example_table_metadata_v1: dict[str, Any]) -> None:
+    metadata = copy(example_table_metadata_v1)
+    metadata["partition-spec"] = [
+        {"name": "x", "transform": "identity", "source-id": 1},
+        {"name": "y", "transform": "identity", "source-id": 2},
+    ]
+    metadata.pop("partition-specs", None)
+
+    table_metadata = TableMetadataV1(**metadata)
+
+    assert table_metadata.partition_specs == [
+        PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+            PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="y"),
+        )
+    ]
+    assert table_metadata.last_partition_id == 1001
+
+    metadata["partition-specs"] = [
+        {"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1}]},
+        {
+            "spec-id": 1,
+            "fields": [
+                {"name": "x", "transform": "identity", "source-id": 1},
+                {"name": "y", "transform": "identity", "source-id": 2},
+            ],
+        },
+    ]
+
+    table_metadata = TableMetadataV1(**metadata)
+
+    assert [[field.field_id for field in spec.fields] for spec in table_metadata.partition_specs] == [[1000], [1000, 1001]]
+    assert table_metadata.last_partition_id == 1001
+
+    # A spec that mixes fields with and without ids is rejected, as in Java
+    for fields in (
+        [
+            {"name": "x", "transform": "identity", "source-id": 1},
+            {"name": "y", "transform": "identity", "source-id": 2, "field-id": 1000},
+        ],
+        [
+            {"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000},
+            {"name": "y", "transform": "identity", "source-id": 2},
+        ],
+    ):
+        metadata["partition-specs"] = [{"spec-id": 0, "fields": fields}]
+        with pytest.raises(PydanticValidationError, match="Cannot parse spec with missing field IDs: 1 missing of 2 fields"):
+            TableMetadataV1(**metadata)
+
+
 def test_new_table_metadata_with_explicit_v1_format() -> None:
     schema = Schema(
         NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
