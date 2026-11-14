@@ -693,6 +693,37 @@ def test_add_column(table_v2: Table) -> None:
     assert apply_schema.highest_field_id == 4
 
 
+def test_move_column_deleted_and_added_back(table_v2: Table) -> None:
+    update = UpdateSchema(transaction=table_v2.transaction())
+    update.delete_column("z")
+    update.add_column(path="z", field_type=StringType())
+    update.move_after("z", "x")
+    apply_schema: Schema = update._apply()  # pylint: disable=W0212
+
+    assert apply_schema == Schema(
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        NestedField(field_id=4, name="z", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
+        identifier_field_ids=[1, 2],
+    )
+
+
+def test_move_column_deleted_and_added_back_case_insensitive(table_v2: Table) -> None:
+    update = UpdateSchema(transaction=table_v2.transaction(), case_sensitive=False)
+    update.delete_column("z")
+    update.add_column(path="Z", field_type=StringType())
+    update.move_first("z")
+    update.move_after("y", "z")
+    apply_schema: Schema = update._apply()  # pylint: disable=W0212
+
+    assert apply_schema == Schema(
+        NestedField(field_id=4, name="Z", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="y", field_type=LongType(), required=True, doc="comment"),
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        identifier_field_ids=[1, 2],
+    )
+
+
 def test_update_column(table_v1: Table, table_v2: Table) -> None:
     """
     Table should be able to update existing property `doc`
