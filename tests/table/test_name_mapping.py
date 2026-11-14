@@ -303,7 +303,7 @@ def test_update_mapping(table_name_mapping_nested: NameMapping) -> None:
     updates = {1: NestedField(1, "foo_update", StringType(), True)}
     adds = {
         -1: [NestedField(18, "add_18", StringType(), True)],
-        15: [NestedField(19, "name", StringType(), True), NestedField(20, "add_20", StringType(), True)],
+        15: [NestedField(19, "add_19", StringType(), True), NestedField(20, "add_20", StringType(), True)],
     }
 
     expected = NameMapping(
@@ -345,8 +345,9 @@ def test_update_mapping(table_name_mapping_nested: NameMapping) -> None:
                 field_id=15,
                 names=["person"],
                 fields=[
+                    MappedField(field_id=16, names=["name"]),
                     MappedField(field_id=17, names=["age"]),
-                    MappedField(field_id=19, names=["name"]),
+                    MappedField(field_id=19, names=["add_19"]),
                     MappedField(field_id=20, names=["add_20"]),
                 ],
             ),
@@ -354,6 +355,27 @@ def test_update_mapping(table_name_mapping_nested: NameMapping) -> None:
         ]
     )
     assert update_mapping(table_name_mapping_nested, updates, adds) == expected
+
+
+def test_update_mapping_refuses_reassigned_name_on_add(table_name_mapping_nested: NameMapping) -> None:
+    adds = {-1: [NestedField(18, "foo", StringType(), True)]}
+
+    with pytest.raises(ValueError, match="name mapping already assigns it to another field"):
+        update_mapping(table_name_mapping_nested, {}, adds)
+
+
+def test_update_mapping_refuses_reassigned_name_on_nested_add(table_name_mapping_nested: NameMapping) -> None:
+    adds = {15: [NestedField(19, "name", StringType(), True)]}
+
+    with pytest.raises(ValueError, match="name mapping already assigns it to another field"):
+        update_mapping(table_name_mapping_nested, {}, adds)
+
+
+def test_update_mapping_refuses_reassigned_name_on_rename(table_name_mapping_nested: NameMapping) -> None:
+    updates = {2: NestedField(2, "foo", StringType(), True)}
+
+    with pytest.raises(ValueError, match="name mapping already assigns it to another field"):
+        update_mapping(table_name_mapping_nested, updates, {})
 
 
 def test_mapping_using_by_visitor(table_schema_nested: Schema, table_name_mapping_nested: NameMapping) -> None:

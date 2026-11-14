@@ -187,35 +187,20 @@ class _UpdateMapping(NameMappingVisitor[list[MappedField], MappedField]):
         self._adds = adds
 
     @staticmethod
-    def _remove_reassigned_names(field: MappedField, assignments: dict[str, int]) -> MappedField | None:
-        removed_names = set()
-        for name in field.names:
-            if (assigned_id := assignments.get(name)) and assigned_id != field.field_id:
-                removed_names.add(name)
-
-        remaining_names = [f for f in field.names if f not in removed_names]
-        if remaining_names:
-            return MappedField(field_id=field.field_id, names=remaining_names, fields=field.fields)
-        else:
-            return None
+    def _check_names_not_reassigned(fields: list[MappedField], assignments: dict[str, int], operation: str) -> None:
+        for field in fields:
+            for name in field.names:
+                if (assigned_id := assignments.get(name)) is not None and assigned_id != field.field_id:
+                    raise ValueError(f"Cannot {operation} '{name}': the name mapping already assigns it to another field")
 
     def _add_new_fields(self, mapped_fields: list[MappedField], parent_id: int) -> list[MappedField]:
         if fields_to_add := self._adds.get(parent_id):
-            fields: list[MappedField] = []
-            new_fields: list[MappedField] = []
-
-            for add in fields_to_add:
-                new_fields.append(
-                    MappedField(field_id=add.field_id, names=[add.name], fields=visit(add.field_type, _CreateMapping()))
-                )
-
-            reassignments = {f.name: f.field_id for f in fields_to_add}
-            fields = [
-                updated_field
-                for field in mapped_fields
-                if (updated_field := self._remove_reassigned_names(field, reassignments)) is not None
-            ] + new_fields
-            return fields
+            new_fields = [
+                MappedField(field_id=add.field_id, names=[add.name], fields=visit(add.field_type, _CreateMapping()))
+                for add in fields_to_add
+            ]
+            self._check_names_not_reassigned(mapped_fields, {field.name: field.field_id for field in fields_to_add}, "add column")
+            return mapped_fields + new_fields
         else:
             return mapped_fields
 
@@ -225,14 +210,11 @@ class _UpdateMapping(NameMappingVisitor[list[MappedField], MappedField]):
     def fields(self, struct: list[MappedField], field_results: list[MappedField]) -> list[MappedField]:
         reassignments: dict[str, int] = {
             update.name: update.field_id
-            for f in field_results
-            if f.field_id is not None and (update := self._updates.get(f.field_id))
-        }
-        return [
-            updated_field
             for field in field_results
-            if (updated_field := self._remove_reassigned_names(field, reassignments)) is not None
-        ]
+            if field.field_id is not None and (update := self._updates.get(field.field_id))
+        }
+        self._check_names_not_reassigned(field_results, reassignments, "rename column to")
+        return field_results
 
     def field(self, field: MappedField, field_result: list[MappedField]) -> MappedField:
         if field.field_id is None:
