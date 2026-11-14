@@ -62,7 +62,7 @@ class UpdateStatistics(UpdateTableMetadata["UpdateStatistics"]):
         return self
 
     def remove_statistics(self, snapshot_id: int) -> "UpdateStatistics":
-        self._updates = (
+        self._updates += (
             RemoveStatisticsUpdate(
                 snapshot_id=snapshot_id,
             ),
