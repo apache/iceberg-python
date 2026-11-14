@@ -965,6 +965,9 @@ configures the AWS credentials for both Glue Catalog and S3 FileIO.
 !!! Note "Properties Priority"
     `client.*` properties will be overridden by service-specific properties if they are set. For example, if `client.region` is set to `us-west-1` and `s3.region` is set to `us-east-1`, the S3 FileIO will use `us-east-1` as the region.
 
+!!! Note "botocore session"
+    A `botocore_session` passed to `load_catalog` is only used by the catalog client: the boto3 clients of the Glue and DynamoDB catalogs, and SigV4 signing for the REST catalog. The S3 FileIO does not read it. It takes its credentials from the `s3.*` and `client.*` properties, or from the default AWS credential chain, so set those as well when the session's credentials differ from the environment's.
+
 <!-- prettier-ignore-end -->
 
 ## Concurrency
