@@ -21,6 +21,7 @@ from collections.abc import Generator
 from pathlib import PosixPath
 
 import pytest
+from pytest_mock import MockerFixture
 
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.catalog.memory import InMemoryCatalog
@@ -52,6 +53,18 @@ def test_load_catalog_impl_does_not_exist() -> None:
         load_catalog("catalog", **{"py-catalog-impl": "pyiceberg.does.not.exist.Catalog"})
 
     assert "Could not initialize Catalog: pyiceberg.does.not.exist.Catalog" in str(exc_info.value)
+
+
+def test_load_catalog_impl_from_config(mocker: MockerFixture) -> None:
+    mocker.patch(
+        "pyiceberg.catalog._ENV_CONFIG.get_catalog_config",
+        return_value={"py-catalog-impl": "pyiceberg.catalog.memory.InMemoryCatalog", "test.key": "test.value"},
+    )
+
+    catalog = load_catalog("catalog")
+
+    assert isinstance(catalog, InMemoryCatalog)
+    assert catalog.properties["test.key"] == "test.value"
 
 
 def test_load_catalog_has_type_and_impl() -> None:
