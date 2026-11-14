@@ -50,6 +50,7 @@ from pyiceberg.table import (
 )
 from pyiceberg.table.labels import Labels
 from pyiceberg.table.metadata import EncryptedKey, TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID, project_schema, split_selected_fields
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -388,6 +389,51 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
         _ = scan.select("a").projection()
 
     assert "Could not find column: 'a'" in str(exc_info.value)
+
+
+def test_table_scan_projection_row_lineage_columns(table_v3: Table) -> None:
+    projection_schema = table_v3.scan().select("x", "_row_id", "_last_updated_sequence_number").projection()
+    assert projection_schema == Schema(
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        ROW_ID,
+        LAST_UPDATED_SEQUENCE_NUMBER,
+        identifier_field_ids=[1],
+    )
+    assert projection_schema.schema_id == 1
+
+
+def test_table_scan_projection_row_lineage_columns_with_star(table_v3: Table) -> None:
+    projection_schema = table_v3.scan(selected_fields=("*", "_row_id")).projection()
+    assert projection_schema.fields == (*table_v3.schema().fields, ROW_ID)
+
+
+def test_table_scan_projection_row_lineage_columns_case_insensitive(table_v3: Table) -> None:
+    projection_schema = table_v3.scan().with_case_sensitive(False).select("X", "_ROW_ID").projection()
+    assert [field.name for field in projection_schema.fields] == ["x", "_row_id"]
+
+
+def test_table_scan_projection_row_lineage_columns_case_sensitive(table_v3: Table) -> None:
+    with pytest.raises(ValueError, match="Could not find column: '_ROW_ID'"):
+        table_v3.scan().select("x", "_ROW_ID").projection()
+
+
+def test_table_scan_projection_row_lineage_columns_before_v3(table_v2: Table) -> None:
+    with pytest.raises(ValueError, match="Cannot select _row_id: row lineage requires format version 3"):
+        table_v2.scan().select("x", "_row_id").projection()
+
+
+def test_incremental_append_scan_projection_row_lineage_columns(table_v3: Table) -> None:
+    projection_schema = table_v3.incremental_append_scan(selected_fields=("x", "_row_id")).projection()
+    assert [field.name for field in projection_schema.fields] == ["x", "_row_id"]
+
+
+def test_project_schema_prefers_schema_column_over_metadata_column() -> None:
+    schema = Schema(NestedField(field_id=1, name="_row_id", field_type=LongType(), required=True))
+    assert project_schema(schema, ("_row_id",), case_sensitive=True, format_version=3) == schema
+    assert split_selected_fields(schema, ("_row_id", "_last_updated_sequence_number"), case_sensitive=True) == (
+        ("_row_id",),
+        (LAST_UPDATED_SEQUENCE_NUMBER,),
+    )
 
 
 def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> None:

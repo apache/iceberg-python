@@ -157,6 +157,7 @@ from pyiceberg.table import DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE, TablePropertie
 from pyiceberg.table.deletion_vector import read_deletion_vectors
 from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
+from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
@@ -214,6 +215,8 @@ PYARROW_FIELD_DOC_KEY = b"doc"
 LIST_ELEMENT_NAME = "element"
 MAP_KEY_NAME = "key"
 MAP_VALUE_NAME = "value"
+# Temporary column that tracks the position of each row in its file while rows are filtered
+_POSITION_COLUMN = "__iceberg_file_position"
 DOC = "doc"
 UTC_ALIASES = {"UTC", "+00:00", "Etc/UTC", "Z"}
 ADLS_SCHEMES = frozenset({"abfs", "abfss", "wasb", "wasbs"})
@@ -1793,12 +1796,18 @@ def _task_to_record_batches(
 
         file_project_schema = prune_columns(file_schema, projected_field_ids, select_full_types=False)
 
+        # Row IDs are derived from the position of each row in the file, so rows must not be filtered before they are counted
+        row_id_index = next(
+            (index for index, field in enumerate(projected_schema.fields) if field.field_id == ROW_ID.field_id), None
+        )
+        filter_after_read = bool(positional_deletes) or row_id_index is not None
+
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
             schema=physical_schema,
             # This will push down the query to Arrow.
-            # But in case there are positional deletes, we have to apply them first
-            filter=pyarrow_filter if not positional_deletes else None,
+            # But in case there are positional deletes or row IDs, rows must be counted before filtering
+            filter=pyarrow_filter if not filter_after_read else None,
             columns=[col.name for col in file_project_schema.columns],
         )
 
@@ -1808,27 +1817,36 @@ def _task_to_record_batches(
             next_index = next_index + len(batch)
             current_index = next_index - len(batch)
             current_batch = batch
+            positions = pa.array(range(current_index, next_index), type=pa.int64()) if row_id_index is not None else None
 
             if positional_deletes:
                 # Create the mask of indices that we're interested in
                 indices = _combine_positional_deletes(positional_deletes, current_index, current_index + len(batch))
                 current_batch = current_batch.take(indices)
-                if pyarrow_filter is not None:
-                    # Temporary fix until PyArrow 21 is the minimum supported version
-                    # (https://github.com/apache/arrow/pull/46057): RecordBatch.filter raises
-                    # IndexError on PyArrow <21 when the result is empty; Table.filter does not.
-                    table = pa.Table.from_batches([current_batch])
-                    table = table.filter(pyarrow_filter)
-                    if table.num_rows == 0:
-                        current_batch = current_batch.slice(0, 0)
-                    else:
-                        current_batch = table.combine_chunks().to_batches()[0]
+                if positions is not None:
+                    positions = positions.take(indices)
+
+            if filter_after_read and pyarrow_filter is not None:
+                # Temporary fix until PyArrow 21 is the minimum supported version
+                # (https://github.com/apache/arrow/pull/46057): RecordBatch.filter raises
+                # IndexError on PyArrow <21 when the result is empty; Table.filter does not.
+                table = pa.Table.from_batches([current_batch])
+                if positions is not None:
+                    table = table.append_column(_POSITION_COLUMN, positions)
+                table = table.filter(pyarrow_filter)
+                if positions is not None:
+                    positions = table.column(_POSITION_COLUMN).combine_chunks()
+                    table = table.drop_columns([_POSITION_COLUMN])
+                if table.num_rows == 0:
+                    current_batch = current_batch.slice(0, 0)
+                else:
+                    current_batch = table.combine_chunks().to_batches()[0]
 
             # skip empty batches
             if current_batch.num_rows == 0:
                 continue
 
-            yield _to_requested_schema(
+            result_batch = _to_requested_schema(
                 projected_schema,
                 file_project_schema,
                 current_batch,
@@ -1836,6 +1854,21 @@ def _task_to_record_batches(
                 projected_missing_fields=projected_missing_fields,
                 allow_timestamp_tz_mismatch=True,
             )
+            if row_id_index is not None and positions is not None:
+                result_batch = _assign_row_ids(result_batch, row_id_index, positions, task.file.first_row_id)
+            yield result_batch
+
+
+def _assign_row_ids(batch: pa.RecordBatch, row_id_index: int, positions: pa.Array, first_row_id: int | None) -> pa.RecordBatch:
+    """Replace null row IDs with the file's first row ID plus the row position.
+
+    When the data file has no first row ID, every row ID is null.
+    """
+    if first_row_id is None:
+        row_ids = pa.nulls(len(batch), type=pa.int64())
+    else:
+        row_ids = pc.coalesce(batch.column(row_id_index), pc.add(positions, pa.scalar(first_row_id, type=pa.int64())))
+    return batch.set_column(row_id_index, batch.schema.field(row_id_index), row_ids)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1904,6 +1937,9 @@ class ArrowScan:
         *,
         dictionary_columns: tuple[str, ...] = (),
     ) -> None:
+        if any(field.field_id == LAST_UPDATED_SEQUENCE_NUMBER.field_id for field in projected_schema.fields):
+            # The data sequence number is not carried on the scan task yet
+            raise NotImplementedError(f"Reading {LAST_UPDATED_SEQUENCE_NUMBER.name} is not yet supported")
         self._table_metadata = table_metadata
         self._io = io
         self._projected_schema = projected_schema
