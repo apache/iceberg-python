@@ -1660,10 +1660,15 @@ class Table:
             timestamp_ms: Find snapshot that was current at/before this timestamp
             inclusive: Includes timestamp_ms in search when True. Excludes timestamp_ms when False
         """
-        for log_entry in reversed(self.history()):
-            if (inclusive and log_entry.timestamp_ms <= timestamp_ms) or log_entry.timestamp_ms < timestamp_ms:
-                return self.snapshot_by_id(log_entry.snapshot_id)
-        return None
+        # The snapshot log is not guaranteed to be ordered by timestamp, so pick the latest timestamp rather than the last entry
+        candidate: SnapshotLogEntry | None = None
+        for log_entry in self.history():
+            if log_entry.timestamp_ms > timestamp_ms or (not inclusive and log_entry.timestamp_ms == timestamp_ms):
+                continue
+            # On equal timestamps the later entry wins, it is the state that was current last
+            if candidate is None or log_entry.timestamp_ms >= candidate.timestamp_ms:
+                candidate = log_entry
+        return self.snapshot_by_id(candidate.snapshot_id) if candidate is not None else None
 
     def history(self) -> list[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
