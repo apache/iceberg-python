@@ -2717,6 +2717,25 @@ def parquet_path_to_id_mapping(
     return result
 
 
+def _file_parquet_path_to_id_mapping(parquet_metadata: pq.FileMetaData, file_schema: Schema) -> dict[str, int]:
+    """
+    Compute the mapping of the parquet column paths of a file to the Iceberg IDs of its columns.
+
+    Unlike `parquet_path_to_id_mapping`, the paths are the ones stored in the file, so a list element keeps
+    the name that the file gives it. The IDs come from the schema of the file, so a column keeps its ID
+    when the table has renamed it.
+
+    Args:
+        parquet_metadata (pyarrow.parquet.FileMetaData): The metadata of the parquet file.
+        file_schema (pyiceberg.schema.Schema): The Iceberg schema of the file, as returned by
+            `_check_pyarrow_schema_compatible`.
+    """
+    # The leaf fields of the file schema are in the same depth-first order as the parquet columns.
+    field_ids = [pair.field_id for pair in pre_order_visit(file_schema, ID2ParquetPathVisitor())]
+    paths = [parquet_metadata.schema.column(pos).path for pos in range(parquet_metadata.num_columns)]
+    return dict(zip(paths, field_ids, strict=True))
+
+
 def data_file_statistics_from_parquet_metadata(
     parquet_metadata: pq.FileMetaData,
     stats_columns: dict[int, StatisticsCollector],
@@ -3060,11 +3079,14 @@ def _check_pyarrow_schema_compatible(
     provided_schema: pa.Schema,
     downcast_ns_timestamp_to_us: bool = False,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
-) -> None:
+) -> Schema:
     """
     Check if the `requested_schema` is compatible with `provided_schema`.
 
     Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
+
+    Returns:
+        The Iceberg schema of `provided_schema`, with the field IDs of its columns.
 
     Raises:
         ValueError: If the schemas are not compatible.
@@ -3088,6 +3110,7 @@ def _check_pyarrow_schema_compatible(
             "Update the schema first (hint, use union_by_name)."
         ) from e
     _check_schema_compatible(requested_schema, provided_schema)
+    return provided_schema
 
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:
@@ -3104,12 +3127,20 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
     arrow_schema = parquet_metadata.schema.to_arrow_schema()
 
     schema = table_metadata.schema()
-    _check_pyarrow_schema_compatible(schema, arrow_schema, format_version=table_metadata.format_version)
+    file_schema = _check_pyarrow_schema_compatible(schema, arrow_schema, format_version=table_metadata.format_version)
+
+    stats_columns = compute_statistics_plan(schema, table_metadata.properties)
+    parquet_column_mapping = _file_parquet_path_to_id_mapping(parquet_metadata, file_schema)
+    if additional_paths := sorted(path for path, field_id in parquet_column_mapping.items() if field_id not in stats_columns):
+        raise ValueError(
+            f"PyArrow table contains more columns: {', '.join(additional_paths)}. "
+            "Update the schema first (hint, use union_by_name)."
+        )
 
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=parquet_metadata,
-        stats_columns=compute_statistics_plan(schema, table_metadata.properties),
-        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        stats_columns=stats_columns,
+        parquet_column_mapping=parquet_column_mapping,
     )
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,

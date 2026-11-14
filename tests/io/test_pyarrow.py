@@ -3313,6 +3313,123 @@ def test_schema_downcast(table_schema_simple: Schema) -> None:
         pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
+def test_add_files_matches_columns_by_field_id(catalog: InMemoryCatalog, tmp_path: str) -> None:
+    # Each file is valid for its table, but its column paths differ from the table's names.
+    nested_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(
+            2,
+            "address",
+            StructType(
+                NestedField(3, "street", StringType(), required=False),
+                NestedField(4, "zip", LongType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+    list_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "tags", ListType(3, StringType(), element_required=False), required=False),
+    )
+    nested_file = pa.schema(
+        [
+            pa.field("id", pa.int64(), metadata={"PARQUET:field_id": "1"}),
+            pa.field(
+                "address",
+                pa.struct(
+                    [
+                        pa.field("street", pa.string(), metadata={"PARQUET:field_id": "3"}),
+                        pa.field("zip", pa.int64(), metadata={"PARQUET:field_id": "4"}),
+                    ]
+                ),
+                metadata={"PARQUET:field_id": "2"},
+            ),
+        ]
+    )
+    item_with_ids = pa.schema(
+        [
+            pa.field("id", pa.int64(), metadata={"PARQUET:field_id": "1"}),
+            pa.field(
+                "tags",
+                pa.list_(pa.field("item", pa.string(), metadata={"PARQUET:field_id": "3"})),
+                metadata={"PARQUET:field_id": "2"},
+            ),
+        ]
+    )
+    item_without_ids = pa.schema([pa.field("id", pa.int64()), pa.field("tags", pa.list_(pa.field("item", pa.string())))])
+    nested_data = {"id": [7, 8], "address": [{"street": "x", "zip": 98101}, {"street": "y", "zip": 10001}]}
+    list_data = {"id": [1, 2], "tags": [["a", "b"], ["c"]]}
+    nested_rows = [
+        {"id": 7, "address": {"street": "x", "postal_code": 98101}},
+        {"id": 8, "address": {"street": "y", "postal_code": 10001}},
+    ]
+    list_rows = [{"id": 1, "tags": ["a", "b"]}, {"id": 2, "tags": ["c"]}]
+
+    catalog.create_namespace("default")
+    shapes = [
+        # The table renames address.zip (field ID 4) after the file was written.
+        (
+            "renamed_nested",
+            nested_schema,
+            ("address.zip", "postal_code"),
+            nested_file,
+            nested_data,
+            True,
+            nested_rows,
+            {1: 2, 3: 2, 4: 2},
+        ),
+        # Legacy writers name the list element "item"; the table calls it "element" (field ID 3).
+        ("item_with_ids", list_schema, None, item_with_ids, list_data, False, list_rows, {1: 2, 3: 3}),
+        ("item_without_ids", list_schema, None, item_without_ids, list_data, False, list_rows, {1: 2, 3: 3}),
+    ]
+    for name, table_schema, rename, file_schema, data, compliant, rows, value_counts in shapes:
+        identifier = f"default.add_files_{name}"
+        catalog.create_table(identifier, schema=table_schema)
+        if rename is not None:
+            with catalog.load_table(identifier).update_schema() as update:
+                update.rename_column(*rename)
+        file_loc = f"{tmp_path}/{name}.parquet"
+        pq.write_table(pa.table(data, schema=file_schema), file_loc, use_compliant_nested_type=compliant)
+
+        catalog.load_table(identifier).add_files([file_loc])
+
+        table = catalog.load_table(identifier)
+        assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == rows
+        assert dict(table.inspect.files().to_pylist()[0]["value_counts"]) == value_counts
+
+
+def test_add_files_rejects_columns_missing_from_table(catalog: InMemoryCatalog, tmp_path: str) -> None:
+    table_schema = Schema(
+        NestedField(1, "a", LongType(), required=False),
+        NestedField(2, "b", StringType(), required=False),
+    )
+    field_a = pa.field("a", pa.int64(), metadata={"PARQUET:field_id": "1"})
+    field_b = pa.field("b", pa.string(), metadata={"PARQUET:field_id": "2"})
+    field_extra = pa.field("extra", pa.int64(), metadata={"PARQUET:field_id": "3"})
+
+    catalog.create_namespace("default")
+    shapes = [
+        # The file has a column with field ID 3, which the table does not have.
+        ("extra_column", False, pa.schema([field_a, field_b, field_extra]), {"a": [5], "b": ["p"], "extra": [9]}, "extra"),
+        # The table dropped field ID 1 and added a new column named "a" (field ID 3). The file's "a" is still field ID 1.
+        # Before this change, its statistics were recorded under the new "a", so a scan for "a IS NULL" pruned the file.
+        ("same_name_new_id", True, pa.schema([field_a, field_b]), {"a": [5], "b": ["p"]}, "a"),
+    ]
+    for name, drop_and_add_a, file_schema, data, missing in shapes:
+        identifier = f"default.add_files_rejects_{name}"
+        catalog.create_table(identifier, schema=table_schema)
+        if drop_and_add_a:
+            with catalog.load_table(identifier).update_schema() as update:
+                update.delete_column("a")
+            with catalog.load_table(identifier).update_schema() as update:
+                update.add_column("a", LongType())
+        file_loc = f"{tmp_path}/{name}.parquet"
+        pq.write_table(pa.table(data, schema=file_schema), file_loc)
+
+        with pytest.raises(ValueError, match=f"PyArrow table contains more columns: {missing}"):
+            catalog.load_table(identifier).add_files([file_loc])
+
+
 def test_partition_for_demo() -> None:
     test_pa_schema = pa.schema([("year", pa.int64()), ("n_legs", pa.int64()), ("animal", pa.string())])
     test_schema = Schema(
