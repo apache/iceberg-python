@@ -949,9 +949,9 @@ def test_fractional_string_to_integral_type_raises() -> None:
         for value in ["2.5", "2.6", "-2.5", "0.1"]:
             with pytest.raises(ValueError, match=f"Could not convert {value} into a {target_type}"):
                 _ = literal(value).to(target_type)
-    
-    
-    def test_integral_decimal_to_integral_type() -> None:
+
+
+def test_integral_decimal_to_integral_type() -> None:
     # A decimal literal without a fractional part, such as 2.0, still converts exactly
     for target_type in [IntegerType(), LongType()]:
         for value in ["2", "2.0", "2.00", "-2.0"]:
