@@ -1465,7 +1465,7 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
 
 
 class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
-    """Converts PyArrowSchema to Iceberg Schema. Applies the IDs from name_mapping if provided."""
+    """Converts PyArrowSchema to Iceberg Schema."""
 
     _field_names: builtins.list[str]
 
@@ -1496,20 +1496,14 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
 
     def list(self, list_type: pa.ListType, element_result: IcebergType) -> ListType:
         element_field = list_type.value_field
-        self._field_names.append(LIST_ELEMENT_NAME)
         element_id = self._field_id(element_field)
-        self._field_names.pop()
         return ListType(element_id, element_result, element_required=not element_field.nullable)
 
     def map(self, map_type: pa.MapType, key_result: IcebergType, value_result: IcebergType) -> MapType:
         key_field = map_type.key_field
-        self._field_names.append(MAP_KEY_NAME)
         key_id = self._field_id(key_field)
-        self._field_names.pop()
         value_field = map_type.item_field
-        self._field_names.append(MAP_VALUE_NAME)
         value_id = self._field_id(value_field)
-        self._field_names.pop()
         return MapType(key_id, key_result, value_id, value_result, value_required=not value_field.nullable)
 
     def primitive(self, primitive: pa.DataType) -> PrimitiveType:
