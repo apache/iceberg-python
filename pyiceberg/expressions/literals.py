@@ -595,7 +595,7 @@ class StringLiteral(Literal[str]):
                 return IntAboveMax()
             elif IntegerType.min > number:
                 return IntBelowMin()
-            return LongLiteral(int(number))
+            return LongLiteral(_to_integral(number, type_var))
         except (ArithmeticError, OverflowError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
@@ -608,7 +608,7 @@ class StringLiteral(Literal[str]):
             elif LongType.min > long_value:
                 return LongBelowMin()
             else:
-                return LongLiteral(int(long_value))
+                return LongLiteral(_to_integral(long_value, type_var))
         except (ArithmeticError, OverflowError, TypeError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
