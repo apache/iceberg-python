@@ -325,9 +325,7 @@ def test_string_literal() -> None:
     pi_string_lit = StringLiteral("3.141")
     pi_double_lit = literal(3.141).to(DoubleType())
 
-    assert literal("3.141").to(IntegerType()) == literal(3)
-    assert literal("3.141").to(LongType()) == literal(3)
-
+    
     assert sqrt2 != pi
     assert pi != pi_double_lit
     assert pi == pi_string_lit
@@ -946,7 +944,15 @@ def test_fractional_decimal_to_integral_type_raises() -> None:
                 _ = DecimalLiteral(Decimal(value)).to(target_type)
 
 
-def test_integral_decimal_to_integral_type() -> None:
+def test_fractional_string_to_integral_type_raises() -> None:
+    # Rounding would change the predicate, e.g. x < "2.6" would become x < 2 and drop x = 2
+    for target_type in [IntegerType(), LongType()]:
+        for value in ["2.5", "2.6", "-2.5", "0.1"]:
+            with pytest.raises(ValueError, match=f"Could not convert {value} into a {target_type}"):
+                _ = literal(value).to(target_type)
+    
+    
+    def test_integral_decimal_to_integral_type() -> None:
     # A decimal literal without a fractional part, such as 2.0, still converts exactly
     for target_type in [IntegerType(), LongType()]:
         for value in ["2", "2.0", "2.00", "-2.0"]:
