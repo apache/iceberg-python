@@ -897,10 +897,15 @@ def _literal_arrow_type(iceberg_type: IcebergType, values: Iterable[Any]) -> pa.
     return visit(iceberg_type, _ConvertToArrowSchema())
 
 
+def _to_arrow_value(value: Any) -> Any:
+    # PyArrow builds uuid values from their 16 bytes; older PyArrow releases reject a uuid.UUID
+    return value.bytes if isinstance(value, uuid.UUID) else value
+
+
 def _convert_scalar(value: Any, iceberg_type: IcebergType) -> pa.scalar:
     if not isinstance(iceberg_type, PrimitiveType):
         raise ValueError(f"Expected primitive type, got: {iceberg_type}")
-    return pa.scalar(value=value, type=_literal_arrow_type(iceberg_type, [value]))
+    return pa.scalar(value=_to_arrow_value(value), type=_literal_arrow_type(iceberg_type, [value]))
 
 
 class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
@@ -937,11 +942,15 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         return term.ref().field.name
 
     def visit_in(self, term: BoundTerm, literals: set[Any]) -> pc.Expression:
-        pyarrow_literals = pa.array(literals, type=_literal_arrow_type(term.ref().field.field_type, literals))
+        pyarrow_literals = pa.array(
+            [_to_arrow_value(literal) for literal in literals], type=_literal_arrow_type(term.ref().field.field_type, literals)
+        )
         return pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_not_in(self, term: BoundTerm, literals: set[Any]) -> pc.Expression:
-        pyarrow_literals = pa.array(literals, type=_literal_arrow_type(term.ref().field.field_type, literals))
+        pyarrow_literals = pa.array(
+            [_to_arrow_value(literal) for literal in literals], type=_literal_arrow_type(term.ref().field.field_type, literals)
+        )
         return ~pc.field(self._get_field_name(term)).isin(pyarrow_literals)
 
     def visit_is_nan(self, term: BoundTerm) -> pc.Expression:

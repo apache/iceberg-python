@@ -487,7 +487,7 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
     Return the Partition Record representation of the value.
 
     The value is first converted to internal partition representation.
-    For example, UUID is converted to bytes[16], DateType to days since epoch, etc.
+    For example, UUID values become uuid.UUID, and DateType values become days since epoch.
 
     Then the corresponding PartitionField's transform is applied to return
     the final partition record value.
@@ -498,7 +498,7 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
 
 @singledispatch
 def _to_partition_representation(type: IcebergType, value: Any) -> Any:
-    """Strip the logical type into the physical type.
+    """Return the internal partition representation of a value.
 
     It can be that the value is already transformed into its physical type,
     in this case it will return the original value. Keep in mind that the
@@ -560,13 +560,13 @@ def _(type: IcebergType, value: int | time | None) -> int | None:
 
 
 @_to_partition_representation.register(UUIDType)
-def _(type: IcebergType, value: uuid.UUID | int | bytes | None) -> bytes | int | None:
+def _(type: IcebergType, value: uuid.UUID | int | bytes | None) -> uuid.UUID | int | None:
     if value is None:
         return None
     elif isinstance(value, bytes):
-        return value  # IdentityTransform
+        return uuid.UUID(bytes=value)  # IdentityTransform
     elif isinstance(value, uuid.UUID):
-        return value.bytes  # IdentityTransform
+        return value  # IdentityTransform
     elif isinstance(value, int):
         return value  # BucketTransform
     else:
