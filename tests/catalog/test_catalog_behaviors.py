@@ -240,6 +240,32 @@ def test_create_table_custom_sort_order(catalog: Catalog, table_schema_nested: S
     catalog.drop_table(test_table_identifier)
 
 
+def test_update_sort_order_default_null_order(
+    catalog: Catalog, table_schema_simple: Schema, test_table_identifier: Identifier
+) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    table = catalog.create_table(test_table_identifier, table_schema_simple)
+
+    # Without a null order, ascending fields are nulls-first and descending fields are nulls-last
+    table.update_sort_order().asc("foo", IdentityTransform()).desc("bar", IdentityTransform()).commit()
+    assert table.sort_order() == SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
+        SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.DESC, null_order=NullOrder.NULLS_LAST),
+        order_id=1,
+    )
+
+    # An explicit null order is kept
+    table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_LAST).desc(
+        "bar", IdentityTransform(), NullOrder.NULLS_FIRST
+    ).commit()
+    assert table.sort_order() == SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.DESC, null_order=NullOrder.NULLS_FIRST),
+        order_id=2,
+    )
+    catalog.drop_table(test_table_identifier)
+
+
 def test_create_table_with_default_warehouse_location(
     warehouse: Path, catalog_with_warehouse: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier
 ) -> None:
