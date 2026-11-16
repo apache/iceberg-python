@@ -512,6 +512,8 @@ class Transaction:
         df: pa.Table | pa.RecordBatchReader,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         branch: str | None = MAIN_BRANCH,
+        _upsert_insert_filter: BooleanExpression | None = None,
+        _case_sensitive: bool = True,
     ) -> None:
         """
         Shorthand API for appending PyArrow data to a table transaction.
@@ -576,6 +578,9 @@ class Transaction:
         )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
+            if _upsert_insert_filter is not None:
+                append_files.set_upsert_insert_filter(_upsert_insert_filter, _case_sensitive)
+
             # For pa.Table we can short-circuit empty inputs cheaply. For a
             # RecordBatchReader the stream is consumed lazily by
             # _dataframe_to_data_files and an empty reader simply yields zero
@@ -1014,7 +1019,13 @@ class Transaction:
         if when_not_matched_insert_all:
             insert_row_cnt = len(rows_to_insert)
             if rows_to_insert:
-                self.append(rows_to_insert, branch=branch, snapshot_properties=snapshot_properties)
+                self.append(
+                    rows_to_insert,
+                    branch=branch,
+                    snapshot_properties=snapshot_properties,
+                    _upsert_insert_filter=upsert_util.create_match_filter(rows_to_insert, join_cols),
+                    _case_sensitive=case_sensitive,
+                )
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 

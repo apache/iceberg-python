@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.exceptions import (
+    CommitFailedException,
     NoSuchSnapshotRefError,
     NotAncestorError,
     SnapshotRefTypeError,
@@ -690,8 +691,39 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
+    _upsert_insert_filter: BooleanExpression | None = None
+
+    def set_upsert_insert_filter(self, insert_filter: BooleanExpression, case_sensitive: bool) -> None:
+        self._upsert_insert_filter = insert_filter
+        self._case_sensitive = case_sensitive
+
     def _validate_concurrency(self) -> None:
-        """Skip validation; appends do not conflict with other operations."""
+        """Skip validation for plain appends.
+
+        An upsert registers the filter for the rows it inserts, so a retry fails instead of
+        inserting a key that another writer added after the upsert was planned.
+        """
+        if self._upsert_insert_filter is None or self._commit_window is None or self._commit_window.is_empty():
+            return
+
+        from pyiceberg.table.update.validate import _validate_added_data_files
+
+        catalog_head = self._commit_window.head
+        if catalog_head is None:
+            return
+
+        try:
+            _validate_added_data_files(
+                self._transaction._table,
+                catalog_head,
+                self._upsert_insert_filter,
+                self._commit_window.base,
+                self._case_sensitive,
+            )
+        except ValidationException as e:
+            raise CommitFailedException(
+                "Cannot retry the upsert because a concurrent commit added rows matching the rows to insert"
+            ) from e
 
     def _existing_manifests(self) -> list[ManifestFile]:
         """To determine if there are any existing manifest files.

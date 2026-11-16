@@ -23,7 +23,7 @@ from datafusion import SessionContext
 from pyarrow import Table as pa_table
 
 from pyiceberg.catalog import Catalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, And, EqualTo, Reference
 from pyiceberg.expressions.literals import LongLiteral
 from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -33,7 +33,7 @@ from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.upsert_util import create_match_filter, get_rows_to_update
 from pyiceberg.transforms import DayTransform
-from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
+from pyiceberg.types import IntegerType, LongType, NestedField, StringType, StructType, TimestampType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -425,6 +425,31 @@ def test_upsert_into_empty_table(catalog: Catalog) -> None:
 
     assert upd.rows_updated == 0
     assert upd.rows_inserted == 4
+
+
+def test_upsert_retry_with_a_concurrently_inserted_key(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_retry_with_a_concurrently_inserted_key"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "k", LongType(), required=True),
+        NestedField(2, "v", StringType(), required=False),
+        identifier_field_ids=[1],
+    )
+    arrow_schema = schema_to_pyarrow(schema)
+    catalog.create_table(identifier, schema=schema).append(pa.Table.from_pylist([{"k": 1, "v": "a"}], schema=arrow_schema))
+
+    writer_a = catalog.load_table(identifier)
+    writer_b = catalog.load_table(identifier)
+    writer_b.upsert(pa.Table.from_pylist([{"k": 2, "v": "b"}], schema=arrow_schema))
+
+    with pytest.raises(CommitFailedException):
+        writer_a.upsert(pa.Table.from_pylist([{"k": 2, "v": "a"}], schema=arrow_schema))
+
+    assert sorted(catalog.load_table(identifier).scan().to_arrow().to_pylist(), key=str) == [
+        {"k": 1, "v": "a"},
+        {"k": 2, "v": "b"},
+    ]
 
 
 def test_create_match_filter_single_condition() -> None:
