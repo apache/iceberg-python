@@ -43,7 +43,10 @@ from pyiceberg.expressions import (
     Reference,
     StartsWith,
 )
-from pyiceberg.expressions.literals import DecimalLiteral, LongLiteral, literal
+from pyiceberg.expressions.literals import DecimalLiteral, DoubleLiteral, LongLiteral, literal
+from pyiceberg.expressions.visitors import bind
+from pyiceberg.schema import Schema
+from pyiceberg.types import DecimalType, DoubleType, LongType, NestedField
 
 
 def test_always_true() -> None:
@@ -152,18 +155,54 @@ def test_in_mixed_numbers() -> None:
         assert result == In("foo", {LongLiteral(5), DecimalLiteral(Decimal("6.5"))}), values
         assert isinstance(result, In)
         assert {type(value) for value in result.literals} == {LongLiteral, DecimalLiteral}, values
-    assert NotIn("foo", {LongLiteral(5), DecimalLiteral(Decimal("1e3"))}) == parser.parse("foo not in (5, 1e3)")
+
+    result = parser.parse("foo not in (5, 6.5, 1e3)")
+    assert result == NotIn("foo", {LongLiteral(5), DecimalLiteral(Decimal("6.5")), DoubleLiteral(1000.0)})
+    assert isinstance(result, NotIn)
+    assert {type(value) for value in result.literals} == {LongLiteral, DecimalLiteral, DoubleLiteral}
 
 
 def test_scientific_notation() -> None:
+    # A number with an exponent is a double, as in ANSI SQL
     for expression, expected in [
-        ("foo > 1e-3", GreaterThan("foo", Decimal("0.001"))),
-        ("1e-3 < foo", GreaterThan("foo", Decimal("0.001"))),
-        ("foo < -1.5E3", LessThan("foo", Decimal("-1500"))),
-        ("foo = 2e2", EqualTo("foo", Decimal("200"))),
-        ("foo between 1e1 and 2.5e1", And(GreaterThanOrEqual("foo", Decimal("10")), LessThanOrEqual("foo", Decimal("25")))),
+        ("foo > 1e-3", GreaterThan("foo", 0.001)),
+        ("1e-3 < foo", GreaterThan("foo", 0.001)),
+        ("foo < -1.5E3", LessThan("foo", -1500.0)),
+        ("foo = 2e2", EqualTo("foo", 200.0)),
+        ("foo = .5e1", EqualTo("foo", 5.0)),
     ]:
-        assert parser.parse(expression) == expected, expression
+        result = parser.parse(expression)
+        assert result == expected, expression
+        assert isinstance(result.literal, DoubleLiteral), expression
+
+    assert And(GreaterThanOrEqual("foo", 10.0), LessThanOrEqual("foo", 25.0)) == parser.parse("foo between 1e1 and 2.5e1")
+
+
+def test_bind_numeric_literals() -> None:
+    schema = Schema(
+        NestedField(1, "dec", DecimalType(9, 2), required=False),
+        NestedField(2, "lng", LongType(), required=False),
+        NestedField(3, "dbl", DoubleType(), required=False),
+    )
+    for expression, expected in [
+        ("dec = 1e3", DecimalLiteral(Decimal("1000.00"))),
+        ("dec > 2.5e-1", DecimalLiteral(Decimal("0.25"))),
+        ("dec = 12.34", DecimalLiteral(Decimal("12.34"))),
+        ("lng = 1e3", LongLiteral(1000)),
+        ("lng = 7", LongLiteral(7)),
+        ("dbl > 1e-3", DoubleLiteral(0.001)),
+        ("dbl > 2.5", DoubleLiteral(2.5)),
+    ]:
+        bound = bind(schema, parser.parse(expression), case_sensitive=True)
+        assert bound.literal == expected, expression
+        assert type(bound.literal) is type(expected), expression
+        if isinstance(expected, DecimalLiteral):
+            assert bound.literal.value.as_tuple() == expected.value.as_tuple(), expression
+
+    bound = bind(schema, parser.parse("lng in (1, 2e1, 3)"), case_sensitive=True)
+    assert bound.literals == {LongLiteral(1), LongLiteral(20), LongLiteral(3)}
+    with pytest.raises(ValueError, match="value has a fractional part"):
+        bind(schema, parser.parse("lng = 1.5e0"), case_sensitive=True)
 
 
 def test_simple_and() -> None:

@@ -445,6 +445,16 @@ class DoubleLiteral(Literal[float]):
             raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
         return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
 
+    @to.register(IntegerType)
+    @to.register(LongType)
+    def _(self, type_var: IntegerType | LongType) -> Literal[int]:
+        if not isfinite(self.value):
+            raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
+        if not self.value.is_integer():
+            raise ValueError(f"Could not convert {self.value} into a {type_var}, value has a fractional part")
+        # The decimal conversion checks the range of the column type
+        return DecimalLiteral(Decimal(self.value)).to(type_var)
+
 
 class DateLiteral(Literal[int]):
     def __init__(self, value: int) -> None:

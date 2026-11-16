@@ -268,6 +268,21 @@ def test_double_to_float_outside_bound() -> None:
     assert below_min_lit == FloatBelowMin()
 
 
+def test_double_to_integer_and_long_conversion() -> None:
+    for type_var in (IntegerType(), LongType()):
+        assert DoubleLiteral(1e3).to(type_var) == LongLiteral(1000)
+        assert DoubleLiteral(-2.0).to(type_var) == LongLiteral(-2)
+        with pytest.raises(ValueError, match="value has a fractional part"):
+            DoubleLiteral(1.5).to(type_var)
+        with pytest.raises(ValueError, match="value is not finite"):
+            DoubleLiteral(float("inf")).to(type_var)
+        # A float literal still does not convert to an integer type
+        with pytest.raises(TypeError):
+            FloatLiteral(1e3).to(type_var)
+    assert DoubleLiteral(1e10).to(IntegerType()) == IntAboveMax()
+    assert DoubleLiteral(-1e19).to(LongType()) == LongBelowMin()
+
+
 @pytest.mark.parametrize(
     "decimal_type, decimal_value", [(DecimalType(9, 1), "34.6"), (DecimalType(9, 2), "34.56"), (DecimalType(9, 4), "34.5600")]
 )
@@ -703,8 +718,6 @@ def test_invalid_long_conversions() -> None:
     "test_type",
     [
         BooleanType(),
-        IntegerType(),
-        LongType(),
         DateType(),
         TimeType(),
         TimestampType(),
