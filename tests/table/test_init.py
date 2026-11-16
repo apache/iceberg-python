@@ -50,6 +50,7 @@ from pyiceberg.table import (
 )
 from pyiceberg.table.labels import Labels
 from pyiceberg.table.metadata import EncryptedKey, TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID, project_schema, split_selected_fields
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -124,6 +125,7 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+from tests.table.test_commit_retry import commit_partition_position_delete
 
 
 def test_schema(table_v2: Table) -> None:
@@ -387,6 +389,51 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
         _ = scan.select("a").projection()
 
     assert "Could not find column: 'a'" in str(exc_info.value)
+
+
+def test_table_scan_projection_row_lineage_columns(table_v3: Table) -> None:
+    projection_schema = table_v3.scan().select("x", "_row_id", "_last_updated_sequence_number").projection()
+    assert projection_schema == Schema(
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        ROW_ID,
+        LAST_UPDATED_SEQUENCE_NUMBER,
+        identifier_field_ids=[1],
+    )
+    assert projection_schema.schema_id == 1
+
+
+def test_table_scan_projection_row_lineage_columns_with_star(table_v3: Table) -> None:
+    projection_schema = table_v3.scan(selected_fields=("*", "_row_id")).projection()
+    assert projection_schema.fields == (*table_v3.schema().fields, ROW_ID)
+
+
+def test_table_scan_projection_row_lineage_columns_case_insensitive(table_v3: Table) -> None:
+    projection_schema = table_v3.scan().with_case_sensitive(False).select("X", "_ROW_ID").projection()
+    assert [field.name for field in projection_schema.fields] == ["x", "_row_id"]
+
+
+def test_table_scan_projection_row_lineage_columns_case_sensitive(table_v3: Table) -> None:
+    with pytest.raises(ValueError, match="Could not find column: '_ROW_ID'"):
+        table_v3.scan().select("x", "_ROW_ID").projection()
+
+
+def test_table_scan_projection_row_lineage_columns_before_v3(table_v2: Table) -> None:
+    with pytest.raises(ValueError, match="Cannot select _row_id: row lineage requires format version 3"):
+        table_v2.scan().select("x", "_row_id").projection()
+
+
+def test_incremental_append_scan_projection_row_lineage_columns(table_v3: Table) -> None:
+    projection_schema = table_v3.incremental_append_scan(selected_fields=("x", "_row_id")).projection()
+    assert [field.name for field in projection_schema.fields] == ["x", "_row_id"]
+
+
+def test_project_schema_prefers_schema_column_over_metadata_column() -> None:
+    schema = Schema(NestedField(field_id=1, name="_row_id", field_type=LongType(), required=True))
+    assert project_schema(schema, ("_row_id",), case_sensitive=True, format_version=3) == schema
+    assert split_selected_fields(schema, ("_row_id", "_last_updated_sequence_number"), case_sensitive=True) == (
+        ("_row_id",),
+        (LAST_UPDATED_SEQUENCE_NUMBER,),
+    )
 
 
 def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> None:
@@ -2421,6 +2468,25 @@ def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> Non
             overwrite.delete_data_file(data_file)
 
     assert table.scan().to_arrow().num_rows == 0
+
+
+def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalog) -> None:
+    """Rewriting a file applies all of its delete files, not only those whose bounds can match the delete filter."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "k", LongType(), required=False), NestedField(2, "v", StringType(), required=False))
+    table = catalog.create_table("default.partial_delete", schema=schema, properties={"format-version": "2"})
+    table.append(pa.table({"k": [1, 2, 3], "v": ["a", "b", "c"]}))
+    data_file = next(iter(table.scan().plan_files())).file
+
+    # The delete file stores the deleted row (2, 'b'), so a scan for k = 1 skips it.
+    commit_partition_position_delete(table, Record(), data_file.file_path, pos=1, row={"k": 2, "v": "b"})
+    assert [task.delete_files for task in table.scan(row_filter="k = 1").plan_files()] == [set()]
+
+    table.delete("k = 1")
+
+    assert table.scan().to_arrow()["k"].to_pylist() == [3]
 
 
 def test_static_table_forwards_location_to_table_file_io(metadata_location: str, monkeypatch: pytest.MonkeyPatch) -> None:
