@@ -45,7 +45,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UnknownType,
@@ -170,6 +172,26 @@ def test_partition_spec_to_path() -> None:
     # Both partition field names and values should be URL encoded, with spaces mapping to plus signs, to match the Java
     # behaviour: https://github.com/apache/iceberg/blob/ca3db931b0f024f0412084751ac85dd4ef2da7e7/api/src/main/java/org/apache/iceberg/PartitionSpec.java#L198-L204
     assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
+
+
+@pytest.mark.parametrize(
+    "field_type, expected_path",
+    [
+        (TimestampType(), "ts=2025-02-23T20%3A21%3A44.375612"),
+        (TimestamptzType(), "ts=2025-02-23T20%3A21%3A44.375612%2B00%3A00"),
+        (TimestampNanoType(), "ts=2025-02-23T20%3A21%3A44.375612001"),
+        (TimestamptzNanoType(), "ts=2025-02-23T20%3A21%3A44.375612001%2B00%3A00"),
+    ],
+)
+def test_partition_spec_to_path_timestamp(field_type: PrimitiveType, expected_path: str) -> None:
+    schema = Schema(NestedField(field_id=1, name="ts", field_type=field_type, required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="ts"))
+
+    # Nanosecond timestamps carry three extra sub-microsecond digits; the microsecond
+    # value 1740342104375612 is the same instant as 1740342104375612001 nanoseconds.
+    value = 1740342104375612001 if isinstance(field_type, (TimestampNanoType, TimestamptzNanoType)) else 1740342104375612
+
+    assert spec.partition_to_path(Record(value), schema) == expected_path
 
 
 def test_partition_spec_to_path_dropped_source_id() -> None:
