@@ -550,6 +550,10 @@ class DataFile(Record):
     def first_row_id(self) -> int | None:
         return self._data[16]
 
+    @first_row_id.setter
+    def first_row_id(self, value: int | None) -> None:
+        self._data[16] = value
+
     @property
     def referenced_data_file(self) -> str | None:
         return self._data[17]
@@ -671,6 +675,10 @@ class ManifestEntry(Record):
     def data_file(self, value: DataFile) -> None:
         self._data[4] = value
 
+    def is_live(self) -> bool:
+        """Return whether the entry is live (added or existing) in the snapshot."""
+        return self.status in (ManifestEntryStatus.ADDED, ManifestEntryStatus.EXISTING)
+
 
 PARTITION_FIELD_SUMMARY_TYPE = StructType(
     NestedField(509, "contains_null", BooleanType(), required=True),
@@ -736,6 +744,12 @@ class PartitionFieldStats:
             else:
                 self._max = max(self._max, value)
                 self._min = min(self._min, value)
+                if isinstance(value, float) and value == 0.0:
+                    # min and max keep whichever zero came first, but bounds must order -0.0 below 0.0
+                    if math.copysign(1.0, value) < 0 and self._min == 0.0:
+                        self._min = value
+                    elif math.copysign(1.0, value) > 0 and self._max == 0.0:
+                        self._max = value
 
 
 def construct_partition_summaries(spec: PartitionSpec, schema: Schema, partitions: list[Record]) -> list[PartitionFieldSummary]:
@@ -900,7 +914,7 @@ class ManifestFile(Record):
         entry_filter: Callable[[ManifestEntry], bool] | None = None,
     ) -> list[ManifestEntry]:
         """
-        Read the manifest entries from the manifest file.
+        Read the manifest entries from the manifest file, decrypting it when it has key metadata.
 
         Args:
             io: The FileIO to fetch the file.
@@ -911,6 +925,8 @@ class ManifestFile(Record):
             An Iterator of manifest entries.
         """
         input_file = io.new_input(self.manifest_path)
+        if self.key_metadata is not None:
+            input_file = EncryptedInputFile(input_file, StandardKeyMetadata.from_bytes(self.key_metadata))
         with AvroFile[ManifestEntry](
             input_file,
             MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
@@ -918,11 +934,20 @@ class ManifestFile(Record):
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
             result = []
+            next_row_id = self.first_row_id if self.content == ManifestContent.DATA else None
 
             for entry in reader:
-                if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
+                if discard_deleted and not entry.is_live():
                     continue
                 _inherit_from_manifest(entry, self)
+
+                # Inherit first row IDs, which are only valid when a data manifest has a first_row_id
+                data_file = entry.data_file
+                if next_row_id is None:
+                    data_file.first_row_id = None
+                elif entry.is_live() and data_file.first_row_id is None:
+                    data_file.first_row_id = next_row_id
+                    next_row_id += data_file.record_count
 
                 if entry_filter is None or entry_filter(entry):
                     result.append(entry)
@@ -1233,7 +1258,7 @@ class ManifestWriter(ABC):
         self._partitions.append(entry.data_file.partition)
 
         if (
-            (entry.status == ManifestEntryStatus.ADDED or entry.status == ManifestEntryStatus.EXISTING)
+            entry.is_live()
             and entry.sequence_number is not None
             and (self._min_sequence_number is None or entry.sequence_number < self._min_sequence_number)
         ):

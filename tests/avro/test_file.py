@@ -41,6 +41,7 @@ from pyiceberg.manifest import (
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record, TableVersion
 from pyiceberg.types import (
+    BinaryType,
     BooleanType,
     DateType,
     DecimalType,
@@ -48,9 +49,12 @@ from pyiceberg.types import (
     FixedType,
     FloatType,
     IntegerType,
+    ListType,
     LongType,
+    MapType,
     NestedField,
     StringType,
+    StructType,
     TimestampNanoType,
     TimestampType,
     TimestamptzNanoType,
@@ -68,6 +72,12 @@ def get_deflate_compressor() -> None:
 
 def get_null_compressor() -> None:
     header = AvroFileHeader(bytes(0), {"avro.codec": "null"}, bytes(16))
+    assert header.compression_codec() is None
+
+
+def test_missing_codec_is_null() -> None:
+    # the Avro specification: a file without avro.codec is uncompressed (iceberg-rust writes such manifests)
+    header = AvroFileHeader(bytes(0), {}, bytes(16))
     assert header.compression_codec() is None
 
 
@@ -341,6 +351,63 @@ def test_write_manifest_entry_with_fastavro_read_with_iceberg(format_version: Ta
                 raise ValueError(f"Unsupported version: {format_version}")
 
 
+def test_read_manifest_entry_with_unknown_nested_fields() -> None:
+    # Writers may add fields to data_file that the read schema does not know; they must be skipped by field ID
+    read_schema = MANIFEST_ENTRY_SCHEMAS[2]
+    data_file_fields = list(read_schema.find_field("data_file").field_type.fields)
+    unknown_fields = [
+        NestedField(1250, "unknown_map", MapType(1260, IntegerType(), 1270, BinaryType()), required=False),
+        NestedField(1280, "unknown_list", ListType(1290, LongType()), required=False),
+        NestedField(
+            1300,
+            "unknown_struct",
+            StructType(NestedField(1310, "inner_map", MapType(1320, IntegerType(), 1330, StringType()), required=False)),
+            required=False,
+        ),
+    ]
+    # Place the unknown fields before known ones to check that the decoder skips their bytes
+    pos = next(i for i, field in enumerate(data_file_fields) if field.name == "lower_bounds")
+    file_data_file = StructType(*data_file_fields[:pos], *unknown_fields, *data_file_fields[pos:])
+    file_schema = Schema(
+        *[
+            NestedField(field.field_id, field.name, file_data_file, required=field.required)
+            if field.name == "data_file"
+            else field
+            for field in read_schema.fields
+        ]
+    )
+
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path="s3://some-path/some-file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=131327,
+        file_size_in_bytes=220669226,
+        lower_bounds={1: b"aaaaaaaaaaaaaaaa"},
+        upper_bounds={1: b"zzzzzzzzzzzzzzzz"},
+        sort_order_id=4,
+    )
+    entry = ManifestEntry.from_args(status=ManifestEntryStatus.ADDED, snapshot_id=8638475580105682862, data_file=data_file)
+
+    record = todict(entry)
+    record["data_file"]["unknown_map"] = todict({1: b"\x01\x02"})
+    record["data_file"]["unknown_list"] = [1, 2, 3]
+    record["data_file"]["unknown_struct"] = {"inner_map": todict({2: "value"})}
+
+    with TemporaryDirectory() as tmpdir:
+        tmp_avro_file = tmpdir + "/manifest_entry.avro"
+        with open(tmp_avro_file, "wb") as out:
+            writer(out, AvroSchemaConversion().iceberg_to_avro(file_schema, schema_name="manifest_entry"), [record])
+
+        with avro.AvroFile[ManifestEntry](
+            input_file=PyArrowFileIO().new_input(tmp_avro_file),
+            read_schema=read_schema,
+            read_types={-1: ManifestEntry, 2: DataFile},
+        ) as avro_reader:
+            assert list(avro_reader) == [entry]
+
+
 @pytest.mark.parametrize("is_required", [True, False])
 def test_all_primitive_types(is_required: bool) -> None:
     all_primitives_schema = Schema(
@@ -480,6 +547,37 @@ def test_timestamp_nanos_round_trip() -> None:
         ) as avro_reader:
             assert avro_reader.schema == schema
             assert list(avro_reader) == records
+
+
+@pytest.mark.parametrize("codec", ["null", "deflate", "bzip2", "snappy"])
+def test_compression_codec_interop_with_fastavro(codec: str) -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=True),
+        schema_id=1,
+    )
+    rows = [{"id": idx, "data": f"value-{idx}"} for idx in range(100)]
+    records = [Record(row["id"], row["data"]) for row in rows]
+
+    with TemporaryDirectory() as tmpdir:
+        # fastavro frames each block as the Avro spec defines, e.g. snappy blocks end with a CRC32 of the uncompressed data
+        fastavro_file = tmpdir + "/fastavro.avro"
+        with open(fastavro_file, "wb") as out:
+            writer(out, AvroSchemaConversion().iceberg_to_avro(schema, schema_name="compressed"), rows, codec=codec)
+
+        with avro.AvroFile[Record](PyArrowFileIO().new_input(fastavro_file), schema, {-1: Record}) as avro_reader:
+            assert list(avro_reader) == records
+
+        iceberg_file = tmpdir + "/iceberg.avro"
+        with avro.AvroOutputFile[Record](
+            PyArrowFileIO().new_output(iceberg_file), schema, "compressed", metadata={"avro.codec": codec}
+        ) as out:
+            out.write_block(records)
+
+        with open(iceberg_file, "rb") as fo:
+            fastavro_reader = reader(fo)
+            assert fastavro_reader.codec == codec
+            assert list(fastavro_reader) == rows
 
 
 def manifest_entry(index: int) -> ManifestEntry:

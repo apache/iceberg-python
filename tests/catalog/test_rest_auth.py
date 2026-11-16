@@ -16,13 +16,23 @@
 #  under the License.
 
 import base64
+import json
+import pickle
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 from requests_mock import Mocker
 
-from pyiceberg.catalog.rest.auth import AuthManagerAdapter, BasicAuthManager, EntraAuthManager, GoogleAuthManager, NoopAuthManager
+from pyiceberg.catalog.rest.auth import (
+    AuthManagerAdapter,
+    BasicAuthManager,
+    EntraAuthManager,
+    GoogleAuthManager,
+    NoopAuthManager,
+    OAuth2TokenProvider,
+)
 
 TEST_URI = "https://iceberg-test-catalog/"
 GOOGLE_CREDS_URI = "https://oauth2.googleapis.com/token"
@@ -47,6 +57,23 @@ def google_mock(requests_mock: Mocker) -> Mocker:
         status_code=200,
     )
     return requests_mock
+
+
+@pytest.fixture
+def google_default_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    credentials_path = tmp_path / "credentials.json"
+    credentials_path.write_text(
+        json.dumps(
+            {
+                "type": "authorized_user",
+                "client_id": "client",
+                "client_secret": "secret",
+                "refresh_token": "refresh",
+                "token_uri": GOOGLE_CREDS_URI,
+            }
+        )
+    )
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(credentials_path))
 
 
 def test_noop_auth_header(rest_mock: Mocker) -> None:
@@ -85,6 +112,7 @@ def test_google_auth_manager_default_credentials(
 ) -> None:
     """Test GoogleAuthManager with default application credentials."""
     mock_credentials = MagicMock()
+    mock_credentials.valid = False
     mock_credentials.token = "test_token"
     mock_google_auth_default.return_value = (mock_credentials, "test_project")
 
@@ -108,6 +136,7 @@ def test_google_auth_manager_with_credentials_file(
 ) -> None:
     """Test GoogleAuthManager with a credentials file path."""
     mock_credentials = MagicMock()
+    mock_credentials.valid = False
     mock_credentials.token = "file_token"
     mock_load_creds.return_value = (mock_credentials, "test_project_file")
 
@@ -131,6 +160,7 @@ def test_google_auth_manager_with_credentials_file_and_scopes(
 ) -> None:
     """Test GoogleAuthManager with a credentials file path and scopes."""
     mock_credentials = MagicMock()
+    mock_credentials.valid = False
     mock_credentials.token = "scoped_token"
     mock_load_creds.return_value = (mock_credentials, "test_project_scoped")
     scopes = ["https://www.googleapis.com/auth/bigquery"]
@@ -146,6 +176,28 @@ def test_google_auth_manager_with_credentials_file_and_scopes(
     assert len(history) == 1
     actual_headers = history[0].headers
     assert actual_headers["Authorization"] == "Bearer scoped_token"
+
+
+def test_google_auth_manager_reuses_valid_token(google_mock: Mocker, google_default_credentials: None) -> None:
+    session = requests.Session()
+    session.auth = AuthManagerAdapter(GoogleAuthManager())
+    for _ in range(3):
+        session.get(TEST_URI)
+
+    history = google_mock.request_history
+    assert [request.url for request in history].count(GOOGLE_CREDS_URI) == 1
+    assert [request.headers["Authorization"] for request in history if request.url == TEST_URI] == ["Bearer aaaabbb"] * 3
+
+
+def test_google_auth_manager_refreshes_expiring_token(google_mock: Mocker, google_default_credentials: None) -> None:
+    # A token that expires within google-auth's refresh threshold is not valid
+    google_mock.post(GOOGLE_CREDS_URI, json={"access_token": "aaaabbb", "expires_in": 60}, status_code=200)
+    session = requests.Session()
+    session.auth = AuthManagerAdapter(GoogleAuthManager())
+    for _ in range(3):
+        session.get(TEST_URI)
+
+    assert [request.url for request in google_mock.request_history].count(GOOGLE_CREDS_URI) == 3
 
 
 def test_google_auth_manager_import_error() -> None:
@@ -249,3 +301,19 @@ def test_entra_auth_manager_token_failure(mock_default_cred: MagicMock, rest_moc
     # Verify no requests were made with a blank/missing auth header
     history = rest_mock.request_history
     assert len(history) == 0
+
+
+def test_oauth2_token_provider_pickle_round_trip(requests_mock: Mocker) -> None:
+    token_url = f"{TEST_URI}v1/oauth/tokens"
+    requests_mock.post(
+        token_url,
+        [{"json": {"access_token": "first", "expires_in": 3600}}, {"json": {"access_token": "second", "expires_in": 3600}}],
+    )
+    provider = OAuth2TokenProvider(client_id="client", client_secret="secret", token_url=token_url)
+    assert provider.get_token() == "first"
+
+    unpickled = pickle.loads(pickle.dumps(provider))
+
+    # The cached token is not carried over, since its expiry is relative to the original process' clock
+    assert unpickled.get_token() == "second"
+    assert unpickled.client_id == "client"

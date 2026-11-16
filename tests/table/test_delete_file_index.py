@@ -233,3 +233,10 @@ def test_record_equality_for_partition_lookup() -> None:
 
     assert len(index.for_data_file(1, data_file, partition_b)) == 1
     assert len(index.for_data_file(1, data_file, partition_c)) == 0
+
+
+def test_record_equality_for_nan_partition_lookup() -> None:
+    index = DeleteFileIndex()
+    index.add_delete_file(_create_partition_delete(sequence_number=2, partition=Record(float("nan"))), Record(float("nan")))
+
+    assert len(index.for_data_file(1, _create_data_file(), Record(float("nan")))) == 1
