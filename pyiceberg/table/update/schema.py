@@ -77,6 +77,7 @@ class _Move:
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     _schema: Schema
     _last_column_id: itertools.count[int]
+    _identifier_field_ids: set[int]
     _identifier_field_names: set[str]
 
     _adds: dict[int, list[NestedField]] = {}
@@ -108,7 +109,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             self._last_column_id = itertools.count(1 + self._transaction.table_metadata.last_column_id)
 
         self._name_mapping = name_mapping
-        self._identifier_field_names = self._schema.identifier_field_names()
+        self._identifier_field_ids = set(self._schema.identifier_field_ids)
+        self._identifier_field_names = set()
 
         self._adds = {}
         self._updates = {}
@@ -331,13 +333,6 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 write_default=field_from.write_default,
             )
 
-        # Lookup the field because of casing
-        from_field_correct_casing = self._schema.find_column_name(field_from.field_id)
-        if from_field_correct_casing in self._identifier_field_names:
-            self._identifier_field_names.remove(from_field_correct_casing)
-            new_identifier_path = f"{from_field_correct_casing[: -len(field_from.name)]}{new_name}"
-            self._identifier_field_names.add(new_identifier_path)
-
         return self
 
     def make_column_optional(self, path: str | tuple[str, ...]) -> UpdateSchema:
@@ -353,7 +348,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def set_identifier_fields(self, *fields: str) -> None:
-        self._identifier_field_names = set(fields)
+        self._identifier_field_ids = set()
+        self._identifier_field_names = set()
+        for field_name in fields:
+            try:
+                self._identifier_field_ids.add(self._schema.find_field(field_name, self._case_sensitive).field_id)
+            except ValueError:
+                self._identifier_field_names.add(field_name)
 
     def _set_column_requirement(self, path: str | tuple[str, ...], required: bool) -> None:
         path = (path,) if isinstance(path, str) else path
@@ -670,7 +671,12 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 validate_partition_name(
                     partition_field.name, partition_field.transform, partition_field.source_id, new_schema, set()
                 )
-        field_ids = set()
+        field_ids = set(self._identifier_field_ids)
+        for field_id in self._identifier_field_ids:
+            if new_schema.find_column_name(field_id) is None:
+                name = self._schema.find_column_name(field_id)
+                raise ValueError(f"Cannot find identifier field {name}. In case of deletion, update the identifier fields first.")
+
         for name in self._identifier_field_names:
             try:
                 field = new_schema.find_field(name, case_sensitive=self._case_sensitive)
