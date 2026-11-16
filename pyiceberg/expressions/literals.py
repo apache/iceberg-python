@@ -590,12 +590,16 @@ class StringLiteral(Literal[str]):
     def _(self, type_var: IntegerType) -> Literal[int]:
         try:
             number = _parse_numeric_string(self.value)
+            # Check the fractional part before the range check, mirroring
+            # DecimalLiteral: a fractional value is not representable at all,
+            # so it raises instead of returning AboveMax/BelowMin
+            value_int = _to_integral(number, type_var)
 
-            if IntegerType.max < number:
+            if IntegerType.max < value_int:
                 return IntAboveMax()
-            elif IntegerType.min > number:
+            elif IntegerType.min > value_int:
                 return IntBelowMin()
-            return LongLiteral(_to_integral(number, type_var))
+            return LongLiteral(value_int)
         except (ArithmeticError, OverflowError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
@@ -603,12 +607,13 @@ class StringLiteral(Literal[str]):
     def _(self, type_var: LongType) -> Literal[int]:
         try:
             long_value = _parse_numeric_string(self.value)
-            if LongType.max < long_value:
+            value_long = _to_integral(long_value, type_var)
+            if LongType.max < value_long:
                 return LongAboveMax()
-            elif LongType.min > long_value:
+            elif LongType.min > value_long:
                 return LongBelowMin()
             else:
-                return LongLiteral(_to_integral(long_value, type_var))
+                return LongLiteral(value_long)
         except (ArithmeticError, OverflowError, TypeError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 

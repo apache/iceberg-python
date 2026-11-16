@@ -951,6 +951,18 @@ def test_fractional_string_to_integral_type_raises() -> None:
                 _ = literal(value).to(target_type)
 
 
+def test_fractional_string_near_integral_type_bounds_raises() -> None:
+    # Rejected even when rounding would cross the bound, mirroring DecimalLiteral
+    for target_type, bound in [
+        (IntegerType(), IntegerType.max),
+        (IntegerType(), IntegerType.min),
+        (LongType(), LongType.max),
+        (LongType(), LongType.min),
+    ]:
+        with pytest.raises(ValueError, match=f"Could not convert {bound}.9 into a {target_type}"):
+            _ = literal(f"{bound}.9").to(target_type)
+
+
 def test_integral_decimal_to_integral_type() -> None:
     # A decimal literal without a fractional part, such as 2.0, still converts exactly
     for target_type in [IntegerType(), LongType()]:
