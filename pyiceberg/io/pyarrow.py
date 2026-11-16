@@ -100,6 +100,7 @@ from pyiceberg.io import (
     AWS_ROLE_SESSION_NAME,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
+    BOTOCORE_SESSION,
     GCS_DEFAULT_LOCATION,
     GCS_SERVICE_HOST,
     GCS_TOKEN,
@@ -405,7 +406,7 @@ class PyArrowFile(InputFile, OutputFile):
 
 
 class PyArrowFileIO(_TransientStateMixin, FileIO):
-    fs_by_scheme: Callable[[str, str | None], FileSystem]
+    fs_by_scheme: Callable[..., FileSystem]
     _transient_attrs = ("fs_by_scheme",)
 
     def __init__(self, properties: Properties = EMPTY_DICT):
@@ -444,13 +445,15 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
         else:
             return uri.scheme, uri.netloc, f"{uri.netloc}{uri.path}"
 
-    def _initialize_fs(self, scheme: str, netloc: str | None = None) -> FileSystem:
+    def _initialize_fs(
+        self, scheme: str, netloc: str | None = None, session_credentials: tuple[str, str, str | None] | None = None
+    ) -> FileSystem:
         """Initialize FileSystem for different scheme."""
         if scheme in {"oss"}:
             return self._initialize_oss_fs()
 
         elif scheme in {"s3", "s3a", "s3n"}:
-            return self._initialize_s3_fs(netloc)
+            return self._initialize_s3_fs(netloc, session_credentials)
 
         elif scheme in {"hdfs", "viewfs"}:
             return self._initialize_hdfs_fs(scheme, netloc)
@@ -513,7 +516,25 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
 
         return S3FileSystem(**client_kwargs)
 
-    def _initialize_s3_fs(self, netloc: str | None) -> FileSystem:
+    def _botocore_session_credentials(self) -> tuple[str, str, str | None] | None:
+        """Return the frozen credentials of the botocore session when no explicit S3 credentials or role are set."""
+        session: Any = self.properties.get(BOTOCORE_SESSION)
+        if session is None or get_first_property_value(self.properties, S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID) is not None:
+            return None
+        if get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ASSUME_ROLE_ARN, AWS_ROLE_ARN) is not None:
+            return None
+        if (credentials := session.get_credentials()) is None:
+            return None
+        # Refreshes the credentials when they are about to expire, which changes the fs_by_scheme cache key
+        frozen = credentials.get_frozen_credentials()
+        return frozen.access_key, frozen.secret_key, frozen.token
+
+    def _filesystem(self, scheme: str, netloc: str | None) -> FileSystem:
+        if scheme in {"s3", "s3a", "s3n"} and (session_credentials := self._botocore_session_credentials()) is not None:
+            return self.fs_by_scheme(scheme, netloc, session_credentials)
+        return self.fs_by_scheme(scheme, netloc)
+
+    def _initialize_s3_fs(self, netloc: str | None, session_credentials: tuple[str, str, str | None] | None = None) -> FileSystem:
         from pyarrow.fs import S3FileSystem
 
         provided_region = get_first_property_value(self.properties, S3_REGION, AWS_REGION)
@@ -538,6 +559,9 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
             "session_token": get_first_property_value(self.properties, S3_SESSION_TOKEN, AWS_SESSION_TOKEN),
             "region": bucket_region,
         }
+
+        if session_credentials is not None:
+            client_kwargs["access_key"], client_kwargs["secret_key"], client_kwargs["session_token"] = session_credentials
 
         if proxy_uri := self.properties.get(S3_PROXY_URI):
             client_kwargs["proxy_options"] = proxy_uri
@@ -681,7 +705,7 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
         """
         scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=self._filesystem(scheme, netloc),
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
@@ -699,7 +723,7 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
         """
         scheme, netloc, path = self.parse_location(location, self.properties)
         return PyArrowFile(
-            fs=self.fs_by_scheme(scheme, netloc),
+            fs=self._filesystem(scheme, netloc),
             location=location,
             path=path,
             buffer_size=int(self.properties.get(BUFFER_SIZE, ONE_MEGABYTE)),
@@ -721,7 +745,7 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
         """
         str_location = location.location if isinstance(location, (InputFile, OutputFile)) else location
         scheme, netloc, path = self.parse_location(str_location, self.properties)
-        fs = self.fs_by_scheme(scheme, netloc)
+        fs = self._filesystem(scheme, netloc)
 
         try:
             fs.delete_file(path)

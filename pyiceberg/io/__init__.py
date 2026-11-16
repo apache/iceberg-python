@@ -54,6 +54,7 @@ def _is_local_path(path: str) -> bool:
     return drive != ""
 
 
+BOTOCORE_SESSION = "botocore_session"
 AWS_PROFILE_NAME = "client.profile-name"
 AWS_REGION = "client.region"
 AWS_ACCESS_KEY_ID = "client.access-key-id"
