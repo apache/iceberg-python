@@ -97,6 +97,7 @@ from pyiceberg.table.update import (
     UpgradeFormatVersionUpdate,
     update_table_metadata,
 )
+from pyiceberg.table.update.partition_statistics import UpdatePartitionStatistics
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.sorting import UpdateSortOrder
@@ -506,6 +507,15 @@ class Transaction:
             A new UpdateStatistics
         """
         return UpdateStatistics(transaction=self)
+
+    def update_partition_statistics(self) -> UpdatePartitionStatistics:
+        """
+        Create a new UpdatePartitionStatistics to update the partition statistics of the table.
+
+        Returns:
+            A new UpdatePartitionStatistics
+        """
+        return UpdatePartitionStatistics(transaction=self)
 
     def append(
         self,
@@ -1700,6 +1710,23 @@ class Table:
             update.remove_statistics(snapshot_id=2)
         """
         return UpdateStatistics(transaction=Transaction(self, autocommit=True))
+
+    def update_partition_statistics(self) -> UpdatePartitionStatistics:
+        """
+        Shorthand to run partition statistics management operations like set and remove partition statistics.
+
+        Use table.update_partition_statistics().<operation>().commit() to run a specific operation.
+        Use table.update_partition_statistics().<operation-one>().<operation-two>().commit() to run multiple operations.
+
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example:
+
+        with table.update_partition_statistics() as update:
+            update.set_partition_statistics(partition_statistics_file=partition_statistics_file)
+            update.remove_partition_statistics(snapshot_id=2)
+        """
+        return UpdatePartitionStatistics(transaction=Transaction(self, autocommit=True))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.

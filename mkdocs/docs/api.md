@@ -1788,6 +1788,26 @@ with table.update_statistics() as update:
     update.remove_statistics(snapshot_id2)
 ```
 
+## Table Partition Statistics Management
+
+Manage partition statistics files with operations through the `Table` API:
+
+```python
+# Setting a file for a snapshot replaces the file already set for that snapshot
+table.update_partition_statistics().set_partition_statistics(partition_statistics_file).commit()
+table.update_partition_statistics().remove_partition_statistics(snapshot_id).commit()
+```
+
+You can also use context managers to make more changes:
+
+```python
+with table.update_partition_statistics() as update:
+    update.set_partition_statistics(partition_statistics_file)
+    update.remove_partition_statistics(snapshot_id)
+```
+
+Within one update, sets are applied before removals, as in Java, so a removal wins over a set for the same snapshot regardless of the order of the calls. Removing partition statistics for a snapshot that has no file is a no-op.
+
 ## Query the data
 
 To query a table, a table scan is needed. A table scan accepts a filter, columns, optionally a limit and a snapshot ID:

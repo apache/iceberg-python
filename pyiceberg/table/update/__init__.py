@@ -692,8 +692,9 @@ def _(update: SetPartitionStatisticsUpdate, base_metadata: TableMetadata, contex
 def _(
     update: RemovePartitionStatisticsUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext
 ) -> TableMetadata:
+    # Removing an absent entry is a no-op, so the metadata is not changed
     if not any(part_stat.snapshot_id == update.snapshot_id for part_stat in base_metadata.partition_statistics):
-        raise ValueError(f"Partition Statistics with snapshot id {update.snapshot_id} does not exist")
+        return base_metadata
 
     statistics = filter_statistics_by_snapshot_id(base_metadata.partition_statistics, update.snapshot_id)
     context.add_update(update)
