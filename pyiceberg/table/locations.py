@@ -80,12 +80,19 @@ class LocationProvider(ABC):
             str: fully-qualified URI for the new table metadata file.
 
         Raises:
-            ValueError: If the version is negative.
+            ValueError: If the version is negative, or the metadata compression codec is not supported.
         """
+        from pyiceberg.table import TableProperties
+
         if new_version < 0:
             raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
 
-        file_name = f"{new_version:05d}-{uuid.uuid4()}.metadata.json"
+        codec = self.table_properties.get(TableProperties.METADATA_COMPRESSION, TableProperties.METADATA_COMPRESSION_DEFAULT)
+        extension = {"none": "", "gzip": ".gz"}.get(codec.lower())
+        if extension is None:
+            raise ValueError(f"Invalid {TableProperties.METADATA_COMPRESSION}: {codec}, expected none or gzip")
+
+        file_name = f"{new_version:05d}-{uuid.uuid4()}{extension}.metadata.json"
         return self.new_metadata_location(file_name)
 
     def new_metadata_location(self, metadata_file_name: str) -> str:

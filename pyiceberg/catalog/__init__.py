@@ -1117,9 +1117,12 @@ class MetastoreCatalog(Catalog, ABC):
             metadata_location=current_table.metadata_location if current_table else None,
         )
 
-        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
-        provider = load_location_provider(updated_metadata.location, updated_metadata.properties)
-        new_metadata_location = provider.new_table_metadata_file_location(new_metadata_version)
+        if current_table and updated_metadata == current_table.metadata:
+            new_metadata_location = current_table.metadata_location
+        else:
+            new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
+            provider = load_location_provider(updated_metadata.location, updated_metadata.properties)
+            new_metadata_location = provider.new_table_metadata_file_location(new_metadata_version)
 
         return StagedTable(
             identifier=table_identifier,

@@ -182,6 +182,32 @@ def test_location_provider_metadata_location_with_custom_path() -> None:
     assert provider.new_metadata_location("metadata.json") == "s3://table-location/custom/path/metadata.json"
 
 
+def test_new_table_metadata_file_location_compression_codec() -> None:
+    for codec, extension in [("none", ""), ("NONE", ""), ("gzip", ".gz"), ("GZIP", ".gz")]:
+        provider = load_location_provider(
+            table_location="table_location",
+            table_properties={TableProperties.METADATA_COMPRESSION: codec},
+        )
+
+        location = provider.new_table_metadata_file_location(1)
+
+        assert location.startswith("table_location/metadata/00001-")
+        assert location.endswith(f"{extension}.metadata.json")
+        # what remains after the version and the codec extension is exactly the uuid
+        file_uuid = location.removeprefix("table_location/metadata/00001-").removesuffix(f"{extension}.metadata.json")
+        assert len(file_uuid) == 36
+
+
+def test_new_table_metadata_file_location_invalid_compression_codec() -> None:
+    provider = load_location_provider(
+        table_location="table_location",
+        table_properties={TableProperties.METADATA_COMPRESSION: "snappy"},
+    )
+
+    with pytest.raises(ValueError, match="snappy"):
+        provider.new_table_metadata_file_location()
+
+
 def test_metadata_location_with_trailing_slash() -> None:
     provider = load_location_provider(
         table_location="table_location",
