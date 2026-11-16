@@ -35,7 +35,6 @@ from pyiceberg.table.metadata import (
     EncryptedKey,
     TableMetadata,
     TableMetadataUtil,
-    TableMetadataV3,
     _check_properties_format_version_compatibility,
 )
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
@@ -704,7 +703,7 @@ def _(
 
 @_apply_table_update.register(AddEncryptionKeyUpdate)
 def _(update: AddEncryptionKeyUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if not isinstance(base_metadata, TableMetadataV3):
+    if base_metadata.format_version < 3:
         raise ValueError(f"Encryption keys are not supported in format version {base_metadata.format_version}")
 
     if any(key.key_id == update.encryption_key.key_id for key in base_metadata.encryption_keys):
@@ -716,7 +715,7 @@ def _(update: AddEncryptionKeyUpdate, base_metadata: TableMetadata, context: _Ta
 
 @_apply_table_update.register(RemoveEncryptionKeyUpdate)
 def _(update: RemoveEncryptionKeyUpdate, base_metadata: TableMetadata, context: _TableMetadataUpdateContext) -> TableMetadata:
-    if not isinstance(base_metadata, TableMetadataV3):
+    if base_metadata.format_version < 3:
         raise ValueError(f"Encryption keys are not supported in format version {base_metadata.format_version}")
 
     encryption_keys = [key for key in base_metadata.encryption_keys if key.key_id != update.key_id]
@@ -750,11 +749,11 @@ def update_table_metadata(
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
 
-    # Update last_updated_ms if it was not updated by update operations
+    # last_updated_ms must not precede the base's, which becomes the latest metadata-log entry
     if context.has_changes():
         if metadata_location:
             new_metadata = _update_table_metadata_log(new_metadata, metadata_location, base_metadata.last_updated_ms)
-        if base_metadata.last_updated_ms == new_metadata.last_updated_ms:
+        if new_metadata.last_updated_ms <= base_metadata.last_updated_ms:
             new_metadata = new_metadata.model_copy(update={"last_updated_ms": datetime_to_millis(datetime.now().astimezone())})
 
     # Check correctness of partition spec, and sort order
@@ -764,7 +763,9 @@ def update_table_metadata(
     if enforce_validation:
         return TableMetadataUtil.parse_obj(new_metadata.model_dump())
     else:
-        return new_metadata.model_copy(deep=True)
+        return new_metadata.model_copy(
+            update={name: value.copy() for name, value in new_metadata if isinstance(value, (list, dict))}
+        )
 
 
 def _update_table_metadata_log(base_metadata: TableMetadata, metadata_location: str, last_updated_ms: int) -> TableMetadata:

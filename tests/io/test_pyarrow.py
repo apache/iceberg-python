@@ -26,7 +26,7 @@ import warnings
 import zlib
 from collections.abc import Callable, Iterator
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
@@ -44,6 +44,7 @@ from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3F
 from pyroaring import BitMap
 
 from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTDeleteFile, RESTFileScanTask, RESTPositionDeleteFile
+from pyiceberg.conversions import to_bytes
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.stream import _encrypt_ags1
 from pyiceberg.exceptions import ResolveError
@@ -116,6 +117,7 @@ from pyiceberg.table.deletion_vector import (
     deletion_vectors_from_puffin_file,
 )
 from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
+from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
 from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
@@ -142,6 +144,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
     TimeType,
+    UUIDType,
 )
 from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
@@ -1344,6 +1347,12 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
       child 0, key: large_string not null
       child 1, value: large_string not null"""
     )
+
+
+def test_projection_last_updated_sequence_number_not_supported(file_int: str) -> None:
+    schema = Schema(NestedField(1, "id", IntegerType(), required=False), LAST_UPDATED_SEQUENCE_NUMBER)
+    with pytest.raises(NotImplementedError, match="Reading _last_updated_sequence_number is not yet supported"):
+        project(schema, [file_int])
 
 
 def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None:
@@ -2960,6 +2969,29 @@ def test_stats_aggregator_update_max(vals: list[Any], primitive_type: PrimitiveT
 
 
 @pytest.mark.parametrize(
+    "vals, primitive_type",
+    [
+        ([0.0, -0.0], DoubleType()),
+        ([-0.0, 0.0], DoubleType()),
+        ([0.0, -0.0], FloatType()),
+        ([-0.0, 0.0], FloatType()),
+    ],
+)
+def test_stats_aggregator_orders_negative_zero_below_zero(vals: list[float], primitive_type: PrimitiveType) -> None:
+    # min/max keep whichever zero came first, but the serialized bounds must
+    # order -0.0 below 0.0, whichever order the values arrive in
+    stats_min = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+    stats_max = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+
+    for val in vals:
+        stats_min.update_min(val)
+        stats_max.update_max(val)
+
+    assert stats_min.min_as_bytes() == to_bytes(primitive_type, -0.0)
+    assert stats_max.max_as_bytes() == to_bytes(primitive_type, 0.0)
+
+
+@pytest.mark.parametrize(
     "iceberg_type, physical_type_string",
     [
         # Exact match
@@ -3476,6 +3508,49 @@ def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) ->
     assert sorted(written.to_pylist(), key=str) == sorted(rows, key=str)
 
 
+def test_determine_partitions_with_uuid_column() -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="uuid"))
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3, 4], type=pa.int64()),
+            "uuid": pa.array([uuid.UUID(int=1).bytes, uuid.UUID(int=2).bytes, uuid.UUID(int=1).bytes, None], type=pa.uuid()),
+        }
+    )
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    # The partition values are the 16 bytes of each UUID
+    rows_by_partition = {p.partition_key.partition[0]: sorted(p.arrow_table_partition["id"].to_pylist()) for p in partitions}
+    assert rows_by_partition == {uuid.UUID(int=1).bytes: [1, 3], uuid.UUID(int=2).bytes: [2], None: [4]}
+    # The written data keeps the uuid type
+    assert all(p.arrow_table_partition.schema.field("uuid").type == pa.uuid() for p in partitions)
+
+
+def test_append_uuid_to_table_partitioned_on_uuid(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="uuid"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_uuid_partitioned", schema=schema, partition_spec=spec)
+
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "uuid": pa.array([uuid.UUID(int=1).bytes, uuid.UUID(int=2).bytes, None], type=pa.uuid()),
+        }
+    )
+    table.append(arrow_table)
+
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+    assert {task.file.partition[0] for task in table.scan().plan_files()} == {uuid.UUID(int=1), uuid.UUID(int=2), None}
+
+
 def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="id", field_type=LongType(), required=False),
@@ -3503,6 +3578,27 @@ def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> Non
 
     assert len(table.inspect.partitions()) == 2
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+
+
+def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="event_time", field_type=TimeType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=BucketTransform(4), name="event_time_bucket"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_bucketed_by_time", schema=schema, partition_spec=spec)
+
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "event_time": pa.array([time(9, 30), time(22, 31, 8), None], type=pa.time64("us")),
+        }
+    )
+    table.append(arrow_table)
+
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+    assert table.scan(row_filter=EqualTo("event_time", "22:31:08")).to_arrow()["id"].to_pylist() == [2]
 
 
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
@@ -3814,6 +3910,50 @@ def test_write_file_parquet_round_trip(tmp_path: Path, table_schema_simple: Sche
     result = ds.dataset(data_file.file_path.replace("file://", "")).to_table()
     assert result.num_rows == 3
     assert result.column_names == ["foo", "bar", "baz"]
+
+
+def test_write_file_encrypts_parquet_for_encrypted_table(tmp_path: Path, table_schema_simple: Schema) -> None:
+    from pyarrow.parquet import encryption
+
+    _, task = _simple_write_task_and_metadata(tmp_path, table_schema_simple, {})
+    table_metadata = TableMetadataV3(
+        location=f"file://{tmp_path}",
+        last_column_id=3,
+        current_schema_id=1,
+        schemas=[table_schema_simple],
+        partition_specs=[PartitionSpec()],
+        properties={TableProperties.ENCRYPTION_KEY_ID: "master-1", TableProperties.ENCRYPTION_DATA_KEY_LENGTH: "32"},
+        next_row_id=0,
+    )
+
+    data_file, other_data_file = write_file(
+        io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task, replace(task, task_id=1)])
+    )
+
+    assert data_file.key_metadata is not None and other_data_file.key_metadata is not None
+    key_metadata = StandardKeyMetadata.from_bytes(data_file.key_metadata)
+    other_key_metadata = StandardKeyMetadata.from_bytes(other_data_file.key_metadata)
+    assert len(key_metadata.encryption_key) == 32
+    assert key_metadata.encryption_key != other_key_metadata.encryption_key
+    assert key_metadata.aad_prefix != other_key_metadata.aad_prefix
+    file_path = data_file.file_path.removeprefix("file://")
+    with open(file_path, "rb") as f:
+        assert f.read(4) == b"PARE"
+
+    with pytest.raises(OSError, match="AAD prefix used for file encryption, but not stored in file"):
+        pq.read_table(file_path, decryption_properties=encryption.create_decryption_properties(key_metadata.encryption_key))
+
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=AlwaysTrue(),
+        projected_schema=table_schema_simple,
+        table_schema=table_schema_simple,
+        projected_field_ids={1, 2, 3},
+        positional_deletes=None,
+        case_sensitive=True,
+    )
+    assert pa.Table.from_batches(batches).to_pydict() == {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, True]}
 
 
 def test__to_requested_schema_timestamps(
@@ -4362,6 +4502,64 @@ def test_task_to_record_batches_keeps_nan_rows_for_nan_sensitive_filters(tmpdir:
             )
             actual_ids = [value for batch in result_batches for value in batch.column(0).to_pylist()]
             assert actual_ids == expected_ids, f"{iceberg_type}: {row_filter}"
+
+
+@pytest.mark.parametrize(
+    "stored_row_ids, first_row_id, deleted_positions, row_filter, expected",
+    [
+        # Row IDs are inherited from the first row ID plus the position
+        (None, 100, None, AlwaysTrue(), [(1, 100), (2, 101), (3, 102), (4, 103), (5, 104)]),
+        # Row IDs stored in the file take precedence
+        ([None, 7, None, 9, None], 100, None, AlwaysTrue(), [(1, 100), (2, 7), (3, 102), (4, 9), (5, 104)]),
+        # Positions are counted before positional deletes are applied
+        (None, 100, [1, 3], AlwaysTrue(), [(1, 100), (3, 102), (5, 104)]),
+        # Positions are counted before the row filter is applied
+        (None, 100, None, GreaterThan("id", 2), [(3, 102), (4, 103), (5, 104)]),
+        (None, 100, [1, 3], GreaterThan("id", 2), [(3, 102), (5, 104)]),
+        # Without a first row ID, row IDs are null even when stored in the file
+        ([None, 7, None, 9, None], None, None, AlwaysTrue(), [(1, None), (2, None), (3, None), (4, None), (5, None)]),
+    ],
+)
+def test_task_to_record_batches_row_ids(
+    tmpdir: str,
+    stored_row_ids: list[int | None] | None,
+    first_row_id: int | None,
+    deleted_positions: list[int] | None,
+    row_filter: BooleanExpression,
+    expected: list[tuple[int, int | None]],
+) -> None:
+    from pyiceberg.expressions.visitors import bind
+
+    fields = [pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]
+    columns = [pa.array([1, 2, 3, 4, 5], type=pa.int32())]
+    if stored_row_ids is not None:
+        fields.append(
+            pa.field(ROW_ID.name, pa.int64(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: str(ROW_ID.field_id)})
+        )
+        columns.append(pa.array(stored_row_ids, type=pa.int64()))
+    arrow_schema = pa.schema(fields)
+    data_file = _write_table_to_data_file(f"{tmpdir}/row_ids.parquet", arrow_schema, pa.table(columns, schema=arrow_schema))
+    data_file.first_row_id = first_row_id
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    projected_schema = Schema(*table_schema.fields, ROW_ID)
+    positional_deletes = [pa.chunked_array([pa.array(deleted_positions, type=pa.int64())])] if deleted_positions else None
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, row_filter, case_sensitive=True),
+            projected_schema=projected_schema,
+            table_schema=table_schema,
+            projected_field_ids={1, ROW_ID.field_id},
+            positional_deletes=positional_deletes,
+            case_sensitive=True,
+        )
+    )
+
+    result = pa.Table.from_batches(result_batches)
+    assert result.schema.field(ROW_ID.name).type == pa.int64()
+    assert list(zip(result["id"].to_pylist(), result[ROW_ID.name].to_pylist(), strict=True)) == expected
 
 
 def test_task_to_record_batches_encrypted_by_iceberg_rust() -> None:

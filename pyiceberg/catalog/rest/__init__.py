@@ -361,6 +361,11 @@ def _retry_hook(retry_state: RetryCallState) -> None:
     rest_catalog._refresh_token()  # pylint: disable=protected-access
 
 
+def _user_agent() -> str:
+    """Return the User-Agent recommended by the REST catalog spec, for example `pyiceberg/0.11.0 (cpython 3.11.4)`."""
+    return f"pyiceberg/{__version__} ({platform.python_implementation().lower()} {platform.python_version()})"
+
+
 _RETRY_ARGS = {
     "retry": retry_if_exception_type((AuthorizationExpiredError, UnauthorizedError)),
     "stop": stop_after_attempt(2),
@@ -1198,9 +1203,8 @@ class RestCatalog(Catalog):
 
     def _response_to_staged_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> StagedTable:
         # Per Iceberg spec: storage-credentials take precedence over config
-        credential_config = self._resolve_storage_credentials(
-            table_response.storage_credentials, table_response.metadata_location
-        )
+        credential_location = table_response.metadata_location or f"{table_response.metadata.location.rstrip('/')}/"
+        credential_config = self._resolve_storage_credentials(table_response.storage_credentials, credential_location)
         return StagedTable(
             identifier=identifier_tuple,
             metadata_location=table_response.metadata_location,  # type: ignore
@@ -1233,9 +1237,7 @@ class RestCatalog(Catalog):
         header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
-        session.headers["User-Agent"] = (
-            f"pyiceberg/{__version__} ({platform.python_implementation().lower()} {platform.python_version()})"
-        )
+        session.headers["User-Agent"] = _user_agent()
         session.headers["X-Client-Version"] = f"PyIceberg {__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
