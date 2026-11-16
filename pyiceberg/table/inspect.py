@@ -40,7 +40,7 @@ ALWAYS_TRUE = AlwaysTrue()
 
 
 def _readable_bound(field_type: PrimitiveType, bound: bytes | None) -> Any | None:
-    return from_bytes(field_type, bound) if bound is not None else None
+    return _storage_value(from_bytes(field_type, bound)) if bound is not None else None
 
 
 def _storage_type(data_type: pa.DataType) -> pa.DataType:
@@ -68,7 +68,7 @@ def _from_pylist(rows: Iterable[dict[str, Any]], schema: pa.Schema) -> pa.Table:
 
 
 def _storage_value(value: Any) -> Any:
-    """Return a partition value in its storage form, where a UUID is its 16 bytes."""
+    """Return a value in its storage form, where a UUID is its 16 bytes."""
     return value.bytes if isinstance(value, UUID) else value
 
 
