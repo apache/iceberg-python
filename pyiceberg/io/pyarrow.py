@@ -2749,6 +2749,7 @@ def data_file_statistics_from_parquet_metadata(
     col_aggs = {}
 
     invalidate_col: set[int] = set()
+    invalidate_null_counts: set[int] = set()
     without_bounds: set[int] = set()
     for r in range(parquet_metadata.num_row_groups):
         # References:
@@ -2785,6 +2786,8 @@ def data_file_statistics_from_parquet_metadata(
 
                     if statistics.has_null_count:
                         null_value_counts[field_id] = null_value_counts.get(field_id, 0) + statistics.null_count
+                    else:
+                        invalidate_null_counts.add(field_id)
 
                     if stats_col.mode == MetricsMode(MetricModeTypes.COUNTS):
                         continue
@@ -2829,6 +2832,9 @@ def data_file_statistics_from_parquet_metadata(
 
     for field_id in invalidate_col:
         col_aggs.pop(field_id, None)
+        null_value_counts.pop(field_id, None)
+
+    for field_id in invalidate_null_counts:
         null_value_counts.pop(field_id, None)
 
     for field_id in without_bounds:
