@@ -237,7 +237,15 @@ def test_micros_to_days() -> None:
 
 
 def test_days_to_date() -> None:
-    for days, expected in [(0, "1970-01-01"), (31, "1970-02-01"), (-1, "1969-12-31")]:
+    for days, expected in [
+        (0, "1970-01-01"),
+        (31, "1970-02-01"),
+        (-1, "1969-12-31"),
+        # Proleptic Gregorian (per the Iceberg spec) has no gap at the 1582 Julian/Gregorian switch.
+        (-141438, "1582-10-04"),
+        (-141437, "1582-10-05"),
+        (-141427, "1582-10-15"),
+    ]:
         assert days_to_date(days).isoformat() == expected
 
 
@@ -267,13 +275,18 @@ def test_to_human_time() -> None:
 
 
 def test_to_human_timestamp() -> None:
-    for micros, expected in [(0, "1970-01-01T00:00:00"), (1_740_342_104_375_612, "2025-02-23T20:21:44.375612")]:
+    for micros, expected in [
+        (0, "1970-01-01T00:00:00"),
+        (-1, "1969-12-31T23:59:59.999999"),
+        (1_740_342_104_375_612, "2025-02-23T20:21:44.375612"),
+    ]:
         assert to_human_timestamp(micros) == expected
 
 
 def test_to_human_timestamptz() -> None:
     for micros, expected in [
         (0, "1970-01-01T00:00:00+00:00"),
+        (-1, "1969-12-31T23:59:59.999999+00:00"),
         (1_740_342_104_375_612, "2025-02-23T20:21:44.375612+00:00"),
     ]:
         assert to_human_timestamptz(micros) == expected
