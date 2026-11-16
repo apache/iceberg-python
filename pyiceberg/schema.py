@@ -159,9 +159,22 @@ class Schema(IcebergBaseModel):
     def _lazy_name_to_id_lower(self) -> dict[str, int]:
         """Return an index of lower-case field names to field IDs.
 
+        Raises:
+            ValueError: When two fields have names that differ only by case.
+
         This is calculated once when called for the first time. Subsequent calls to this method will use a cached index.
         """
-        return {name.lower(): field_id for name, field_id in self._name_to_id.items()}
+        index: dict[str, int] = {}
+        for name, field_id in self._name_to_id.items():
+            lower_name = name.lower()
+            # Names that map to the same field ID (for example, short names of list element structs) are not collisions
+            if lower_name in index and index[lower_name] != field_id:
+                raise ValueError(
+                    f"Cannot build lower case index: {self._lazy_id_to_name[index[lower_name]]} and "
+                    f"{self._lazy_id_to_name[field_id]} collide"
+                )
+            index[lower_name] = field_id
+        return index
 
     @cached_property
     def _lazy_id_to_name(self) -> dict[int, str]:
@@ -207,13 +220,25 @@ class Schema(IcebergBaseModel):
                 raise ValueError(f"Could not find field with id: {name_or_id}")
             return self._lazy_id_to_field[name_or_id]
 
+        field = self._find_field_or_none(name_or_id, case_sensitive)
+        if field is None:
+            raise ValueError(f"Could not find field with name {name_or_id}, case_sensitive={case_sensitive}")
+
+        return field
+
+    def _find_field_or_none(self, name: str, case_sensitive: bool) -> NestedField | None:
+        """Return the field with the given name, or None when no field has that name.
+
+        Raises:
+            ValueError: When case_sensitive is False and two fields have names that differ only by case.
+        """
         if case_sensitive:
-            field_id = self._name_to_id.get(name_or_id)
+            field_id = self._name_to_id.get(name)
         else:
-            field_id = self._lazy_name_to_id_lower.get(name_or_id.lower())
+            field_id = self._lazy_name_to_id_lower.get(name.lower())
 
         if field_id is None:
-            raise ValueError(f"Could not find field with name {name_or_id}, case_sensitive={case_sensitive}")
+            return None
 
         return self._lazy_id_to_field[field_id]
 

@@ -382,6 +382,59 @@ def test_table_scan_projection_single_column_case_sensitive(table_v2: Table) -> 
     assert projection_schema.schema_id == 1
 
 
+def test_case_insensitive_operations_raise_on_case_variant_columns(catalog: Catalog) -> None:
+    """A case-insensitive lookup of ID on a table with ID and id raises, instead of acting on the id column."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "ID", LongType(), required=False), NestedField(2, "id", LongType(), required=False))
+    table = catalog.create_table("default.case_variants", schema=schema)
+    table.append(pa.table({"ID": pa.array([5, 6], pa.int64()), "id": pa.array([7, 5], pa.int64())}))
+    collision = "Cannot build lower case index: ID and id collide"
+
+    with pytest.raises(ValueError, match=collision):
+        table.delete("ID = 5", case_sensitive=False)
+    with pytest.raises(ValueError, match=collision):
+        table.scan(row_filter=EqualTo("ID", 5), case_sensitive=False).to_arrow()
+    with pytest.raises(ValueError, match=collision):
+        table.update_sort_order(case_sensitive=False).asc("ID", IdentityTransform()).commit()
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.delete_column("ID")
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.rename_column("ID", "key")
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.add_column("Id", LongType())
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.move_first("ID")
+
+    reloaded = catalog.load_table("default.case_variants")
+    assert reloaded.schema() == schema
+    assert sorted((row["ID"], row["id"]) for row in reloaded.scan().to_arrow().to_pylist()) == [(5, 7), (6, 5)]
+
+
+def test_case_sensitive_and_unambiguous_operations_are_unchanged(catalog: Catalog) -> None:
+    """Exact-case lookups still resolve each column on a table with ID and id, and unambiguous names work case-insensitively."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "ID", LongType(), required=False), NestedField(2, "id", LongType(), required=False))
+    table = catalog.create_table("default.case_variants_exact", schema=schema)
+    table.append(pa.table({"ID": pa.array([5, 6], pa.int64()), "id": pa.array([7, 5], pa.int64())}))
+
+    assert table.scan(row_filter=EqualTo("ID", 5)).to_arrow()["id"].to_pylist() == [7]
+    table.delete("ID = 5")
+    assert sorted((row["ID"], row["id"]) for row in table.scan().to_arrow().to_pylist()) == [(6, 5)]
+
+    unambiguous = catalog.create_table("default.unambiguous", schema=Schema(NestedField(1, "ID", LongType(), required=False)))
+    unambiguous.append(pa.table({"ID": pa.array([5, 6], pa.int64())}))
+    unambiguous.delete("id = 5", case_sensitive=False)
+    assert unambiguous.scan().to_arrow()["ID"].to_pylist() == [6]
+
+
 def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
     scan = table_v2.scan()
 
