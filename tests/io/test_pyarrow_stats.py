@@ -44,11 +44,13 @@ from pyiceberg.avro import (
     STRUCT_INT32,
     STRUCT_INT64,
 )
-from pyiceberg.expressions import IsNull
+from pyiceberg.expressions import IsNull, NotNaN
 from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator
 from pyiceberg.io.pyarrow import (
     MetricModeTypes,
     MetricsMode,
+    ParquetFormatWriter,
+    PyArrowFileIO,
     PyArrowStatisticsCollector,
     compute_statistics_plan,
     data_file_statistics_from_parquet_metadata,
@@ -67,6 +69,7 @@ from pyiceberg.table.metadata import (
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BooleanType,
+    DoubleType,
     FloatType,
     IntegerType,
     NestedField,
@@ -323,6 +326,63 @@ def test_unknown_row_group_null_count_is_omitted(unknown_row_group: int) -> None
         **statistics.to_serialized_dict(),
     )
     assert _InclusiveMetricsEvaluator(schema, IsNull("value")).eval(data_file)
+
+
+def test_nan_value_counts_are_written(tmp_path) -> None:
+    schema = Schema(NestedField(1, "reading", DoubleType(), required=False))
+    arrow_schema = schema_to_pyarrow(schema)
+    table = pa.table(
+        {"reading": pa.array([1.5, float("nan"), float("nan"), None], type=pa.float64())},
+        schema=arrow_schema,
+    )
+
+    writer = ParquetFormatWriter(PyArrowFileIO().new_output(str(tmp_path / "nan.parquet")), file_schema=schema, properties={})
+    writer.write(table)
+    statistics = writer.close()
+
+    # Two non-null NaNs; nulls are counted separately and excluded from the NaN count
+    assert statistics.nan_value_counts == {1: 2}
+
+    data_file = DataFile.from_args(
+        file_path="nan.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        file_size_in_bytes=1,
+        **statistics.to_serialized_dict(),
+    )
+    # The file holds non-NaN values, so a not_nan filter must not prune it
+    assert _InclusiveMetricsEvaluator(schema, NotNaN("reading")).eval(data_file)
+
+
+def test_nan_value_counts_are_written_across_row_groups(tmp_path) -> None:
+    schema = Schema(NestedField(1, "reading", DoubleType(), required=False))
+    arrow_schema = schema_to_pyarrow(schema)
+    table = pa.table(
+        {
+            "reading": pa.array(
+                [float("nan"), float("nan")],
+                type=pa.float64(),
+            )
+        },
+        schema=arrow_schema,
+    )
+
+    writer = ParquetFormatWriter(PyArrowFileIO().new_output(str(tmp_path / "allnan.parquet")), file_schema=schema, properties={})
+    writer.write(table.slice(0, 1))
+    writer.write(table.slice(1, 1))
+    statistics = writer.close()
+
+    assert statistics.nan_value_counts == {1: 2}
+
+    data_file = DataFile.from_args(
+        file_path="allnan.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        file_size_in_bytes=1,
+        **statistics.to_serialized_dict(),
+    )
+    # Every non-null value is NaN, so a not_nan filter prunes the file
+    assert not _InclusiveMetricsEvaluator(schema, NotNaN("reading")).eval(data_file)
 
 
 def test_bounds() -> None:

@@ -2721,6 +2721,7 @@ def data_file_statistics_from_parquet_metadata(
     parquet_metadata: pq.FileMetaData,
     stats_columns: dict[int, StatisticsCollector],
     parquet_column_mapping: dict[str, int],
+    table_nan_value_counts: dict[int, int] | None = None,
 ) -> DataFileStatistics:
     """
     Compute and return DataFileStatistics that includes the following.
@@ -2738,6 +2739,9 @@ def data_file_statistics_from_parquet_metadata(
         stats_columns (Dict[int, StatisticsCollector]): The statistics gathering plan. It is required to
             set the mode for column metrics collection
         parquet_column_mapping (Dict[str, int]): The mapping of the parquet file name to the field ID
+        table_nan_value_counts (Dict[int, int] | None): NaN counts computed from the written table itself.
+            The parquet statistics API does not expose NaN counts, so the writer supplies them; defaults
+            to no NaN counts being reported.
     """
     column_sizes: dict[int, int] = {}
     value_counts: dict[int, int] = {}
@@ -2845,7 +2849,7 @@ def data_file_statistics_from_parquet_metadata(
         column_sizes=column_sizes,
         value_counts=value_counts,
         null_value_counts=null_value_counts,
-        nan_value_counts=nan_value_counts,
+        nan_value_counts=table_nan_value_counts if table_nan_value_counts is not None else nan_value_counts,
         column_aggregates=col_aggs,
         split_offsets=split_offsets,
     )
@@ -2866,6 +2870,7 @@ class ParquetFormatWriter(FileFormatWriter):
         self._properties = properties
         self._writer: pq.ParquetWriter | None = None
         self._fos: OutputStream | None = None
+        self._nan_value_counts: dict[int, int] = {}
         self._parquet_writer_kwargs = _get_parquet_writer_kwargs(properties)
         self._parquet_writer_kwargs["encryption_properties"] = _parquet_encryption_properties(key_metadata)
         self._row_group_size = property_as_int(
@@ -2889,6 +2894,14 @@ class ParquetFormatWriter(FileFormatWriter):
                 raise
             self._fos = fos
         self._writer.write(table, row_group_size=self._row_group_size)
+        # The parquet statistics API does not expose NaN counts, so they are counted from the data
+        # itself. `is_nan` is null on nulls, and `sum` skips nulls, matching the spec's NaN-count
+        # semantics of counting non-null NaN values.
+        for field in self._file_schema.fields:
+            if isinstance(field.field_type, (FloatType, DoubleType)):
+                nan_count = pc.sum(pc.is_nan(table.column(field.name)), min_count=0).as_py()
+                if nan_count:
+                    self._nan_value_counts[field.field_id] = self._nan_value_counts.get(field.field_id, 0) + nan_count
 
     def close(self) -> DataFileStatistics:
         if self._result is not None:
@@ -2901,6 +2914,7 @@ class ParquetFormatWriter(FileFormatWriter):
                 parquet_metadata=self._writer.writer.metadata,
                 stats_columns=compute_statistics_plan(self._file_schema, self._properties),
                 parquet_column_mapping=parquet_path_to_id_mapping(self._file_schema),
+                table_nan_value_counts=self._nan_value_counts,
             )
         return self._result
 
