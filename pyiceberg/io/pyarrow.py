@@ -1801,6 +1801,14 @@ def _task_to_record_batches(
             (index for index, field in enumerate(projected_schema.fields) if field.field_id == ROW_ID.field_id), None
         )
         filter_after_read = bool(positional_deletes) or row_id_index is not None
+        last_updated_index = next(
+            (
+                index
+                for index, field in enumerate(projected_schema.fields)
+                if field.field_id == LAST_UPDATED_SEQUENCE_NUMBER.field_id
+            ),
+            None,
+        )
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
@@ -1856,6 +1864,10 @@ def _task_to_record_batches(
             )
             if row_id_index is not None and positions is not None:
                 result_batch = _assign_row_ids(result_batch, row_id_index, positions, task.file.first_row_id)
+            if last_updated_index is not None:
+                result_batch = _assign_last_updated_sequence_numbers(
+                    result_batch, last_updated_index, task.file.first_row_id, task.data_sequence_number
+                )
             yield result_batch
 
 
@@ -1869,6 +1881,23 @@ def _assign_row_ids(batch: pa.RecordBatch, row_id_index: int, positions: pa.Arra
     else:
         row_ids = pc.coalesce(batch.column(row_id_index), pc.add(positions, pa.scalar(first_row_id, type=pa.int64())))
     return batch.set_column(row_id_index, batch.schema.field(row_id_index), row_ids)
+
+
+def _assign_last_updated_sequence_numbers(
+    batch: pa.RecordBatch, last_updated_index: int, first_row_id: int | None, data_sequence_number: int | None
+) -> pa.RecordBatch:
+    """Replace null last updated sequence numbers with the data sequence number of the file.
+
+    When the data file has no first row ID, every last updated sequence number is null.
+    """
+    if first_row_id is None:
+        sequence_numbers = pa.nulls(len(batch), type=pa.int64())
+    elif data_sequence_number is None:
+        # REST scan planning does not return the data sequence number
+        raise NotImplementedError(f"Reading {LAST_UPDATED_SEQUENCE_NUMBER.name} requires the data sequence number of the file")
+    else:
+        sequence_numbers = pc.coalesce(batch.column(last_updated_index), pa.scalar(data_sequence_number, type=pa.int64()))
+    return batch.set_column(last_updated_index, batch.schema.field(last_updated_index), sequence_numbers)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1937,9 +1966,6 @@ class ArrowScan:
         *,
         dictionary_columns: tuple[str, ...] = (),
     ) -> None:
-        if any(field.field_id == LAST_UPDATED_SEQUENCE_NUMBER.field_id for field in projected_schema.fields):
-            # The data sequence number is not carried on the scan task yet
-            raise NotImplementedError(f"Reading {LAST_UPDATED_SEQUENCE_NUMBER.name} is not yet supported")
         self._table_metadata = table_metadata
         self._io = io
         self._projected_schema = projected_schema

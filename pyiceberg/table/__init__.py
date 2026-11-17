@@ -2328,16 +2328,19 @@ class FileScanTask(ScanTask):
     file: DataFile
     delete_files: set[DataFile]
     residual: BooleanExpression
+    data_sequence_number: int | None
 
     def __init__(
         self,
         data_file: DataFile,
         delete_files: set[DataFile] | None = None,
         residual: BooleanExpression = ALWAYS_TRUE,
+        data_sequence_number: int | None = None,
     ) -> None:
         self.file = data_file
         self.delete_files = delete_files or set()
         self.residual = residual
+        self.data_sequence_number = data_sequence_number
 
     @staticmethod
     def from_rest_response(
@@ -2996,6 +2999,7 @@ class ManifestGroupPlanner:
                     partition_key=data_entry.data_file.partition,
                 ),
                 residual=ALWAYS_TRUE if self._ignore_residuals else residual_for(data_entry.data_file),
+                data_sequence_number=data_entry.sequence_number,
             )
             for data_entry in data_entries
         ]

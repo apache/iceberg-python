@@ -1344,12 +1344,6 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
     )
 
 
-def test_projection_last_updated_sequence_number_not_supported(file_int: str) -> None:
-    schema = Schema(NestedField(1, "id", IntegerType(), required=False), LAST_UPDATED_SEQUENCE_NUMBER)
-    with pytest.raises(NotImplementedError, match="Reading _last_updated_sequence_number is not yet supported"):
-        project(schema, [file_int])
-
-
 def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None:
     schema = Schema(
         # A new ID
@@ -4499,6 +4493,75 @@ def test_task_to_record_batches_row_ids(
     result = pa.Table.from_batches(result_batches)
     assert result.schema.field(ROW_ID.name).type == pa.int64()
     assert list(zip(result["id"].to_pylist(), result[ROW_ID.name].to_pylist(), strict=True)) == expected
+
+
+def _read_last_updated_sequence_numbers(
+    tmpdir: str, stored_sequence_numbers: list[int | None] | None, first_row_id: int | None, data_sequence_number: int | None
+) -> list[int | None]:
+    fields = [pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]
+    columns = [pa.array([1, 2, 3], type=pa.int32())]
+    if stored_sequence_numbers is not None:
+        fields.append(
+            pa.field(
+                LAST_UPDATED_SEQUENCE_NUMBER.name,
+                pa.int64(),
+                nullable=True,
+                metadata={PYARROW_PARQUET_FIELD_ID_KEY: str(LAST_UPDATED_SEQUENCE_NUMBER.field_id)},
+            )
+        )
+        columns.append(pa.array(stored_sequence_numbers, type=pa.int64()))
+    arrow_schema = pa.schema(fields)
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/last_updated_sequence_numbers.parquet", arrow_schema, pa.table(columns, schema=arrow_schema)
+    )
+    data_file.first_row_id = first_row_id
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    projected_schema = Schema(*table_schema.fields, ROW_ID, LAST_UPDATED_SEQUENCE_NUMBER)
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file, data_sequence_number=data_sequence_number),
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=projected_schema,
+            table_schema=table_schema,
+            projected_field_ids={1, ROW_ID.field_id, LAST_UPDATED_SEQUENCE_NUMBER.field_id},
+            positional_deletes=None,
+            case_sensitive=True,
+        )
+    )
+
+    result = pa.Table.from_batches(result_batches)
+    assert result.schema.field(LAST_UPDATED_SEQUENCE_NUMBER.name).type == pa.int64()
+    return result[LAST_UPDATED_SEQUENCE_NUMBER.name].to_pylist()
+
+
+@pytest.mark.parametrize(
+    "stored_sequence_numbers, first_row_id, data_sequence_number, expected",
+    [
+        # Last updated sequence numbers are inherited from the data sequence number of the file
+        (None, 100, 5, [5, 5, 5]),
+        # Last updated sequence numbers stored in the file take precedence
+        ([None, 2, None], 100, 5, [5, 2, 5]),
+        # Without a first row ID, last updated sequence numbers are null even when stored in the file
+        ([None, 2, None], None, 5, [None, None, None]),
+        # Without a first row ID, the data sequence number is not needed
+        ([None, 2, None], None, None, [None, None, None]),
+    ],
+)
+def test_task_to_record_batches_last_updated_sequence_numbers(
+    tmpdir: str,
+    stored_sequence_numbers: list[int | None] | None,
+    first_row_id: int | None,
+    data_sequence_number: int | None,
+    expected: list[int | None],
+) -> None:
+    assert _read_last_updated_sequence_numbers(tmpdir, stored_sequence_numbers, first_row_id, data_sequence_number) == expected
+
+
+def test_task_to_record_batches_last_updated_sequence_numbers_without_data_sequence_number(tmpdir: str) -> None:
+    with pytest.raises(NotImplementedError, match="requires the data sequence number"):
+        _read_last_updated_sequence_numbers(tmpdir, [None, 2, None], first_row_id=100, data_sequence_number=None)
 
 
 def test_task_to_record_batches_encrypted_by_iceberg_rust() -> None:
