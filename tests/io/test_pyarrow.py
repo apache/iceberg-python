@@ -2253,6 +2253,39 @@ def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tm
     }
 
 
+def test_read_all_delete_files_only_loads_positions_for_tasks_it_is_attached_to(tmp_path: Path) -> None:
+    """A delete file that names rows of two data files only applies to the data files whose task has it attached."""
+    first_path, second_path = f"{tmp_path}/data-0.parquet", f"{tmp_path}/data-1.parquet"
+    old_path, new_path = f"{tmp_path}/old-deletes.parquet", f"{tmp_path}/new-deletes.parquet"
+    pq.write_table(pa.table({"file_path": [first_path, second_path], "pos": [0, 0]}), old_path)
+    pq.write_table(pa.table({"file_path": [first_path], "pos": [1]}), new_path)
+    old_deletes = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES, file_path=old_path, file_format=FileFormat.PARQUET, record_count=2
+    )
+    new_deletes = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES, file_path=new_path, file_format=FileFormat.PARQUET, record_count=1
+    )
+    first_data = DataFile.from_args(
+        content=DataFileContent.DATA, file_path=first_path, file_format=FileFormat.PARQUET, record_count=10
+    )
+    second_data = DataFile.from_args(
+        content=DataFileContent.DATA, file_path=second_path, file_format=FileFormat.PARQUET, record_count=10
+    )
+    # (delete files attached to the first task, delete files attached to the second task) -> expected positions
+    shapes = [
+        (set(), {old_deletes}, {second_path: [pa.chunked_array([[0]])]}),
+        ({old_deletes}, {old_deletes}, {first_path: [pa.chunked_array([[0]])], second_path: [pa.chunked_array([[0]])]}),
+        # The first data file has a newer delete file too; the old one must not add its row 0 to it.
+        ({new_deletes}, {old_deletes}, {first_path: [pa.chunked_array([[1]])], second_path: [pa.chunked_array([[0]])]}),
+    ]
+    for first_task_deletes, second_task_deletes, expected in shapes:
+        tasks = [
+            FileScanTask(data_file=first_data, delete_files=first_task_deletes),
+            FileScanTask(data_file=second_data, delete_files=second_task_deletes),
+        ]
+        assert _read_all_delete_files(PyArrowFileIO(), tasks) == expected
+
+
 @pytest.mark.parametrize("selected_indices", [(0, 1, 2, 3, 4, 5), (0, 3, 5)])
 @pytest.mark.parametrize("planning_mode", ["local", "rest"])
 def test_read_all_delete_files_from_external_packed_deletion_vectors(

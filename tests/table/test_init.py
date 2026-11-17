@@ -2470,6 +2470,40 @@ def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> Non
     assert table.scan().to_arrow().num_rows == 0
 
 
+def test_position_delete_respects_sequence_number_of_readded_file(catalog: Catalog) -> None:
+    """A position delete that names two data files applies to a file only if the file is not newer than the delete."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "id", LongType(), required=False))
+    shapes = [
+        # The delete predates the re-registered file P, so it keeps P's row 0 but still removes Q's row 0.
+        (True, [*range(10), *range(101, 110)]),
+        # The delete is committed after P is re-registered, so it removes row 0 of both files.
+        (False, [*range(1, 10), *range(101, 110)]),
+    ]
+    for index, (delete_before_readd, expected) in enumerate(shapes):
+        table = catalog.create_table(
+            f"default.readded_position_delete_{index}", schema=schema, properties={"format-version": "2"}
+        )
+        table.append(pa.table({"id": pa.array(range(10), pa.int64())}))
+        table.append(pa.table({"id": pa.array(range(100, 110), pa.int64())}))
+        p_path = next(task.file.file_path for task in table.scan(row_filter="id = 0").plan_files())
+        q_path = next(task.file.file_path for task in table.scan(row_filter="id = 100").plan_files())
+        rows = [(p_path, 0), (q_path, 0)]
+
+        if delete_before_readd:
+            commit_partition_position_delete(table, Record(), rows)
+        table.delete("id < 10")  # removes P, the whole file
+        table.add_files([p_path])  # registers P again with a newer data sequence number
+        if not delete_before_readd:
+            commit_partition_position_delete(table, Record(), rows)
+
+        assert sorted(table.scan().to_arrow()["id"].to_pylist()) == expected
+        assert table.scan().count() == len(expected)
+        assert sorted(table.scan(row_filter="id < 10").to_arrow()["id"].to_pylist()) == [i for i in expected if i < 10]
+
+
 def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalog) -> None:
     """Rewriting a file applies all of its delete files, not only those whose bounds can match the delete filter."""
     import pyarrow as pa
@@ -2481,7 +2515,7 @@ def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalo
     data_file = next(iter(table.scan().plan_files())).file
 
     # The delete file stores the deleted row (2, 'b'), so a scan for k = 1 skips it.
-    commit_partition_position_delete(table, Record(), data_file.file_path, pos=1, row={"k": 2, "v": "b"})
+    commit_partition_position_delete(table, Record(), [(data_file.file_path, 1)], row={"k": 2, "v": "b"})
     assert [task.delete_files for task in table.scan(row_filter="k = 1").plan_files()] == [set()]
 
     table.delete("k = 1")
