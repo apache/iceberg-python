@@ -204,7 +204,7 @@ def test_new_table_metadata_file_location_invalid_compression_codec() -> None:
         table_properties={TableProperties.METADATA_COMPRESSION: "snappy"},
     )
 
-    with pytest.raises(ValueError, match="snappy"):
+    with pytest.raises(ValueError, match=r"Invalid write\.metadata\.compression-codec: snappy, expected one of none, gzip"):
         provider.new_table_metadata_file_location()
 
 

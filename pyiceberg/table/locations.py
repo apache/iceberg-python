@@ -82,15 +82,18 @@ class LocationProvider(ABC):
         Raises:
             ValueError: If the version is negative, or the metadata compression codec is not supported.
         """
+        from pyiceberg.serializers import METADATA_FILE_EXTENSIONS
         from pyiceberg.table import TableProperties
 
         if new_version < 0:
             raise ValueError(f"Table metadata version: `{new_version}` must be a non-negative integer")
 
         codec = self.table_properties.get(TableProperties.METADATA_COMPRESSION, TableProperties.METADATA_COMPRESSION_DEFAULT)
-        extension = {"none": "", "gzip": ".gz"}.get(codec.lower())
+        extension = METADATA_FILE_EXTENSIONS.get(codec.lower())
         if extension is None:
-            raise ValueError(f"Invalid {TableProperties.METADATA_COMPRESSION}: {codec}, expected none or gzip")
+            raise ValueError(
+                f"Invalid {TableProperties.METADATA_COMPRESSION}: {codec}, expected one of {', '.join(METADATA_FILE_EXTENSIONS)}"
+            )
 
         file_name = f"{new_version:05d}-{uuid.uuid4()}{extension}.metadata.json"
         return self.new_metadata_location(file_name)
