@@ -15,8 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from dataclasses import replace
+from pathlib import Path
+
 import pytest
 
+from pyiceberg.encryption.io import EncryptedInputFile
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.stream import (
     _BLOCK_OVERHEAD,
@@ -29,6 +33,7 @@ from pyiceberg.encryption.stream import (
     _encrypt_ags1,
     _stream_block_aad,
 )
+from pyiceberg.io.pyarrow import PyArrowFileIO
 
 KEY = b"0123456789012345"
 AAD_PREFIX = b"0123456789abcdef"
@@ -203,3 +208,29 @@ def test_decrypt_rejects_the_wrong_key() -> None:
 
     with pytest.raises(ValueError, match="wrong decryption key; or corrupt/tampered data"):
         decrypt(stream, key=b"1123456789012345")
+
+
+def test_encrypted_input_file(tmp_path: Path) -> None:
+    plaintext = b"manifest list contents"
+    encrypted = _encrypt_ags1(plaintext, KEY_METADATA)
+    path = tmp_path / "manifest-list.avro"
+    path.write_bytes(encrypted)
+
+    input_file = EncryptedInputFile(PyArrowFileIO().new_input(str(path)), replace(KEY_METADATA, file_length=len(encrypted)))
+
+    assert input_file.location == str(path)
+    assert input_file.exists()
+    assert len(input_file) == len(plaintext)
+    with input_file.open() as stream:
+        assert stream.read() == plaintext
+
+
+def test_encrypted_input_file_rejects_a_truncated_file(tmp_path: Path) -> None:
+    encrypted = _encrypt_ags1(b"manifest list contents", KEY_METADATA)
+    path = tmp_path / "manifest-list.avro"
+    path.write_bytes(encrypted[:-1])
+
+    input_file = EncryptedInputFile(PyArrowFileIO().new_input(str(path)), replace(KEY_METADATA, file_length=len(encrypted)))
+
+    with pytest.raises(ValueError, match="key metadata expects"):
+        input_file.open()

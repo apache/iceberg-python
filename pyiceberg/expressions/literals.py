@@ -26,7 +26,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
-from math import isnan
+from math import isfinite, isnan
 from typing import Any, Generic
 from uuid import UUID
 
@@ -414,6 +414,8 @@ class FloatLiteral(Literal[float]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
+        if not isfinite(self.value):
+            raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
         return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
 
 
@@ -439,6 +441,8 @@ class DoubleLiteral(Literal[float]):
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
+        if not isfinite(self.value):
+            raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
         return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
 
 
@@ -514,12 +518,14 @@ class DecimalLiteral(Literal[Decimal]):
         super().__init__(value, Decimal)
 
     def increment(self) -> Literal[Decimal]:
-        original_scale = abs(int(self.value.as_tuple().exponent))
+        # A Decimal carries the negated scale as its exponent, so a value with a
+        # non-negative exponent (1E+2) has a negative scale and abs() would read it wrong
+        original_scale = -int(self.value.as_tuple().exponent)
         unscaled = decimal_to_unscaled(self.value)
         return DecimalLiteral(unscaled_to_decimal(unscaled + 1, original_scale))
 
     def decrement(self) -> Literal[Decimal]:
-        original_scale = abs(int(self.value.as_tuple().exponent))
+        original_scale = -int(self.value.as_tuple().exponent)
         unscaled = decimal_to_unscaled(self.value)
         return DecimalLiteral(unscaled_to_decimal(unscaled - 1, original_scale))
 

@@ -704,7 +704,7 @@ class DynamoDbCatalog(MetastoreCatalog):
             DYNAMODB_COL_NAMESPACE,
             DYNAMODB_COL_CREATED_AT,
         ]:
-            if prop not in table_dict.keys():
+            if prop not in table_dict:
                 raise NoSuchPropertyException(f"Iceberg required property {prop} is missing: {dynamo_table_item}")
 
         table_type = table_dict[_add_property_prefix(TABLE_TYPE)]

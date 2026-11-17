@@ -62,7 +62,7 @@ services:
       - CATALOG_S3_ENDPOINT=http://object-store:9000
       - CATALOG_JDBC_STRICT__MODE=true
   object-store:
-    image: rustfs/rustfs:1.0.3
+    image: rustfs/rustfs:1.0.4
     container_name: pyiceberg-object-store
     networks:
       iceberg_net:

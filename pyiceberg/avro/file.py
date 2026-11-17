@@ -88,11 +88,10 @@ class AvroFileHeader(Record):
         """Get the file's compression codec algorithm from the file's metadata.
 
         In the case of a null codec, we return a None indicating that we
-        don't need to compress/decompress.
+        don't need to compress/decompress. A file without the avro.codec
+        entry is uncompressed: the Avro specification makes "null" the default.
         """
-        from pyiceberg.table import TableProperties
-
-        codec_name = self.meta.get(AVRO_CODEC_KEY, TableProperties.WRITE_AVRO_COMPRESSION_DEFAULT)
+        codec_name = self.meta.get(AVRO_CODEC_KEY, "null")
         if codec_name not in KNOWN_CODECS:
             raise ValueError(f"Unsupported codec: {codec_name}")
 

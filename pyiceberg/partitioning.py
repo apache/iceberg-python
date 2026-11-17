@@ -110,17 +110,16 @@ class PartitionField(IcebergBaseModel):
     @model_validator(mode="before")
     @classmethod
     def map_source_ids_onto_source_id(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            if "source-ids" in data:
-                if "source-id" in data:
-                    raise ValueError("source-id and source-ids are mutually exclusive")
-                source_ids = data["source-ids"]
-                if isinstance(source_ids, list):
-                    if len(source_ids) == 0:
-                        raise ValueError("Empty source-ids is not allowed")
-                    if len(source_ids) > 1:
-                        raise ValueError("Multi argument transforms are not yet supported")
-                    data["source-id"] = source_ids[0]
+        if isinstance(data, dict) and "source-ids" in data:
+            if "source-id" in data:
+                raise ValueError("source-id and source-ids are mutually exclusive")
+            source_ids = data["source-ids"]
+            if isinstance(source_ids, list):
+                if len(source_ids) == 0:
+                    raise ValueError("Empty source-ids is not allowed")
+                if len(source_ids) > 1:
+                    raise ValueError("Multi argument transforms are not yet supported")
+                data["source-id"] = source_ids[0]
         return data
 
     def __str__(self) -> str:
@@ -300,6 +299,11 @@ def validate_partition_name(
     partition_names: set[str],
 ) -> None:
     """Validate that a partition field name doesn't conflict with schema field names."""
+    if not field_name:
+        raise ValueError("Undefined name")
+    if field_name in partition_names:
+        raise ValueError(f"Partition name has to be unique: {field_name}")
+
     try:
         schema_field = schema.find_field(field_name)
     except ValueError:
@@ -311,14 +315,11 @@ def validate_partition_name(
             raise ValueError(f"Cannot create identity partition sourced from different field in schema: {field_name}")
     else:
         raise ValueError(f"Cannot create partition with a name that exists in schema: {field_name}")
-    if not field_name:
-        raise ValueError("Undefined name")
-    if field_name in partition_names:
-        raise ValueError(f"Partition name has to be unique: {field_name}")
 
 
 def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fresh_schema: Schema) -> PartitionSpec:
     partition_fields = []
+    partition_names: set[str] = set()
     for pos, field in enumerate(spec.fields):
         original_column_name = old_schema.find_column_name(field.source_id)
         if original_column_name is None:
@@ -327,7 +328,8 @@ def assign_fresh_partition_spec_ids(spec: PartitionSpec, old_schema: Schema, fre
         if fresh_field is None:
             raise ValueError(f"Could not find field in fresh schema: {original_column_name}")
 
-        validate_partition_name(field.name, field.transform, fresh_field.field_id, fresh_schema, set())
+        validate_partition_name(field.name, field.transform, fresh_field.field_id, fresh_schema, partition_names)
+        partition_names.add(field.name)
 
         partition_fields.append(
             PartitionField(
@@ -546,8 +548,15 @@ def _(type: IcebergType, value: int | date | None) -> int | None:
 
 
 @_to_partition_representation.register(TimeType)
-def _(type: IcebergType, value: time | None) -> int | None:
-    return time_to_micros(value) if value is not None else None
+def _(type: IcebergType, value: int | time | None) -> int | None:
+    if value is None:
+        return None
+    elif isinstance(value, int):
+        return value
+    elif isinstance(value, time):
+        return time_to_micros(value)
+    else:
+        raise ValueError(f"Type not recognized: {value}")
 
 
 @_to_partition_representation.register(UUIDType)
