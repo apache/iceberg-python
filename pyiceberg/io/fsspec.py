@@ -230,19 +230,27 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "config_kwargs": config_kwargs,
     }
 
+    session_kwargs: dict[str, str] = {}
     if profile_name := get_first_property_value(properties, S3_PROFILE_NAME, AWS_PROFILE_NAME):
         s3_fs_kwargs["profile"] = profile_name
+        session_kwargs["profile"] = profile_name
 
     if s3_additional_kwargs:
         s3_fs_kwargs["s3_additional_kwargs"] = s3_additional_kwargs
 
-    fs = S3FileSystem(**s3_fs_kwargs)
+    if register_events:
+        from aiobotocore.session import AioSession
 
-    for event_name, event_function in register_events.items():
-        fs.s3.meta.events.unregister(event_name, unique_id=1925)
-        fs.s3.meta.events.register_last(event_name, event_function, unique_id=1925)
+        # Register the signer on a session that only this filesystem uses. s3fs caches and shares
+        # the client between threads, and unregistering the signer on a shared client leaves a
+        # window in which a request is sent unsigned.
+        session = AioSession(**session_kwargs)
+        event_emitter = session.get_component("event_emitter")
+        for event_name, event_function in register_events.items():
+            event_emitter.register_last(event_name, event_function, unique_id=1925)
+        s3_fs_kwargs["session"] = session
 
-    return fs
+    return S3FileSystem(**s3_fs_kwargs)
 
 
 def _gs(properties: Properties) -> AbstractFileSystem:
