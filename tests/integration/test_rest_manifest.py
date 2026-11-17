@@ -33,6 +33,17 @@ from pyiceberg.table import Table
 from pyiceberg.typedef import Record
 from pyiceberg.utils.lazydict import LazyDict
 
+# DataFile exposes properties for fields added in newer format versions (e.g. the V3-only
+# first_row_id). A record bound to an older layout does not carry those fields in its positional
+# data, so they are excluded from the serialized dict to match the fields fastavro writes for that
+# layout, keyed by the _data length beyond which each field is absent.
+_DATA_FILE_FIELDS_BY_MIN_DATA_LEN = {
+    "first_row_id": 17,
+    "referenced_data_file": 18,
+    "content_offset": 19,
+    "content_size_in_bytes": 20,
+}
+
 
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
@@ -49,10 +60,12 @@ def todict(obj: Any, spec_keys: list[str]) -> Any:
     elif hasattr(obj, "__iter__") and not isinstance(obj, str) and not isinstance(obj, bytes):
         return [todict(v, spec_keys) for v in obj]
     elif hasattr(obj, "__dict__"):
+        min_data_len = _DATA_FILE_FIELDS_BY_MIN_DATA_LEN if isinstance(obj, DataFile) else {}
+        data_len = len(obj._data)
         return {
             key: todict(value, spec_keys)
             for key, value in inspect.getmembers(obj)
-            if not callable(value) and not key.startswith("_")
+            if not callable(value) and not key.startswith("_") and data_len >= min_data_len.get(key, 0)
         }
     else:
         return obj
