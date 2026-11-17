@@ -44,7 +44,7 @@ class UpdatePartitionStatistics(UpdateTableMetadata["UpdatePartitionStatistics"]
     We can also use context managers to make more changes. For example:
 
     with table.update_partition_statistics() as update:
-        update.set_partition_statistics(partition_statistics_file=partition_statistics_file)
+        update.set_partition_statistics(snapshot_id=1, statistics_path="s3://bucket/stats.parquet", file_size_in_bytes=124)
         update.remove_partition_statistics(snapshot_id=2)
     """
 
@@ -56,15 +56,35 @@ class UpdatePartitionStatistics(UpdateTableMetadata["UpdatePartitionStatistics"]
         self._sets = {}
         self._removals = {}
 
-    def set_partition_statistics(self, partition_statistics_file: PartitionStatisticsFile | None) -> "UpdatePartitionStatistics":
-        """Set the partition statistics file of its snapshot, replacing any existing one. None is ignored."""
-        if partition_statistics_file is not None:
-            set_update = SetPartitionStatisticsUpdate(partition_statistics=partition_statistics_file)
-            self._sets[partition_statistics_file.snapshot_id] = set_update
+    def set_partition_statistics(
+        self, snapshot_id: int, statistics_path: str, file_size_in_bytes: int
+    ) -> "UpdatePartitionStatistics":
+        """Set the partition statistics file of a snapshot, replacing the file already set for that snapshot.
+
+        Args:
+            snapshot_id: The ID of the snapshot that the statistics file describes.
+            statistics_path: The location of the partition statistics file.
+            file_size_in_bytes: The size of the partition statistics file in bytes.
+
+        Returns:
+            This for method chaining.
+        """
+        partition_statistics_file = PartitionStatisticsFile(
+            snapshot_id=snapshot_id, statistics_path=statistics_path, file_size_in_bytes=file_size_in_bytes
+        )
+        self._sets[snapshot_id] = SetPartitionStatisticsUpdate(partition_statistics=partition_statistics_file)
 
         return self
 
     def remove_partition_statistics(self, snapshot_id: int) -> "UpdatePartitionStatistics":
+        """Remove the partition statistics file of a snapshot. Removing a snapshot that has no file is a no-op.
+
+        Args:
+            snapshot_id: The ID of the snapshot whose partition statistics file is removed.
+
+        Returns:
+            This for method chaining.
+        """
         self._removals[snapshot_id] = RemovePartitionStatisticsUpdate(snapshot_id=snapshot_id)
 
         return self

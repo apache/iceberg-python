@@ -79,15 +79,15 @@ def test_update_partition_statistics(catalog: Catalog) -> None:
     stats_1_replaced = _partition_statistics_file(snapshot_id_1, "s3://bucket/partition-stats-1-v2.parquet")
     stats_2 = _partition_statistics_file(snapshot_id_2, "s3://bucket/partition-stats-2.parquet")
 
-    table.update_partition_statistics().set_partition_statistics(stats_1).commit()
+    table.update_partition_statistics().set_partition_statistics(**stats_1.model_dump(by_alias=False)).commit()
     assert table.metadata.partition_statistics == [stats_1]
 
     # A file set for a snapshot that already has one replaces it
-    table.update_partition_statistics().set_partition_statistics(stats_1_replaced).commit()
+    table.update_partition_statistics().set_partition_statistics(**stats_1_replaced.model_dump(by_alias=False)).commit()
     assert table.metadata.partition_statistics == [stats_1_replaced]
 
     with table.update_partition_statistics() as update:
-        update.set_partition_statistics(stats_2)
+        update.set_partition_statistics(**stats_2.model_dump(by_alias=False))
     assert table.metadata.partition_statistics == [stats_1_replaced, stats_2]
 
     table.update_partition_statistics().remove_partition_statistics(snapshot_id_1).commit()
@@ -102,12 +102,14 @@ def test_update_partition_statistics_set_and_remove_in_one_update(catalog: Catal
     stats_2 = _partition_statistics_file(snapshot_id_2, "s3://bucket/partition-stats-2.parquet")
 
     # Operations on different snapshots are both applied, in either call order
-    table.update_partition_statistics().set_partition_statistics(stats_1).commit()
-    table.update_partition_statistics().set_partition_statistics(stats_2).remove_partition_statistics(snapshot_id_1).commit()
+    table.update_partition_statistics().set_partition_statistics(**stats_1.model_dump(by_alias=False)).commit()
+    table.update_partition_statistics().set_partition_statistics(
+        **stats_2.model_dump(by_alias=False)
+    ).remove_partition_statistics(snapshot_id_1).commit()
     assert table.metadata.partition_statistics == [stats_2]
 
     with table.update_partition_statistics() as update:
-        update.set_partition_statistics(stats_1)
+        update.set_partition_statistics(**stats_1.model_dump(by_alias=False))
         update.remove_partition_statistics(snapshot_id_2)
     assert table.metadata.partition_statistics == [stats_1]
 
@@ -115,19 +117,25 @@ def test_update_partition_statistics_set_and_remove_in_one_update(catalog: Catal
     for has_existing_file in (False, True):
         for remove_first in (False, True):
             if has_existing_file:
-                table.update_partition_statistics().set_partition_statistics(stats_1).commit()
+                table.update_partition_statistics().set_partition_statistics(**stats_1.model_dump(by_alias=False)).commit()
             else:
                 table.update_partition_statistics().remove_partition_statistics(snapshot_id_1).commit()
             with table.update_partition_statistics() as update:
                 if remove_first:
-                    update.remove_partition_statistics(snapshot_id_1).set_partition_statistics(stats_1_replaced)
+                    update.remove_partition_statistics(snapshot_id_1).set_partition_statistics(
+                        **stats_1_replaced.model_dump(by_alias=False)
+                    )
                 else:
-                    update.set_partition_statistics(stats_1_replaced).remove_partition_statistics(snapshot_id_1)
+                    update.set_partition_statistics(**stats_1_replaced.model_dump(by_alias=False)).remove_partition_statistics(
+                        snapshot_id_1
+                    )
             assert table.metadata.partition_statistics == []
 
     # Repeated operations: the last file set wins, and repeated removals are no-ops
     with table.update_partition_statistics() as update:
-        update.set_partition_statistics(stats_1).set_partition_statistics(stats_1_replaced)
+        update.set_partition_statistics(**stats_1.model_dump(by_alias=False)).set_partition_statistics(
+            **stats_1_replaced.model_dump(by_alias=False)
+        )
     assert table.metadata.partition_statistics == [stats_1_replaced]
 
     with table.update_partition_statistics() as update:
@@ -142,9 +150,9 @@ def test_update_partition_statistics_in_transaction(catalog: Catalog) -> None:
     stats_2 = _partition_statistics_file(snapshot_id_2, "s3://bucket/partition-stats-2.parquet")
 
     with table.transaction() as transaction:
-        transaction.update_partition_statistics().set_partition_statistics(stats_1).commit()
+        transaction.update_partition_statistics().set_partition_statistics(**stats_1.model_dump(by_alias=False)).commit()
         with transaction.update_partition_statistics() as update:
-            update.set_partition_statistics(stats_2)
+            update.set_partition_statistics(**stats_2.model_dump(by_alias=False))
 
         # The pending changes are visible in the transaction only, until it commits
         assert transaction.table_metadata.partition_statistics == [stats_1, stats_2]
@@ -170,7 +178,7 @@ def test_update_partition_statistics_in_transaction(catalog: Catalog) -> None:
 def test_remove_partition_statistics_without_file_is_noop(catalog: Catalog) -> None:
     table, snapshot_id_1, snapshot_id_2 = _create_table_with_two_snapshots(catalog)
     stats_2 = _partition_statistics_file(snapshot_id_2, "s3://bucket/partition-stats-2.parquet")
-    table.update_partition_statistics().set_partition_statistics(stats_2).commit()
+    table.update_partition_statistics().set_partition_statistics(**stats_2.model_dump(by_alias=False)).commit()
     metadata_before = table.metadata
 
     # Removing a snapshot without a file commits without error, once or repeated, and leaves the metadata unchanged
@@ -181,13 +189,3 @@ def test_remove_partition_statistics_without_file_is_noop(catalog: Catalog) -> N
 
     assert table.metadata == metadata_before
     assert catalog.load_table(table.name()).metadata.partition_statistics == [stats_2]
-
-
-def test_set_partition_statistics_none_is_noop(catalog: Catalog) -> None:
-    table, snapshot_id_1, _ = _create_table_with_two_snapshots(catalog)
-    stats_1 = _partition_statistics_file(snapshot_id_1, "s3://bucket/partition-stats-1.parquet")
-    table.update_partition_statistics().set_partition_statistics(stats_1).commit()
-
-    table.update_partition_statistics().set_partition_statistics(None).commit()
-
-    assert table.metadata.partition_statistics == [stats_1]

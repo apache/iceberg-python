@@ -1794,7 +1794,9 @@ Manage partition statistics files with operations through the `Table` API:
 
 ```python
 # Setting a file for a snapshot replaces the file already set for that snapshot
-table.update_partition_statistics().set_partition_statistics(partition_statistics_file).commit()
+table.update_partition_statistics().set_partition_statistics(
+    snapshot_id=snapshot_id, statistics_path="s3://bucket/partition-stats.parquet", file_size_in_bytes=1024
+).commit()
 table.update_partition_statistics().remove_partition_statistics(snapshot_id).commit()
 ```
 
@@ -1802,7 +1804,9 @@ You can also use context managers to make more changes:
 
 ```python
 with table.update_partition_statistics() as update:
-    update.set_partition_statistics(partition_statistics_file)
+    update.set_partition_statistics(
+        snapshot_id=snapshot_id, statistics_path="s3://bucket/partition-stats.parquet", file_size_in_bytes=1024
+    )
     update.remove_partition_statistics(snapshot_id)
 ```
 
