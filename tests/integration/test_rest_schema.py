@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from contextlib import nullcontext
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any
@@ -597,13 +598,29 @@ def test_update_types_case_insensitive(catalog: Catalog) -> None:
     )
 
 
-allowed_promotions = [
+# update_column still applies these with a deprecation warning
+deprecated_promotions = [
     (StringType(), BinaryType()),
     (BinaryType(), StringType()),
+]
+
+allowed_promotions = [
+    *deprecated_promotions,
     (IntegerType(), LongType()),
     (FloatType(), DoubleType()),
     (DecimalType(9, 2), DecimalType(18, 2)),
 ]
+
+
+def _update_bar_type(tbl: Table, from_type: PrimitiveType, to_type: PrimitiveType) -> None:
+    expect_warning = (
+        pytest.warns(DeprecationWarning, match=r"Deprecated in 0\.13\.0, will be removed in 0\.14\.0")
+        if (from_type, to_type) in deprecated_promotions
+        else nullcontext()
+    )
+    with expect_warning:
+        with tbl.update_schema() as schema_update:
+            schema_update.update_column("bar", to_type)
 
 
 @pytest.mark.parametrize("from_type, to_type", allowed_promotions, ids=str)
@@ -616,8 +633,7 @@ def test_allowed_updates(from_type: PrimitiveType, to_type: PrimitiveType, catal
         ),
     )
 
-    with tbl.update_schema() as schema_update:
-        schema_update.update_column("bar", to_type)
+    _update_bar_type(tbl, from_type, to_type)
 
     assert tbl.schema() == Schema(NestedField(field_id=1, name="bar", field_type=to_type, required=True))
 
@@ -663,8 +679,7 @@ def test_disallowed_updates(from_type: PrimitiveType, to_type: PrimitiveType, ca
 
         assert str(exc_info.value).startswith("Cannot change column type: bar:")
     else:
-        with tbl.update_schema() as schema_update:
-            schema_update.update_column("bar", to_type)
+        _update_bar_type(tbl, from_type, to_type)
 
         assert tbl.schema() == Schema(
             NestedField(field_id=1, name="bar", field_type=to_type, required=True),
@@ -1591,8 +1606,9 @@ def test_add_field_to_map_key(nested_table: Table) -> None:
 
 @pytest.mark.integration
 def test_alter_map_key(nested_table: Table) -> None:
+    # The key change is not a valid promotion, so opt in to reach the map key check
     with pytest.raises(ValueError) as exc_info:
-        with nested_table.update_schema() as schema_update:
+        with nested_table.update_schema(allow_incompatible_changes=True) as schema_update:
             schema_update.update_column(("quux", "key"), BinaryType())
 
     assert "Cannot update map keys" in str(exc_info.value)

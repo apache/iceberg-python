@@ -50,7 +50,25 @@ from pyiceberg.table.update import (
     UpdateTableMetadata,
 )
 from pyiceberg.typedef import L, TableVersion
-from pyiceberg.types import IcebergType, ListType, MapType, NestedField, PrimitiveType, StructType
+from pyiceberg.types import (
+    BinaryType,
+    DecimalType,
+    DoubleType,
+    FixedType,
+    FloatType,
+    IcebergType,
+    IntegerType,
+    ListType,
+    LongType,
+    MapType,
+    NestedField,
+    PrimitiveType,
+    StringType,
+    StructType,
+    UnknownType,
+    UUIDType,
+)
+from pyiceberg.utils.deprecated import deprecation_message
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -72,6 +90,34 @@ class _Move:
     full_name: str
     op: _MoveOperation
     other_field_id: int | None = None
+
+
+def _is_valid_promotion(from_type: IcebergType, to_type: IcebergType) -> bool:
+    """Check a column type change against the spec's valid primitive type promotions.
+
+    Do not use promote() here: it is the read-side rule and also accepts string <-> binary and fixed(16) -> uuid.
+    """
+    if from_type == to_type:
+        return True
+    if isinstance(from_type, UnknownType):
+        # Unknown can be promoted to any primitive type in v3+
+        return isinstance(to_type, PrimitiveType)
+    if isinstance(from_type, IntegerType):
+        return isinstance(to_type, LongType)
+    if isinstance(from_type, FloatType):
+        return isinstance(to_type, DoubleType)
+    if isinstance(from_type, DecimalType) and isinstance(to_type, DecimalType):
+        return from_type.scale == to_type.scale and from_type.precision <= to_type.precision
+    return False
+
+
+def _is_deprecated_promotion(from_type: IcebergType, to_type: IcebergType) -> bool:
+    """Check for a non-spec type change that update_column still applies, with a deprecation warning."""
+    if isinstance(from_type, StringType) and isinstance(to_type, BinaryType):
+        return True
+    if isinstance(from_type, BinaryType) and isinstance(to_type, StringType):
+        return True
+    return isinstance(from_type, FixedType) and len(from_type) == 16 and isinstance(to_type, UUIDType)
 
 
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
@@ -470,11 +516,16 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             if not field.field_type.is_primitive:
                 raise ValidationError(f"Cannot change column type: {field.field_type} is not a primitive")
 
-            if not self._allow_incompatible_changes and field.field_type != field_type:
-                try:
-                    promote(field.field_type, field_type)
-                except ResolveError as e:
-                    raise ValidationError(f"Cannot change column type: {full_name}: {field.field_type} -> {field_type}") from e
+            if not self._allow_incompatible_changes and not _is_valid_promotion(field.field_type, field_type):
+                if not _is_deprecated_promotion(field.field_type, field_type):
+                    raise ValidationError(f"Cannot change column type: {full_name}: {field.field_type} -> {field_type}")
+                deprecation_message(
+                    deprecated_in="0.13.0",
+                    removed_in="0.14.0",
+                    help_message=f"Column {full_name} changes from {field.field_type} to {field_type}, "
+                    "which is not a valid type promotion. Pass allow_incompatible_changes=True to update_schema() "
+                    "to keep this change.",
+                )
 
         # if other updates for the same field exist in one transaction:
         if updated := self._updates.get(field.field_id):
