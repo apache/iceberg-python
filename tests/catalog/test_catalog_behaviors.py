@@ -1429,6 +1429,25 @@ def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
         tbl.scan(row_filter="x > 2.6").to_arrow()
 
 
+def test_scan_null_filter_on_list_and_map_columns(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    data = pa.table(
+        {
+            "id": pa.array([1, 2, 3], pa.int32()),
+            "tags": pa.array([["a"], [], None], pa.list_(pa.string())),
+            "props": pa.array([[("k", 1)], [], None], pa.map_(pa.string(), pa.int32())),
+            "points": pa.array([[{"x": 1}], [], None], pa.list_(pa.struct([("x", pa.int32())]))),
+        }
+    )
+    tbl = catalog.create_table(f"default.scan_null_filter_list_map_{catalog.name}", schema=data.schema)
+    tbl.append(data)
+
+    for column in ("tags", "props", "points"):
+        assert tbl.scan(row_filter=f"{column} is null").to_arrow()["id"].to_pylist() == [3], column
+        assert sorted(tbl.scan(row_filter=f"{column} is not null").to_arrow()["id"].to_pylist()) == [1, 2], column
+        assert tbl.scan(row_filter=f"{column} is null", selected_fields=("id",)).to_arrow().to_pydict() == {"id": [3]}, column
+
+
 def test_scan_negated_comparison_matches_file_pruning_for_nan(catalog: Catalog) -> None:
     catalog.create_namespace("default")
     identifier = f"default.scan_negated_comparison_nan_{catalog.name}"
