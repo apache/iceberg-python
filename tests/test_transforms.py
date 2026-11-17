@@ -465,6 +465,11 @@ def test_truncate_integer(type_var: PrimitiveType, input_var: int, expected: int
     assert trunc.transform(type_var)(input_var) == expected
 
 
+def test_truncate_integer_minimum_wraps() -> None:
+    assert TruncateTransform(10).transform(IntegerType())(-(2**31)) == 2147483646
+    assert TruncateTransform(10).transform(LongType())(-(2**63)) == 9223372036854775806
+
+
 @pytest.mark.parametrize(
     "input_var,expected",
     [

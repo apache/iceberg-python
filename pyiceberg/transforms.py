@@ -52,6 +52,7 @@ from pyiceberg.expressions import (
     LessThanOrEqual,
     NotEqualTo,
     NotStartsWith,
+    Or,
     Reference,
     StartsWith,
     UnboundPredicate,
@@ -800,6 +801,8 @@ class TruncateTransform(Transform[S, S]):
             return _set_apply_transform(name, pred, self.transform(field_type))
         elif isinstance(field_type, (IntegerType, LongType, DecimalType)):  # type: ignore
             if isinstance(pred, BoundLiteralPredicate):
+                if isinstance(field_type, (IntegerType, LongType)):
+                    return _truncate_integer_projection(name, pred, self.transform(field_type), field_type, self._width)
                 return _truncate_number(name, pred, self.transform(field_type))
         elif isinstance(field_type, (BinaryType, StringType)):
             if isinstance(pred, BoundLiteralPredicate):
@@ -864,7 +867,7 @@ class TruncateTransform(Transform[S, S]):
         if isinstance(source, (IntegerType, LongType)):
 
             def truncate_func(v: Any) -> Any:
-                return v - v % self._width
+                return _wrap_integer(v - v % self._width, source)
 
         elif isinstance(source, (StringType, BinaryType)):
 
@@ -1028,6 +1031,57 @@ class VoidTransform(Transform[S, None], Singleton):
             raise ModuleNotFoundError("For partition transforms, PyArrow needs to be installed") from e
 
         return lambda arr: pa.nulls(len(arr), type=arr.type)
+
+
+def _integer_bounds(source: IcebergType) -> tuple[int, int]:
+    """Return the minimum value and the size of the range of an integer type."""
+    if isinstance(source, IntegerType):
+        return -(2**31), 2**32
+    return -(2**63), 2**64
+
+
+def _wrap_integer(value: int, source: IcebergType) -> int:
+    """Wrap an integer into the range of the source type, like Java's two's complement arithmetic."""
+    minimum, modulus = _integer_bounds(source)
+    return (value - minimum) % modulus + minimum
+
+
+def _truncate_integer_projection(
+    name: str,
+    pred: BoundLiteralPredicate,
+    transform: Callable[[Any | None], Any | None],
+    source: IcebergType,
+    width: int,
+) -> UnboundPredicate | None:
+    """Project a predicate on a truncate partition of an integer column.
+
+    The values from the minimum of the source type truncate to a partition value at the top of the
+    type's range, which does not sort with the other partition values. A range that can match those
+    values therefore also matches that partition.
+    """
+    minimum, _ = _integer_bounds(source)
+    floor_mod = minimum % width
+    if floor_mod == 0 or not isinstance(pred.literal, LongLiteral):
+        return _truncate_number(name, pred, transform)
+
+    wrapped_minimum = _wrap_integer(minimum - floor_mod, source)
+    # The first partition value after the block that holds the minimum of the source type
+    next_block_start = minimum - floor_mod + width
+    boundary = pred.literal.value
+
+    if isinstance(pred, BoundGreaterThan):
+        if boundary + 1 < next_block_start:
+            return Or(GreaterThanOrEqual(Reference(name), next_block_start), EqualTo(Reference(name), wrapped_minimum))
+        return _truncate_number(name, pred, transform)
+    elif isinstance(pred, BoundGreaterThanOrEqual):
+        if boundary < next_block_start:
+            return Or(GreaterThanOrEqual(Reference(name), next_block_start), EqualTo(Reference(name), wrapped_minimum))
+        return _truncate_number(name, pred, transform)
+
+    projected = _truncate_number(name, pred, transform)
+    if isinstance(pred, (BoundLessThan, BoundLessThanOrEqual)) and projected is not None:
+        return Or(projected, EqualTo(Reference(name), wrapped_minimum))
+    return projected
 
 
 def _truncate_number(

@@ -1985,7 +1985,7 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
             inclusive_projection = part.transform.project(part.name, predicate)
             inclusive_result = None
-            if inclusive_projection is not None:
+            if isinstance(inclusive_projection, UnboundPredicate):
                 bound_inclusive = inclusive_projection.bind(self.partition_schema, case_sensitive=self.case_sensitive)
                 if isinstance(bound_inclusive, BoundPredicate):
                     # using predicate method specific to inclusive
