@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.exc import ArgumentError
 
 from pyiceberg.catalog import load_catalog
