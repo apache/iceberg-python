@@ -39,7 +39,7 @@ import uuid
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from enum import Enum
 from functools import lru_cache, singledispatch
@@ -2717,6 +2717,45 @@ def parquet_path_to_id_mapping(
     return result
 
 
+def _nan_value_counts_from_arrow(table: pa.Table, schema: Schema) -> dict[int, int]:
+    """Count the non-null NaN values of the top-level float and double columns.
+
+    PyArrow does not expose the NaN count of a Parquet column statistic, so the counts are taken
+    from the data before it is written. Columns that cannot be counted are left out, which only
+    means the file cannot be pruned on NaN counts.
+
+    Args:
+        table (pyarrow.Table): The data that is written to the file.
+        schema (Schema): The schema of the file.
+
+    Returns:
+        A mapping of Iceberg field ID to the number of non-null NaN values.
+    """
+    nan_value_counts: dict[int, int] = {}
+    for pos, arrow_field in enumerate(table.schema):
+        if (field_id := _get_field_id(arrow_field)) is None:
+            continue
+
+        try:
+            field_type = schema.find_field(field_id).field_type
+        except ValueError:
+            continue
+
+        if not isinstance(field_type, (FloatType, DoubleType)):
+            continue
+
+        try:
+            count = pc.sum(pc.is_nan(table.column(pos)), min_count=0)
+        except (pyarrow.lib.ArrowInvalid, pyarrow.lib.ArrowNotImplementedError) as e:
+            logger.warning("Could not count NaN values for column %s: %s", arrow_field.name, e)
+            continue
+
+        if count is not None:
+            nan_value_counts[field_id] = count.as_py()
+
+    return nan_value_counts
+
+
 def data_file_statistics_from_parquet_metadata(
     parquet_metadata: pq.FileMetaData,
     stats_columns: dict[int, StatisticsCollector],
@@ -2868,6 +2907,7 @@ class ParquetFormatWriter(FileFormatWriter):
         self._fos: OutputStream | None = None
         self._parquet_writer_kwargs = _get_parquet_writer_kwargs(properties)
         self._parquet_writer_kwargs["encryption_properties"] = _parquet_encryption_properties(key_metadata)
+        self._nan_value_counts: dict[int, int] = {}
         self._row_group_size = property_as_int(
             properties=properties,
             property_name=TableProperties.PARQUET_ROW_GROUP_LIMIT,
@@ -2889,6 +2929,7 @@ class ParquetFormatWriter(FileFormatWriter):
                 raise
             self._fos = fos
         self._writer.write(table, row_group_size=self._row_group_size)
+        self._nan_value_counts.update(_nan_value_counts_from_arrow(table, self._file_schema))
 
     def close(self) -> DataFileStatistics:
         if self._result is not None:
@@ -2897,10 +2938,13 @@ class ParquetFormatWriter(FileFormatWriter):
             raise ValueError("Cannot close a writer that was never written to")
         with self._fos:
             self._writer.close()
-            self._result = data_file_statistics_from_parquet_metadata(
-                parquet_metadata=self._writer.writer.metadata,
-                stats_columns=compute_statistics_plan(self._file_schema, self._properties),
-                parquet_column_mapping=parquet_path_to_id_mapping(self._file_schema),
+            self._result = replace(
+                data_file_statistics_from_parquet_metadata(
+                    parquet_metadata=self._writer.writer.metadata,
+                    stats_columns=compute_statistics_plan(self._file_schema, self._properties),
+                    parquet_column_mapping=parquet_path_to_id_mapping(self._file_schema),
+                ),
+                nan_value_counts=self._nan_value_counts,
             )
         return self._result
 
