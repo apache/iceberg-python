@@ -299,6 +299,31 @@ def test_from_bytes(primitive_type: PrimitiveType, b: bytes, result: Any) -> Non
     assert conversions.from_bytes(primitive_type, b) == result
 
 
+def test_from_bytes_date_bound_promoted_to_timestamp() -> None:
+    # A bound written before a date -> timestamp promotion keeps its 4-byte day count
+    cases: list[tuple[PrimitiveType, bytes, int]] = [
+        (TimestampType(), struct.pack("<i", 18793), 1623715200000000),  # 2021-06-15
+        (TimestampType(), struct.pack("<i", -3653), -315619200000000),  # 1960-01-01
+        (TimestampNanoType(), struct.pack("<i", 18793), 1623715200000000000),
+        (TimestampNanoType(), struct.pack("<i", -3653), -315619200000000000),
+        # The 8-byte encoding is unchanged
+        (TimestampType(), struct.pack("<q", 1623715200000000), 1623715200000000),
+        (TimestampNanoType(), struct.pack("<q", 1623715200000000000), 1623715200000000000),
+    ]
+    for primitive_type, b, expected in cases:
+        assert conversions.from_bytes(primitive_type, b) == expected, primitive_type
+
+
+def test_from_bytes_date_bound_promoted_to_timestamp_beyond_int64() -> None:
+    # A bound can be wider than the data, so the scaled value stays exact outside the int64 range
+    cases: list[tuple[PrimitiveType, int, int]] = [
+        (TimestampNanoType(), 106752, 9223372800000000000),
+        (TimestampNanoType(), -106752, -9223372800000000000),
+    ]
+    for primitive_type, days, expected in cases:
+        assert conversions.from_bytes(primitive_type, struct.pack("<i", days)) == expected
+
+
 @pytest.mark.parametrize(
     "primitive_type, b, result",
     [
