@@ -72,6 +72,7 @@ from pyiceberg.expressions import (
     GreaterThan,
     IsNull,
     Not,
+    NotNull,
     Or,
 )
 from pyiceberg.expressions.literals import literal
@@ -1951,6 +1952,46 @@ def test_projection_filter_on_unprojected_field(schema_int_str: Schema, file_int
         assert actual.as_py() == expected
     assert len(result_table.columns[0]) == 1
     assert repr(result_table.schema) == "id: int32 not null"
+
+
+def test_projection_null_filter_on_list_and_map(tmpdir: str) -> None:
+    schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "tags", ListType(21, StringType(), element_required=False), required=False),
+        NestedField(
+            3,
+            "props",
+            MapType(key_id=31, key_type=StringType(), value_id=32, value_type=IntegerType(), value_required=False),
+            required=False,
+        ),
+        NestedField(
+            4,
+            "points",
+            ListType(41, StructType(NestedField(42, "x", IntegerType(), required=False)), element_required=False),
+            required=False,
+        ),
+    )
+    pyarrow_schema = schema_to_pyarrow(schema, metadata={ICEBERG_SCHEMA: bytes(schema.model_dump_json(), UTF8)})
+    file = _write_table_to_file(
+        f"{tmpdir}/null_list_map.parquet",
+        pyarrow_schema,
+        pa.Table.from_pylist(
+            [
+                {"id": 1, "tags": ["a"], "props": [("k", 1)], "points": [{"x": 1}]},
+                {"id": 2, "tags": [], "props": [], "points": []},
+                {"id": 3, "tags": None, "props": None, "points": None},
+            ],
+            schema=pyarrow_schema,
+        ),
+    )
+    schema_id = Schema(NestedField(1, "id", IntegerType(), required=False))
+
+    for column in ("tags", "props", "points"):
+        for expr, expected in ((IsNull(column), [3]), (NotNull(column), [1, 2])):
+            assert project(schema, [file], expr)["id"].to_pylist() == expected
+            assert project(schema_id, [file], expr, schema).to_pydict() == {"id": expected}
+
+    assert project(schema, [file], IsNull("tags")).to_pylist() == [{"id": 3, "tags": None, "props": None, "points": None}]
 
 
 def test_projection_filter_on_unknown_field(schema_int_str: Schema, file_int_str: str) -> None:
