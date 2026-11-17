@@ -3601,10 +3601,10 @@ def test_append_writes_parquet_page_index(catalog: InMemoryCatalog) -> None:
     catalog.create_namespace("default")
 
     for page_index_enabled, identifier in [
-        (True, "default.test_append_page_index_enabled"),
         (False, "default.test_append_page_index_disabled"),
+        (True, "default.test_append_page_index_enabled"),
     ]:
-        properties = {} if page_index_enabled else {TableProperties.PARQUET_PAGE_INDEX_ENABLED: "false"}
+        properties = {TableProperties.PARQUET_PAGE_INDEX_ENABLED: "true"} if page_index_enabled else {}
         table = catalog.create_table(identifier, schema=schema, properties=properties)
         table.append(pa.table({"id": pa.array(range(1000), type=pa.int64())}))
 

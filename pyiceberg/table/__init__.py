@@ -164,7 +164,7 @@ class TableProperties:
     PARQUET_PAGE_ROW_LIMIT_DEFAULT = 20000
 
     PARQUET_PAGE_INDEX_ENABLED = "write.parquet.page-index-enabled"
-    PARQUET_PAGE_INDEX_ENABLED_DEFAULT = True
+    PARQUET_PAGE_INDEX_ENABLED_DEFAULT = False
 
     PARQUET_DICT_SIZE_BYTES = "write.parquet.dict-size-bytes"
     PARQUET_DICT_SIZE_BYTES_DEFAULT = 2 * 1024 * 1024  # 2 MB
