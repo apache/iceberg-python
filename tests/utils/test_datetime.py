@@ -24,10 +24,16 @@ from pyiceberg.utils.datetime import (
     datetime_to_millis,
     datetime_to_nanos,
     days_to_date,
+    days_to_months,
+    days_to_years,
     micros_to_days,
+    micros_to_months,
+    micros_to_years,
     millis_to_datetime,
     nanos_to_hours,
     nanos_to_micros,
+    nanos_to_months,
+    nanos_to_years,
     time_str_to_nanos,
     time_to_nanos,
     timestamp_to_micros,
@@ -290,3 +296,29 @@ def test_to_human_timestamptz() -> None:
         (1_740_342_104_375_612, "2025-02-23T20:21:44.375612+00:00"),
     ]:
         assert to_human_timestamptz(micros) == expected
+
+
+@pytest.mark.parametrize(
+    "days, years, months",
+    [
+        (0, 0, 0),
+        (-1, -1, -1),
+        (2932896, 8029, 96359),
+        (2932897, 8030, 96360),
+        (-719162, -1969, -23628),
+        (-719163, -1970, -23629),
+    ],
+)
+def test_days_to_years_and_months(days: int, years: int, months: int) -> None:
+    assert days_to_years(days) == years
+    assert days_to_months(days) == months
+
+
+def test_years_and_months_beyond_the_date_range() -> None:
+    day_micros = 86_400_000_000
+    day_nanos = day_micros * 1000
+
+    assert micros_to_years(2932897 * day_micros) == 8030
+    assert micros_to_months(2932897 * day_micros) == 96360
+    assert nanos_to_years(2932897 * day_nanos) == 8030
+    assert nanos_to_months(2932897 * day_nanos) == 96360

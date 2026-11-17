@@ -26,7 +26,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 from functools import singledispatchmethod
-from math import isfinite, isnan
+from math import isfinite, isinf, isnan
 from typing import Any, Generic
 from uuid import UUID
 
@@ -433,6 +433,8 @@ class DoubleLiteral(Literal[float]):
 
     @to.register(FloatType)
     def _(self, _: FloatType) -> Literal[float]:
+        if isinf(self.value):
+            return FloatLiteral(self.value)
         if FloatType.max < self.value:
             return FloatAboveMax()
         elif FloatType.min > self.value:
