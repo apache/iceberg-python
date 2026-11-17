@@ -72,7 +72,7 @@ META_SCHEMA = StructType(
 _SCHEMA_KEY = "avro.schema"
 
 
-@lru_cache
+@lru_cache(maxsize=32)
 def _avro_schema_string_to_iceberg(avro_schema_string: str) -> Schema:
     return AvroSchemaConversion().avro_to_iceberg(json.loads(avro_schema_string))
 
