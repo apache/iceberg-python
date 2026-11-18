@@ -828,6 +828,8 @@ class TruncateTransform(Transform[S, S]):
 
         if isinstance(field_type, (IntegerType, LongType, DecimalType)):
             if isinstance(pred, BoundLiteralPredicate):
+                if isinstance(field_type, (IntegerType, LongType)):
+                    return _truncate_integer_strict(name, pred, self.transform(field_type), field_type, self._width)
                 return _truncate_number_strict(name, pred, self.transform(field_type))
             elif isinstance(pred, BoundNotIn):
                 return _set_apply_transform(name, pred, self.transform(field_type))
@@ -1082,6 +1084,37 @@ def _truncate_integer_projection(
     if isinstance(pred, (BoundLessThan, BoundLessThanOrEqual)) and projected is not None:
         return Or(projected, EqualTo(Reference(name), wrapped_minimum))
     return projected
+
+
+def _truncate_integer_strict(
+    name: str,
+    pred: BoundLiteralPredicate,
+    transform: Callable[[Any | None], Any | None],
+    source: IcebergType,
+    width: int,
+) -> UnboundPredicate | None:
+    """Project a predicate strictly on a truncate partition of an integer column.
+
+    Values from the minimum of the source type truncate to a partition value at the top of the
+    type's range, which does not sort with the other partition values. No single predicate on the
+    partition value can account for that, so those ranges have no strict projection.
+    """
+    minimum, _ = _integer_bounds(source)
+    floor_mod = minimum % width
+    if floor_mod == 0 or not isinstance(pred.literal, LongLiteral):
+        return _truncate_number_strict(name, pred, transform)
+
+    first_block_end = minimum - floor_mod + width
+    if isinstance(pred, BoundLessThan):
+        if pred.literal.value < first_block_end:
+            return None
+    elif isinstance(pred, BoundLessThanOrEqual):
+        if pred.literal.increment().value < first_block_end:
+            return None
+    elif isinstance(pred, (BoundGreaterThan, BoundGreaterThanOrEqual)):
+        return None
+
+    return _truncate_number_strict(name, pred, transform)
 
 
 def _truncate_number(
