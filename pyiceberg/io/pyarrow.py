@@ -864,7 +864,15 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             from geoarrow.types.type_pyarrow import register_extension_types
 
             register_extension_types()
-            return ga.wkb(crs=geometry_type.crs).to_pyarrow()
+
+            # Iceberg cannot represent a GeoArrow/GeoPandas/GeoParquet None CRS as None,
+            # as its default is OGC:CRS84. Instead, we use the SRID:0 string in the
+            # Iceberg and Parquet specification examples as the sentinel. This follows
+            # the meaning of srid:0 in the GeoParquet 2.0 specification, PostGIS, and
+            # GeoPackage, as well as its mapping to the Parquet logical type in arrow-rs
+            # and Arrow C++.
+            crs = None if geometry_type.crs.lower() == "srid:0" else geometry_type.crs
+            return ga.wkb(crs=crs).to_pyarrow()
         except ImportError:
             return pa.large_binary()
 
@@ -886,7 +894,8 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             if geography_type.algorithm == "planar":
                 raise ValueError("The planar algorithm is not supported for geography types")
 
-            return ga.wkb(crs=geography_type.crs, edge_type=geography_type.algorithm).to_pyarrow()
+            crs = None if geography_type.crs.lower() == "srid:0" else geography_type.crs
+            return ga.wkb(crs=crs, edge_type=geography_type.algorithm).to_pyarrow()
         except ImportError:
             return pa.large_binary()
         except KeyError as e:

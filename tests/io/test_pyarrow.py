@@ -772,6 +772,17 @@ def test_geography_type_to_pyarrow_planar() -> None:
         visit(GeographyType("OGC:CRS84", "planar"), _ConvertToArrowSchema())
 
 
+def test_spatial_type_to_pyarrow_unspecified_crs() -> None:
+    pytest.importorskip("geoarrow.types")
+
+    for crs in ("srid:0", "SRID:0", "sRiD:0"):
+        for iceberg_type in (GeometryType(crs), GeographyType(crs)):
+            result = visit(iceberg_type, _ConvertToArrowSchema())
+            assert result.crs is None
+            expected_metadata = {"edges": "spherical"} if isinstance(iceberg_type, GeographyType) else {}
+            assert json.loads(result.__arrow_ext_serialize__()) == expected_metadata
+
+
 def test_geography_type_to_pyarrow_unsupported_algorithm() -> None:
     pytest.importorskip("geoarrow.types")
 
