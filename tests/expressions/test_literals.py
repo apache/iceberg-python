@@ -410,7 +410,7 @@ def test_string_to_uuid_literal() -> None:
     uuid_str = literal(str(expected))
     uuid_lit = uuid_str.to(UUIDType())
 
-    assert expected.bytes == uuid_lit.value
+    assert expected == uuid_lit.value
 
 
 def test_string_to_decimal_literal() -> None:
@@ -567,8 +567,8 @@ def test_binary_to_uuid() -> None:
     lit = literal(test_uuid.bytes)
     uuid_lit = lit.to(UUIDType())
     assert uuid_lit is not None
-    assert lit.value == uuid_lit.value
-    assert uuid_lit.value == test_uuid.bytes
+    assert lit.value == test_uuid.bytes
+    assert uuid_lit.value == test_uuid
 
 
 def test_incompatible_binary_to_uuid() -> None:
@@ -597,8 +597,8 @@ def test_fixed_to_uuid() -> None:
     lit = literal(test_uuid.bytes).to(FixedType(16))
     uuid_lit = lit.to(UUIDType())
     assert uuid_lit is not None
-    assert lit.value == uuid_lit.value
-    assert uuid_lit.value == test_uuid.bytes
+    assert lit.value == test_uuid.bytes
+    assert uuid_lit.value == test_uuid
 
 
 def test_incompatible_fixed_to_uuid() -> None:
@@ -1057,7 +1057,7 @@ def test_uuid_literal_initialization() -> None:
     test_uuid = uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7")
     uuid_literal = literal(test_uuid)
     assert isinstance(uuid_literal, Literal)
-    assert test_uuid.bytes == uuid_literal.value
+    assert test_uuid == uuid_literal.value
 
 
 def test_uuid_to_fixed() -> None:
