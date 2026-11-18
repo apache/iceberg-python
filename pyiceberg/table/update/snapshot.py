@@ -1369,12 +1369,16 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
     _updates: tuple[TableUpdate, ...]
     _requirements: tuple[TableRequirement, ...]
     _snapshot_ids_to_expire: set[int]
+    _snapshot_ids_older_than: set[int]
+    _retain_last: int | None
 
     def __init__(self, transaction: Transaction) -> None:
         super().__init__(transaction)
         self._updates = ()
         self._requirements = ()
         self._snapshot_ids_to_expire = set()
+        self._snapshot_ids_older_than = set()
+        self._retain_last = None
 
     def _commit(self) -> UpdatesAndRequirements:
         """
@@ -1386,6 +1390,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             Tuple of updates and requirements to be committed,
             as required by the calling parent apply functions.
         """
+        self._snapshot_ids_to_expire |= self._snapshot_ids_older_than - self._get_retained_ancestor_ids()
         # Remove any protected snapshot IDs from the set to expire, just in case
         protected_ids = self._get_protected_snapshot_ids()
         self._snapshot_ids_to_expire -= protected_ids
@@ -1407,6 +1412,19 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
             for ref in self._transaction.table_metadata.refs.values()
             if ref.snapshot_ref_type in [SnapshotRefType.TAG, SnapshotRefType.BRANCH]
         }
+
+    def _get_retained_ancestor_ids(self) -> set[int]:
+        """Get the IDs of the most recent ancestors of each branch that retain_last keeps."""
+        if self._retain_last is None:
+            return set()
+
+        metadata = self._transaction.table_metadata
+        retained_ids: set[int] = set()
+        for ref in metadata.refs.values():
+            if ref.snapshot_ref_type == SnapshotRefType.BRANCH:
+                ancestors = ancestors_of(metadata.snapshot_by_id(ref.snapshot_id), metadata)
+                retained_ids.update(snapshot.snapshot_id for snapshot in itertools.islice(ancestors, self._retain_last))
+        return retained_ids
 
     def by_id(self, snapshot_id: int) -> ExpireSnapshots:
         """
@@ -1460,5 +1478,24 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         expire_from = datetime_to_millis(dt)
         for snapshot in self._transaction.table_metadata.snapshots:
             if snapshot.timestamp_ms < expire_from and snapshot.snapshot_id not in protected_ids:
-                self._snapshot_ids_to_expire.add(snapshot.snapshot_id)
+                self._snapshot_ids_older_than.add(snapshot.snapshot_id)
+        return self
+
+    def retain_last(self, num_snapshots: int) -> ExpireSnapshots:
+        """
+        Retain the most recent ancestors of each branch.
+
+        A snapshot that older_than would expire is kept if it is one of the num_snapshots most recent
+        ancestors of a branch. Snapshots expired by ID are still expired.
+
+        Args:
+            num_snapshots (int): The number of ancestors to retain per branch, must be at least 1.
+
+        Returns:
+            This for method chaining.
+        """
+        if num_snapshots < 1:
+            raise ValueError(f"Number of snapshots to retain must be at least 1, cannot be: {num_snapshots}")
+
+        self._retain_last = num_snapshots
         return self
