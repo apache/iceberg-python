@@ -3713,6 +3713,39 @@ def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
     assert table.scan(row_filter=EqualTo("event_time", "22:31:08")).to_arrow()["id"].to_pylist() == [2]
 
 
+def test_append_counts_nan_values(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="f", field_type=FloatType(), required=False),
+        NestedField(id=2, name="d", field_type=DoubleType(), required=False),
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_nan_counts", schema=schema)
+
+    table.append(
+        pa.table(
+            {
+                "f": pa.array([float("nan"), float("nan"), 1.0, None], type=pa.float32()),
+                "d": pa.array([float("nan"), 2.0, None, float("nan")], type=pa.float64()),
+            }
+        )
+    )
+
+    data_file = next(iter(table.scan().plan_files())).file
+    assert dict(data_file.nan_value_counts) == {1: 2, 2: 2}
+
+
+def test_scan_prunes_files_without_nan_values(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="d", field_type=DoubleType(), required=False))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_prunes_nan_counts", schema=schema)
+
+    table.append(pa.table({"d": pa.array([float("nan"), 1.0], type=pa.float64())}))
+    table.append(pa.table({"d": pa.array([2.0, 3.0], type=pa.float64())}))
+
+    assert len(list(table.scan(row_filter="d IS NAN").plan_files())) == 1
+    assert len(list(table.scan(row_filter="d IS NOT NAN").plan_files())) == 2
+
+
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="foo", field_type=StringType(), required=True),
