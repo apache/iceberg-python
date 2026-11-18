@@ -54,10 +54,9 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 
 ### Spec Compliance
 
-<!-- markdown-link-check-disable-next-line -->
 - The [Iceberg spec](https://github.com/apache/iceberg/blob/main/format/spec.md) is the source of truth. Check changes to metadata, manifests, schemas, partitioning, transforms, or the commit path against it, and cite the relevant section when behavior is non-obvious.
-<!-- markdown-link-check-disable-next-line -->
-- Where the spec is ambiguous or silent, follow the [Java reference implementation](https://github.com/apache/iceberg). Deviations from Java need a justification in the PR.
+- Changes to the REST catalog (`pyiceberg/catalog/rest/`) must follow the [REST catalog OpenAPI spec](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml).
+- Check every change, including catalog work, against the [Java reference implementation](https://github.com/apache/iceberg). Where the spec is ambiguous or silent, follow Java. Deviations from Java need a justification in the PR.
 
 ### Dependencies
 
