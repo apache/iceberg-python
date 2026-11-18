@@ -1509,8 +1509,8 @@ def test_truncate_strict_integer_lower_bound(bound_reference_int: BoundReference
 
     _assert_projection_strict(BoundLessThan(term=bound_reference_int, literal=value), transform, LessThan, "100")
     _assert_projection_strict(BoundLessThanOrEqual(term=bound_reference_int, literal=value), transform, LessThan, "100")
-    _assert_projection_strict(BoundGreaterThan(term=bound_reference_int, literal=value), transform, GreaterThan, "100")
-    _assert_projection_strict(BoundGreaterThanOrEqual(term=bound_reference_int, literal=value), transform, GreaterThan, "90")
+    assert transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_int, literal=value)) is None
+    assert transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_int, literal=value)) is None
     _assert_projection_strict(BoundNotEqualTo(term=bound_reference_int, literal=value), transform, NotIn, "100")
     _assert_projection_strict(BoundNotEqualTo(term=bound_reference_int, literal=value), transform, AlwaysFalse)
     value_dec = value.decrement()
@@ -1527,8 +1527,8 @@ def test_truncate_strict_integer_upper_bound(bound_reference_int: BoundReference
 
     _assert_projection_strict(BoundLessThan(term=bound_reference_int, literal=value), transform, LessThan, "90")
     _assert_projection_strict(BoundLessThanOrEqual(term=bound_reference_int, literal=value), transform, LessThan, "100")
-    _assert_projection_strict(BoundGreaterThan(term=bound_reference_int, literal=value), transform, GreaterThan, "90")
-    _assert_projection_strict(BoundGreaterThanOrEqual(term=bound_reference_int, literal=value), transform, GreaterThan, "90")
+    assert transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_int, literal=value)) is None
+    assert transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_int, literal=value)) is None
     _assert_projection_strict(BoundNotEqualTo(term=bound_reference_int, literal=value), transform, NotIn, "90")
     _assert_projection_strict(BoundNotEqualTo(term=bound_reference_int, literal=value), transform, AlwaysFalse)
 
@@ -1543,8 +1543,8 @@ def test_truncate_strict_long_lower_bound(bound_reference_long: BoundReference) 
 
     _assert_projection_strict(BoundLessThan(term=bound_reference_long, literal=value), transform, LessThan, "100")
     _assert_projection_strict(BoundLessThanOrEqual(term=bound_reference_long, literal=value), transform, LessThan, "100")
-    _assert_projection_strict(BoundGreaterThan(term=bound_reference_long, literal=value), transform, GreaterThan, "100")
-    _assert_projection_strict(BoundGreaterThanOrEqual(term=bound_reference_long, literal=value), transform, GreaterThan, "90")
+    assert transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_long, literal=value)) is None
+    assert transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_long, literal=value)) is None
     _assert_projection_strict(BoundNotEqualTo(term=bound_reference_long, literal=value), transform, NotIn, "100")
     _assert_projection_strict(BoundNotEqualTo(term=bound_reference_long, literal=value), transform, AlwaysFalse)
     value_dec = value.decrement()
@@ -1561,8 +1561,8 @@ def test_truncate_strict_long_upper_bound(bound_reference_long: BoundReference) 
 
     _assert_projection_strict(BoundLessThan(term=bound_reference_long, literal=value), transform, LessThan, "90")
     _assert_projection_strict(BoundLessThanOrEqual(term=bound_reference_long, literal=value), transform, LessThan, "100")
-    _assert_projection_strict(BoundGreaterThan(term=bound_reference_long, literal=value), transform, GreaterThan, "90")
-    _assert_projection_strict(BoundGreaterThanOrEqual(term=bound_reference_long, literal=value), transform, GreaterThan, "90")
+    assert transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_long, literal=value)) is None
+    assert transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_long, literal=value)) is None
     _assert_projection_strict(BoundNotEqualTo(term=bound_reference_long, literal=value), transform, NotIn, "90")
     _assert_projection_strict(BoundNotEqualTo(term=bound_reference_long, literal=value), transform, AlwaysFalse)
     value_dec = value.decrement()
@@ -1571,6 +1571,50 @@ def test_truncate_strict_long_upper_bound(bound_reference_long: BoundReference) 
         BoundNotIn(term=bound_reference_long, literals={value_dec, value, value_inc}), transform, NotIn, "[100, 90]"
     )
     _assert_projection_strict(BoundIn(term=bound_reference_long, literals={value_dec, value, value_inc}), transform, NotIn)
+
+
+def test_truncate_strict_integer_minimum(bound_reference_int: BoundReference) -> None:
+    minimum = -(2**31)
+    first_block_end = minimum - minimum % 1000 + 1000
+    transform = TruncateTransform(1000)
+
+    assert transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_int, literal=literal(minimum))) is None
+    assert (
+        transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_int, literal=literal(minimum + 1)))
+        is None
+    )
+    assert transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_int, literal=literal(0))) is None
+    assert (
+        transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_int, literal=literal(0))) is None
+    )
+    _assert_projection_strict(
+        BoundLessThan(term=bound_reference_int, literal=literal(first_block_end)),
+        transform,
+        LessThan,
+        str(first_block_end),
+    )
+
+
+def test_truncate_strict_long_minimum(bound_reference_long: BoundReference) -> None:
+    minimum = -(2**63)
+    first_block_end = minimum - minimum % 1000 + 1000
+    transform = TruncateTransform(1000)
+
+    assert transform.strict_project(name="name", pred=BoundLessThan(term=bound_reference_long, literal=literal(minimum))) is None
+    assert (
+        transform.strict_project(name="name", pred=BoundLessThanOrEqual(term=bound_reference_long, literal=literal(minimum + 1)))
+        is None
+    )
+    assert transform.strict_project(name="name", pred=BoundGreaterThan(term=bound_reference_long, literal=literal(0))) is None
+    assert (
+        transform.strict_project(name="name", pred=BoundGreaterThanOrEqual(term=bound_reference_long, literal=literal(0))) is None
+    )
+    _assert_projection_strict(
+        BoundLessThan(term=bound_reference_long, literal=literal(first_block_end)),
+        transform,
+        LessThan,
+        str(first_block_end),
+    )
 
 
 def test_truncate_strict_decimal_lower_bound(bound_reference_decimal: BoundReference) -> None:
