@@ -107,9 +107,11 @@ boolean = one_of(["true", "false"], caseless=True)
 string = sgl_quoted_string.set_results_name("raw_quoted_string")
 decimal = common.real().set_results_name("decimal")
 integer = common.signed_integer().set_results_name("integer")
-literal = Group(string | decimal | integer | boolean).set_results_name("literal")
+literal = Group((string | decimal | integer | boolean).set_name("a literal value")).set_results_name("literal")
 literal_set = Group(
-    DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer) | DelimitedList(boolean)
+    (DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer) | DelimitedList(boolean)).set_name(
+        "a non-empty list of literals"
+    )
 ).set_results_name("literal_set")
 
 
