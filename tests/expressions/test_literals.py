@@ -325,6 +325,8 @@ def test_string_literal() -> None:
     pi_string_lit = StringLiteral("3.141")
     pi_double_lit = literal(3.141).to(DoubleType())
 
+    assert literal("3").to(IntegerType()) == literal(3)
+    assert literal("3").to(LongType()) == literal(3)
     assert sqrt2 != pi
     assert pi != pi_double_lit
     assert pi == pi_string_lit
