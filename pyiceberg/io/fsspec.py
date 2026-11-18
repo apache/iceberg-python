@@ -230,7 +230,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "config_kwargs": config_kwargs,
     }
 
-    session_kwargs: dict[str, str] = {}
+    session_kwargs: dict[str, Any] = {}
     if profile_name := get_first_property_value(properties, S3_PROFILE_NAME, AWS_PROFILE_NAME):
         s3_fs_kwargs["profile"] = profile_name
         session_kwargs["profile"] = profile_name
