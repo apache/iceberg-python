@@ -110,17 +110,16 @@ class PartitionField(IcebergBaseModel):
     @model_validator(mode="before")
     @classmethod
     def map_source_ids_onto_source_id(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            if "source-ids" in data:
-                if "source-id" in data:
-                    raise ValueError("source-id and source-ids are mutually exclusive")
-                source_ids = data["source-ids"]
-                if isinstance(source_ids, list):
-                    if len(source_ids) == 0:
-                        raise ValueError("Empty source-ids is not allowed")
-                    if len(source_ids) > 1:
-                        raise ValueError("Multi argument transforms are not yet supported")
-                    data["source-id"] = source_ids[0]
+        if isinstance(data, dict) and "source-ids" in data:
+            if "source-id" in data:
+                raise ValueError("source-id and source-ids are mutually exclusive")
+            source_ids = data["source-ids"]
+            if isinstance(source_ids, list):
+                if len(source_ids) == 0:
+                    raise ValueError("Empty source-ids is not allowed")
+                if len(source_ids) > 1:
+                    raise ValueError("Multi argument transforms are not yet supported")
+                data["source-id"] = source_ids[0]
         return data
 
     def __str__(self) -> str:
@@ -488,7 +487,7 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
     Return the Partition Record representation of the value.
 
     The value is first converted to internal partition representation.
-    For example, UUID is converted to bytes[16], DateType to days since epoch, etc.
+    For example, UUID values become uuid.UUID, and DateType values become days since epoch.
 
     Then the corresponding PartitionField's transform is applied to return
     the final partition record value.
@@ -499,7 +498,7 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
 
 @singledispatch
 def _to_partition_representation(type: IcebergType, value: Any) -> Any:
-    """Strip the logical type into the physical type.
+    """Return the internal partition representation of a value.
 
     It can be that the value is already transformed into its physical type,
     in this case it will return the original value. Keep in mind that the
@@ -549,18 +548,25 @@ def _(type: IcebergType, value: int | date | None) -> int | None:
 
 
 @_to_partition_representation.register(TimeType)
-def _(type: IcebergType, value: time | None) -> int | None:
-    return time_to_micros(value) if value is not None else None
+def _(type: IcebergType, value: int | time | None) -> int | None:
+    if value is None:
+        return None
+    elif isinstance(value, int):
+        return value
+    elif isinstance(value, time):
+        return time_to_micros(value)
+    else:
+        raise ValueError(f"Type not recognized: {value}")
 
 
 @_to_partition_representation.register(UUIDType)
-def _(type: IcebergType, value: uuid.UUID | int | bytes | None) -> bytes | int | None:
+def _(type: IcebergType, value: uuid.UUID | int | bytes | None) -> uuid.UUID | int | None:
     if value is None:
         return None
     elif isinstance(value, bytes):
-        return value  # IdentityTransform
+        return uuid.UUID(bytes=value)  # IdentityTransform
     elif isinstance(value, uuid.UUID):
-        return value.bytes  # IdentityTransform
+        return value  # IdentityTransform
     elif isinstance(value, int):
         return value  # BucketTransform
     else:

@@ -675,6 +675,10 @@ class ManifestEntry(Record):
     def data_file(self, value: DataFile) -> None:
         self._data[4] = value
 
+    def is_live(self) -> bool:
+        """Return whether the entry is live (added or existing) in the snapshot."""
+        return self.status in (ManifestEntryStatus.ADDED, ManifestEntryStatus.EXISTING)
+
 
 PARTITION_FIELD_SUMMARY_TYPE = StructType(
     NestedField(509, "contains_null", BooleanType(), required=True),
@@ -933,7 +937,7 @@ class ManifestFile(Record):
             next_row_id = self.first_row_id if self.content == ManifestContent.DATA else None
 
             for entry in reader:
-                if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
+                if discard_deleted and not entry.is_live():
                     continue
                 _inherit_from_manifest(entry, self)
 
@@ -941,7 +945,7 @@ class ManifestFile(Record):
                 data_file = entry.data_file
                 if next_row_id is None:
                     data_file.first_row_id = None
-                elif entry.status != ManifestEntryStatus.DELETED and data_file.first_row_id is None:
+                elif entry.is_live() and data_file.first_row_id is None:
                     data_file.first_row_id = next_row_id
                     next_row_id += data_file.record_count
 
@@ -1254,7 +1258,7 @@ class ManifestWriter(ABC):
         self._partitions.append(entry.data_file.partition)
 
         if (
-            (entry.status == ManifestEntryStatus.ADDED or entry.status == ManifestEntryStatus.EXISTING)
+            entry.is_live()
             and entry.sequence_number is not None
             and (self._min_sequence_number is None or entry.sequence_number < self._min_sequence_number)
         ):

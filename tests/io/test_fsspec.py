@@ -32,6 +32,7 @@ from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
 from requests_mock import Mocker
 
+from pyiceberg.catalog.rest import _user_agent
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import fsspec
@@ -1028,6 +1029,43 @@ def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
         "X-Custom-Header": "value",
     }
+    assert requests_mock.last_request.headers["User-Agent"] == _user_agent()
+
+
+def test_s3v4_rest_signer_replaces_existing_headers(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={
+            "uri": "https://bucket/metadata/file.avro",
+            "headers": {
+                "Authorization": ["AWS4-HMAC-SHA256 Credential=..., SignedHeaders=..., Signature=..."],
+                "x-amz-content-sha256": ["UNSIGNED-PAYLOAD"],
+                "User-Agent": ["Botocore/1.27.59"],
+            },
+            "extensions": {},
+        },
+        status_code=200,
+    )
+
+    request = AWSRequest(
+        method="PUT",
+        url="https://bucket/metadata/file.avro",
+        headers={
+            "User-Agent": "Botocore/1.27.59",
+            "X-Amz-Content-SHA256": "STREAMING-UNSIGNED-PAYLOAD-TRAILER",
+        },
+        data=b"",
+        params={},
+        auth_path="/metadata/file.avro",
+    )
+    request.context = {"client_region": "us-west-2"}
+
+    signer = S3V4RestSigner(properties={"token": "abc", "uri": TEST_URI})
+    signer(request)
+
+    assert request.headers.get_all("x-amz-content-sha256") == ["UNSIGNED-PAYLOAD"]
+    assert request.headers.get_all("User-Agent") == ["Botocore/1.27.59"]
+    assert len(request.headers.get_all("Authorization")) == 1
 
 
 @pytest.mark.s3

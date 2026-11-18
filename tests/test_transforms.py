@@ -17,7 +17,7 @@
 # under the License.
 # pylint: disable=eval-used,protected-access,redefined-outer-name
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
@@ -1661,11 +1661,20 @@ def test_to_partition_representation_timestamps(source_type: PrimitiveType, valu
     assert _to_partition_representation(source_type, value) == expected
 
 
+def test_to_partition_representation_time() -> None:
+    assert _to_partition_representation(TimeType(), None) is None
+    assert _to_partition_representation(TimeType(), time(22, 31, 8)) == 81068000000
+    # The bucket transform returns an int, which is already the partition representation
+    assert _to_partition_representation(TimeType(), 3) == 3
+
+
 def test_to_partition_representation_unrecognized_type_raises() -> None:
     with pytest.raises(ValueError, match="Type not recognized"):
         _to_partition_representation(TimestampType(), "not-a-datetime-or-int")
     with pytest.raises(ValueError, match="Type not recognized"):
         _to_partition_representation(TimestampNanoType(), "not-a-datetime-or-int")
+    with pytest.raises(ValueError, match="Type not recognized"):
+        _to_partition_representation(TimeType(), "not-a-time-or-int")
 
 
 @pytest.mark.parametrize(

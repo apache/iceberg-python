@@ -71,6 +71,7 @@ from pyiceberg.exceptions import (
     UnauthorizedError,
     ViewAlreadyExistsError,
 )
+from pyiceberg.expressions import AlwaysTrue, BooleanExpression
 from pyiceberg.io import (
     AWS_ACCESS_KEY_ID,
     AWS_PROFILE_NAME,
@@ -359,6 +360,11 @@ else:
 def _retry_hook(retry_state: RetryCallState) -> None:
     rest_catalog: RestCatalog = retry_state.args[0]
     rest_catalog._refresh_token()  # pylint: disable=protected-access
+
+
+def _user_agent() -> str:
+    """Return the User-Agent recommended by the REST catalog spec, for example `pyiceberg/0.11.0 (cpython 3.11.4)`."""
+    return f"pyiceberg/{__version__} ({platform.python_implementation().lower()} {platform.python_version()})"
 
 
 _RETRY_ARGS = {
@@ -855,13 +861,15 @@ class RestCatalog(Catalog):
             sleep_ms = min(sleep_ms * REST_SCAN_PLANNING_POLL_SCALE_FACTOR, REST_SCAN_PLANNING_POLL_MAX_SLEEP_MS)
             retries += 1
 
-    def _expand_plan_tasks(self, identifier: str | Identifier, response: PlanCompleted) -> list[FileScanTask]:
+    def _expand_plan_tasks(
+        self, identifier: str | Identifier, response: PlanCompleted, fallback_residual: BooleanExpression
+    ) -> list[FileScanTask]:
         """Expand a completed plan response into FileScanTask objects, including pagination."""
         tasks: list[FileScanTask] = []
 
         # Collect tasks from initial response
         for task in response.file_scan_tasks:
-            tasks.append(FileScanTask.from_rest_response(task, response.delete_files))
+            tasks.append(FileScanTask.from_rest_response(task, response.delete_files, fallback_residual=fallback_residual))
 
         # Fetch and collect from additional batches
         pending_tasks = deque(response.plan_tasks)
@@ -869,7 +877,7 @@ class RestCatalog(Catalog):
             plan_task = pending_tasks.popleft()
             batch = self._fetch_scan_tasks(identifier, plan_task)
             for task in batch.file_scan_tasks:
-                tasks.append(FileScanTask.from_rest_response(task, batch.delete_files))
+                tasks.append(FileScanTask.from_rest_response(task, batch.delete_files, fallback_residual=fallback_residual))
             pending_tasks.extend(batch.plan_tasks)
 
         return tasks
@@ -896,7 +904,7 @@ class RestCatalog(Catalog):
         if not isinstance(response, PlanCompleted):
             raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
 
-        tasks = self._expand_plan_tasks(identifier, response)
+        tasks = self._expand_plan_tasks(identifier, response, request.filter or AlwaysTrue())
         return PlannedScanResult(
             tasks=tasks,
             storage_credentials=list(response.storage_credentials or []),
@@ -1232,9 +1240,7 @@ class RestCatalog(Catalog):
         header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
-        session.headers["User-Agent"] = (
-            f"pyiceberg/{__version__} ({platform.python_implementation().lower()} {platform.python_version()})"
-        )
+        session.headers["User-Agent"] = _user_agent()
         session.headers["X-Client-Version"] = f"PyIceberg {__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 

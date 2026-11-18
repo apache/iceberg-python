@@ -28,6 +28,7 @@ from datetime import (
     timezone,
 )
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import (
     Any,
 )
@@ -43,6 +44,8 @@ from pyiceberg.avro import (
     STRUCT_INT32,
     STRUCT_INT64,
 )
+from pyiceberg.expressions import IsNull
+from pyiceberg.expressions.visitors import _InclusiveMetricsEvaluator
 from pyiceberg.io.pyarrow import (
     MetricModeTypes,
     MetricsMode,
@@ -53,7 +56,7 @@ from pyiceberg.io.pyarrow import (
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
 )
-from pyiceberg.manifest import DataFile
+from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema, pre_order_visit
 from pyiceberg.table.metadata import (
     TableMetadata,
@@ -61,10 +64,12 @@ from pyiceberg.table.metadata import (
     TableMetadataV1,
     TableMetadataV2,
 )
+from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BooleanType,
     FloatType,
     IntegerType,
+    NestedField,
     StringType,
 )
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
@@ -260,6 +265,64 @@ def test_null_and_nan_counts() -> None:
     # assert datafile.nan_value_counts[1]    == 0
     # assert datafile.nan_value_counts[2]    == 1
     # assert datafile.nan_value_counts[3]    == 0
+
+
+@pytest.mark.parametrize("unknown_row_group", [0, 1])
+def test_unknown_row_group_null_count_is_omitted(unknown_row_group: int) -> None:
+    schema = Schema(NestedField(1, "value", StringType()))
+    arrow_schema = schema_to_pyarrow(schema)
+    table = pa.table({"value": ["present", None]}, schema=arrow_schema)
+    metadata_collector: list[Any] = []
+
+    with pa.BufferOutputStream() as output:
+        with pq.ParquetWriter(output, table.schema, metadata_collector=metadata_collector) as writer:
+            writer.write_table(table, row_group_size=1)
+
+    metadata = metadata_collector[0]
+    assert metadata.num_row_groups == 2
+    assert metadata.row_group(0).column(0).statistics.null_count == 0
+    assert metadata.row_group(1).column(0).statistics.null_count == 1
+    assert table.column("value").null_count == 1
+
+    row_groups: list[Any] = []
+    for index in range(metadata.num_row_groups):
+        column = metadata.row_group(index).column(0)
+        column_metadata = SimpleNamespace(
+            data_page_offset=column.data_page_offset,
+            dictionary_page_offset=column.dictionary_page_offset,
+            has_dictionary_page=column.has_dictionary_page,
+            path_in_schema=column.path_in_schema,
+            total_compressed_size=column.total_compressed_size,
+            num_values=column.num_values,
+            is_stats_set=column.is_stats_set,
+            statistics=SimpleNamespace(
+                has_null_count=index != unknown_row_group,
+                null_count=column.statistics.null_count,
+            ),
+        )
+        row_groups.append(SimpleNamespace(column=lambda _index, column=column_metadata: column))
+    metadata_view = SimpleNamespace(
+        num_row_groups=metadata.num_row_groups,
+        num_columns=metadata.num_columns,
+        num_rows=metadata.num_rows,
+        row_group=lambda index: row_groups[index],
+    )
+
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=metadata_view,
+        stats_columns=compute_statistics_plan(schema, {"write.metadata.metrics.default": "counts"}),
+        parquet_column_mapping=parquet_path_to_id_mapping(schema),
+    )
+    assert statistics.null_value_counts == {}
+
+    data_file = DataFile.from_args(
+        file_path="file.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        file_size_in_bytes=metadata.serialized_size,
+        **statistics.to_serialized_dict(),
+    )
+    assert _InclusiveMetricsEvaluator(schema, IsNull("value")).eval(data_file)
 
 
 def test_bounds() -> None:
