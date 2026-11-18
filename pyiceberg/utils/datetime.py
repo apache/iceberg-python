@@ -237,7 +237,7 @@ def _civil_from_days(days: int) -> tuple[int, int]:
     https://howardhinnant.github.io/date_algorithms.html#civil_from_days.
     """
     z = days + 719468
-    era = (z if z >= 0 else z - 146096) // 146097
+    era = z // 146097
     doe = z - era * 146097
     yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
     doy = doe - (365 * yoe + yoe // 4 - yoe // 100)

@@ -307,6 +307,7 @@ def test_to_human_timestamptz() -> None:
         (2932897, 8030, 96360),
         (-719162, -1969, -23628),
         (-719163, -1970, -23629),
+        (-719529, -1971, -23641),
     ],
 )
 def test_days_to_years_and_months(days: int, years: int, months: int) -> None:
