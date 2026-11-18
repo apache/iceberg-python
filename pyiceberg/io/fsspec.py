@@ -238,13 +238,23 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if s3_additional_kwargs:
         s3_fs_kwargs["s3_additional_kwargs"] = s3_additional_kwargs
 
-    fs = S3FileSystem(**s3_fs_kwargs)
+    if register_events:
 
-    for event_name, event_function in register_events.items():
-        fs.s3.meta.events.unregister(event_name, unique_id=1925)
-        fs.s3.meta.events.register_last(event_name, event_function, unique_id=1925)
+        class _SignedS3FileSystem(S3FileSystem):
+            async def set_session(self, *args: Any, **kwargs: Any) -> Any:
+                s3 = await super().set_session(*args, **kwargs)
+                for event_name, event_function in register_events.items():
+                    s3.meta.events.unregister(event_name, unique_id=1925)
+                    s3.meta.events.register_last(event_name, event_function, unique_id=1925)
+                return s3
 
-    return fs
+        fs = _SignedS3FileSystem(**s3_fs_kwargs, skip_instance_cache=True)
+        for event_name, event_function in register_events.items():
+            fs.s3.meta.events.unregister(event_name, unique_id=1925)
+            fs.s3.meta.events.register_last(event_name, event_function, unique_id=1925)
+        return fs
+
+    return S3FileSystem(**s3_fs_kwargs)
 
 
 def _gs(properties: Properties) -> AbstractFileSystem:

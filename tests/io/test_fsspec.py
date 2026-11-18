@@ -1262,3 +1262,69 @@ def test_s3v4_rest_signer_uses_auth_manager(requests_mock: Mocker) -> None:
     assert requests_mock.last_request is not None
     assert requests_mock.last_request.headers["Authorization"] == "Bearer via-manager"
     assert request.url == new_uri
+
+def test_s3_signer_isolated_across_file_ios(monkeypatch: pytest.MonkeyPatch) -> None:
+    from s3fs.core import sync
+
+    from pyiceberg.io.fsspec import SIGNERS, FsspecFileIO
+
+    calls: list[str] = []
+
+    def make_signer(tag: str):
+        def _factory(_properties):
+            def _sign(request, **kwargs):
+                calls.append(tag)
+
+            return _sign
+
+        return _factory
+
+    monkeypatch.setitem(SIGNERS, "test-signer-a", make_signer("a"))
+    monkeypatch.setitem(SIGNERS, "test-signer-b", make_signer("b"))
+
+    base_props = {"s3.endpoint": "http://localhost:9000", "s3.region": "us-east-1"}
+    io_a = FsspecFileIO({**base_props, "s3.signer": "test-signer-a"})
+    io_b = FsspecFileIO({**base_props, "s3.signer": "test-signer-b"})
+
+    fs_a = io_a.get_fs("s3")
+    fs_b = io_b.get_fs("s3")
+
+    assert fs_a is not fs_b
+    assert fs_a.s3 is not fs_b.s3
+
+    sync(fs_a.loop, fs_a.s3.generate_presigned_url, "head_object", Params={"Bucket": "b", "Key": "k"})
+    sync(fs_b.loop, fs_b.s3.generate_presigned_url, "head_object", Params={"Bucket": "b", "Key": "k"})
+    assert calls == ["a", "b"]
+
+
+def test_s3_signer_re_registered_on_set_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    from s3fs.core import sync
+
+    from pyiceberg.io.fsspec import SIGNERS, FsspecFileIO
+
+    calls: list[str] = []
+
+    def _factory(_properties):
+        def _sign(request, **kwargs):
+            calls.append("signed")
+
+        return _sign
+
+    monkeypatch.setitem(SIGNERS, "test-signer-refresh", _factory)
+
+    io = FsspecFileIO(
+        {
+            "s3.endpoint": "http://localhost:9000",
+            "s3.region": "us-east-1",
+            "s3.signer": "test-signer-refresh",
+        }
+    )
+    fs = io.get_fs("s3")
+    old_s3 = fs.s3
+
+    fs._s3 = None
+    sync(fs.loop, fs.set_session, refresh=True)
+    assert fs.s3 is not old_s3
+
+    sync(fs.loop, fs.s3.generate_presigned_url, "head_object", Params={"Bucket": "b", "Key": "k"})
+    assert calls == ["signed"]
