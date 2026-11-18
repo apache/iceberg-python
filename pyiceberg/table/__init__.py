@@ -227,6 +227,9 @@ class TableProperties:
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
     MANIFEST_MERGE_ENABLED_DEFAULT = False
 
+    METADATA_COMPRESSION = "write.metadata.compression-codec"
+    METADATA_COMPRESSION_DEFAULT = "none"
+
     METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
     METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
 

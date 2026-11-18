@@ -834,6 +834,106 @@ def test_table_metadata_writes_reflect_latest_path(
     assert table.location_provider().new_metadata_location("metadata.json") == f"{new_metadata_path}/metadata.json"
 
 
+def test_table_writes_gzip_metadata_when_compression_codec_is_set(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    table_schema_simple: Schema,
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        identifier=test_table_identifier,
+        schema=table_schema_simple,
+        properties={TableProperties.METADATA_COMPRESSION: "gzip"},
+    )
+    assert table.metadata_location.endswith(".gz.metadata.json")
+    with table.io.new_input(table.metadata_location).open() as stream:
+        assert stream.read(2) == b"\x1f\x8b"  # gzip magic number
+
+    df = pa.Table.from_pydict(
+        {"foo": ["a"], "bar": [1], "baz": [True]},
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+    table.append(df)
+
+    # a later commit keeps the codec, and the version is parsed from the gzip file name
+    assert table.metadata_location.endswith(".gz.metadata.json")
+    assert table.metadata_location.split("/")[-1].startswith("00001-")
+    loaded_table = catalog.load_table(test_table_identifier)
+    assert loaded_table.metadata_location == table.metadata_location
+    assert loaded_table.metadata == table.metadata
+
+
+def test_table_metadata_compression_codec_default_and_set_on_commit(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    table_schema_simple: Schema,
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(identifier=test_table_identifier, schema=table_schema_simple)
+    assert table.metadata_location.endswith(".metadata.json")
+    assert not table.metadata_location.endswith(".gz.metadata.json")
+
+    # the codec set in a commit applies to the metadata file that the commit writes
+    table.transaction().set_properties({TableProperties.METADATA_COMPRESSION: "gzip"}).commit_transaction()
+    assert table.metadata_location.endswith(".gz.metadata.json")
+    assert catalog.load_table(test_table_identifier).metadata_location == table.metadata_location
+
+
+def test_table_metadata_invalid_compression_codec_raises(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    table_schema_simple: Schema,
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    with pytest.raises(ValueError, match="snappy"):
+        catalog.create_table(
+            identifier=test_table_identifier,
+            schema=table_schema_simple,
+            properties={TableProperties.METADATA_COMPRESSION: "snappy"},
+        )
+    assert not catalog.table_exists(test_table_identifier)
+
+    table = catalog.create_table(identifier=test_table_identifier, schema=table_schema_simple)
+    with pytest.raises(ValueError, match="snappy"):
+        table.transaction().set_properties({TableProperties.METADATA_COMPRESSION: "snappy"}).commit_transaction()
+    assert catalog.load_table(test_table_identifier).metadata_location == table.metadata_location
+
+
+def test_table_metadata_legacy_invalid_compression_codec_on_commit(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    metadata_location: str,
+    tmp_path: Path,
+) -> None:
+    # metadata registered with a codec this version rejects: commits without changes still work
+    # the table location is local, so the commit that removes the codec can write its metadata file
+    metadata = json.loads(Path(metadata_location).read_text())
+    metadata["location"] = f"file://{tmp_path}/table"
+    metadata.setdefault("properties", {})[TableProperties.METADATA_COMPRESSION] = "snappy"
+    legacy_location = str(tmp_path / "table" / "metadata" / "00000-6c97e413-d51b-4538-ac70-12fe2a85cb83.metadata.json")
+    Path(legacy_location).parent.mkdir(parents=True)
+    Path(legacy_location).write_text(json.dumps(metadata))
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.register_table(test_table_identifier, legacy_location)
+
+    table.transaction().set_properties({}).commit_transaction()
+    assert table.metadata_location == legacy_location
+
+    # a change writes new metadata, so the unsupported codec raises
+    with pytest.raises(ValueError, match="snappy"):
+        table.transaction().set_properties({"owner": "test"}).commit_transaction()
+    assert catalog.load_table(test_table_identifier).metadata_location == legacy_location
+
+    # removing the property writes new metadata with the default codec
+    table.transaction().remove_properties(TableProperties.METADATA_COMPRESSION).commit_transaction()
+    assert table.metadata_location != legacy_location
+    assert table.metadata_location.endswith(".metadata.json")
+
+
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_and_evolve(catalog: Catalog, format_version: int) -> None:
     identifier = f"default.arrow_write_data_and_evolve_schema_v{format_version}"
