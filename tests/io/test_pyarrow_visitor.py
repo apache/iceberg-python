@@ -377,7 +377,7 @@ def test_simple_schema_has_missing_ids() -> None:
     assert not has_ids
 
 
-def test_simple_schema_has_missing_ids_partial() -> None:
+def test_simple_schema_has_partial_ids() -> None:
     schema = pa.schema(
         [
             pa.field("foo", pa.string(), nullable=False, metadata={"PARQUET:field_id": "1", "doc": "foo doc"}),
@@ -386,7 +386,7 @@ def test_simple_schema_has_missing_ids_partial() -> None:
     )
     visitor = _HasIds()
     has_ids = visit_pyarrow(schema, visitor)
-    assert not has_ids
+    assert has_ids
 
 
 def test_nested_schema_has_missing_ids() -> None:
@@ -436,7 +436,7 @@ def test_nested_schema_has_ids() -> None:
     assert has_ids
 
 
-def test_nested_schema_has_partial_missing_ids() -> None:
+def test_nested_schema_has_partial_ids() -> None:
     schema = pa.schema(
         [
             pa.field("foo", pa.string(), nullable=False, metadata={"PARQUET:field_id": "1", "doc": "foo doc"}),
@@ -457,7 +457,61 @@ def test_nested_schema_has_partial_missing_ids() -> None:
     )
     visitor = _HasIds()
     has_ids = visit_pyarrow(schema, visitor)
-    assert not has_ids
+    assert has_ids
+
+
+def test_pyarrow_to_schema_prunes_fields_without_ids() -> None:
+    # A Databricks UniForm file may attach IDs only to data columns, leaving
+    # row-tracking columns unannotated. Previously _HasIds required every
+    # column to have an ID and fell back to name mapping, which failed when
+    # physical names differed from the mapped names.
+    file_schema = pa.schema(
+        [
+            pa.field("col-2b93b371", pa.string(), metadata={"PARQUET:field_id": "1"}),
+            pa.field("_row-id-col-922d6355", pa.int64()),
+        ]
+    )
+    expected = Schema(NestedField(1, "col-2b93b371", StringType(), required=False))
+    name_mappings = [None, NameMapping([MappedField(field_id=1, names=["store_id"])])]
+    for name_mapping in name_mappings:
+        assert pyarrow_to_schema(file_schema, name_mapping) == expected
+
+
+def test_pyarrow_to_schema_prunes_nested_fields_without_ids() -> None:
+    schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False, metadata={"PARQUET:field_id": "1", "doc": "foo doc"}),
+            pa.field(
+                "quux",
+                pa.map_(
+                    pa.field("key", pa.string(), nullable=False, metadata={"PARQUET:field_id": "7"}),
+                    pa.field(
+                        "value",
+                        pa.map_(pa.field("key", pa.string(), nullable=False), pa.field("value", pa.int32())),
+                        nullable=False,
+                    ),
+                ),
+                nullable=False,
+                metadata={"PARQUET:field_id": "6", "doc": "quux doc"},
+            ),
+            pa.field(
+                "person",
+                pa.struct(
+                    [
+                        pa.field("name", pa.string(), metadata={"PARQUET:field_id": "16"}),
+                        pa.field("age", pa.int32()),
+                    ]
+                ),
+                metadata={"PARQUET:field_id": "15"},
+            ),
+        ]
+    )
+    actual = str(pyarrow_to_schema(schema))
+    expected = """table {
+  1: foo: required string (foo doc)
+  15: person: optional struct<16: name: optional string>
+}"""
+    assert actual == expected
 
 
 def test_pyarrow_schema_to_schema_missing_ids_and_name_mapping(pyarrow_schema_simple_without_ids: pa.Schema) -> None:

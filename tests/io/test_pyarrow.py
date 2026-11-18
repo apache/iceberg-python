@@ -3255,10 +3255,11 @@ def test_schema_compatible_missing_nullable_field_nested(table_schema_nested: Sc
             "person",
             pa.struct(
                 [
-                    pa.field("age", pa.int32(), nullable=False),
+                    pa.field("age", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "17"}),
                 ]
             ),
             nullable=True,
+            metadata={"PARQUET:field_id": "15"},
         ),
     )
     try:
@@ -3276,10 +3277,11 @@ def test_schema_mismatch_missing_required_field_nested(table_schema_nested: Sche
             "person",
             pa.struct(
                 [
-                    pa.field("name", pa.string(), nullable=True),
+                    pa.field("name", pa.string(), nullable=True, metadata={"PARQUET:field_id": "16"}),
                 ]
             ),
             nullable=True,
+            metadata={"PARQUET:field_id": "15"},
         ),
     )
     expected = """Mismatch in fields:

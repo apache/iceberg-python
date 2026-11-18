@@ -1268,9 +1268,11 @@ def pyarrow_to_schema(
 ) -> Schema:
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
-        return visit_pyarrow(
+        result = visit_pyarrow(
             schema, _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version)
         )
+        assert isinstance(result, Schema)
+        return result
     elif name_mapping is not None:
         schema_without_ids = _pyarrow_to_schema_without_ids(
             schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
@@ -1287,10 +1289,12 @@ def _pyarrow_to_schema_without_ids(
     downcast_ns_timestamp_to_us: bool = False,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> Schema:
-    return visit_pyarrow(
+    result = visit_pyarrow(
         schema,
         _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version),
     )
+    assert isinstance(result, Schema)
+    return result
 
 
 def _pyarrow_schema_ensure_large_types(schema: pa.Schema) -> pa.Schema:
@@ -1448,32 +1452,39 @@ def _get_field_id(field: pa.Field) -> int | None:
 
 
 class _HasIds(PyArrowSchemaVisitor[bool]):
+    """Return whether any field in the Arrow schema has an Iceberg field ID.
+
+    Matches Java's ParquetSchemaUtil.hasIds, which is true if any column has an ID.
+    Fields without IDs are later pruned by _ConvertToIceberg.
+    """
+
     def schema(self, schema: pa.Schema, struct_result: bool) -> bool:
         return struct_result
 
     def struct(self, struct: pa.StructType, field_results: builtins.list[bool]) -> bool:
-        return all(field_results)
+        return any(field_results)
 
     def field(self, field: pa.Field, field_result: bool) -> bool:
-        return all([_get_field_id(field) is not None, field_result])
+        return _get_field_id(field) is not None or field_result
 
     def list(self, list_type: pa.ListType, element_result: bool) -> bool:
         element_field = list_type.value_field
         element_id = _get_field_id(element_field)
-        return element_result and element_id is not None
+        return element_result or element_id is not None
 
     def map(self, map_type: pa.MapType, key_result: bool, value_result: bool) -> bool:
         key_field = map_type.key_field
         key_id = _get_field_id(key_field)
         value_field = map_type.item_field
         value_id = _get_field_id(value_field)
-        return all([key_id is not None, value_id is not None, key_result, value_result])
+        return any([key_id is not None, value_id is not None, key_result, value_result])
 
     def primitive(self, primitive: pa.DataType) -> bool:
-        return True
+        # IDs live on pa.Field metadata, not on primitive types
+        return False
 
 
-class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
+class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema | None]):
     """Converts PyArrowSchema to Iceberg Schema."""
 
     _field_names: builtins.list[str]
@@ -1485,34 +1496,37 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._format_version = format_version
 
-    def _field_id(self, field: pa.Field) -> int:
-        if (field_id := _get_field_id(field)) is not None:
-            return field_id
-        else:
-            raise ValueError(f"Cannot convert {field} to Iceberg Field as field_id is empty.")
+    def _field_id(self, field: pa.Field) -> int | None:
+        return _get_field_id(field)
 
-    def schema(self, schema: pa.Schema, struct_result: StructType) -> Schema:
-        return Schema(*struct_result.fields)
+    def schema(self, schema: pa.Schema, struct_result: StructType | None) -> Schema:
+        return Schema(*(struct_result.fields if struct_result is not None else ()))
 
-    def struct(self, struct: pa.StructType, field_results: builtins.list[NestedField]) -> StructType:
-        return StructType(*field_results)
+    def struct(self, struct: pa.StructType, field_results: builtins.list[NestedField | None]) -> StructType | None:
+        fields = tuple(field for field in field_results if field is not None)
+        return StructType(*fields) if fields else None
 
-    def field(self, field: pa.Field, field_result: IcebergType) -> NestedField:
+    def field(self, field: pa.Field, field_result: IcebergType | None) -> NestedField | None:
         field_id = self._field_id(field)
+        if field_id is None or field_result is None:
+            return None
         field_doc = doc_str.decode() if (field.metadata and (doc_str := field.metadata.get(PYARROW_FIELD_DOC_KEY))) else None
-        field_type = field_result
-        return NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc)
+        return NestedField(field_id, field.name, field_result, required=not field.nullable, doc=field_doc)
 
-    def list(self, list_type: pa.ListType, element_result: IcebergType) -> ListType:
+    def list(self, list_type: pa.ListType, element_result: IcebergType | None) -> ListType | None:
         element_field = list_type.value_field
         element_id = self._field_id(element_field)
+        if element_id is None or element_result is None:
+            return None
         return ListType(element_id, element_result, element_required=not element_field.nullable)
 
-    def map(self, map_type: pa.MapType, key_result: IcebergType, value_result: IcebergType) -> MapType:
+    def map(self, map_type: pa.MapType, key_result: IcebergType | None, value_result: IcebergType | None) -> MapType | None:
         key_field = map_type.key_field
         key_id = self._field_id(key_field)
         value_field = map_type.item_field
         value_id = self._field_id(value_field)
+        if key_id is None or value_id is None or key_result is None or value_result is None:
+            return None
         return MapType(key_id, key_result, value_id, value_result, value_required=not value_field.nullable)
 
     def primitive(self, primitive: pa.DataType) -> PrimitiveType:
