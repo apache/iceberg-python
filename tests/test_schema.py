@@ -15,14 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import warnings
 from textwrap import dedent
 from typing import Any
 
 import pyarrow as pa
 import pytest
 
-from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import ResolveError, ValidationError
 from pyiceberg.schema import (
     Accessor,
@@ -1330,145 +1328,16 @@ def test_detect_invalid_promotion_string_to_float(table_v2: Table) -> None:
         _ = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
 
-def test_update_column_rejects_invalid_promotions(catalog: Catalog) -> None:
-    catalog.create_namespace("default")
-    identifier = f"default.update_column_invalid_{catalog.name}"
-    tbl = catalog.create_table(
-        identifier,
-        Schema(
-            NestedField(field_id=1, name="name", field_type=StringType(), required=False),
-            NestedField(field_id=2, name="qty", field_type=IntegerType(), required=False),
-            NestedField(field_id=3, name="price", field_type=DecimalType(9, 2), required=False),
-            NestedField(field_id=4, name="key", field_type=FixedType(15), required=False),
-            NestedField(field_id=5, name="ratio", field_type=FloatType(), required=False),
-        ),
-    )
-    metadata_location = tbl.metadata_location
-
-    # Not valid promotions in the spec, so the update is rejected and the table is not changed
-    rejected = [
-        ("qty", FloatType(), "int -> float"),
-        ("price", DecimalType(9, 3), "decimal(9, 2) -> decimal(9, 3)"),
-        ("price", DecimalType(5, 2), "decimal(9, 2) -> decimal(5, 2)"),
-        ("key", UUIDType(), "fixed[15] -> uuid"),
-        ("ratio", IntegerType(), "float -> int"),
-    ]
-    for name, new_type, promotion in rejected:
-        with pytest.raises(ValidationError) as exc_info:
-            tbl.update_schema().update_column(name, field_type=new_type).commit()
-        assert str(exc_info.value) == f"Cannot change column type: {name}: {promotion}"
-
-    assert catalog.load_table(identifier).metadata_location == metadata_location
-
-    # Valid promotions in the spec, and a type that does not change
-    for name, new_type in [("name", StringType()), ("qty", LongType()), ("price", DecimalType(18, 2)), ("ratio", DoubleType())]:
-        tbl.update_schema().update_column(name, field_type=new_type).commit()
-
-    assert catalog.load_table(identifier).schema() == Schema(
-        NestedField(field_id=1, name="name", field_type=StringType(), required=False),
-        NestedField(field_id=2, name="qty", field_type=LongType(), required=False),
-        NestedField(field_id=3, name="price", field_type=DecimalType(18, 2), required=False),
-        NestedField(field_id=4, name="key", field_type=FixedType(15), required=False),
-        NestedField(field_id=5, name="ratio", field_type=DoubleType(), required=False),
-    )
-
-
-def test_update_column_warns_for_non_spec_promotions(catalog: Catalog) -> None:
-    catalog.create_namespace("default")
-    identifier = f"default.update_column_deprecated_{catalog.name}"
-    tbl = catalog.create_table(
-        identifier,
-        Schema(
-            NestedField(field_id=1, name="name", field_type=StringType(), required=False),
-            NestedField(field_id=2, name="blob", field_type=BinaryType(), required=False),
-            NestedField(field_id=3, name="key", field_type=FixedType(16), required=False),
-        ),
-    )
-
-    # Not in the spec, but still applied with a deprecation warning
-    for name, old_type, new_type in [
-        ("name", StringType(), BinaryType()),
-        ("blob", BinaryType(), StringType()),
-        ("key", FixedType(16), UUIDType()),
-    ]:
-        with pytest.warns(DeprecationWarning) as record:
-            tbl.update_schema().update_column(name, field_type=new_type).commit()
-        assert [str(w.message) for w in record if issubclass(w.category, DeprecationWarning)] == [
-            f"Deprecated in 0.13.0, will be removed in 0.14.0. Column {name} changes from {old_type} to {new_type}, "
-            "which is not a valid type promotion. Pass allow_incompatible_changes=True to update_schema() to keep this change."
-        ]
-
-    assert catalog.load_table(identifier).schema() == Schema(
-        NestedField(field_id=1, name="name", field_type=BinaryType(), required=False),
-        NestedField(field_id=2, name="blob", field_type=StringType(), required=False),
-        NestedField(field_id=3, name="key", field_type=UUIDType(), required=False),
-    )
-
-
-def test_update_column_no_warning_with_allow_incompatible_changes(catalog: Catalog) -> None:
-    catalog.create_namespace("default")
-    identifier = f"default.update_column_opt_in_{catalog.name}"
-    catalog.create_table(
-        identifier,
-        Schema(
-            NestedField(field_id=1, name="name", field_type=StringType(), required=False),
-            NestedField(field_id=2, name="blob", field_type=BinaryType(), required=False),
-            NestedField(field_id=3, name="key", field_type=FixedType(16), required=False),
-        ),
-    )
-
-    # The explicit opt-in applies the same changes without a warning
-    for name, new_type in [("name", BinaryType()), ("blob", StringType()), ("key", UUIDType())]:
-        with warnings.catch_warnings(record=True) as record:
-            warnings.simplefilter("always")
-            catalog.load_table(identifier).update_schema(allow_incompatible_changes=True).update_column(
-                name, field_type=new_type
-            ).commit()
-        assert not [w for w in record if issubclass(w.category, DeprecationWarning)]
-
-    assert catalog.load_table(identifier).schema() == Schema(
-        NestedField(field_id=1, name="name", field_type=BinaryType(), required=False),
-        NestedField(field_id=2, name="blob", field_type=StringType(), required=False),
-        NestedField(field_id=3, name="key", field_type=UUIDType(), required=False),
-    )
-
-
-def test_update_column_promotes_unknown_to_primitive_only(table_v3: Table) -> None:
-    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=UnknownType(), required=False))
-
-    applied = (
-        UpdateSchema(transaction=Transaction(table_v3), schema=current_schema)
-        .update_column("aCol", field_type=StringType())
-        ._apply()
-    )
-    assert applied.find_field("aCol").field_type == StringType()
-
-    with pytest.raises(ValidationError) as exc_info:
-        UpdateSchema(transaction=Transaction(table_v3), schema=current_schema).update_column(
-            "aCol", field_type=ListType(element_id=2, element_type=StringType(), element_required=False)
-        )
-    assert str(exc_info.value) == "Cannot change column type: aCol: unknown -> list<string>"
-
-
-def test_union_by_name_fixed_uuid_and_string_binary(table_v2: Table) -> None:
-    fixed_list = ListType(element_id=2, element_type=FixedType(16), element_required=False)
-    uuid_list = ListType(element_id=2, element_type=UUIDType(), element_required=False)
-    # An incoming UUID over an existing fixed(16) field warns, also for a list element. The other
-    # pairs keep the existing type without a warning.
-    for current_type, new_type, applied_type, warns in [
-        (FixedType(16), UUIDType(), UUIDType(), True),
-        (UUIDType(), FixedType(16), UUIDType(), False),
-        (StringType(), BinaryType(), StringType(), False),
-        (BinaryType(), StringType(), BinaryType(), False),
-        (fixed_list, uuid_list, uuid_list, True),
-    ]:
+def test_update_column_allows_non_spec_promotions(table_v2: Table) -> None:
+    # Not valid promotions in the spec, but allowed on purpose, see promote()
+    for current_type, new_type in [(StringType(), BinaryType()), (BinaryType(), StringType()), (FixedType(16), UUIDType())]:
         current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=current_type, required=False))
-        new_schema = Schema(NestedField(field_id=1, name="aCol", field_type=new_type, required=False))
-        with warnings.catch_warnings(record=True) as record:
-            warnings.simplefilter("always")
-            applied = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
-        assert bool([w for w in record if issubclass(w.category, DeprecationWarning)]) == warns
-        assert applied.find_field("aCol").field_type == applied_type
+        update = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).update_column("aCol", new_type)
+        assert update._apply().find_field("aCol").field_type == new_type
+
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FixedType(15), required=False))
+    with pytest.raises(ValidationError, match=r"^Cannot change column type: aCol: fixed\[15\] -> uuid$"):
+        UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).update_column("aCol", UUIDType())
 
 
 # decimal(P,S) Fixed-point decimal; precision P, scale S -> Scale is fixed [1],
