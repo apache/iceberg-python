@@ -2215,16 +2215,17 @@ def test_remove_partition_statistics_update(table_v2_with_statistics: Table) -> 
     assert len(remove_metadata.partition_statistics) == 0
 
 
-def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_with_statistics: Table) -> None:
-    # Remove the same partition statistics file.
-    with pytest.raises(
-        ValueError,
-        match="Partition Statistics with snapshot id 123456789 does not exist",
-    ):
-        update_table_metadata(
-            table_v2_with_statistics.metadata,
-            (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
-        )
+def test_remove_partition_statistics_update_without_file_is_noop(table_v2_with_statistics: Table) -> None:
+    # Removing a partition statistics file that does not exist leaves the metadata unchanged, also when repeated
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (
+            RemovePartitionStatisticsUpdate(snapshot_id=123456789),
+            RemovePartitionStatisticsUpdate(snapshot_id=123456789),
+        ),
+    )
+
+    assert new_metadata == table_v2_with_statistics.metadata
 
 
 def test_add_encryption_key_update(table_v3: Table) -> None:
