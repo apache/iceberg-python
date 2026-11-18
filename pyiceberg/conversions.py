@@ -506,6 +506,10 @@ def _(_: DecimalType, val: Decimal) -> str:
     decimal point is used to indicate scale, for values with a negative scale,
     the scientific notation is used and the exponent must equal the negated scale.
     """
+    exponent = val.as_tuple().exponent
+    if isinstance(exponent, int) and exponent <= 0:
+        # str() switches to scientific notation for small values, such as 0E-8
+        return f"{val:f}"
     return str(val)
 
 
