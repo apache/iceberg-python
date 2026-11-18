@@ -3730,6 +3730,7 @@ def test_append_writes_parquet_page_index(catalog: InMemoryCatalog) -> None:
         assert column_chunk.has_column_index is page_index_enabled
         assert column_chunk.has_offset_index is page_index_enabled
 
+
 def test_append_counts_nan_values(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="f", field_type=FloatType(), required=False),
