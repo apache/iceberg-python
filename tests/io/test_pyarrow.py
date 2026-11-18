@@ -751,25 +751,32 @@ def test_geography_type_to_pyarrow_with_geoarrow() -> None:
     # Test default (spherical algorithm)
     iceberg_type = GeographyType()
     result = visit(iceberg_type, _ConvertToArrowSchema())
-    expected = ga.wkb(crs="OGC:CRS84").to_pyarrow().with_edge_type(ga.EdgeType.SPHERICAL)
+    expected = ga.wkb(crs="OGC:CRS84", edge_type="spherical").to_pyarrow()
     assert result == expected
 
-    # Test custom CRS with spherical
-    iceberg_type_custom = GeographyType("EPSG:4326", "spherical")
-    result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
-    expected_custom = ga.wkb(crs="EPSG:4326").to_pyarrow().with_edge_type(ga.EdgeType.SPHERICAL)
-    assert result_custom == expected_custom
-    assert json.loads(result_custom.__arrow_ext_serialize__()) == {"crs": "EPSG:4326", "edges": "spherical"}
+    # Test custom CRS with each geography algorithm
+    for algorithm in ("spherical", "vincenty", "thomas", "andoyer", "karney"):
+        iceberg_type_custom = GeographyType("EPSG:4326", algorithm)
+        result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
+        assert result_custom.edge_type.name.lower() == algorithm
+        assert json.loads(result_custom.__arrow_ext_serialize__()) == {"crs": "EPSG:4326", "edges": algorithm}
 
-    schema = pa.schema([("geography", result_custom)])
-    assert pa.ipc.read_schema(schema.serialize()).equals(schema, check_metadata=True)
+        schema = pa.schema([("geography", result_custom)])
+        restored_type = pa.ipc.read_schema(schema.serialize()).field("geography").type
+        assert restored_type.edge_type == result_custom.edge_type
+        assert restored_type.__arrow_ext_serialize__() == result_custom.__arrow_ext_serialize__()
 
-    # Test planar algorithm (no edge type set, uses default)
-    iceberg_type_planar = GeographyType("OGC:CRS84", "planar")
-    result_planar = visit(iceberg_type_planar, _ConvertToArrowSchema())
-    expected_planar = ga.wkb(crs="OGC:CRS84").to_pyarrow()
-    assert result_planar == expected_planar
-    assert json.loads(result_planar.__arrow_ext_serialize__()) == {"crs": "OGC:CRS84"}
+
+def test_geography_type_to_pyarrow_planar() -> None:
+    with pytest.raises(ValueError, match="The planar algorithm is not supported for geography types"):
+        visit(GeographyType("OGC:CRS84", "planar"), _ConvertToArrowSchema())
+
+
+def test_geography_type_to_pyarrow_unsupported_algorithm() -> None:
+    pytest.importorskip("geoarrow.types")
+
+    with pytest.raises(ValueError, match="Unsupported geography edge interpolation algorithm: 'unsupported'"):
+        visit(GeographyType("OGC:CRS84", "unsupported"), _ConvertToArrowSchema())
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:

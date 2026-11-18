@@ -879,14 +879,18 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
             from geoarrow.types.type_pyarrow import register_extension_types
 
             register_extension_types()
-            wkb_type = ga.wkb(crs=geography_type.crs).to_pyarrow()
-            # Map Iceberg algorithm to GeoArrow edge type
-            if geography_type.algorithm == "spherical":
-                wkb_type = wkb_type.with_edge_type(ga.EdgeType.SPHERICAL)
-            # "planar" is the default edge type in GeoArrow, no need to set explicitly
-            return wkb_type
+
+            # Other unsupported values are validated by ga.wkb(); however, this is a valid value
+            # that if passed to ga.wkb() will result in the value being interpreted as geometry
+            # instead of geography.
+            if geography_type.algorithm == "planar":
+                raise ValueError("The planar algorithm is not supported for geography types")
+
+            return ga.wkb(crs=geography_type.crs, edge_type=geography_type.algorithm).to_pyarrow()
         except ImportError:
             return pa.large_binary()
+        except KeyError as e:
+            raise ValueError(f"Unsupported geography edge interpolation algorithm: {geography_type.algorithm!r}") from e
 
 
 def _literal_arrow_type(iceberg_type: IcebergType, values: Iterable[Any]) -> pa.DataType:
