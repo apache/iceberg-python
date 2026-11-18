@@ -30,6 +30,7 @@ import fnmatch
 import functools
 import importlib
 import itertools
+import json
 import logging
 import math
 import operator
@@ -162,6 +163,7 @@ from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
+    DEFAULT_GEOMETRY_CRS,
     BinaryType,
     BooleanType,
     DateType,
@@ -1490,6 +1492,50 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
         return True
 
 
+def _geoarrow_crs_to_iceberg(crs: object) -> str:
+    """Convert GeoArrow CRS metadata to a compact Iceberg CRS identifier."""
+    # Missing CRS has a specific meaning in GeoArrow that aligns with a
+    # GeoParquet "null" CRS and a GeoPandas "None" CRS. From the Iceberg
+    # and Parquet examples and GeoParquet 2.0 guidance, the corresponding
+    # Iceberg string is "srid:0".
+    if crs is None:
+        return "srid:0"
+
+    # PROJJSON CRSes need their authority:code extracted, because the Iceberg
+    # spec forbids storing a PROJJSON string inline in the schema
+    # (PROJJSON strings are typically several kilobytes and types are repeated
+    # in metadata frequently).
+    if isinstance(crs, dict):
+        crs_id = crs.get("id")
+        if (
+            not isinstance(crs_id, dict)
+            or not isinstance(crs_id.get("authority"), str)
+            or not crs_id["authority"]
+            or not isinstance(crs_id.get("code"), (str, int, float))
+            or isinstance(crs_id["code"], bool)
+        ):
+            raise ValueError(
+                "GeoArrow PROJJSON CRS must have an authority/code ID; inline PROJJSON is not supported in Iceberg schemas"
+            )
+        crs = f"{crs_id['authority']}:{crs_id['code']}"
+
+    if not isinstance(crs, str):
+        raise ValueError("GeoArrow CRS must be a string, a PROJJSON object, or null")
+
+    # Parquet omits these exact identifiers, defaulting to OGC:CRS84. This ensures
+    # that the Parquet type and the Iceberg type match for the most common two CRS
+    # values. The two values are implicitly equivalent according to the Coordinate
+    # Axis Order of the Parquet specification.
+    if crs in (DEFAULT_GEOMETRY_CRS, "EPSG:4326"):
+        return DEFAULT_GEOMETRY_CRS
+
+    # Otherwise, preserve the string exactly as PyArrow writes it.
+    if not crs.strip():
+        raise ValueError("Geospatial CRS must be non-empty")
+
+    return crs
+
+
 class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
     """Converts PyArrowSchema to Iceberg Schema."""
 
@@ -1605,6 +1651,14 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
             return UnknownType()
         elif isinstance(primitive, pa.UuidType):
             return UUIDType()
+        elif isinstance(primitive, pa.ExtensionType) and primitive.extension_name == "geoarrow.wkb":
+            metadata = json.loads(primitive.__arrow_ext_serialize__())
+            crs = _geoarrow_crs_to_iceberg(metadata.get("crs"))
+            edges = metadata.get("edges", "planar")
+            if edges == "planar":
+                return GeometryType(crs)
+            else:
+                return GeographyType(crs, edges)
 
         raise TypeError(f"Unsupported type: {primitive}")
 
