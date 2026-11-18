@@ -3547,6 +3547,25 @@ def test_append_uuid_to_table_partitioned_on_uuid(catalog: InMemoryCatalog) -> N
     assert {task.file.partition[0] for task in table.scan().plan_files()} == {uuid.UUID(int=1), uuid.UUID(int=2), None}
 
 
+def test_scan_filters_truncate_partitions_near_the_minimum(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=True),
+        NestedField(id=2, name="x", field_type=IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=TruncateTransform(1000), name="x_trunc"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_truncate_minimum", schema=schema, partition_spec=spec)
+    table.append(
+        pa.Table.from_pylist(
+            [{"id": 0, "x": -(2**31)}, {"id": 1, "x": -(2**31) + 100}, {"id": 2, "x": 5}], schema=schema.as_arrow()
+        )
+    )
+
+    assert table.scan(row_filter=EqualTo("x", -(2**31))).to_arrow()["id"].to_pylist() == [0]
+    assert sorted(table.scan(row_filter=LessThan("x", 0)).to_arrow()["id"].to_pylist()) == [0, 1]
+    assert sorted(table.scan(row_filter=GreaterThan("x", -(2**31))).to_arrow()["id"].to_pylist()) == [1, 2]
+
+
 def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="id", field_type=LongType(), required=False),
@@ -3595,25 +3614,6 @@ def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
 
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
     assert table.scan(row_filter=EqualTo("event_time", "22:31:08")).to_arrow()["id"].to_pylist() == [2]
-
-
-def test_scan_filters_truncate_partitions_near_the_minimum(catalog: InMemoryCatalog) -> None:
-    schema = Schema(
-        NestedField(id=1, name="id", field_type=LongType(), required=True),
-        NestedField(id=2, name="x", field_type=IntegerType(), required=False),
-    )
-    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=TruncateTransform(1000), name="x_trunc"))
-    catalog.create_namespace("default")
-    table = catalog.create_table("default.test_scan_truncate_minimum", schema=schema, partition_spec=spec)
-    table.append(
-        pa.Table.from_pylist(
-            [{"id": 0, "x": -(2**31)}, {"id": 1, "x": -(2**31) + 100}, {"id": 2, "x": 5}], schema=schema.as_arrow()
-        )
-    )
-
-    assert table.scan(row_filter=EqualTo("x", -(2**31))).to_arrow()["id"].to_pylist() == [0]
-    assert sorted(table.scan(row_filter=LessThan("x", 0)).to_arrow()["id"].to_pylist()) == [0, 1]
-    assert sorted(table.scan(row_filter=GreaterThan("x", -(2**31))).to_arrow()["id"].to_pylist()) == [1, 2]
 
 
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
