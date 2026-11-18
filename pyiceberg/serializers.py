@@ -27,6 +27,10 @@ from pyiceberg.typedef import UTF8
 from pyiceberg.utils.config import Config
 
 GZIP = "gzip"
+NONE = "none"
+
+# Suffix before ".metadata.json" for each write.metadata.compression-codec value
+METADATA_FILE_EXTENSIONS = {NONE: "", GZIP: ".gz"}
 
 
 class Compressor(ABC):
