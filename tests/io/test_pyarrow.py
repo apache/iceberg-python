@@ -723,44 +723,53 @@ def test_geography_type_to_pyarrow_without_geoarrow() -> None:
 
 def test_geometry_type_to_pyarrow_with_geoarrow() -> None:
     """Test geometry type uses geoarrow WKB extension type when available."""
-    pytest.importorskip("geoarrow.pyarrow")
-    import geoarrow.pyarrow as ga
+    pytest.importorskip("geoarrow.types")
+    import geoarrow.types as ga
 
     # Test default CRS
     iceberg_type = GeometryType()
     result = visit(iceberg_type, _ConvertToArrowSchema())
-    expected = ga.wkb().with_crs("OGC:CRS84")
+    expected = ga.wkb(crs="OGC:CRS84").to_pyarrow()
     assert result == expected
 
     # Test custom CRS
     iceberg_type_custom = GeometryType("EPSG:4326")
     result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
-    expected_custom = ga.wkb().with_crs("EPSG:4326")
+    expected_custom = ga.wkb(crs="EPSG:4326").to_pyarrow()
     assert result_custom == expected_custom
+    assert json.loads(result_custom.__arrow_ext_serialize__()) == {"crs": "EPSG:4326"}
+
+    schema = pa.schema([("geometry", result_custom)])
+    assert pa.ipc.read_schema(schema.serialize()).equals(schema, check_metadata=True)
 
 
 def test_geography_type_to_pyarrow_with_geoarrow() -> None:
     """Test geography type uses geoarrow WKB extension type with edge type when available."""
-    pytest.importorskip("geoarrow.pyarrow")
-    import geoarrow.pyarrow as ga
+    pytest.importorskip("geoarrow.types")
+    import geoarrow.types as ga
 
     # Test default (spherical algorithm)
     iceberg_type = GeographyType()
     result = visit(iceberg_type, _ConvertToArrowSchema())
-    expected = ga.wkb().with_crs("OGC:CRS84").with_edge_type(ga.EdgeType.SPHERICAL)
+    expected = ga.wkb(crs="OGC:CRS84").to_pyarrow().with_edge_type(ga.EdgeType.SPHERICAL)
     assert result == expected
 
     # Test custom CRS with spherical
     iceberg_type_custom = GeographyType("EPSG:4326", "spherical")
     result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
-    expected_custom = ga.wkb().with_crs("EPSG:4326").with_edge_type(ga.EdgeType.SPHERICAL)
+    expected_custom = ga.wkb(crs="EPSG:4326").to_pyarrow().with_edge_type(ga.EdgeType.SPHERICAL)
     assert result_custom == expected_custom
+    assert json.loads(result_custom.__arrow_ext_serialize__()) == {"crs": "EPSG:4326", "edges": "spherical"}
+
+    schema = pa.schema([("geography", result_custom)])
+    assert pa.ipc.read_schema(schema.serialize()).equals(schema, check_metadata=True)
 
     # Test planar algorithm (no edge type set, uses default)
     iceberg_type_planar = GeographyType("OGC:CRS84", "planar")
     result_planar = visit(iceberg_type_planar, _ConvertToArrowSchema())
-    expected_planar = ga.wkb().with_crs("OGC:CRS84")
+    expected_planar = ga.wkb(crs="OGC:CRS84").to_pyarrow()
     assert result_planar == expected_planar
+    assert json.loads(result_planar.__arrow_ext_serialize__()) == {"crs": "OGC:CRS84"}
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
