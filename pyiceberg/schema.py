@@ -210,7 +210,8 @@ class Schema(IcebergBaseModel):
             case_sensitive (bool, optional): Whether to perform a case-sensitive lookup using a field name. Defaults to True.
 
         Raises:
-            ValueError: When the value cannot be found.
+            ValueError: When the value cannot be found, or when case_sensitive is False and two fields have names
+                that differ only by case.
 
         Returns:
             NestedField: The matched NestedField.
@@ -333,7 +334,8 @@ class Schema(IcebergBaseModel):
             Schema: A new schema with pruned columns.
 
         Raises:
-            ValueError: If a column is selected that doesn't exist.
+            ValueError: If a column is selected that doesn't exist, or when case_sensitive is False and two fields
+                have names that differ only by case.
         """
         try:
             if case_sensitive:
