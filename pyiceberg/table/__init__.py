@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import math
 import random
 import time
 import uuid
@@ -34,8 +35,8 @@ from cachetools import LRUCache
 from pydantic import Field
 
 from pyiceberg.encryption.kms import KeyManagementClient
-from pyiceberg.exceptions import CommitFailedException, ValidationException
-from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNull, Or, Reference
+from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException, ValidationException
+from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, BooleanExpression, EqualTo, IsNaN, IsNull, Or, Reference
 from pyiceberg.expressions.visitors import (
     ResidualEvaluator,
     _InclusiveMetricsEvaluator,
@@ -63,6 +64,7 @@ from pyiceberg.table.labels import Labels
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
+from pyiceberg.table.metadata_columns import project_schema, split_selected_fields
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
 from pyiceberg.table.snapshots import (
@@ -95,6 +97,7 @@ from pyiceberg.table.update import (
     UpgradeFormatVersionUpdate,
     update_table_metadata,
 )
+from pyiceberg.table.update.partition_statistics import UpdatePartitionStatistics
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.sorting import UpdateSortOrder
@@ -225,6 +228,9 @@ class TableProperties:
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
     MANIFEST_MERGE_ENABLED_DEFAULT = False
 
+    METADATA_COMPRESSION = "write.metadata.compression-codec"
+    METADATA_COMPRESSION_DEFAULT = "none"
+
     METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
     METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
 
@@ -276,6 +282,8 @@ class Transaction:
 
     @property
     def table_metadata(self) -> TableMetadata:
+        if not self._updates:
+            return self._table.metadata
         return update_table_metadata(self._table.metadata, self._updates)
 
     def __enter__(self) -> Transaction:
@@ -335,12 +343,6 @@ class Transaction:
             self.commit_transaction()
 
         return self
-
-    def _scan(self, row_filter: str | BooleanExpression = ALWAYS_TRUE, case_sensitive: bool = True) -> DataScan:
-        """Minimal data scan of the table with the current state of the transaction."""
-        return DataScan(
-            table_metadata=self.table_metadata, io=self._table.io, row_filter=row_filter, case_sensitive=case_sensitive
-        )
 
     def upgrade_table_version(self, format_version: TableVersion) -> Transaction:
         """Set the table to a certain version.
@@ -427,12 +429,16 @@ class Transaction:
 
         per_record_exprs: list[BooleanExpression] = []
         for partition_record in partition_records:
-            predicates: list[BooleanExpression] = [
-                EqualTo(Reference(partition_field), partition_record[pos])
-                if partition_record[pos] is not None
-                else IsNull(Reference(partition_field))
-                for pos, partition_field in enumerate(partition_fields)
-            ]
+            predicates: list[BooleanExpression] = []
+            for pos, partition_field in enumerate(partition_fields):
+                ref = Reference(partition_field)
+                value = partition_record[pos]
+                if value is None:
+                    predicates.append(IsNull(ref))
+                elif isinstance(value, float) and math.isnan(value):
+                    predicates.append(IsNaN(ref))
+                else:
+                    predicates.append(EqualTo(ref, value))
             per_record_exprs.append(And(*predicates) if len(predicates) > 1 else predicates[0])
 
         return Or(*per_record_exprs) if len(per_record_exprs) > 1 else per_record_exprs[0]
@@ -504,6 +510,15 @@ class Transaction:
             A new UpdateStatistics
         """
         return UpdateStatistics(transaction=self)
+
+    def update_partition_statistics(self) -> UpdatePartitionStatistics:
+        """
+        Create a new UpdatePartitionStatistics to update the partition statistics of the table.
+
+        Returns:
+            A new UpdatePartitionStatistics
+        """
+        return UpdatePartitionStatistics(transaction=self)
 
     def append(
         self,
@@ -800,10 +815,17 @@ class Transaction:
             bound_delete_filter = bind(self.table_metadata.schema(), delete_filter, case_sensitive)
             preserve_row_filter = _expression_to_complementary_pyarrow(bound_delete_filter, self.table_metadata.schema())
 
-            file_scan = self._scan(row_filter=delete_filter, case_sensitive=case_sensitive)
-            if branch is not None:
-                file_scan = file_scan.use_ref(branch)
-            files = file_scan.plan_files()
+            # Each file is rewritten in full, so it needs every delete file that applies to it,
+            # not only those whose bounds can match the delete filter.
+            planner = ManifestGroupPlanner(
+                table_metadata=self.table_metadata,
+                io=self._table.io,
+                row_filter=delete_filter,
+                case_sensitive=case_sensitive,
+                _ignore_residuals=True,
+            )
+            snapshot = self.table_metadata.snapshot_by_name(branch)
+            files = planner.plan_files(snapshot.manifests(self._table.io)) if snapshot is not None else []
 
             commit_uuid = uuid.uuid4()
             counter = itertools.count(0)
@@ -1151,6 +1173,12 @@ class Transaction:
                         except CommitFailedException:
                             elapsed_ms = (time.monotonic() - start_time) * 1000
                             if attempt == num_retries or not self._snapshot_producers or elapsed_ms >= total_timeout_ms:
+                                # The catalog can apply a commit and still report failure, for example
+                                # when the response is lost. Check before cleaning up, since cleaning
+                                # up a snapshot that landed would leave the table unreadable.
+                                if self._snapshot_producers and self._attempt_landed():
+                                    self._cleanup_uncommitted_manifests()
+                                    break
                                 raise
 
                             wait = min(min_wait_ms * (2**attempt), max_wait_ms)
@@ -1163,11 +1191,7 @@ class Transaction:
                             )
                             time.sleep((wait + jitter) / 1000.0)
 
-                            self._table.refresh()
-                            if all(
-                                self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None
-                                for producer in self._snapshot_producers
-                            ):
+                            if self._attempt_landed():
                                 # A previous attempt actually landed even though it was reported as
                                 # failed (for example a lost response that the transport layer retried).
                                 # The snapshot id is stable across attempts, so finding it in the
@@ -1195,17 +1219,10 @@ class Transaction:
         elif self._snapshot_producers:
             # An empty staged output (e.g. a delete whose plan matched nothing) skips the
             # commit loop above, so run concurrency validation explicitly before reporting success.
-            from pyiceberg.table.update.snapshot import CommitWindow
-
             try:
                 self._table.refresh()
-                commit_window = CommitWindow.resolve(
-                    self._table.metadata,
-                    self._snapshot_producers[0]._starting_snapshot_id,
-                    self._snapshot_producers[0]._target_branch,
-                )
+                self._resolve_commit_windows()
                 for producer in self._snapshot_producers:
-                    producer._commit_window = commit_window
                     producer._validate_concurrency()
             except Exception:
                 for producer in self._snapshot_producers:
@@ -1220,25 +1237,53 @@ class Transaction:
 
         return self._table
 
+    def _attempt_landed(self) -> bool:
+        """Refresh the table and return whether a snapshot written by this transaction is present.
+
+        Raises:
+            CommitStateUnknownException: If the table cannot be refreshed, the outcome is unknown and
+                the files written for the attempt must not be deleted.
+        """
+        try:
+            self._table.refresh()
+        except Exception as e:
+            raise CommitStateUnknownException(
+                f"Commit failed and the table could not be refreshed to check whether it landed: {e}"
+            ) from e
+
+        return all(
+            self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None for producer in self._snapshot_producers
+        )
+
     def _cleanup_uncommitted_manifests(self) -> None:
         """Clean up manifests from failed retry attempts after a successful commit."""
         for producer in self._snapshot_producers:
             producer._cleanup_uncommitted()
 
+    def _resolve_commit_windows(self) -> None:
+        """Resolve each producer's commit window against the refreshed metadata of its own branch.
+
+        The window starts where the transaction first wrote to the branch. Later producers on the same
+        branch start from a snapshot staged by this transaction, which the catalog has never seen.
+        """
+        from pyiceberg.table.update.snapshot import CommitWindow
+
+        windows: dict[str | None, CommitWindow] = {}
+        for producer in self._snapshot_producers:
+            branch = producer._target_branch
+            if branch not in windows:
+                windows[branch] = CommitWindow.resolve(self._table.metadata, producer._starting_snapshot_id, branch)
+            producer._commit_window = windows[branch]
+
     def _rebuild_snapshot_updates(self) -> None:
         """Rebuild snapshot updates for retry by re-executing registered producers."""
         from pyiceberg.table.update import AddSnapshotUpdate, AssertRefSnapshotId, SetSnapshotRefUpdate
-        from pyiceberg.table.update.snapshot import CommitWindow
 
         self._updates = tuple(u for u in self._updates if not isinstance(u, (AddSnapshotUpdate, SetSnapshotRefUpdate)))
         self._requirements = tuple(r for r in self._requirements if not isinstance(r, AssertRefSnapshotId))
 
-        starting_id = self._snapshot_producers[0]._starting_snapshot_id if self._snapshot_producers else None
-        target_branch = self._snapshot_producers[0]._target_branch if self._snapshot_producers else None
-        commit_window = CommitWindow.resolve(self._table.metadata, starting_id, target_branch)
-
+        self._resolve_commit_windows()
         for producer in self._snapshot_producers:
-            producer._commit_window = commit_window
             producer._refresh_for_retry()
             producer._validate_concurrency()
             updates, requirements = producer._commit()
@@ -1668,6 +1713,23 @@ class Table:
             update.remove_statistics(snapshot_id=2)
         """
         return UpdateStatistics(transaction=Transaction(self, autocommit=True))
+
+    def update_partition_statistics(self) -> UpdatePartitionStatistics:
+        """
+        Shorthand to run partition statistics management operations like set and remove partition statistics.
+
+        Use table.update_partition_statistics().<operation>().commit() to run a specific operation.
+        Use table.update_partition_statistics().<operation-one>().<operation-two>().commit() to run multiple operations.
+
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example:
+
+        with table.update_partition_statistics() as update:
+            update.set_partition_statistics(partition_statistics_file=partition_statistics_file)
+            update.remove_partition_statistics(snapshot_id=2)
+        """
+        return UpdatePartitionStatistics(transaction=Transaction(self, autocommit=True))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -2271,10 +2333,7 @@ class TableScan(BaseScan):
             else:
                 raise ValueError(f"Snapshot not found: {self.snapshot_id}")
 
-        if "*" in self.selected_fields:
-            return current_schema
-
-        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+        return project_schema(current_schema, self.selected_fields, self.case_sensitive, self.table_metadata.format_version)
 
     def use_ref(self: S, name: str) -> S:
         if self.snapshot_id is not None:
@@ -2314,12 +2373,15 @@ class FileScanTask(ScanTask):
     def from_rest_response(
         rest_task: RESTFileScanTask,
         delete_files: list[RESTDeleteFile],
+        *,
+        fallback_residual: BooleanExpression = ALWAYS_TRUE,
     ) -> FileScanTask:
         """Convert a RESTFileScanTask to a FileScanTask.
 
         Args:
             rest_task: The REST file scan task.
             delete_files: The list of delete files from the ScanTasks response.
+            fallback_residual: The scan filter to use when the server omits the residual.
 
         Returns:
             A FileScanTask with the converted data and delete files.
@@ -2342,7 +2404,7 @@ class FileScanTask(ScanTask):
         return FileScanTask(
             data_file=data_file,
             delete_files=resolved_deletes,
-            residual=rest_task.residual_filter if rest_task.residual_filter else ALWAYS_TRUE,
+            residual=rest_task.residual_filter if rest_task.residual_filter is not None else fallback_residual,
         )
 
 
@@ -2388,6 +2450,7 @@ def _rest_file_to_data_file(rest_file: RESTContentFile, default_referenced_data_
         referenced_data_file=referenced_data_file,
         content_offset=rest_file.content_offset if isinstance(rest_file, RESTPositionDeleteFile) else None,
         content_size_in_bytes=rest_file.content_size_in_bytes if isinstance(rest_file, RESTPositionDeleteFile) else None,
+        first_row_id=rest_file.first_row_id if isinstance(rest_file, RESTDataFile) else None,
     )
     data_file.spec_id = rest_file.spec_id
     return data_file
@@ -2518,9 +2581,11 @@ class DataScan(TableScan):
         if self.table_identifier is None:
             raise ValueError("REST scan planning requires a table identifier")
 
+        # Metadata columns are not in the table schema, so the server cannot resolve them
+        schema_fields, _ = split_selected_fields(self.table_metadata.schema(), self.selected_fields, self.case_sensitive)
         request = PlanTableScanRequest(
             snapshot_id=self.snapshot_id,
-            select=list(self.selected_fields) if self.selected_fields != ("*",) else None,
+            select=list(schema_fields) if schema_fields != ("*",) else None,
             filter=self.row_filter if self.row_filter != ALWAYS_TRUE else None,
             case_sensitive=self.case_sensitive,
         )
@@ -2711,10 +2776,9 @@ class IncrementalAppendScan(BaseScan):
         return self.update(to_snapshot_id=to_snapshot_id)
 
     def projection(self) -> Schema:
-        current_schema = self.table_metadata.schema()
-        if "*" in self.selected_fields:
-            return current_schema
-        return current_schema.select(*self.selected_fields, case_sensitive=self.case_sensitive)
+        return project_schema(
+            self.table_metadata.schema(), self.selected_fields, self.case_sensitive, self.table_metadata.format_version
+        )
 
     def plan_files(self) -> Iterable[FileScanTask]:
         """Plans the relevant files added between the specified snapshots."""
@@ -2840,12 +2904,16 @@ class ManifestGroupPlanner:
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         case_sensitive: bool = True,
         options: Properties = EMPTY_DICT,
+        _ignore_residuals: bool = False,
     ):
         self.table_metadata = table_metadata
         self.io = io
         self.row_filter = _parse_row_filter(row_filter)
         self.case_sensitive = case_sensitive
         self.options = options
+        # Set when the planned data files are read in full, as in a rewrite. Residuals are then always true, and delete
+        # files are kept even if their bounds cannot match the row filter, as no residual drops the rows they delete.
+        self._ignore_residuals = _ignore_residuals
 
     @cached_property
     def partition_filters(self) -> KeyDefaultDict[int, BooleanExpression]:
@@ -2883,7 +2951,9 @@ class ManifestGroupPlanner:
                     self.io,
                     manifest,
                     partition_evaluators[manifest.partition_spec_id],
-                    metrics_evaluator,
+                    metrics_evaluator
+                    if manifest.content == ManifestContent.DATA or not self._ignore_residuals
+                    else lambda _: True,
                 )
                 for manifest in manifests
                 if self._check_sequence_number(min_sequence_number, manifest)
@@ -2962,7 +3032,7 @@ class ManifestGroupPlanner:
                     data_entry.data_file,
                     partition_key=data_entry.data_file.partition,
                 ),
-                residual=residual_for(data_entry.data_file),
+                residual=ALWAYS_TRUE if self._ignore_residuals else residual_for(data_entry.data_file),
             )
             for data_entry in data_entries
         ]

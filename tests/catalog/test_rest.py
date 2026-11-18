@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import os
 import pickle
+import platform
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -97,7 +98,7 @@ TEST_RESOURCE = "test_resource"
 
 TEST_HEADERS = {
     "Content-type": "application/json",
-    "User-Agent": f"PyIceberg/{pyiceberg.__version__}",
+    "User-Agent": f"pyiceberg/{pyiceberg.__version__} ({platform.python_implementation().lower()} {platform.python_version()})",
     "Authorization": f"Bearer {TEST_TOKEN}",
     "X-Iceberg-Access-Delegation": "vended-credentials",
 }
@@ -1798,6 +1799,33 @@ def test_create_staged_table_200(
     assert actual_response == expected
 
 
+def test_create_staged_table_with_storage_credentials(
+    rest_mock: Mocker,
+    table_schema_simple: Schema,
+    example_table_metadata_no_snapshot_v1: dict[str, Any],
+) -> None:
+    table_location = "gs://bucket/ns/t"
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json={
+            "metadata": {**example_table_metadata_no_snapshot_v1, "location": table_location},
+            "config": {},
+            "storage-credentials": [
+                {
+                    "prefix": f"{table_location}/",
+                    "config": {"gcs.oauth2.token": "vended"},
+                }
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    txn = catalog.create_table_transaction(identifier=("fokko", "fokko2"), schema=table_schema_simple)
+
+    assert txn._table.io.properties["gcs.oauth2.token"] == "vended"
+
+
 def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
@@ -2184,7 +2212,24 @@ def test_delete_table_204(rest_mock: Mocker) -> None:
         status_code=204,
         request_headers=TEST_HEADERS,
     )
-    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(("example", "fokko"))
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    catalog.drop_table(("example", "fokko"))
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/example/tables/fokko?purgeRequested=false"
+
+    catalog.drop_table(("example", "fokko"), purge_requested=True)
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/example/tables/fokko?purgeRequested=true"
+
+
+def test_purge_table_204(rest_mock: Mocker) -> None:
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/example/tables/fokko",
+        json={},
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).purge_table(("example", "fokko"))
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/example/tables/fokko?purgeRequested=true"
 
 
 def test_delete_table_from_self_identifier_204(
@@ -3182,6 +3227,7 @@ def test_rest_catalog_with_google_credentials_path(
     mock_load_creds: mock.MagicMock, mock_google_request: mock.MagicMock, rest_mock: Mocker
 ) -> None:
     mock_credentials = mock.MagicMock()
+    mock_credentials.valid = False
     mock_credentials.token = "file_token"
     mock_load_creds.return_value = (mock_credentials, "test_project_file")
 
@@ -3264,6 +3310,18 @@ def test_auth_header(rest_mock: Mocker) -> None:
         mock_request.last_request.text
         == "grant_type=client_credentials&client_id=client&client_secret=secret_with%3Acolon&scope=catalog"
     )
+
+
+def test_user_agent_header(rest_mock: Mocker, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pyiceberg.catalog.rest.__version__", "0.11.0")
+    for implementation, python_version, expected in [
+        ("CPython", "3.11.4", "pyiceberg/0.11.0 (cpython 3.11.4)"),
+        ("PyPy", "3.10.16", "pyiceberg/0.11.0 (pypy 3.10.16)"),
+    ]:
+        monkeypatch.setattr(platform, "python_implementation", lambda implementation=implementation: implementation)
+        monkeypatch.setattr(platform, "python_version", lambda python_version=python_version: python_version)
+        catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+        assert catalog._session.headers["User-Agent"] == expected
 
 
 def test_client_version_header(rest_mock: Mocker) -> None:

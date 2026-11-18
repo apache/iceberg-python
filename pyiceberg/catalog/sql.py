@@ -25,6 +25,7 @@ from typing import (
 
 from sqlalchemy import (
     ColumnElement,
+    Engine,
     String,
     create_engine,
     delete,
@@ -126,17 +127,21 @@ class SqlCatalog(MetastoreCatalog):
     The `SqlCatalog` has a different convention where a `TableIdentifier` requires a `Namespace`.
     """
 
-    def __init__(self, name: str, **properties: str):
+    def __init__(self, name: str, engine: Engine | None = None, **properties: str):
         super().__init__(name, **properties)
 
-        if not (uri_prop := self.properties.get(URI)):
-            raise NoSuchPropertyException("SQL connection URI is required")
+        if engine is not None:
+            self.engine = engine
+        else:
+            if not (uri_prop := self.properties.get(URI)):
+                raise NoSuchPropertyException("SQL connection URI is required")
 
-        echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
-        echo = strtobool(echo_str) if echo_str != "debug" else "debug"
-        pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
+            echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
+            echo = strtobool(echo_str) if echo_str != "debug" else "debug"
+            pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
 
-        self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
+            self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
+
         self._init_catalog()
 
     def _init_catalog(self) -> None:

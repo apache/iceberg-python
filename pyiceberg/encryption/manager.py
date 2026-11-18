@@ -29,7 +29,7 @@ from collections.abc import Iterable
 from pyiceberg.encryption.ciphers import AesGcmCipher, AesKeySize, SecureKey
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.kms import KeyManagementClient
-from pyiceberg.table.metadata import EncryptedKey, TableMetadata, TableMetadataV3
+from pyiceberg.table.metadata import EncryptedKey, TableMetadata
 from pyiceberg.utils.properties import property_as_int
 
 KEK_CREATED_AT_PROPERTY = "KEY_TIMESTAMP"
@@ -68,18 +68,13 @@ class EncryptionManager:
         if (table_key_id := metadata.properties.get(TableProperties.ENCRYPTION_KEY_ID)) is None:
             return None
 
-        if not isinstance(metadata, TableMetadataV3):
+        if metadata.format_version < 3:
             raise ValueError(f"Invalid properties for v{metadata.format_version}: {TableProperties.ENCRYPTION_KEY_ID}")
 
         if kms_client is None:
             raise ValueError(f"Table has {TableProperties.ENCRYPTION_KEY_ID} set but no key management client was provided")
 
-        key_length = property_as_int(metadata.properties, TableProperties.ENCRYPTION_DATA_KEY_LENGTH)
-        key_size = AesKeySize.from_key_length(
-            TableProperties.ENCRYPTION_DATA_KEY_LENGTH_DEFAULT if key_length is None else key_length
-        )
-
-        return cls(kms_client, table_key_id, metadata.encryption_keys, key_size)
+        return cls(kms_client, table_key_id, metadata.encryption_keys, _data_key_size(metadata))
 
     @property
     def encryption_keys(self) -> list[EncryptedKey]:
@@ -168,6 +163,23 @@ class EncryptionManager:
         plaintext = SecureKey(self._kms_client.unwrap_key(kek.encrypted_key_metadata, kek.encrypted_by_id))
         self._kek_cache[kek.key_id] = (plaintext, time.monotonic())
         return plaintext
+
+
+def _new_data_file_key_metadata(metadata: TableMetadata) -> StandardKeyMetadata | None:
+    """Generate key metadata for a new data file, or return None if the table is not encrypted."""
+    from pyiceberg.table import TableProperties
+
+    if TableProperties.ENCRYPTION_KEY_ID not in metadata.properties:
+        return None
+
+    return StandardKeyMetadata.generate(_data_key_size(metadata))
+
+
+def _data_key_size(metadata: TableMetadata) -> AesKeySize:
+    from pyiceberg.table import TableProperties
+
+    key_length = property_as_int(metadata.properties, TableProperties.ENCRYPTION_DATA_KEY_LENGTH)
+    return AesKeySize.from_key_length(TableProperties.ENCRYPTION_DATA_KEY_LENGTH_DEFAULT if key_length is None else key_length)
 
 
 def _now_ms() -> int:

@@ -1724,6 +1724,56 @@ def test_union_with_pa_schema(primitive_fields: NestedField, table_v2: Table) ->
     assert new_schema == expected_schema
 
 
+def test_rename_struct_containing_identifier_field(table_v2: Table) -> None:
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="user",
+            field_type=StructType(NestedField(field_id=2, name="id", field_type=LongType(), required=True)),
+            required=True,
+        ),
+        identifier_field_ids=[2],
+    )
+
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=schema).rename_column("user", "account")._apply()
+
+    assert applied.identifier_field_ids == [2]
+    assert applied.identifier_field_names() == {"account.id"}
+
+
+def test_rename_identifier_field(table_v2: Table) -> None:
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=True), identifier_field_ids=[1])
+
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=schema).rename_column("foo", "bar")._apply()
+
+    assert applied.identifier_field_ids == [1]
+    assert applied.identifier_field_names() == {"bar"}
+
+
+def test_rename_column_after_set_identifier_fields(table_v2: Table) -> None:
+    user = NestedField(
+        field_id=1,
+        name="user",
+        field_type=StructType(NestedField(field_id=2, name="id", field_type=LongType(), required=True)),
+        required=True,
+    )
+    update = UpdateSchema(transaction=Transaction(table_v2), schema=Schema(user))
+    update.set_identifier_fields("user.id")
+    applied = update.rename_column("user", "account")._apply()
+
+    assert applied.identifier_field_ids == [2]
+    assert applied.identifier_field_names() == {"account.id"}
+
+
+def test_delete_identifier_field(table_v2: Table) -> None:
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=True), identifier_field_ids=[1])
+
+    with pytest.raises(ValueError) as exc_info:
+        UpdateSchema(transaction=Transaction(table_v2), schema=schema).delete_column("foo")._apply()
+
+    assert "Cannot find identifier field foo. In case of deletion, update the identifier fields first." in str(exc_info)
+
+
 def test_arrow_schema() -> None:
     base_schema = Schema(
         NestedField(field_id=1, name="foo", field_type=StringType(), required=True),

@@ -466,6 +466,10 @@ def test_google_authenticated_io_recreates_auth_after_pickle(
             self.lock = threading.Lock()
             self.token: str | None = None
 
+        @property
+        def valid(self) -> bool:
+            return self.token is not None
+
         def refresh(self, request: object) -> None:
             self.token = catalog_tokens[0]
 

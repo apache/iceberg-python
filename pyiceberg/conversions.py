@@ -388,11 +388,15 @@ def _(_: StringType, b: bytes) -> str:
 
 @from_bytes.register(BinaryType)
 @from_bytes.register(FixedType)
-@from_bytes.register(UUIDType)
 @from_bytes.register(GeometryType)
 @from_bytes.register(GeographyType)
 def _(_: PrimitiveType, b: bytes) -> bytes:
     return b
+
+
+@from_bytes.register(UUIDType)
+def _(_: UUIDType, b: bytes) -> uuid.UUID:
+    return uuid.UUID(bytes=b)
 
 
 @from_bytes.register(DecimalType)
