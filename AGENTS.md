@@ -52,6 +52,13 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - Use domain-specific exceptions from pyiceberg/exceptions.py for Iceberg-specific error conditions. For invalid arguments/values, ValueError is acceptable. Don't raise bare Exception.
 - Comments should be succinct and follow the same style of comments found in the rest of the codebase.
 
+### Spec Compliance
+
+<!-- markdown-link-check-disable-next-line -->
+- The [Iceberg spec](https://github.com/apache/iceberg/blob/main/format/spec.md) is the source of truth. Check changes to metadata, manifests, schemas, partitioning, transforms, or the commit path against it, and cite the relevant section when behavior is non-obvious.
+<!-- markdown-link-check-disable-next-line -->
+- Where the spec is ambiguous or silent, follow the [Java reference implementation](https://github.com/apache/iceberg). Deviations from Java need a justification in the PR.
+
 ### Dependencies
 
 - Large/integration libraries must be **optional extras** in `pyproject.toml`, not core `dependencies`.
