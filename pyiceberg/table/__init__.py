@@ -1726,7 +1726,7 @@ class Table:
         We can also use context managers to make more changes. For example:
 
         with table.update_partition_statistics() as update:
-            update.set_partition_statistics(partition_statistics_file=partition_statistics_file)
+            update.set_partition_statistics(snapshot_id=1, statistics_path="s3://bucket/stats.parquet", file_size_in_bytes=124)
             update.remove_partition_statistics(snapshot_id=2)
         """
         return UpdatePartitionStatistics(transaction=Transaction(self, autocommit=True))
