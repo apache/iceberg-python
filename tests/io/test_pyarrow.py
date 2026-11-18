@@ -71,8 +71,10 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     EqualTo,
     GreaterThan,
+    GreaterThanOrEqual,
     In,
     IsNull,
+    LessThan,
     LessThanOrEqual,
     Not,
     NotEqualTo,
@@ -3726,6 +3728,32 @@ def test_scan_filters_on_infinity(catalog: InMemoryCatalog) -> None:
     assert table.scan(row_filter=EqualTo("x", math.inf)).to_arrow()["x"].to_pylist() == [math.inf]
     assert table.scan(row_filter=NotEqualTo("x", math.inf)).to_arrow()["x"].to_pylist() == [1.5, -math.inf]
     assert sorted(table.scan(row_filter=In("x", {math.inf, 1.5})).to_arrow()["x"].to_pylist()) == [1.5, math.inf]
+
+
+def test_scan_and_delete_filters_on_infinity(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(id=2, name="x", field_type=FloatType(), required=False),
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_and_delete_infinity", schema=schema)
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3, 4, 5], type=pa.int32()),
+                "x": pa.array([1.5, math.inf, -math.inf, math.nan, None], type=pa.float32()),
+            }
+        )
+    )
+
+    assert table.scan(row_filter=LessThan("x", math.inf)).to_arrow()["id"].to_pylist() == [1, 3]
+    assert table.scan(row_filter=LessThanOrEqual("x", math.inf)).to_arrow()["id"].to_pylist() == [1, 2, 3]
+    assert table.scan(row_filter=GreaterThan("x", -math.inf)).to_arrow()["id"].to_pylist() == [1, 2]
+    assert table.scan(row_filter=GreaterThanOrEqual("x", math.inf)).to_arrow()["id"].to_pylist() == [2]
+
+    table.delete(LessThan("x", math.inf))
+
+    assert table.scan().to_arrow()["id"].to_pylist() == [2, 4, 5]
 
 
 def test_scan_filters_at_the_end_of_the_date_range(catalog: InMemoryCatalog) -> None:
