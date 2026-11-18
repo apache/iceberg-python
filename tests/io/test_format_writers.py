@@ -24,10 +24,10 @@ import pyarrow.dataset as ds
 import pytest
 
 from pyiceberg.io.fileformat import FileFormatFactory, FileFormatModel
-from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.io.pyarrow import ParquetFormatModel, PyArrowFileIO, schema_to_pyarrow
 from pyiceberg.manifest import FileFormat
 from pyiceberg.schema import Schema
-from pyiceberg.types import LongType, NestedField
+from pyiceberg.types import DoubleType, FloatType, LongType, NestedField
 
 
 @pytest.fixture(params=FileFormatFactory.available_formats(), ids=lambda f: f.name.lower())
@@ -138,3 +138,58 @@ def test_parquet_format_model_adds_field_id_metadata() -> None:
     metadata_no_ids: dict[bytes, bytes] = {}
     ParquetFormatModel().add_field_metadata(field, metadata_no_ids, include_field_ids=False)
     assert metadata_no_ids == {}
+
+
+def test_parquet_writer_accumulates_nan_value_counts(tmp_path: Path) -> None:
+    """NaN counts from multiple write() calls are added together."""
+    schema = Schema(NestedField(field_id=1, name="d", field_type=DoubleType(), required=False))
+    arrow_schema = schema_to_pyarrow(schema, include_field_ids=True)
+    file_path = str(tmp_path / "test.parquet")
+    writer = ParquetFormatModel().create_writer(PyArrowFileIO().new_output(file_path), schema, {})
+
+    writer.write(pa.Table.from_arrays([pa.array([float("nan"), float("nan")], type=pa.float64())], schema=arrow_schema))
+    writer.write(pa.Table.from_arrays([pa.array([1.0, None], type=pa.float64())], schema=arrow_schema))
+    statistics = writer.close()
+
+    assert dict(statistics.nan_value_counts) == {1: 2}
+
+
+def test_parquet_writer_skips_nan_counts_for_none_metrics_mode(tmp_path: Path) -> None:
+    """A column with metrics mode none does not report a NaN count."""
+    schema = Schema(
+        NestedField(field_id=1, name="f", field_type=FloatType(), required=False),
+        NestedField(field_id=2, name="d", field_type=DoubleType(), required=False),
+    )
+    arrow_schema = schema_to_pyarrow(schema, include_field_ids=True)
+    file_path = str(tmp_path / "test.parquet")
+    writer = ParquetFormatModel().create_writer(
+        PyArrowFileIO().new_output(file_path), schema, {"write.metadata.metrics.column.f": "none"}
+    )
+
+    writer.write(
+        pa.Table.from_arrays(
+            [
+                pa.array([float("nan"), 1.0], type=pa.float32()),
+                pa.array([float("nan"), 1.0], type=pa.float64()),
+            ],
+            schema=arrow_schema,
+        )
+    )
+    statistics = writer.close()
+
+    assert dict(statistics.nan_value_counts) == {2: 1}
+
+
+def test_parquet_writer_default_none_metrics_mode_reports_no_nan_counts(tmp_path: Path) -> None:
+    """With metrics mode none as the default, no column reports a NaN count."""
+    schema = Schema(NestedField(field_id=1, name="d", field_type=DoubleType(), required=False))
+    arrow_schema = schema_to_pyarrow(schema, include_field_ids=True)
+    file_path = str(tmp_path / "test.parquet")
+    writer = ParquetFormatModel().create_writer(
+        PyArrowFileIO().new_output(file_path), schema, {"write.metadata.metrics.default": "none"}
+    )
+
+    writer.write(pa.Table.from_arrays([pa.array([float("nan"), 1.0], type=pa.float64())], schema=arrow_schema))
+    statistics = writer.close()
+
+    assert dict(statistics.nan_value_counts) == {}

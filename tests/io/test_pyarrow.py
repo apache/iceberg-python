@@ -915,6 +915,25 @@ def test_expr_not_starts_with_to_pyarrow(bound_reference: BoundReference) -> Non
     )
 
 
+def test_uuid_expressions_to_pyarrow() -> None:
+    schema = Schema(NestedField(1, "u", UUIDType(), required=False))
+    ref = BoundReference(schema.find_field(1), schema.accessor_for_field(1))
+    first, second = uuid.UUID(int=1), uuid.UUID(int=2)
+    literals = {literal(first), literal(second)}
+    # PyArrow builds uuid values from their 16 bytes, so compare with expressions built from bytes in either set order
+    expected_in = [
+        ds.field("u").isin(pa.array(values, type=pa.uuid()))
+        for values in ([first.bytes, second.bytes], [second.bytes, first.bytes])
+    ]
+    for expression, expected in [
+        (BoundEqualTo(ref, literal(first)), [ds.field("u") == pa.scalar(first.bytes, type=pa.uuid())]),
+        (BoundIn(ref, literals), expected_in),
+        (BoundNotIn(ref, literals), [~candidate for candidate in expected_in]),
+    ]:
+        actual = expression_to_pyarrow(expression)
+        assert any(actual.equals(candidate) for candidate in expected), expression
+
+
 def test_and_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(And(BoundEqualTo(bound_reference, literal("hello")), BoundIsNull(bound_reference))))
@@ -1569,6 +1588,53 @@ def test_identity_transform_column_projection_with_falsy_value(
     assert table.scan(row_filter=row_filter, selected_fields=("other_field",)).to_arrow() == pa.table(
         {"other_field": ["foo", "bar"]}
     )
+
+
+def test_identity_transform_column_projection_uuid(tmp_path: str, catalog: InMemoryCatalog) -> None:
+    """A filter on a uuid identity partition column matches the files that do not contain the column."""
+    schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False),
+        NestedField(2, "partition_col", UUIDType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_col"))
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_projection_partition_uuid",
+        schema=schema,
+        partition_spec=partition_spec,
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    file_loc = f"{tmp_path}/test.parquet"
+    pq.write_table(pa.table([pa.array(["foo", "bar"], type=pa.string())], names=["other_field"]), file_loc)
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=pq.read_metadata(file_loc),
+        stats_columns=compute_statistics_plan(table.schema(), table.metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+    partition_value = uuid.UUID(int=1)
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_loc,
+        file_format=FileFormat.PARQUET,
+        partition=Record(partition_value),
+        file_size_in_bytes=os.path.getsize(file_loc),
+        sort_order_id=None,
+        spec_id=table.metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as update:
+            update.append_data_file(data_file)
+
+    for row_filter, expected in [
+        (f"partition_col = '{partition_value}'", ["foo", "bar"]),
+        (f"partition_col != '{partition_value}'", []),
+    ]:
+        result = table.scan(row_filter=row_filter, selected_fields=("other_field",)).to_arrow()
+        assert result["other_field"].to_pylist() == expected, row_filter
 
 
 def test_identity_transform_null_partition_value_takes_precedence_over_initial_default(tmpdir: str) -> None:
@@ -3518,9 +3584,9 @@ def test_determine_partitions_with_uuid_column() -> None:
 
     partitions = list(_determine_partitions(spec, schema, arrow_table))
 
-    # The partition values are the 16 bytes of each UUID
+    # The partition values are uuid.UUID, as they are read back from the manifests
     rows_by_partition = {p.partition_key.partition[0]: sorted(p.arrow_table_partition["id"].to_pylist()) for p in partitions}
-    assert rows_by_partition == {uuid.UUID(int=1).bytes: [1, 3], uuid.UUID(int=2).bytes: [2], None: [4]}
+    assert rows_by_partition == {uuid.UUID(int=1): [1, 3], uuid.UUID(int=2): [2], None: [4]}
     # The written data keeps the uuid type
     assert all(p.arrow_table_partition.schema.field("uuid").type == pa.uuid() for p in partitions)
 
@@ -3544,6 +3610,57 @@ def test_append_uuid_to_table_partitioned_on_uuid(catalog: InMemoryCatalog) -> N
 
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
     assert {task.file.partition[0] for task in table.scan().plan_files()} == {uuid.UUID(int=1), uuid.UUID(int=2), None}
+
+
+def test_scan_plans_uuid_identity_partitions(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="uuid"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_uuid_partitioned", schema=schema, partition_spec=spec)
+    first, second, third = uuid.UUID(int=1), uuid.UUID(int=2), uuid.UUID(int=3)
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3], type=pa.int64()),
+                "uuid": pa.array([first.bytes, second.bytes, third.bytes], type=pa.uuid()),
+            }
+        )
+    )
+
+    # UUID partition values read from manifests must compare equal to bound UUID literals
+    for row_filter, expected in [
+        (f"uuid = '{first}'", {first}),
+        (f"uuid in ('{first}', '{second}')", {first, second}),
+        (f"uuid != '{first}'", {second, third}),
+        (f"uuid not in ('{first}', '{second}')", {third}),
+    ]:
+        scan = table.scan(row_filter=row_filter)
+        assert {task.file.partition[0] for task in scan.plan_files()} == expected, row_filter
+        assert scan.count() == len(expected), row_filter
+
+
+def test_scan_prunes_uuid_files_by_bounds(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_uuid_bounds", schema=schema)
+    for ids in ([1, 2], [3, 4]):
+        values = [uuid.UUID(int=value).bytes for value in ids]
+        table.append(pa.table({"id": pa.array(ids, type=pa.int64()), "uuid": pa.array(values, type=pa.uuid())}))
+
+    # The lower and upper bounds of the uuid column are compared with the literal to prune files
+    for row_filter, expected_files in [
+        (f"uuid = '{uuid.UUID(int=1)}'", 1),
+        (f"uuid > '{uuid.UUID(int=2)}'", 1),
+        (f"uuid < '{uuid.UUID(int=5)}'", 2),
+        (f"uuid in ('{uuid.UUID(int=1)}', '{uuid.UUID(int=4)}')", 2),
+    ]:
+        assert len(list(table.scan(row_filter=row_filter).plan_files())) == expected_files, row_filter
 
 
 def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
@@ -3612,6 +3729,39 @@ def test_append_writes_parquet_page_index(catalog: InMemoryCatalog) -> None:
         column_chunk = pq.read_metadata(file_path).row_group(0).column(0)
         assert column_chunk.has_column_index is page_index_enabled
         assert column_chunk.has_offset_index is page_index_enabled
+
+        
+def test_append_counts_nan_values(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="f", field_type=FloatType(), required=False),
+        NestedField(id=2, name="d", field_type=DoubleType(), required=False),
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_nan_counts", schema=schema)
+
+    table.append(
+        pa.table(
+            {
+                "f": pa.array([float("nan"), float("nan"), 1.0, None], type=pa.float32()),
+                "d": pa.array([float("nan"), 2.0, None, float("nan")], type=pa.float64()),
+            }
+        )
+    )
+
+    data_file = next(iter(table.scan().plan_files())).file
+    assert dict(data_file.nan_value_counts) == {1: 2, 2: 2}
+
+
+def test_scan_prunes_files_without_nan_values(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="d", field_type=DoubleType(), required=False))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_prunes_nan_counts", schema=schema)
+
+    table.append(pa.table({"d": pa.array([float("nan"), 1.0], type=pa.float64())}))
+    table.append(pa.table({"d": pa.array([2.0, 3.0], type=pa.float64())}))
+
+    assert len(list(table.scan(row_filter="d IS NAN").plan_files())) == 1
+    assert len(list(table.scan(row_filter="d IS NOT NAN").plan_files())) == 2
 
 
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:

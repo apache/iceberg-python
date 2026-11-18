@@ -97,6 +97,7 @@ from pyiceberg.table.update import (
     UpgradeFormatVersionUpdate,
     update_table_metadata,
 )
+from pyiceberg.table.update.partition_statistics import UpdatePartitionStatistics
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.sorting import UpdateSortOrder
@@ -229,6 +230,9 @@ class TableProperties:
 
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
     MANIFEST_MERGE_ENABLED_DEFAULT = False
+
+    METADATA_COMPRESSION = "write.metadata.compression-codec"
+    METADATA_COMPRESSION_DEFAULT = "none"
 
     METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
     METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
@@ -509,6 +513,15 @@ class Transaction:
             A new UpdateStatistics
         """
         return UpdateStatistics(transaction=self)
+
+    def update_partition_statistics(self) -> UpdatePartitionStatistics:
+        """
+        Create a new UpdatePartitionStatistics to update the partition statistics of the table.
+
+        Returns:
+            A new UpdatePartitionStatistics
+        """
+        return UpdatePartitionStatistics(transaction=self)
 
     def append(
         self,
@@ -1704,6 +1717,23 @@ class Table:
         """
         return UpdateStatistics(transaction=Transaction(self, autocommit=True))
 
+    def update_partition_statistics(self) -> UpdatePartitionStatistics:
+        """
+        Shorthand to run partition statistics management operations like set and remove partition statistics.
+
+        Use table.update_partition_statistics().<operation>().commit() to run a specific operation.
+        Use table.update_partition_statistics().<operation-one>().<operation-two>().commit() to run multiple operations.
+
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example:
+
+        with table.update_partition_statistics() as update:
+            update.set_partition_statistics(partition_statistics_file=partition_statistics_file)
+            update.remove_partition_statistics(snapshot_id=2)
+        """
+        return UpdatePartitionStatistics(transaction=Transaction(self, autocommit=True))
+
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
 
@@ -2346,12 +2376,15 @@ class FileScanTask(ScanTask):
     def from_rest_response(
         rest_task: RESTFileScanTask,
         delete_files: list[RESTDeleteFile],
+        *,
+        fallback_residual: BooleanExpression = ALWAYS_TRUE,
     ) -> FileScanTask:
         """Convert a RESTFileScanTask to a FileScanTask.
 
         Args:
             rest_task: The REST file scan task.
             delete_files: The list of delete files from the ScanTasks response.
+            fallback_residual: The scan filter to use when the server omits the residual.
 
         Returns:
             A FileScanTask with the converted data and delete files.
@@ -2374,7 +2407,7 @@ class FileScanTask(ScanTask):
         return FileScanTask(
             data_file=data_file,
             delete_files=resolved_deletes,
-            residual=rest_task.residual_filter if rest_task.residual_filter else ALWAYS_TRUE,
+            residual=rest_task.residual_filter if rest_task.residual_filter is not None else fallback_residual,
         )
 
 

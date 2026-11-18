@@ -1664,6 +1664,77 @@ def test_update_spec_remove_and_add_field_with_same_name(table_v1: Table, table_
             )
 
 
+def test_update_spec_rename_onto_removed_partition_field_name(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "x", IntegerType(), required=False),
+        NestedField(2, "y", IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"))
+    table = catalog.create_table(
+        "default.rename_onto_removed", schema=schema, partition_spec=spec, properties={"format-version": "1"}
+    )
+    table.update_spec().add_field("y", BucketTransform(16), "y_shard").commit()
+    table.update_spec().remove_field("y_shard").commit()
+    table.update_spec().rename_field("x", "y_shard").commit()
+
+    assert catalog.load_table("default.rename_onto_removed").spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="y_shard"),
+        PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+    )
+
+
+def test_update_spec_rename_onto_explicit_void_partition_field_name(table_v2: Table) -> None:
+    txn = table_v2.transaction()
+    txn.update_spec().add_field("y", VoidTransform(), "y_shard").commit()
+    txn.update_spec().rename_field("x", "y_shard").commit()
+
+    assert txn.table_metadata.spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="y_shard"),
+        PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+    )
+
+
+def test_update_spec_rename_to_unused_partition_field_name(table_v2: Table) -> None:
+    txn = table_v2.transaction()
+    txn.update_spec().rename_field("x", "x_shard").commit()
+
+    assert txn.table_metadata.spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x_shard"),
+    )
+
+
+def test_update_spec_rename_onto_void_rejects_removal_in_same_update(table_v1: Table, table_v2: Table) -> None:
+    for table in (table_v1, table_v2):
+        txn = table.transaction()
+        txn.update_spec().add_field("y", VoidTransform(), "y_shard").commit()
+
+        with pytest.raises(ValueError, match="^Cannot delete and rename partition field y_shard$"):
+            txn.update_spec().remove_field("y_shard").rename_field("x", "y_shard").commit()
+
+        with pytest.raises(ValueError, match="^Cannot rename and delete field y_shard$"):
+            txn.update_spec().rename_field("x", "y_shard").remove_field("y_shard").commit()
+
+
+def test_update_spec_cascades_void_name_collisions(table_v2: Table) -> None:
+    for add_field in (False, True):
+        txn = table_v2.transaction()
+        txn.update_spec().add_field("y", VoidTransform(), "y_shard").add_field("z", VoidTransform(), "y_shard_1001").commit()
+
+        expected: tuple[PartitionField, ...] = (
+            PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x" if add_field else "y_shard"),
+            PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+            PartitionField(source_id=3, field_id=1002, transform=VoidTransform(), name="y_shard_1001_1002"),
+        )
+        if add_field:
+            txn.update_spec().add_field("y", BucketTransform(16), "y_shard").commit()
+            expected += (PartitionField(source_id=2, field_id=1003, transform=BucketTransform(16), name="y_shard"),)
+        else:
+            txn.update_spec().rename_field("x", "y_shard").commit()
+
+        assert txn.table_metadata.spec().fields == expected
+
+
 def test_assert_default_spec_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertDefaultSpecId(default_spec_id=base_metadata.default_spec_id).validate(base_metadata)
@@ -2144,16 +2215,17 @@ def test_remove_partition_statistics_update(table_v2_with_statistics: Table) -> 
     assert len(remove_metadata.partition_statistics) == 0
 
 
-def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_with_statistics: Table) -> None:
-    # Remove the same partition statistics file.
-    with pytest.raises(
-        ValueError,
-        match="Partition Statistics with snapshot id 123456789 does not exist",
-    ):
-        update_table_metadata(
-            table_v2_with_statistics.metadata,
-            (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
-        )
+def test_remove_partition_statistics_update_without_file_is_noop(table_v2_with_statistics: Table) -> None:
+    # Removing a partition statistics file that does not exist leaves the metadata unchanged, also when repeated
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (
+            RemovePartitionStatisticsUpdate(snapshot_id=123456789),
+            RemovePartitionStatisticsUpdate(snapshot_id=123456789),
+        ),
+    )
+
+    assert new_metadata == table_v2_with_statistics.metadata
 
 
 def test_add_encryption_key_update(table_v3: Table) -> None:
