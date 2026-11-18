@@ -159,7 +159,7 @@ from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
-from pyiceberg.transforms import IdentityTransform, TruncateTransform
+from pyiceberg.transforms import IdentityTransform, Transform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -3322,6 +3322,36 @@ class _TablePartition:
     arrow_table_partition: pa.Table
 
 
+def _cast_to_transform_input_type(array: pa.Array, source_type: IcebergType, transform: Transform[Any, Any]) -> pa.Array:
+    """Cast a partition source column to the Arrow type that the partition transform kernels accept.
+
+    A write accepts Arrow columns that can be converted to the Iceberg type, for example int16 for an int column,
+    millisecond timestamps for a timestamp column or large_binary for a binary column. The bucket, truncate,
+    day and hour kernels of pyiceberg-core only handle the Arrow type that matches the Iceberg type exactly.
+    Only the truncate kernel lacks large_binary support, so large_binary is cast to binary for truncate alone.
+    """
+    arrow_type = array.type
+    target: pa.DataType | None = None
+    if isinstance(source_type, IntegerType) and pa.types.is_integer(arrow_type):
+        target = pa.int32()
+    elif isinstance(source_type, LongType) and pa.types.is_integer(arrow_type):
+        target = pa.int64()
+    elif (
+        isinstance(source_type, (TimestampType, TimestamptzType))
+        and pa.types.is_timestamp(arrow_type)
+        and arrow_type.unit in ("s", "ms")
+    ):
+        target = pa.timestamp("us", tz=arrow_type.tz)
+    elif (
+        isinstance(source_type, BinaryType) and pa.types.is_large_binary(arrow_type) and isinstance(transform, TruncateTransform)
+    ):
+        target = pa.binary()
+
+    if target is None or target == arrow_type:
+        return array
+    return array.cast(target)
+
+
 def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> Iterable[_TablePartition]:
     """Based on the iceberg table partition spec, filter the arrow table into partitions with their keys.
 
@@ -3355,7 +3385,9 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         full_field_name = schema.find_column_name(partition.source_id)
         if full_field_name is None:
             raise ValueError(f"Could not find column name for field ID: {partition.source_id}")
-        field_array = _get_field_from_arrow_table(arrow_table, full_field_name)
+        field_array = _cast_to_transform_input_type(
+            _get_field_from_arrow_table(arrow_table, full_field_name), source_field.field_type, partition.transform
+        )
         partition_array = partition.transform.pyarrow_transform(source_field.field_type)(field_array)
         # PyArrow has no group by or equality kernels for extension types such as arrow.uuid, so use their storage type
         if isinstance(partition_array.type, pa.BaseExtensionType):
