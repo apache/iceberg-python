@@ -1838,6 +1838,16 @@ def _task_to_record_batches(
     format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
     if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
         format_kwargs["dictionary_columns"] = dictionary_columns
+    if (
+        task.file.file_format == FileFormat.PARQUET
+        and hasattr(ds.ParquetFragmentScanOptions, "arrow_extensions_enabled")
+        and any(
+            isinstance(table_schema.find_type(field_id), (GeometryType, GeographyType))
+            for field_id in projected_field_ids & table_schema.field_ids
+        )
+    ):
+        # Dataset scans disable logical-type extension decoding by default.
+        format_kwargs["arrow_extensions_enabled"] = True
     arrow_format = _create_arrow_read_format(task.file.file_format, task.file.key_metadata, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
@@ -2017,6 +2027,8 @@ class ArrowScan:
         self._table_metadata = table_metadata
         self._io = io
         self._projected_schema = projected_schema
+        # Register extension types before inspecting any data file schemas.
+        self._arrow_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._limit = limit
@@ -2055,14 +2067,12 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
-
         batches = self.to_record_batches(tasks)
         try:
             first_batch = next(batches)
         except StopIteration:
             # Empty
-            return arrow_schema.empty_table()
+            return self._arrow_schema.empty_table()
 
         # Note: cannot use pa.Table.from_batches(itertools.chain([first_batch], batches)))
         #       as different batches can use different schema's (due to large_ types)
