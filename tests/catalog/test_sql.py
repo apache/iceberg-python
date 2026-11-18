@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.exc import ArgumentError
 
 from pyiceberg.catalog import load_catalog
@@ -32,6 +32,7 @@ from pyiceberg.catalog.sql import (
     SqlCatalogBaseTable,
 )
 from pyiceberg.exceptions import (
+    NamespaceAlreadyExistsError,
     NoSuchPropertyException,
     NoSuchTableError,
     TableAlreadyExistsError,
@@ -559,3 +560,33 @@ def test_create_and_load_table_on_v0_schema(warehouse: Path) -> None:
 
     # iceberg_type column must still be absent from the DB (no migration occurred)
     assert "iceberg_type" not in get_columns(catalog.engine)
+
+
+def test_create_namespace_concurrent_integrity_error(warehouse: Path) -> None:
+    """Concurrent create_namespace requests should raise NamespaceAlreadyExistsError."""
+    uri = f"sqlite:///{warehouse.as_posix()}/test-concurrent-create-namespace"
+    warehouse_uri = f"file://{warehouse}"
+    catalog_1 = SqlCatalog("test", uri=uri, warehouse=warehouse_uri)
+    catalog_2 = SqlCatalog("test", uri=uri, warehouse=warehouse_uri)
+    try:
+        injected = False
+
+        @event.listens_for(catalog_1.engine, "before_cursor_execute")
+        def inject_concurrent_insert(
+            _conn: object,
+            _cursor: object,
+            statement: str,
+            _parameters: object,
+            _context: object,
+            _executemany: bool,
+        ) -> None:
+            nonlocal injected
+            if not injected and "INSERT INTO iceberg_namespace_properties" in statement:
+                injected = True
+                catalog_2.create_namespace("concurrent_ns")
+
+        with pytest.raises(NamespaceAlreadyExistsError):
+            catalog_1.create_namespace("concurrent_ns")
+    finally:
+        catalog_1.close()
+        catalog_2.close()
