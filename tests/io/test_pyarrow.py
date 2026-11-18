@@ -3566,6 +3566,30 @@ def test_scan_filters_truncate_partitions_near_the_minimum(catalog: InMemoryCata
     assert sorted(table.scan(row_filter=GreaterThan("x", -(2**31))).to_arrow()["id"].to_pylist()) == [1, 2]
 
 
+def test_count_truncate_partitions_near_the_minimum(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=True),
+        NestedField(id=2, name="x", field_type=IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=TruncateTransform(1000), name="x_trunc"))
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_count_truncate_minimum",
+        schema=schema,
+        partition_spec=spec,
+        properties={"write.metadata.metrics.default": "counts"},
+    )
+    table.append(pa.Table.from_pylist([{"id": 0, "x": -(2**31)}, {"id": 1, "x": 5}], schema=schema.as_arrow()))
+
+    less_than = table.scan(row_filter=LessThan("x", -(2**31) + 100))
+    assert less_than.to_arrow()["id"].to_pylist() == [0]
+    assert less_than.count() == 1
+
+    greater_than = table.scan(row_filter=GreaterThan("x", 0))
+    assert greater_than.to_arrow()["id"].to_pylist() == [1]
+    assert greater_than.count() == 1
+
+
 def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="id", field_type=LongType(), required=False),
