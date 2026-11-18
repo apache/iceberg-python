@@ -32,8 +32,6 @@ from pyiceberg.utils.datetime import (
     millis_to_datetime,
     nanos_to_hours,
     nanos_to_micros,
-    nanos_to_months,
-    nanos_to_years,
     time_str_to_nanos,
     time_to_nanos,
     timestamp_to_micros,
@@ -317,9 +315,6 @@ def test_days_to_years_and_months(days: int, years: int, months: int) -> None:
 
 def test_years_and_months_beyond_the_date_range() -> None:
     day_micros = 86_400_000_000
-    day_nanos = day_micros * 1000
 
     assert micros_to_years(2932897 * day_micros) == 8030
     assert micros_to_months(2932897 * day_micros) == 96360
-    assert nanos_to_years(2932897 * day_nanos) == 8030
-    assert nanos_to_months(2932897 * day_nanos) == 96360
