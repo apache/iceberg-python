@@ -16,6 +16,7 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
+import pyarrow.parquet as pq
 import pytest
 from pyspark.sql import SparkSession
 
@@ -124,7 +125,7 @@ def test_scan_encrypted_table_snapshots(
 @pytest.mark.integration
 @pytest.mark.parametrize("data_key_length", DATA_KEY_LENGTHS)
 def test_scan_encrypted_table_requires_master_key(
-    spark: SparkSession, session_catalog_hive: Catalog, data_key_length: int
+    spark: SparkSession, session_catalog_hive: Catalog, kms: KeyManagementClient, data_key_length: int
 ) -> None:
     identifier = "default.test_scan_encrypted_table_requires_master_key"
     _create_encrypted_table(spark, identifier, data_key_length)
@@ -137,6 +138,15 @@ def test_scan_encrypted_table_requires_master_key(
     wrong_kms.add_master_key(MASTER_KEY_ID, SecureKey(bytes(16)))
     with pytest.raises(ValueError, match="GCM tag check failed"):
         _load_table(session_catalog_hive, identifier, wrong_kms).scan().to_arrow()
+
+    # Spark also encrypts the Parquet data files, so they can't be read without their keys
+    table = _load_table(session_catalog_hive, identifier, kms)
+    data_files = [task.file.file_path for task in table.scan().plan_files()]
+    assert data_files
+    for data_file in data_files:
+        with table.io.new_input(data_file).open() as stream:
+            with pytest.raises(OSError, match="no decryption found"):
+                pq.read_table(stream)
 
 
 @pytest.mark.integration
