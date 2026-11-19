@@ -4645,6 +4645,47 @@ def test_task_to_record_batches_row_ids(
     assert list(zip(result["id"].to_pylist(), result[ROW_ID.name].to_pylist(), strict=True)) == expected
 
 
+def test_task_to_record_batches_row_ids_with_position_column_name(tmpdir: str) -> None:
+    from pyiceberg.expressions.visitors import bind
+
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+            pa.field("__iceberg_file_position", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "2"}),
+        ]
+    )
+    arrow_table = pa.table(
+        [pa.array([1, 2, 3], type=pa.int32()), pa.array([10, 20, 30], type=pa.int32())],
+        schema=arrow_schema,
+    )
+    data_file = _write_table_to_data_file(f"{tmpdir}/row_ids_position_name.parquet", arrow_schema, arrow_table)
+    data_file.first_row_id = 100
+
+    table_schema = Schema(
+        NestedField(1, "id", IntegerType(), required=False),
+        NestedField(2, "__iceberg_file_position", IntegerType(), required=False),
+    )
+    projected_schema = Schema(*table_schema.fields, ROW_ID)
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, GreaterThan("id", 1), case_sensitive=True),
+            projected_schema=projected_schema,
+            table_schema=table_schema,
+            projected_field_ids={1, 2, ROW_ID.field_id},
+            positional_deletes=None,
+            case_sensitive=True,
+        )
+    )
+
+    assert pa.Table.from_batches(result_batches).to_pydict() == {
+        "id": [2, 3],
+        "__iceberg_file_position": [20, 30],
+        ROW_ID.name: [101, 102],
+    }
+
+
 def _read_last_updated_sequence_numbers(
     tmpdir: str, stored_sequence_numbers: list[int | None] | None, first_row_id: int | None, data_sequence_number: int | None
 ) -> list[int | None]:
