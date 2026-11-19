@@ -1615,6 +1615,31 @@ with table.maintenance.expire_snapshots() as expire:
     # Automatically commits when exiting the context
 ```
 
+#### Deleting files of expired snapshots
+
+By default, expiring snapshots only updates the table metadata and leaves every file in place. Call `clean_expired_files()` to also delete the files that only the expired snapshots referenced:
+
+```python
+table.maintenance.expire_snapshots().clean_expired_files().older_than(
+    datetime.now() - timedelta(days=3)
+).commit()
+```
+
+The files are deleted after the expiration has been committed to the catalog. A file is deleted only when no snapshot left in the table references it as a live file:
+
+- data files and delete files
+- manifests and manifest lists
+
+Statistics files and partition statistics files of the expired snapshots are deleted unless the table metadata after the commit still references them. Previous metadata files and orphan files that no snapshot referenced are not deleted.
+
+To decide which data and delete files to remove, PyIceberg reads the manifest lists of the expired snapshots and of every snapshot left in the table, and the manifests that go away with the expired snapshots. Only if those manifests list any files does it also read the manifests of every snapshot left in the table. When the table has only been written with fast appends, no manifest goes away with the expired snapshots, so only the manifest lists are read.
+
+`clean_expired_files()` cannot be used inside `table.transaction()`, because the files can only be deleted once the expiration has been committed; `commit()` raises a `ValueError` in that case. Before committing, `commit()` loads the latest table metadata from the catalog and raises a `ValueError`, with nothing expired, if `gc.enabled` is `false` there or if a branch or tag there points at a snapshot selected for expiration. The commit also requires every branch and tag other than `main` to still point where it pointed in that metadata, so if another writer moves or removes one before the commit lands, the commit fails with a `CommitFailedException` and nothing is deleted. Two changes made by another writer between that load and the commit are not detected: creating a branch or tag on a snapshot selected for expiration, and resetting `main` to one. The catalog then removes that branch or tag together with the snapshot, and the snapshot's files are deleted.
+
+`gc.enabled` defaults to `true`. When it is `false`, expiring snapshots without `clean_expired_files()` is still allowed, because it only updates the metadata.
+
+A file whose deletion raises an `OSError` is skipped and a warning is logged. If a manifest list or manifest needed for the check cannot be read, no files are deleted; if the cleanup raises any other exception, the files not deleted yet are kept. In both cases a warning with the traceback is logged and the expiration stays committed. The expired snapshots are then gone from the metadata, so the cleanup cannot be run again for them, and the files left behind can only be removed by an orphan file cleanup in another engine, such as Spark's `remove_orphan_files` procedure.
+
 #### Real-world Example
 
 ```python
