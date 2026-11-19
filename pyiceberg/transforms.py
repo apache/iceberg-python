@@ -243,6 +243,8 @@ class BucketTransform(Transform[S, int]):
     _num_buckets: PositiveInt = PrivateAttr()
 
     def __init__(self, num_buckets: int, **data: Any) -> None:
+        if num_buckets <= 0:
+            raise ValueError(f"Invalid number of buckets: {num_buckets} (must be > 0)")
         super().__init__(f"bucket[{num_buckets}]", **data)
         self._num_buckets = num_buckets
 
@@ -770,7 +772,9 @@ class TruncateTransform(Transform[S, S]):
     _source_type: IcebergType = PrivateAttr()
     _width: PositiveInt = PrivateAttr()
 
-    def __init__(self, width: int, **data: Any):
+    def __init__(self, width: int, **data: Any) -> None:
+        if width <= 0:
+            raise ValueError(f"Invalid truncate width: {width} (must be > 0)")
         super().__init__(root=f"truncate[{width}]", **data)
         self._width = width
 
