@@ -1975,15 +1975,14 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
                 return AlwaysTrue()
 
             inclusive_projection = part.transform.project(part.name, predicate)
-            if isinstance(inclusive_projection, UnboundPredicate) and isinstance(
-                self._eval_projection(inclusive_projection), AlwaysFalse
-            ):
+            if isinstance(self._eval_projection(inclusive_projection), AlwaysFalse):
                 return AlwaysFalse()
 
         return predicate
 
-    def _eval_projection(self, projection: UnboundPredicate | None) -> BooleanExpression | None:
-        if projection is None:
+    def _eval_projection(self, projection: BooleanExpression | None) -> BooleanExpression | None:
+        if not isinstance(projection, UnboundPredicate):
+            # only a single predicate can be evaluated against the partition value
             return None
 
         bound = projection.bind(self.partition_schema, case_sensitive=self.case_sensitive)
