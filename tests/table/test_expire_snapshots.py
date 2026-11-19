@@ -15,15 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 import threading
-from datetime import datetime, timedelta
+import time
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
+import pyarrow as pa
 import pytest
 
-from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.catalog import Catalog
+from pyiceberg.exceptions import CommitFailedException
+from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.schema import Schema
+from pyiceberg.table import CommitTableResponse, Table, TableProperties
 from pyiceberg.table.update import RemoveSnapshotsUpdate, update_table_metadata
 from pyiceberg.table.update.snapshot import ExpireSnapshots
+from pyiceberg.types import LongType, NestedField
 
 
 def test_cannot_expire_protected_head_snapshot(table_v2: Table) -> None:
@@ -316,3 +323,139 @@ def test_update_remove_snapshots_with_statistics(table_v2_with_statistics: Table
     assert not any(stat.snapshot_id == REMOVE_SNAPSHOT for stat in new_metadata.statistics), (
         "Statistics for removed snapshot should be gone"
     )
+
+
+def _table_with_expired_branch(
+    catalog_with_warehouse: Catalog,
+    max_ref_age_ms: int,
+    namespace: str,
+) -> tuple[Table, int]:
+    """Create a table with three snapshots and a branch on the oldest, then wait out its TTL.
+
+    Returns the reloaded table and the snapshot id the branch pins.
+    """
+    catalog_with_warehouse.create_namespace(namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+    table = catalog_with_warehouse.create_table(f"{namespace}.tbl", schema=schema)
+
+    arrow_schema = schema_to_pyarrow(schema, include_field_ids=False)
+    for i in range(3):
+        table.append(pa.table({"id": pa.array([i], type=pa.int64())}, schema=arrow_schema))
+    table = catalog_with_warehouse.load_table(f"{namespace}.tbl")
+
+    pinned_snapshot_id = table.metadata.snapshots[0].snapshot_id
+    table.manage_snapshots().create_branch(
+        snapshot_id=pinned_snapshot_id,
+        branch_name="audit",
+        max_ref_age_ms=max_ref_age_ms,
+    ).commit()
+
+    time.sleep(0.05)
+    return catalog_with_warehouse.load_table(f"{namespace}.tbl"), pinned_snapshot_id
+
+
+def test_remove_expired_refs_removes_expired_branch(catalog_with_warehouse: Catalog) -> None:
+    """An expired branch is dropped, and the snapshot it pinned becomes expirable."""
+    table, pinned_snapshot_id = _table_with_expired_branch(catalog_with_warehouse, namespace="ns_removes", max_ref_age_ms=1)
+    assert "audit" in table.metadata.refs
+
+    table.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(UTC) + timedelta(days=1)).commit()
+
+    table = catalog_with_warehouse.load_table("ns_removes.tbl")
+    assert "audit" not in table.metadata.refs
+    assert table.snapshot_by_id(pinned_snapshot_id) is None
+
+
+@pytest.mark.parametrize("refs_first", [True, False])
+def test_remove_expired_refs_is_order_independent(catalog_with_warehouse: Catalog, refs_first: bool) -> None:
+    """Snapshots released by an expired ref are reclaimed whichever order the builder is chained in."""
+    table, pinned_snapshot_id = _table_with_expired_branch(catalog_with_warehouse, namespace="ns_order", max_ref_age_ms=1)
+    cutoff = datetime.now(UTC) + timedelta(days=1)
+
+    expire = table.maintenance.expire_snapshots()
+    if refs_first:
+        expire.remove_expired_refs().older_than(cutoff).commit()
+    else:
+        expire.older_than(cutoff).remove_expired_refs().commit()
+
+    table = catalog_with_warehouse.load_table("ns_order.tbl")
+    assert "audit" not in table.metadata.refs
+    assert table.snapshot_by_id(pinned_snapshot_id) is None
+
+
+def test_remove_expired_refs_is_opt_in(catalog_with_warehouse: Catalog) -> None:
+    """Without remove_expired_refs(), an expired branch survives and keeps pinning its snapshot."""
+    table, pinned_snapshot_id = _table_with_expired_branch(catalog_with_warehouse, namespace="ns_optin", max_ref_age_ms=1)
+
+    table.maintenance.expire_snapshots().older_than(datetime.now(UTC) + timedelta(days=1)).commit()
+
+    table = catalog_with_warehouse.load_table("ns_optin.tbl")
+    assert "audit" in table.metadata.refs
+    assert table.snapshot_by_id(pinned_snapshot_id) is not None
+
+
+def test_remove_expired_refs_keeps_unexpired_branch(catalog_with_warehouse: Catalog) -> None:
+    """A branch still inside its retention window is kept, and keeps protecting its snapshot."""
+    table, pinned_snapshot_id = _table_with_expired_branch(
+        catalog_with_warehouse, namespace="ns_keeps", max_ref_age_ms=7 * 24 * 60 * 60 * 1000
+    )
+
+    table.maintenance.expire_snapshots().remove_expired_refs().older_than(datetime.now(UTC) + timedelta(days=1)).commit()
+
+    table = catalog_with_warehouse.load_table("ns_keeps.tbl")
+    assert "audit" in table.metadata.refs
+    assert table.snapshot_by_id(pinned_snapshot_id) is not None
+
+
+def test_remove_expired_refs_falls_back_to_table_property(catalog_with_warehouse: Catalog) -> None:
+    """A ref without its own TTL uses history.expire.max-ref-age-ms."""
+    catalog_with_warehouse.create_namespace("ns_prop")
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+    table = catalog_with_warehouse.create_table("ns_prop.tbl", schema=schema, properties={TableProperties.MAX_REF_AGE_MS: "1"})
+    arrow_schema = schema_to_pyarrow(schema, include_field_ids=False)
+    table.append(pa.table({"id": pa.array([1], type=pa.int64())}, schema=arrow_schema))
+    table = catalog_with_warehouse.load_table("ns_prop.tbl")
+
+    snapshot_id = table.metadata.current_snapshot_id
+    assert snapshot_id is not None
+    table.manage_snapshots().create_tag(snapshot_id=snapshot_id, tag_name="release").commit()
+    table = catalog_with_warehouse.load_table("ns_prop.tbl")
+    assert table.metadata.refs["release"].max_ref_age_ms is None
+
+    time.sleep(0.05)
+    table.maintenance.expire_snapshots().remove_expired_refs().commit()
+
+    table = catalog_with_warehouse.load_table("ns_prop.tbl")
+    assert "release" not in table.metadata.refs
+
+
+def test_remove_expired_refs_fails_if_ref_moved_since_planning(catalog_with_warehouse: Catalog) -> None:
+    """A branch that gained a commit after it was judged expired is not removed."""
+    table, _ = _table_with_expired_branch(catalog_with_warehouse, namespace="ns_race", max_ref_age_ms=1)
+    expire = table.maintenance.expire_snapshots().remove_expired_refs()
+
+    writer = catalog_with_warehouse.load_table("ns_race.tbl")
+    arrow_schema = schema_to_pyarrow(writer.schema(), include_field_ids=False)
+    writer.append(pa.table({"id": pa.array([9], type=pa.int64())}, schema=arrow_schema), branch="audit")
+
+    with pytest.raises(CommitFailedException):
+        expire.commit()
+
+    assert "audit" in catalog_with_warehouse.load_table("ns_race.tbl").metadata.refs
+
+
+def test_remove_expired_refs_never_removes_main(catalog_with_warehouse: Catalog) -> None:
+    """main is exempt from ref expiry even when the table-level TTL has elapsed."""
+    catalog_with_warehouse.create_namespace("ns_main")
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+    table = catalog_with_warehouse.create_table("ns_main.tbl", schema=schema, properties={TableProperties.MAX_REF_AGE_MS: "1"})
+    arrow_schema = schema_to_pyarrow(schema, include_field_ids=False)
+    table.append(pa.table({"id": pa.array([1], type=pa.int64())}, schema=arrow_schema))
+    table = catalog_with_warehouse.load_table("ns_main.tbl")
+
+    time.sleep(0.05)
+    table.maintenance.expire_snapshots().remove_expired_refs().commit()
+
+    table = catalog_with_warehouse.load_table("ns_main.tbl")
+    assert "main" in table.metadata.refs
+    assert table.metadata.current_snapshot_id is not None
