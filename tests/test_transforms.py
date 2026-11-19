@@ -572,6 +572,22 @@ def test_bucket_transform_deserialize() -> None:
     assert transform == BucketTransform(num_buckets=22)
 
 
+def test_bucket_transform_rejects_non_positive_counts() -> None:
+    for count in (0, -1):
+        with pytest.raises(ValueError, match="Invalid number of buckets"):
+            BucketTransform(num_buckets=count)
+    with pytest.raises(ValueError, match="Invalid number of buckets"):
+        parse_transform("bucket[0]")
+
+
+def test_truncate_transform_rejects_non_positive_widths() -> None:
+    for width in (0, -1):
+        with pytest.raises(ValueError, match="Invalid truncate width"):
+            TruncateTransform(width=width)
+    with pytest.raises(ValueError, match="Invalid truncate width"):
+        parse_transform("truncate[0]")
+
+
 def test_bucket_transform_str() -> None:
     assert str(BucketTransform(num_buckets=22)) == "bucket[22]"
 
