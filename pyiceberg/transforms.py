@@ -1082,7 +1082,13 @@ def _truncate_integer_projection(
         return _truncate_number(name, pred, transform)
 
     projected = _truncate_number(name, pred, transform)
-    if isinstance(pred, (BoundLessThan, BoundLessThanOrEqual)) and projected is not None:
+    if isinstance(pred, BoundLessThan) and projected is not None:
+        if boundary <= next_block_start:
+            return EqualTo(Reference(name), wrapped_minimum)
+        return Or(projected, EqualTo(Reference(name), wrapped_minimum))
+    elif isinstance(pred, BoundLessThanOrEqual) and projected is not None:
+        if boundary < next_block_start:
+            return EqualTo(Reference(name), wrapped_minimum)
         return Or(projected, EqualTo(Reference(name), wrapped_minimum))
     return projected
 
