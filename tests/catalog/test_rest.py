@@ -24,6 +24,7 @@ import platform
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import timedelta
 from typing import Any, cast
 from unittest import mock
 from urllib.parse import parse_qs, quote, urlsplit
@@ -57,6 +58,7 @@ from pyiceberg.catalog.rest import (
     ScanPlanningMode,
     TableResponse,
     ViewResponse,
+    _parse_idempotency_key_lifetime,
     _RetryTimeoutHTTPAdapter,
 )
 from pyiceberg.exceptions import (
@@ -2558,7 +2560,9 @@ def test_session_with_socket_timeout_only(rest_mock: Mocker) -> None:
 
 
 @contextmanager
-def _local_rest_server_503_then_200(num_failures: int, idempotency_key_lifetime: str | None = None) -> Iterator[dict[str, Any]]:
+def _local_rest_server_503_then_200(
+    num_failures: int, idempotency_key_lifetime: str | None = None, retry_after: str | None = None
+) -> Iterator[dict[str, Any]]:
     """Stand up a loopback HTTP server that returns `num_failures` 503s for `/v1/namespaces` then a 200.
 
     Used in place of `requests_mock`, which replaces the HTTPAdapter and would bypass the retry logic.
@@ -2591,16 +2595,18 @@ def _local_rest_server_503_then_200(num_failures: int, idempotency_key_lifetime:
                 state["namespace_calls"] += 1
                 state["idempotency_keys"].append(self.headers.get(IDEMPOTENCY_KEY_HEADER))
                 if state["namespace_calls"] <= num_failures:
-                    self._respond(503, b"")
+                    self._respond(503, b"", {"Retry-After": retry_after} if retry_after is not None else {})
                 else:
                     self._respond(200, json.dumps({"namespaces": [["foo"]]}).encode())
             else:
                 self._respond(404, b"")
 
-        def _respond(self, status: int, body: bytes) -> None:
+        def _respond(self, status: int, body: bytes, headers: dict[str, str] | None = None) -> None:
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             if body:
                 self.wfile.write(body)
@@ -2672,6 +2678,119 @@ def test_session_retries_keyed_post_with_the_same_key() -> None:
         key = server["idempotency_keys"][0]
         assert key is not None
         assert server["idempotency_keys"] == [key, key]
+
+
+def test_session_does_not_retry_keyed_post_past_the_key_lifetime() -> None:
+    # Retry-After (60s) is longer than the advertised lifetime (PT30S), so the retry would reuse an expired key.
+    with _local_rest_server_503_then_200(num_failures=1, idempotency_key_lifetime="PT30S", retry_after="60") as server:
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                REST_CLIENT_MAX_RETRIES: "3",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+            },
+        )
+        with pytest.raises(ServiceUnavailableError):
+            catalog.create_namespace("foo")
+        assert server["namespace_calls"] == 1
+
+
+def test_session_does_not_retry_keyed_post_past_the_key_lifetime_due_to_backoff() -> None:
+    # urllib3 retries the first failure immediately; the backoff before the second retry (20s) alone
+    # exceeds the advertised lifetime (PT5S).
+    with _local_rest_server_503_then_200(num_failures=2, idempotency_key_lifetime="PT5S") as server:
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                REST_CLIENT_MAX_RETRIES: "3",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "10",
+            },
+        )
+        with pytest.raises(ServiceUnavailableError):
+            catalog.create_namespace("foo")
+        assert server["namespace_calls"] == 2
+
+
+def test_session_retries_keyed_post_within_the_key_lifetime_with_retry_after() -> None:
+    with _local_rest_server_503_then_200(num_failures=1, idempotency_key_lifetime="PT30M", retry_after="0") as server:
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                REST_CLIENT_MAX_RETRIES: "1",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+            },
+        )
+        catalog.create_namespace("foo")
+        assert server["namespace_calls"] == 2
+
+
+def test_session_never_retries_keyed_post_with_non_positive_key_lifetime() -> None:
+    for lifetime in ("PT0S", "-PT5M"):
+        with _local_rest_server_503_then_200(num_failures=1, idempotency_key_lifetime=lifetime) as server:
+            catalog = RestCatalog(
+                "rest",
+                **{
+                    "uri": f"http://127.0.0.1:{server['port']}/",
+                    "token": TEST_TOKEN,
+                    REST_CLIENT_MAX_RETRIES: "3",
+                    REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+                },
+            )
+            with pytest.raises(ServiceUnavailableError):
+                catalog.create_namespace("foo")
+            assert server["namespace_calls"] == 1, lifetime
+            # The key is still sent, only the retry is skipped.
+            assert server["idempotency_keys"][0] is not None
+
+
+def test_session_key_lifetime_does_not_bound_unkeyed_requests() -> None:
+    # GETs carry no Idempotency-Key, so they are retried as before even though the lifetime is zero.
+    with _local_rest_server_503_then_200(num_failures=1, idempotency_key_lifetime="PT0S") as server:
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                REST_CLIENT_MAX_RETRIES: "1",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+            },
+        )
+        assert catalog.list_namespaces() == [("foo",)]
+        assert server["namespace_calls"] == 2
+
+
+def test_session_retries_keyed_post_with_malformed_key_lifetime(caplog: pytest.LogCaptureFixture) -> None:
+    with _local_rest_server_503_then_200(num_failures=1, idempotency_key_lifetime="not-a-duration") as server:
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                REST_CLIENT_MAX_RETRIES: "1",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+            },
+        )
+        catalog.create_namespace("foo")
+
+        key = server["idempotency_keys"][0]
+        assert key is not None
+        assert server["idempotency_keys"] == [key, key]
+    assert "Ignoring malformed idempotency-key lifetime: not-a-duration" in caplog.text
+
+
+def test_parse_idempotency_key_lifetime() -> None:
+    assert _parse_idempotency_key_lifetime(None) is None
+    assert _parse_idempotency_key_lifetime("PT30M") == timedelta(minutes=30)
+    assert _parse_idempotency_key_lifetime("P1DT2H") == timedelta(days=1, hours=2)
+    assert _parse_idempotency_key_lifetime("PT0S") == timedelta(0)
+    assert _parse_idempotency_key_lifetime("-PT5M") == timedelta(0)
+    assert _parse_idempotency_key_lifetime("garbage") is None
 
 
 def test_mutations_send_idempotency_key_when_advertised(requests_mock: Mocker) -> None:
