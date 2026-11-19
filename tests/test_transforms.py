@@ -420,6 +420,10 @@ def test_satisfies_order_of_method(transform: TimeTransform[Any], other_transfor
         (LongType(), -1234567890000, "-1234567890000"),
         (StringType(), "a/b/c=d", "a/b/c=d"),
         (DecimalType(9, 2), Decimal("-1.50"), "-1.50"),
+        (DecimalType(20, 8), Decimal("0.00000012"), "0.00000012"),
+        (DecimalType(20, 8), Decimal("0.00000000"), "0.00000000"),
+        (DecimalType(20, 8), Decimal("-0.00000012"), "-0.00000012"),
+        (DecimalType(38, 18), Decimal("0.000000000000000001"), "0.000000000000000001"),
         (FixedType(100), b"foo", "Zm9v"),
     ],
 )
