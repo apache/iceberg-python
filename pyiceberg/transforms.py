@@ -30,6 +30,7 @@ import mmh3
 from pydantic import Field, PositiveInt, PrivateAttr
 
 from pyiceberg.expressions import (
+    BooleanExpression,
     BoundEqualTo,
     BoundGreaterThan,
     BoundGreaterThanOrEqual,
@@ -174,7 +175,7 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
         ...
 
     @abstractmethod
-    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None: ...
+    def project(self, name: str, pred: BoundPredicate) -> BooleanExpression | None: ...
 
     @abstractmethod
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None: ...
@@ -789,7 +790,7 @@ class TruncateTransform(Transform[S, S]):
     def source_type(self) -> IcebergType:
         return self._source_type
 
-    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
+    def project(self, name: str, pred: BoundPredicate) -> BooleanExpression | None:
         field_type = pred.term.ref().field.field_type
 
         if isinstance(pred.term, BoundTransform):
@@ -1054,7 +1055,7 @@ def _truncate_integer_projection(
     transform: Callable[[Any | None], Any | None],
     source: IcebergType,
     width: int,
-) -> UnboundPredicate | None:
+) -> BooleanExpression | None:
     """Project a predicate on a truncate partition of an integer column.
 
     The values from the minimum of the source type truncate to a partition value at the top of the
