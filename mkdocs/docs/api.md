@@ -1512,6 +1512,24 @@ Fast-forward `from_branch` to point at the snapshot referenced by `to_ref`.
 
 <!-- markdownlint-enable MD046 -->
 
+#### Cherry-picking a snapshot
+
+Apply the changes of a snapshot from another branch, or of a staged snapshot, to `main`:
+
+```python
+table.manage_snapshots().cherrypick(snapshot_id).commit()
+```
+
+If the snapshot's parent is the current snapshot of `main`, `main` is fast-forwarded to it.
+Otherwise, an `append` snapshot is replayed as a new snapshot on top of `main`, which records the
+picked snapshot in its `source-snapshot-id` summary property. Other operations can only be fast-forwarded.
+
+A snapshot written with a `wap.id` summary property, for example with
+`table.append(df, branch=None, snapshot_properties={"wap.id": "nightly-2024-01-01"})`, records it
+as `published-wap-id` when picked, and a `wap.id` can only be published once.
+Picking a snapshot that is already an ancestor of `main`, or was already picked, raises
+`CherrypickAncestorCommitException`.
+
 #### Example Use-Case: write-audit-publish (WAP)
 
 The use of branching & fast-forwarding enable the usage of the write-audit-publish (WAP) process:

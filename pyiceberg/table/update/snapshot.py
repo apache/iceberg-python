@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.exceptions import (
+    CherrypickAncestorCommitException,
+    DuplicateWAPCommitException,
     NoSuchSnapshotRefError,
     NotAncestorError,
     SnapshotRefTypeError,
@@ -59,6 +61,9 @@ from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
+    PUBLISHED_WAP_ID,
+    SOURCE_SNAPSHOT_ID,
+    STAGED_WAP_ID,
     Operation,
     Snapshot,
     SnapshotSummaryCollector,
@@ -721,6 +726,64 @@ class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
         return []
 
 
+class _CherrypickAppendFiles(_FastAppendFiles):
+    """Replay the data files added by an append snapshot as a new snapshot on main."""
+
+    _cherrypick_snapshot_id: int
+
+    def __init__(self, cherrypick_snapshot_id: int, transaction: Transaction, io: FileIO, snapshot_properties: dict[str, str]):
+        super().__init__(operation=Operation.APPEND, transaction=transaction, io=io, snapshot_properties=snapshot_properties)
+        self._cherrypick_snapshot_id = cherrypick_snapshot_id
+
+    def _validate_concurrency(self) -> None:
+        """Validate against the refreshed state that the snapshot was not picked or its wap id published concurrently."""
+        metadata = self._transaction._table.metadata
+        _validate_cherrypick_non_ancestor(metadata, self._cherrypick_snapshot_id)
+        _validate_wap_publish(metadata, self._cherrypick_snapshot_id)
+
+
+def _validate_cherrypick_non_ancestor(metadata: TableMetadata, snapshot_id: int) -> None:
+    ancestors = list(ancestors_of(metadata.current_snapshot(), metadata))
+    if any(ancestor.snapshot_id == snapshot_id for ancestor in ancestors):
+        raise CherrypickAncestorCommitException(f"Cannot cherrypick snapshot {snapshot_id}: already an ancestor")
+
+    for ancestor in ancestors:
+        if ancestor.summary is not None and ancestor.summary.get(SOURCE_SNAPSHOT_ID) == str(snapshot_id):
+            raise CherrypickAncestorCommitException(
+                f"Cannot cherrypick snapshot {snapshot_id}: already picked to create ancestor {ancestor.snapshot_id}"
+            )
+
+
+def _validate_wap_publish(metadata: TableMetadata, snapshot_id: int) -> str | None:
+    """Return the staged wap id of the snapshot, if any, after checking it was not already published to main."""
+    snapshot = metadata.snapshot_by_id(snapshot_id)
+    wap_id = snapshot.summary.get(STAGED_WAP_ID) if snapshot is not None and snapshot.summary is not None else None
+    if not wap_id:
+        return None
+
+    for ancestor in ancestors_of(metadata.current_snapshot(), metadata):
+        if ancestor.summary is not None and wap_id in (
+            ancestor.summary.get(STAGED_WAP_ID),
+            ancestor.summary.get(PUBLISHED_WAP_ID),
+        ):
+            raise DuplicateWAPCommitException(f"Duplicate request to cherry pick wap id that was published already: {wap_id}")
+
+    return wap_id
+
+
+def _added_data_files(snapshot: Snapshot, io: FileIO) -> list[DataFile]:
+    """Return the data files added by the given snapshot."""
+    added_data_files = []
+    for manifest in snapshot.manifests(io=io):
+        if manifest.content == ManifestContent.DATA and manifest.added_snapshot_id == snapshot.snapshot_id:
+            for entry in manifest.fetch_manifest_entry(io=io, discard_deleted=True):
+                if entry.status == ManifestEntryStatus.ADDED:
+                    # Picked files are new rows on main, so they inherit row ids from the publishing snapshot
+                    entry.data_file.first_row_id = None
+                    added_data_files.append(entry.data_file)
+    return added_data_files
+
+
 class _MergeAppendFiles(_FastAppendFiles):
     _target_size_bytes: int
     _min_count_to_merge: int
@@ -1289,6 +1352,61 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             raise ValueError(f"Cannot roll back, no valid snapshot older than: {timestamp_ms}")
 
         return self.set_current_snapshot(snapshot_id=snapshot.snapshot_id)
+
+    def cherrypick(self, snapshot_id: int) -> ManageSnapshots:
+        """Apply the changes of a snapshot to the current state of the main branch.
+
+        An append snapshot is replayed as a new snapshot on top of main, which records the picked snapshot in
+        its ``source-snapshot-id`` summary property and, for a staged write-audit-publish snapshot, its
+        ``published-wap-id``. Any other snapshot can only be picked when its parent is the current snapshot,
+        in which case main is fast-forwarded to it.
+
+        Args:
+            snapshot_id: The ID of the snapshot to cherry-pick.
+
+        Returns:
+            This for method chaining.
+
+        Raises:
+            ValidationException: If the snapshot does not exist, or is neither an append nor a fast-forward.
+            CherrypickAncestorCommitException: If the snapshot is already an ancestor of, or was already picked into, main.
+            DuplicateWAPCommitException: If the wap id of the snapshot was already published.
+        """
+        self._commit_if_ref_updates_exist()
+
+        metadata = self._transaction.table_metadata
+        snapshot = metadata.snapshot_by_id(snapshot_id)
+        if snapshot is None:
+            raise ValidationException(f"Cannot cherry-pick unknown snapshot ID: {snapshot_id}")
+
+        is_append = snapshot.summary is not None and snapshot.summary.operation == Operation.APPEND
+        wap_id = _validate_wap_publish(metadata, snapshot_id) if is_append else None
+
+        current_snapshot = metadata.current_snapshot()
+        current_snapshot_id = current_snapshot.snapshot_id if current_snapshot is not None else None
+        if snapshot.parent_snapshot_id == current_snapshot_id:
+            return self.set_current_snapshot(snapshot_id=snapshot_id)
+
+        if not is_append:
+            raise ValidationException(f"Cannot cherry-pick snapshot {snapshot_id}: not append or fast-forward")
+
+        _validate_cherrypick_non_ancestor(metadata, snapshot_id)
+
+        snapshot_properties = {SOURCE_SNAPSHOT_ID: str(snapshot_id)}
+        if wap_id is not None:
+            snapshot_properties[PUBLISHED_WAP_ID] = wap_id
+
+        io = self._transaction._table.io
+        producer = _CherrypickAppendFiles(
+            cherrypick_snapshot_id=snapshot_id,
+            transaction=self._transaction,
+            io=io,
+            snapshot_properties=snapshot_properties,
+        )
+        for data_file in _added_data_files(snapshot, io):
+            producer.append_data_file(data_file)
+        producer.commit()
+        return self
 
     def _is_current_ancestor(self, snapshot_id: int) -> bool:
         return snapshot_id in self._current_ancestors()
