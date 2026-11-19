@@ -91,6 +91,7 @@ def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMem
         partition=Record(),
         record_count=1,
         file_size_in_bytes=os.path.getsize(file_path),
+        spec_id=tbl.metadata.default_spec_id,
     )
     with tbl.transaction() as tx:
         with tx.update_snapshot().fast_append() as fast_append:
