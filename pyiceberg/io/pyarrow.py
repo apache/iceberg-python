@@ -1265,14 +1265,31 @@ def pyarrow_to_schema(
     name_mapping: NameMapping | None = None,
     downcast_ns_timestamp_to_us: bool = False,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
+    prune_fields_without_ids: bool = False,
 ) -> Schema:
+    """Convert a PyArrow schema to an Iceberg schema.
+
+    Args:
+        schema: The PyArrow schema to convert.
+        name_mapping: Used when the schema has no field IDs.
+        downcast_ns_timestamp_to_us: Downcast nanosecond timestamps to microseconds.
+        format_version: The Iceberg table format version.
+        prune_fields_without_ids: If some fields have field IDs, drop the ones that do not
+            (including lists and maps with an element, key, or value without one) instead of
+            falling back to the name mapping, like the Java Parquet reader does. Only meant for
+            reading data files. Writes keep the stricter check, so extra columns are rejected
+            instead of silently dropped.
+    """
+    if prune_fields_without_ids:
+        # Prune before conversion, so an unsupported type in a column without an ID does not fail the read
+        pruned_schema = _prune_fields_without_ids(schema)
+        if len(pruned_schema) > 0:
+            schema = pruned_schema
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
-        result = visit_pyarrow(
+        return visit_pyarrow(
             schema, _ConvertToIceberg(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version)
         )
-        assert isinstance(result, Schema)
-        return result
     elif name_mapping is not None:
         schema_without_ids = _pyarrow_to_schema_without_ids(
             schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
@@ -1284,17 +1301,59 @@ def pyarrow_to_schema(
         )
 
 
+def _prune_fields_without_ids(schema: pa.Schema) -> pa.Schema:
+    """Drop fields without a field ID, so only the columns with IDs are read.
+
+    A list is dropped when its element has no ID, and a map when its key or value has none,
+    since neither can be represented in Iceberg without them. A struct whose children all
+    get dropped is dropped as well.
+    """
+    fields = [pruned for field in schema if (pruned := _prune_field_without_id(field)) is not None]
+    return pa.schema(fields, metadata=schema.metadata)
+
+
+def _prune_field_without_id(field: pa.Field) -> pa.Field | None:
+    if _get_field_id(field) is None:
+        return None
+    pruned_type = _prune_type_without_ids(field.type)
+    if pruned_type is None:
+        return None
+    return field.with_type(pruned_type)
+
+
+def _prune_type_without_ids(arrow_type: pa.DataType) -> pa.DataType | None:
+    if pa.types.is_struct(arrow_type):
+        children = [arrow_type.field(i) for i in range(arrow_type.num_fields)]
+        pruned_children = [pruned for child in children if (pruned := _prune_field_without_id(child)) is not None]
+        return pa.struct(pruned_children) if pruned_children else None
+    elif isinstance(arrow_type, (pa.ListType, pa.LargeListType, pa.FixedSizeListType)):
+        element_field = _prune_field_without_id(arrow_type.value_field)
+        if element_field is None:
+            return None
+        if isinstance(arrow_type, pa.LargeListType):
+            return pa.large_list(element_field)
+        if isinstance(arrow_type, pa.FixedSizeListType):
+            return pa.list_(element_field, arrow_type.list_size)
+        return pa.list_(element_field)
+    elif isinstance(arrow_type, pa.MapType):
+        key_field = _prune_field_without_id(arrow_type.key_field)
+        value_field = _prune_field_without_id(arrow_type.item_field)
+        if key_field is None or value_field is None:
+            # Keeping a map without its value (or key) would change its type, so drop the whole map
+            return None
+        return pa.map_(key_field, value_field, keys_sorted=arrow_type.keys_sorted)
+    return arrow_type
+
+
 def _pyarrow_to_schema_without_ids(
     schema: pa.Schema,
     downcast_ns_timestamp_to_us: bool = False,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
 ) -> Schema:
-    result = visit_pyarrow(
+    return visit_pyarrow(
         schema,
         _ConvertToIcebergWithoutIDs(downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version),
     )
-    assert isinstance(result, Schema)
-    return result
 
 
 def _pyarrow_schema_ensure_large_types(schema: pa.Schema) -> pa.Schema:
@@ -1452,39 +1511,32 @@ def _get_field_id(field: pa.Field) -> int | None:
 
 
 class _HasIds(PyArrowSchemaVisitor[bool]):
-    """Return whether any field in the Arrow schema has an Iceberg field ID.
-
-    Matches Java's ParquetSchemaUtil.hasIds, which is true if any column has an ID.
-    Fields without IDs are later pruned by _ConvertToIceberg.
-    """
-
     def schema(self, schema: pa.Schema, struct_result: bool) -> bool:
         return struct_result
 
     def struct(self, struct: pa.StructType, field_results: builtins.list[bool]) -> bool:
-        return any(field_results)
+        return all(field_results)
 
     def field(self, field: pa.Field, field_result: bool) -> bool:
-        return _get_field_id(field) is not None or field_result
+        return all([_get_field_id(field) is not None, field_result])
 
     def list(self, list_type: pa.ListType, element_result: bool) -> bool:
         element_field = list_type.value_field
         element_id = _get_field_id(element_field)
-        return element_result or element_id is not None
+        return element_result and element_id is not None
 
     def map(self, map_type: pa.MapType, key_result: bool, value_result: bool) -> bool:
         key_field = map_type.key_field
         key_id = _get_field_id(key_field)
         value_field = map_type.item_field
         value_id = _get_field_id(value_field)
-        return any([key_id is not None, value_id is not None, key_result, value_result])
+        return all([key_id is not None, value_id is not None, key_result, value_result])
 
     def primitive(self, primitive: pa.DataType) -> bool:
-        # IDs live on pa.Field metadata, not on primitive types
-        return False
+        return True
 
 
-class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema | None]):
+class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
     """Converts PyArrowSchema to Iceberg Schema."""
 
     _field_names: builtins.list[str]
@@ -1496,37 +1548,34 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema | None]):
         self._downcast_ns_timestamp_to_us = downcast_ns_timestamp_to_us
         self._format_version = format_version
 
-    def _field_id(self, field: pa.Field) -> int | None:
-        return _get_field_id(field)
+    def _field_id(self, field: pa.Field) -> int:
+        if (field_id := _get_field_id(field)) is not None:
+            return field_id
+        else:
+            raise ValueError(f"Cannot convert {field} to Iceberg Field as field_id is empty.")
 
-    def schema(self, schema: pa.Schema, struct_result: StructType | None) -> Schema:
-        return Schema(*(struct_result.fields if struct_result is not None else ()))
+    def schema(self, schema: pa.Schema, struct_result: StructType) -> Schema:
+        return Schema(*struct_result.fields)
 
-    def struct(self, struct: pa.StructType, field_results: builtins.list[NestedField | None]) -> StructType | None:
-        fields = tuple(field for field in field_results if field is not None)
-        return StructType(*fields) if fields else None
+    def struct(self, struct: pa.StructType, field_results: builtins.list[NestedField]) -> StructType:
+        return StructType(*field_results)
 
-    def field(self, field: pa.Field, field_result: IcebergType | None) -> NestedField | None:
+    def field(self, field: pa.Field, field_result: IcebergType) -> NestedField:
         field_id = self._field_id(field)
-        if field_id is None or field_result is None:
-            return None
         field_doc = doc_str.decode() if (field.metadata and (doc_str := field.metadata.get(PYARROW_FIELD_DOC_KEY))) else None
-        return NestedField(field_id, field.name, field_result, required=not field.nullable, doc=field_doc)
+        field_type = field_result
+        return NestedField(field_id, field.name, field_type, required=not field.nullable, doc=field_doc)
 
-    def list(self, list_type: pa.ListType, element_result: IcebergType | None) -> ListType | None:
+    def list(self, list_type: pa.ListType, element_result: IcebergType) -> ListType:
         element_field = list_type.value_field
         element_id = self._field_id(element_field)
-        if element_id is None or element_result is None:
-            return None
         return ListType(element_id, element_result, element_required=not element_field.nullable)
 
-    def map(self, map_type: pa.MapType, key_result: IcebergType | None, value_result: IcebergType | None) -> MapType | None:
+    def map(self, map_type: pa.MapType, key_result: IcebergType, value_result: IcebergType) -> MapType:
         key_field = map_type.key_field
         key_id = self._field_id(key_field)
         value_field = map_type.item_field
         value_id = self._field_id(value_field)
-        if key_id is None or value_id is None or key_result is None or value_result is None:
-            return None
         return MapType(key_id, key_result, value_id, value_result, value_required=not value_field.nullable)
 
     def primitive(self, primitive: pa.DataType) -> PrimitiveType:
@@ -1793,7 +1842,11 @@ def _task_to_record_batches(
             downcast_ns_timestamp_to_us if downcast_ns_timestamp_to_us is not None else format_version <= 2
         )
         file_schema = pyarrow_to_schema(
-            physical_schema, name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
+            physical_schema,
+            name_mapping,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=format_version,
+            prune_fields_without_ids=True,
         )
 
         # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
