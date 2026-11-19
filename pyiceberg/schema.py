@@ -1337,9 +1337,11 @@ def build_position_accessors(schema_or_type: Schema | IcebergType) -> dict[int, 
     return visit(schema_or_type, _BuildPositionAccessors())
 
 
-def assign_fresh_schema_ids(schema_or_type: Schema | IcebergType, next_id: Callable[[], int] | None = None) -> Schema:
-    """Traverses the schema, and sets new IDs."""
-    return pre_order_visit(schema_or_type, _SetFreshIDs(next_id_func=next_id))
+def assign_fresh_schema_ids(
+    schema_or_type: Schema | IcebergType, next_id: Callable[[], int] | None = None, *, preserve_defaults: bool = False
+) -> Schema:
+    """Assign fresh field IDs and optionally preserve field defaults."""
+    return pre_order_visit(schema_or_type, _SetFreshIDs(next_id_func=next_id, preserve_defaults=preserve_defaults))
 
 
 class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
@@ -1347,8 +1349,9 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
 
     old_id_to_new_id: dict[int, int]
 
-    def __init__(self, next_id_func: Callable[[], int] | None = None) -> None:
+    def __init__(self, next_id_func: Callable[[], int] | None, *, preserve_defaults: bool) -> None:
         self.old_id_to_new_id = {}
+        self._preserve_defaults = preserve_defaults
         counter = itertools.count(1)
         self.next_id_func = next_id_func if next_id_func is not None else lambda: next(counter)
 
@@ -1368,12 +1371,13 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
         new_fields = []
         for field_id, field, field_type in zip(new_ids, struct.fields, field_results, strict=True):
             new_fields.append(
-                NestedField(
-                    field_id=field_id,
-                    name=field.name,
-                    field_type=field_type(),
-                    required=field.required,
-                    doc=field.doc,
+                field.model_copy(
+                    update={
+                        "field_id": field_id,
+                        "field_type": field_type(),
+                        "initial_default": field.initial_default if self._preserve_defaults else None,
+                        "write_default": field.write_default if self._preserve_defaults else None,
+                    }
                 )
             )
         return StructType(*new_fields)
