@@ -4271,6 +4271,184 @@ def test__to_requested_schema_null_list_of_structs(list_type: Callable[[pa.DataT
     assert result.column(1).to_pylist() == [[], None, [2, None]]
 
 
+def test__to_requested_schema_fixed_size_list_of_structs() -> None:
+    # The requested schema renames the struct field, like sanitize_column_names does on write
+    file_schema = Schema(
+        NestedField(
+            1,
+            "col_list_with_struct",
+            ListType(11, StructType(NestedField(111, "a b", IntegerType(), required=False)), element_required=False),
+            required=False,
+        ),
+    )
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_list_with_struct",
+            ListType(11, StructType(NestedField(111, "a_b", IntegerType(), required=False)), element_required=False),
+            required=False,
+        ),
+    )
+    arrow_schema = pa.schema([pa.field("col_list_with_struct", pa.list_(pa.struct([pa.field("a b", pa.int32())]), 2))])
+    values = pa.array(
+        [[{"a b": 1}, None], None, [{"a b": None}, {"a b": 2}], [{"a b": 3}, {"a b": 4}]], type=arrow_schema.field(0).type
+    )
+    batch = pa.RecordBatch.from_arrays([values], schema=arrow_schema)
+
+    result = _to_requested_schema(requested_schema, file_schema, batch)
+    assert result.column(0).to_pylist() == [[{"a_b": 1}, None], None, [{"a_b": None}, {"a_b": 2}], [{"a_b": 3}, {"a_b": 4}]]
+
+    # A sliced batch has to keep the nulls as well
+    result = _to_requested_schema(requested_schema, file_schema, batch.slice(1, 3))
+    assert result.column(0).to_pylist() == [None, [{"a_b": None}, {"a_b": 2}], [{"a_b": 3}, {"a_b": 4}]]
+
+
+def test__to_requested_schema_list_of_lists_of_renamed_structs() -> None:
+    # The renamed struct fields are only in the projected values, so every list around them has to be rebuilt
+    file_struct = StructType(NestedField(4, "a b", IntegerType(), required=False))
+    requested_struct = StructType(NestedField(4, "a_b", IntegerType(), required=False))
+    file_schema = Schema(
+        NestedField(
+            1,
+            "col",
+            ListType(2, ListType(3, file_struct, element_required=False), element_required=False),
+            required=False,
+        ),
+    )
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col",
+            ListType(2, ListType(3, requested_struct, element_required=False), element_required=False),
+            required=False,
+        ),
+    )
+    struct_type = pa.struct([pa.field("a b", pa.int32())])
+    builders: dict[str, Callable[[pa.DataType], pa.DataType]] = {
+        "list": pa.list_,
+        "large_list": pa.large_list,
+        "fixed_size_list": lambda value_type: pa.list_(value_type, 2),
+    }
+    rows = [[[{"a b": 1}, None], [{"a b": 2}, {"a b": None}]], None, [None, [{"a b": 3}, {"a b": 4}]]]
+    expected = [[[{"a_b": 1}, None], [{"a_b": 2}, {"a_b": None}]], None, [None, [{"a_b": 3}, {"a_b": 4}]]]
+    for outer_builder in builders.values():
+        for inner_builder in builders.values():
+            arrow_type = outer_builder(inner_builder(struct_type))
+            batch = pa.RecordBatch.from_arrays([pa.array(rows, type=arrow_type)], names=["col"])
+
+            result = _to_requested_schema(requested_schema, file_schema, batch)
+            assert result.column(0).to_pylist() == expected
+
+            # A sliced batch has to keep the nulls as well, also when the slice is empty
+            result = _to_requested_schema(requested_schema, file_schema, batch.slice(1, 2))
+            assert result.column(0).to_pylist() == expected[1:]
+            assert _to_requested_schema(requested_schema, file_schema, batch.slice(1, 0)).num_rows == 0
+
+    # Control: a fixed-size list of integers goes through the same projection without any struct
+    ints_schema = Schema(NestedField(1, "col", ListType(2, IntegerType(), element_required=False), required=False))
+    ints = pa.RecordBatch.from_arrays([pa.array([[1, 2], None, [None, 4]], pa.list_(pa.int32(), 2))], names=["col"])
+    assert _to_requested_schema(ints_schema, ints_schema, ints).column(0).to_pylist() == [[1, 2], None, [None, 4]]
+
+
+def test_append_fixed_size_list_of_structs(catalog: InMemoryCatalog) -> None:
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2], pa.int64()),
+            "v": pa.array(
+                [[{"a b": 1, "c": "x"}, {"a b": 2, "c": "y"}], [{"a b": None, "c": "z"}, None]],
+                pa.list_(pa.struct([("a b", pa.int32()), ("c", pa.string())]), 2),
+            ),
+        }
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_fixed_size_list_of_structs", schema=arrow_table.schema)
+
+    table.append(arrow_table)
+
+    assert table.scan().to_arrow().to_pylist() == arrow_table.to_pylist()
+
+
+def test__to_requested_schema_map_of_lists_of_renamed_structs() -> None:
+    # The renamed struct fields are in the list values of a map, so the map has to keep the projected values
+    file_schema = Schema(
+        NestedField(
+            1,
+            "col",
+            MapType(
+                2,
+                StringType(),
+                3,
+                ListType(4, StructType(NestedField(5, "a b", IntegerType(), required=False)), element_required=False),
+                value_required=False,
+            ),
+            required=False,
+        ),
+    )
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col",
+            MapType(
+                2,
+                StringType(),
+                3,
+                ListType(4, StructType(NestedField(5, "a_b", IntegerType(), required=False)), element_required=False),
+                value_required=False,
+            ),
+            required=False,
+        ),
+    )
+    struct_type = pa.struct([pa.field("a b", pa.int32())])
+    builders: list[Callable[[pa.DataType], pa.DataType]] = [pa.list_, pa.large_list, lambda value_type: pa.list_(value_type, 2)]
+    rows = [[("k", [{"a b": 1}, None])], None, [("j", None), ("m", [{"a b": 2}, {"a b": 3}])]]
+    expected = [[("k", [{"a_b": 1}, None])], None, [("j", None), ("m", [{"a_b": 2}, {"a_b": 3}])]]
+    for builder in builders:
+        batch = pa.RecordBatch.from_arrays([pa.array(rows, type=pa.map_(pa.string(), builder(struct_type)))], names=["col"])
+
+        result = _to_requested_schema(requested_schema, file_schema, batch)
+        assert result.column(0).to_pylist() == expected
+
+        # A sliced batch has to keep the null maps and the null list values as well
+        result = _to_requested_schema(requested_schema, file_schema, batch.slice(1, 2))
+        assert result.column(0).to_pylist() == expected[1:]
+
+
+def test_append_map_of_fixed_size_list_of_structs(catalog: InMemoryCatalog) -> None:
+    arrow_table = pa.table(
+        {
+            "v": pa.array(
+                [[("k", [{"a b": 1}, {"a b": 2}])]],
+                pa.map_(pa.string(), pa.list_(pa.struct([("a b", pa.int32())]), 2)),
+            ),
+        }
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_map_of_fixed_size_list_of_structs", schema=arrow_table.schema)
+
+    table.append(arrow_table)
+
+    assert table.scan().to_arrow().to_pylist() == arrow_table.to_pylist()
+
+
+def test_append_map_with_struct_keys(catalog: InMemoryCatalog) -> None:
+    # A struct key without nulls must not get a validity bitmap, or Arrow aborts on the rebuilt map
+    # (https://github.com/apache/arrow/issues/51029)
+    rows = [[({"a": 1}, 2)], None, [], [({"a": None}, 3)]]
+    arrow_table = pa.table({"v": pa.array(rows, pa.map_(pa.struct([("a", pa.int32())]), pa.int32()))})
+    key_type = StructType(NestedField(4, "a", IntegerType(), required=False))
+    schema = Schema(NestedField(1, "v", MapType(2, key_type, 3, IntegerType(), value_required=False), required=False))
+    batch = arrow_table.to_batches()[0]
+    for projected in (batch, batch.slice(1, 3)):
+        assert _to_requested_schema(schema, schema, projected).column(0).to_pylist() == projected.column(0).to_pylist()
+
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_map_with_struct_keys", schema=arrow_table.schema)
+
+    table.append(arrow_table)
+
+    assert table.scan().to_arrow().to_pylist() == arrow_table.to_pylist()
+
+
 @skip_if_pyarrow_too_old
 @pytest.mark.parametrize("scheme", ["abfs", "abfss", "wasb", "wasbs"])
 def test_adls_account_name_from_location(scheme: str) -> None:
