@@ -1073,11 +1073,12 @@ def _truncate_integer_projection(
 
     if isinstance(pred, BoundGreaterThan):
         if boundary + 1 < next_block_start:
-            return Or(GreaterThanOrEqual(Reference(name), next_block_start), EqualTo(Reference(name), wrapped_minimum))
+            # The wrapped value sorts above the first block after the minimum, so it is included
+            return GreaterThanOrEqual(Reference(name), next_block_start)
         return _truncate_number(name, pred, transform)
     elif isinstance(pred, BoundGreaterThanOrEqual):
         if boundary < next_block_start:
-            return Or(GreaterThanOrEqual(Reference(name), next_block_start), EqualTo(Reference(name), wrapped_minimum))
+            return GreaterThanOrEqual(Reference(name), next_block_start)
         return _truncate_number(name, pred, transform)
 
     projected = _truncate_number(name, pred, transform)
