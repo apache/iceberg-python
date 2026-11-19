@@ -1493,7 +1493,8 @@ def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
 
     tbl.append(
         pa.Table.from_pydict(
-            {"id": [1, 2, 3, 4], "value": [1.0, float("nan"), None, float("nan")]},
+            # -float("nan") has the sign bit set, but both NaNs are one partition value
+            {"id": [1, 2, 3, 4], "value": [1.0, float("nan"), None, -float("nan")]},
             schema=schema_to_pyarrow(iceberg_schema),
         )
     )
