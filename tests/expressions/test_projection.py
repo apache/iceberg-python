@@ -49,6 +49,7 @@ from pyiceberg.transforms import (
 )
 from pyiceberg.types import (
     DateType,
+    IntegerType,
     LongType,
     NestedField,
     StringType,
@@ -292,9 +293,19 @@ def test_int_truncate_projection_near_minimum(schema: Schema) -> None:
 
     assert project(EqualTo("id", -(2**63))) == EqualTo("id_trunc", wrapped_minimum)
     assert project(LessThan("id", 0)) == Or(LessThanOrEqual("id_trunc", -10), EqualTo("id_trunc", wrapped_minimum))
-    assert project(GreaterThan("id", -(2**63))) == Or(
-        GreaterThanOrEqual("id_trunc", -9223372036854775800), EqualTo("id_trunc", wrapped_minimum)
-    )
+    assert project(GreaterThan("id", -(2**63))) == GreaterThanOrEqual("id_trunc", -9223372036854775800)
+    assert project(GreaterThanOrEqual("id", -(2**63) + 1)) == GreaterThanOrEqual("id_trunc", -9223372036854775800)
+
+
+def test_integer_truncate_projection_near_minimum() -> None:
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+    spec = PartitionSpec(PartitionField(1, 1000, TruncateTransform(10), "x_trunc"))
+    project = inclusive_projection(schema, spec)
+    wrapped_minimum = 2147483646
+
+    assert project(EqualTo("x", -(2**31))) == EqualTo("x_trunc", wrapped_minimum)
+    assert project(GreaterThan("x", -(2**31))) == GreaterThanOrEqual("x_trunc", -2147483640)
+    assert project(GreaterThanOrEqual("x", -(2**31) + 1)) == GreaterThanOrEqual("x_trunc", -2147483640)
 
 
 def test_string_truncate_projection(schema: Schema, truncate_str_spec: PartitionSpec) -> None:
