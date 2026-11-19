@@ -15,12 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import os
 from pathlib import PosixPath
 from typing import Any
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.conversions import to_bytes
@@ -78,19 +76,17 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
     assert files_metrics["upper_bound"] is None
 
 
-def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMemoryCatalog, tmp_path: PosixPath) -> None:
+def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMemoryCatalog) -> None:
     # column_sizes and the other metric maps are optional in a data file
     schema = Schema(NestedField(1, "x", LongType(), required=False))
     tbl = catalog.create_table("default.no_metrics", schema)
-    file_path = f"{tmp_path.absolute().as_posix()}/a.parquet"
-    pq.write_table(pa.table({"x": [1]}), file_path)
     data_file = DataFile.from_args(
         content=DataFileContent.DATA,
-        file_path=file_path,
+        file_path=f"{tbl.location()}/data/a.parquet",
         file_format=FileFormat.PARQUET,
         partition=Record(),
         record_count=1,
-        file_size_in_bytes=os.path.getsize(file_path),
+        file_size_in_bytes=1,
         spec_id=tbl.metadata.default_spec_id,
     )
     with tbl.transaction() as tx:
