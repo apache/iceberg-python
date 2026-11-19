@@ -22,6 +22,8 @@ import io
 from collections.abc import Callable
 from dataclasses import replace
 
+from typing_extensions import override
+
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.stream import _decrypt_ags1, _encrypt_ags1
 from pyiceberg.io import InputFile, InputStream, OutputFile, OutputStream
@@ -68,18 +70,22 @@ class EncryptedOutputFile(OutputFile):
             raise ValueError(f"Cannot get key metadata before the file is written: {self.location}")
         return replace(self._key_metadata, file_length=self._file_length)
 
+    @override
     def __len__(self) -> int:
         """Return the length of the encrypted file, in bytes."""
         return self._file_length if self._file_length is not None else len(self._output_file)
 
+    @override
     def exists(self) -> bool:
         """Check whether the file exists."""
         return self._output_file.exists()
 
+    @override
     def to_input_file(self) -> InputFile:
         """Return an input file that decrypts the written file."""
         return EncryptedInputFile(self._output_file.to_input_file(), self.key_metadata)
 
+    @override
     def create(self, overwrite: bool = False) -> OutputStream:
         """Return a stream that buffers the file, then encrypts and writes it when closed."""
         return _EncryptingOutputStream(self._output_file.create(overwrite=overwrite), self._key_metadata, self._set_file_length)
