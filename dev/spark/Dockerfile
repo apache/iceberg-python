@@ -52,8 +52,7 @@ RUN set -e && \
         "org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" \
         "org/apache/hive/hive-standalone-metastore-common/${HIVE_METASTORE_VERSION}/hive-standalone-metastore-common-${HIVE_METASTORE_VERSION}.jar" \
         "org/apache/hive/hive-standalone-metastore-client/${HIVE_METASTORE_VERSION}/hive-standalone-metastore-client-${HIVE_METASTORE_VERSION}.jar" \
-        "software/amazon/awssdk/bundle/${AWS_SDK_VERSION}/bundle-${AWS_SDK_VERSION}.jar" \
-        "org/apache/iceberg/iceberg-core/${ICEBERG_VERSION}/iceberg-core-${ICEBERG_VERSION}-tests.jar"; \
+        "software/amazon/awssdk/bundle/${AWS_SDK_VERSION}/bundle-${AWS_SDK_VERSION}.jar"; \
     do \
         jar_name=$(basename "${jar_path}") && \
         curl -fsSL --retry 3 --retry-delay 5 \
