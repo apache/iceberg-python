@@ -15,12 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import io
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from pyiceberg.encryption.io import EncryptedInputFile, EncryptedOutputFile
+from pyiceberg.encryption.io import EncryptedInputFile, EncryptedOutputFile, _EncryptingOutputStream
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.stream import (
     _BLOCK_OVERHEAD,
@@ -255,3 +256,15 @@ def test_encrypted_output_file(tmp_path: Path) -> None:
 
     with pytest.raises(FileExistsError):
         output_file.create()
+
+
+def test_encrypting_output_stream_closes_when_the_write_fails() -> None:
+    class FailingStream(io.BytesIO):
+        def write(self, b: object) -> int:
+            raise OSError("write failed")
+
+    stream = _EncryptingOutputStream(FailingStream(), KEY_METADATA, lambda _: None)
+    with pytest.raises(OSError, match="write failed"):
+        stream.close()
+
+    assert stream.closed

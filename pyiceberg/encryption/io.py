@@ -96,9 +96,13 @@ class _EncryptingOutputStream(io.BytesIO):
         self._on_close = on_close
 
     def close(self) -> None:
-        if not self.closed:
+        if self.closed:
+            return
+        try:
             encrypted = _encrypt_ags1(self.getvalue(), self._key_metadata)
             with self._output_stream:
                 self._output_stream.write(encrypted)
             self._on_close(len(encrypted))
-        super().close()
+        finally:
+            # Close even if the write fails, so garbage collection does not retry it.
+            super().close()
