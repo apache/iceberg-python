@@ -148,7 +148,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     def rename_field(self, name: str, new_name: str) -> UpdateSpec:
         existing_field = self._name_to_field.get(new_name)
         if existing_field and isinstance(existing_field.transform, VoidTransform):
-            return self.rename_field(name, name + "_" + str(existing_field.field_id))
+            # free the name by renaming the void field, then apply the requested rename
+            self.rename_field(existing_field.name, existing_field.name + "_" + str(existing_field.field_id))
         added = self._name_to_added_field.get(name)
         if added:
             raise ValueError("Cannot rename recently added partitions")

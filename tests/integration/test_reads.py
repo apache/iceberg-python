@@ -1300,6 +1300,54 @@ def test_read_first_row_ids_written_by_spark(catalog: Catalog, spark: SparkSessi
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_read_row_lineage_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
+    identifier = "default.test_read_row_lineage_written_by_spark"
+    spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (id int, data string)
+        USING ICEBERG
+        TBLPROPERTIES (
+            'format-version'='3',
+            'write.update.mode'='copy-on-write',
+            'write.delete.mode'='merge-on-read',
+            'write.merge.mode'='merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')")
+    spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (5, 'e'), (6, 'f')")
+    # Copy-on-write rewrites the data file and stores the existing row IDs in it
+    spark.sql(f"UPDATE {identifier} SET data = 'x' WHERE id = 2")
+    # Merge-on-read adds deletion vectors, and new rows inherit their row IDs
+    spark.sql(f"DELETE FROM {identifier} WHERE id = 3")
+    spark.sql(
+        f"""
+        MERGE INTO {identifier} t
+        USING (SELECT * FROM VALUES (5, 'y'), (7, 'g') AS s(id, data)) s
+        ON t.id = s.id
+        WHEN MATCHED THEN UPDATE SET t.data = s.data
+        WHEN NOT MATCHED THEN INSERT *
+        """
+    )
+    spark.sql(f"CALL rest.system.rewrite_data_files(table => '{identifier}', options => map('rewrite-all', 'true'))")
+    # Rows in a new file inherit row IDs from their position, so a filter must not drop rows before they are counted
+    spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (8, 'h'), (9, 'i'), (10, 'j')")
+
+    columns = ("id", "_row_id", "_last_updated_sequence_number")
+    expected = sorted(tuple(row) for row in spark.sql(f"SELECT {', '.join(columns)} FROM {identifier}").collect())
+    assert all(value is not None for row in expected for value in row)
+
+    def rows(result: pa.Table) -> list[tuple[int, int, int]]:
+        return sorted(zip(*(result[column].to_pylist() for column in columns), strict=True))
+
+    table = catalog.load_table(identifier)
+    assert rows(table.scan(selected_fields=columns).to_arrow()) == expected
+    assert rows(table.scan(row_filter="id >= 9", selected_fields=columns).to_arrow()) == [row for row in expected if row[0] >= 9]
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog_hive"), lf("session_catalog")])
 def test_filter_after_arrow_scan(catalog: Catalog) -> None:
     identifier = "test_partitioned_by_hours"

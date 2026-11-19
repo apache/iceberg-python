@@ -514,14 +514,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
 
         if self._deleted_data_files:
             _validate_data_files_exist(table, catalog_head, self._deleted_data_files, starting_snapshot)
-            _validate_no_new_deletes_for_data_files(
-                table,
-                catalog_head,
-                conflict_detection_filter,
-                self._deleted_data_files,
-                starting_snapshot,
-                self._case_sensitive,
-            )
+            _validate_no_new_deletes_for_data_files(table, catalog_head, self._deleted_data_files, starting_snapshot)
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.schema(), self.spec(spec_id), self._case_sensitive)
