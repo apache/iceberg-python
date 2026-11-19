@@ -19,6 +19,7 @@ import zlib
 from os import path
 from pathlib import Path
 
+import pyarrow as pa
 import pytest
 from pyroaring import BitMap
 
@@ -133,6 +134,23 @@ def test_map_empty() -> None:
     actual = DeletionVector._deserialize_bitmap(puffin)
 
     assert expected == actual
+    vector = DeletionVector("data.parquet", actual).to_vector()
+    assert vector.type == pa.int64()
+    assert vector.to_pylist() == []
+
+
+def test_to_vector_with_empty_bitmaps_for_low_keys() -> None:
+    # Keys without positions have empty bitmaps, such as key 0 when every position is at or above 2**32
+    for bitmaps, expected in [
+        ([BitMap(), BitMap([5])], [2**32 + 5]),
+        ([BitMap(), BitMap(), BitMap([0, 7])], [2 * 2**32, 2 * 2**32 + 7]),
+        ([BitMap([2]), BitMap(), BitMap([1])], [2, 2 * 2**32 + 1]),
+        ([BitMap()], []),
+        ([BitMap(), BitMap()], []),
+    ]:
+        vector = DeletionVector("data.parquet", bitmaps).to_vector()
+        assert vector.type == pa.int64()
+        assert vector.to_pylist() == expected
 
 
 def test_map_bitvals() -> None:

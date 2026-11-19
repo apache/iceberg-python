@@ -178,7 +178,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             dataset.external_catalog_dataset_options = self._create_external_catalog_dataset_options(properties, dataset_ref)
             self.client.create_dataset(dataset)
         except Conflict as e:
-            raise NamespaceAlreadyExistsError("Namespace {database_name} already exists") from e
+            raise NamespaceAlreadyExistsError(f"Namespace {database_name} already exists") from e
 
     @override
     def load_table(self, identifier: str | Identifier) -> Table:

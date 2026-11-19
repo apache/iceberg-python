@@ -90,6 +90,10 @@ _LONG_STRUCT = Struct("<q")
 _FLOAT_STRUCT = Struct("<f")
 _DOUBLE_STRUCT = Struct("<d")
 
+# Scaled bounds are not range checked: a bound can be wider than the data, and Python ints keep comparisons exact
+_MICROS_PER_DAY = 86_400 * 1_000_000
+_NANOS_PER_DAY = 86_400 * 1_000_000_000
+
 
 def handle_none(func: Callable) -> Callable:  # type: ignore
     """Handle cases where partition values are `None` or "__HIVE_DEFAULT_PARTITION__".
@@ -352,11 +356,25 @@ def _(_: PrimitiveType, b: bytes) -> int:
 
 
 @from_bytes.register(TimeType)
-@from_bytes.register(TimestampType)
 @from_bytes.register(TimestamptzType)
-@from_bytes.register(TimestampNanoType)
 @from_bytes.register(TimestamptzNanoType)
 def _(_: PrimitiveType, b: bytes) -> int:
+    return _LONG_STRUCT.unpack(b)[0]
+
+
+@from_bytes.register(TimestampType)
+def _(_: TimestampType, b: bytes) -> int:
+    if len(b) < 8:
+        # If the length is 4 bytes, it is a date promoted to timestamp, stored as days from the epoch
+        return _INT_STRUCT.unpack(b)[0] * _MICROS_PER_DAY
+    return _LONG_STRUCT.unpack(b)[0]
+
+
+@from_bytes.register(TimestampNanoType)
+def _(_: TimestampNanoType, b: bytes) -> int:
+    if len(b) < 8:
+        # If the length is 4 bytes, it is a date promoted to timestamp_ns, stored as days from the epoch
+        return _INT_STRUCT.unpack(b)[0] * _NANOS_PER_DAY
     return _LONG_STRUCT.unpack(b)[0]
 
 
@@ -388,11 +406,15 @@ def _(_: StringType, b: bytes) -> str:
 
 @from_bytes.register(BinaryType)
 @from_bytes.register(FixedType)
-@from_bytes.register(UUIDType)
 @from_bytes.register(GeometryType)
 @from_bytes.register(GeographyType)
 def _(_: PrimitiveType, b: bytes) -> bytes:
     return b
+
+
+@from_bytes.register(UUIDType)
+def _(_: UUIDType, b: bytes) -> uuid.UUID:
+    return uuid.UUID(bytes=b)
 
 
 @from_bytes.register(DecimalType)
@@ -502,6 +524,10 @@ def _(_: DecimalType, val: Decimal) -> str:
     decimal point is used to indicate scale, for values with a negative scale,
     the scientific notation is used and the exponent must equal the negated scale.
     """
+    exponent = val.as_tuple().exponent
+    if isinstance(exponent, int) and exponent <= 0:
+        # str() switches to scientific notation for small values, such as 0E-8
+        return f"{val:f}"
     return str(val)
 
 

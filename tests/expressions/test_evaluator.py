@@ -17,11 +17,14 @@
 # pylint:disable=redefined-outer-name
 from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
 from threading import Event
 from typing import Any
 
+import pyarrow as pa
 import pytest
 
+from pyiceberg.catalog import Catalog
 from pyiceberg.conversions import to_bytes
 from pyiceberg.expressions import (
     And,
@@ -56,6 +59,7 @@ from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
+    DateType,
     DoubleType,
     FloatType,
     IcebergType,
@@ -64,6 +68,7 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StringType,
+    TimestampType,
 )
 
 INT_MIN_VALUE = 30
@@ -1831,6 +1836,33 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
     assert not should_read, "Should not match: no_nulls field does not have bounds"
 
 
+def test_plan_and_inspect_after_date_to_timestamp_promotion(catalog: Catalog) -> None:
+    # PyIceberg cannot write v3 metadata yet (#1551), so the promotion is simulated on v2 metadata. The bound
+    # decoder does not depend on the format version, and the data files keep their 4-byte day counts either way.
+    catalog.create_namespace("default")
+    tbl = catalog.create_table("default.date_promotion", Schema(NestedField(1, "d", DateType(), required=False)))
+    tbl.append(pa.table({"d": pa.array([date(2020, 1, 1), date(2021, 6, 15)], pa.date32())}))
+    tbl.append(pa.table({"d": pa.array([date(2023, 3, 1), date(2024, 2, 29)], pa.date32())}))
+    paths = {row["readable_metrics"]["d"]["lower_bound"]: row["file_path"] for row in tbl.inspect.files().to_pylist()}
+    file_a, file_b = paths[date(2020, 1, 1)], paths[date(2023, 3, 1)]
+
+    # date -> timestamp is a v3 promotion that promote() does not implement, so the incompatible change is allowed
+    with tbl.update_schema(allow_incompatible_changes=True) as update:
+        update.update_column("d", field_type=TimestampType())
+
+    for row_filter, expected_files in [
+        # file A's latest date is 2021-06-15, file B's earliest date is 2023-03-01
+        (GreaterThan("d", "2022-01-01T00:00:00"), [file_b]),
+        (LessThan("d", "2021-01-01T00:00:00"), [file_a]),
+    ]:
+        planned = tbl.scan(row_filter=row_filter).plan_files()
+        assert [task.file.file_path for task in planned] == expected_files
+
+    bounds = {row["file_path"]: row["readable_metrics"]["d"] for row in tbl.inspect.files().to_pylist()}
+    assert (bounds[file_a]["lower_bound"], bounds[file_a]["upper_bound"]) == (datetime(2020, 1, 1), datetime(2021, 6, 15))
+    assert (bounds[file_b]["lower_bound"], bounds[file_b]["upper_bound"]) == (datetime(2023, 3, 1), datetime(2024, 2, 29))
+
+
 @pytest.mark.parametrize(
     "file_type, evolved_type, lower_bound, upper_bound, op, lit, expected",
     [
@@ -1840,6 +1872,9 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
         # Float -> Double
         (FloatType(), DoubleType(), 30.0, 79.0, GreaterThan, 100.0, ROWS_CANNOT_MATCH),
         (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 50.0, ROWS_MIGHT_MATCH),
+        # Date -> Timestamp, including a day count before the epoch
+        (DateType(), TimestampType(), 30, 79, GreaterThan, "2022-01-01T00:00:00", ROWS_CANNOT_MATCH),
+        (DateType(), TimestampType(), -10, 79, LessThan, "1969-12-31T00:00:00", ROWS_MIGHT_MATCH),
     ],
 )
 def test_inclusive_metrics_eval_bounds_after_promotion(
@@ -1880,6 +1915,8 @@ def test_inclusive_metrics_eval_bounds_after_promotion(
         (FloatType(), DoubleType(), 30.0, 79.0, GreaterThan, 100.0, ROWS_MIGHT_NOT_MATCH),
         (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 100.0, ROWS_MUST_MATCH),
         (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 20.0, ROWS_MIGHT_NOT_MATCH),
+        # Date -> Timestamp
+        (DateType(), TimestampType(), 30, 79, GreaterThan, "1970-01-15T00:00:00", ROWS_MUST_MATCH),
     ],
 )
 def test_strict_metrics_eval_bounds_after_promotion(

@@ -1301,8 +1301,8 @@ def test_read_first_row_ids_written_by_spark(catalog: Catalog, spark: SparkSessi
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog")])
-def test_read_row_ids_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
-    identifier = "default.test_read_row_ids_written_by_spark"
+def test_read_row_lineage_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
+    identifier = "default.test_read_row_lineage_written_by_spark"
     spark.sql(f"DROP TABLE IF EXISTS {identifier}")
     spark.sql(
         f"""
@@ -1335,17 +1335,16 @@ def test_read_row_ids_written_by_spark(catalog: Catalog, spark: SparkSession) ->
     # Rows in a new file inherit row IDs from their position, so a filter must not drop rows before they are counted
     spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (8, 'h'), (9, 'i'), (10, 'j')")
 
-    expected = sorted((row.id, row._row_id) for row in spark.sql(f"SELECT id, _row_id FROM {identifier}").collect())
-    assert all(row_id is not None for _, row_id in expected)
+    columns = ("id", "_row_id", "_last_updated_sequence_number")
+    expected = sorted(tuple(row) for row in spark.sql(f"SELECT {', '.join(columns)} FROM {identifier}").collect())
+    assert all(value is not None for row in expected for value in row)
+
+    def rows(result: pa.Table) -> list[tuple[int, int, int]]:
+        return sorted(zip(*(result[column].to_pylist() for column in columns), strict=True))
 
     table = catalog.load_table(identifier)
-    result = table.scan(selected_fields=("id", "_row_id")).to_arrow()
-    assert sorted(zip(result["id"].to_pylist(), result["_row_id"].to_pylist(), strict=True)) == expected
-
-    filtered = table.scan(row_filter="id >= 9", selected_fields=("id", "_row_id")).to_arrow()
-    assert sorted(zip(filtered["id"].to_pylist(), filtered["_row_id"].to_pylist(), strict=True)) == [
-        (id_, row_id) for id_, row_id in expected if id_ >= 9
-    ]
+    assert rows(table.scan(selected_fields=columns).to_arrow()) == expected
+    assert rows(table.scan(row_filter="id >= 9", selected_fields=columns).to_arrow()) == [row for row in expected if row[0] >= 9]
 
 
 @pytest.mark.integration
