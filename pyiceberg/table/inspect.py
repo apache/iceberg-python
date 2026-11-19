@@ -784,6 +784,7 @@ class InspectTable:
                     "split_offsets": data_file.split_offsets,
                     "equality_ids": data_file.equality_ids,
                     "sort_order_id": data_file.sort_order_id,
+                    "first_row_id": data_file.first_row_id,
                     "readable_metrics": readable_metrics,
                 }
             )
@@ -804,7 +805,7 @@ class InspectTable:
                 ``file_size_in_bytes``, ``column_sizes``, ``value_counts``,
                 ``null_value_counts``, ``nan_value_counts``, ``lower_bounds``,
                 ``upper_bounds``, ``key_metadata``, ``split_offsets``,
-                ``equality_ids``, ``sort_order_id``, and ``readable_metrics``.
+                ``equality_ids``, ``sort_order_id``, ``first_row_id``, and ``readable_metrics``.
         """
         import pyarrow as pa
 
@@ -853,6 +854,7 @@ class InspectTable:
                 pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
                 pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
                 pa.field("sort_order_id", pa.int32(), nullable=True),
+                pa.field("first_row_id", pa.int64(), nullable=True),
                 pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
             ]
         )
