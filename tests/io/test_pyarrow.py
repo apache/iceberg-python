@@ -1637,6 +1637,55 @@ def test_identity_transform_column_projection_uuid(tmp_path: str, catalog: InMem
         assert result["other_field"].to_pylist() == expected, row_filter
 
 
+def test_initial_default_temporal_filter_matches_projected_value(tmpdir: str) -> None:
+    """A filter on a temporal column with an initial-default keeps the rows that project that default."""
+    table_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "date_col", DateType(), required=False, initial_default=date(2020, 1, 1)),
+        NestedField(3, "time_col", TimeType(), required=False, initial_default=time(7, 15, 30)),
+        NestedField(4, "ts_col", TimestampType(), required=False, initial_default=datetime(2020, 1, 1, 12, 30)),
+        NestedField(5, "tstz_col", TimestamptzType(), required=False, initial_default=datetime(2020, 1, 1, 12, 30, tzinfo=UTC)),
+    )
+    partition_spec = PartitionSpec()
+    table_metadata = TableMetadataV3(
+        location=str(tmpdir), last_column_id=5, schemas=[table_schema], partition_specs=[partition_spec], next_row_id=0
+    )
+
+    # The file was written before the temporal columns were added, so it only has `id`
+    arrow_schema = pa.schema([pa.field("id", pa.int64(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    file_path = _write_table_to_file(f"{tmpdir}/old.parquet", arrow_schema, pa.table({"id": [1, 2, 3]}, schema=arrow_schema))
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=3,
+        file_size_in_bytes=os.path.getsize(file_path),
+        spec_id=partition_spec.spec_id,
+    )
+
+    def scan(row_filter: BooleanExpression) -> pa.Table:
+        return ArrowScan(table_metadata, PyArrowFileIO(), table_schema, row_filter).to_table([FileScanTask(data_file)])
+
+    assert scan(AlwaysTrue()).to_pydict() == {
+        "id": [1, 2, 3],
+        "date_col": [date(2020, 1, 1)] * 3,
+        "time_col": [time(7, 15, 30)] * 3,
+        "ts_col": [datetime(2020, 1, 1, 12, 30)] * 3,
+        "tstz_col": [datetime(2020, 1, 1, 12, 30, tzinfo=UTC)] * 3,
+    }
+
+    for row_filter, expected in [
+        (EqualTo("date_col", date(2020, 1, 1)), [1, 2, 3]),
+        (Not(EqualTo("date_col", date(2020, 1, 1))), []),
+        (GreaterThan("date_col", date(2019, 12, 31)), [1, 2, 3]),
+        (EqualTo("time_col", time(7, 15, 30)), [1, 2, 3]),
+        (EqualTo("ts_col", datetime(2020, 1, 1, 12, 30)), [1, 2, 3]),
+        (EqualTo("tstz_col", datetime(2020, 1, 1, 12, 30, tzinfo=UTC)), [1, 2, 3]),
+    ]:
+        assert scan(row_filter)["id"].to_pylist() == expected, row_filter
+
+
 def test_identity_transform_null_partition_value_takes_precedence_over_initial_default(tmpdir: str) -> None:
     """A null identity partition value must project as null, not as the field's initial-default."""
     table_schema = Schema(

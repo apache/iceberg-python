@@ -432,6 +432,15 @@ class NestedField(IcebergType):
     initial_default: DefaultValue | None = Field(alias="initial-default", default=None, repr=True)  # type: ignore
     write_default: DefaultValue | None = Field(alias="write-default", default=None, repr=True)  # type: ignore
 
+    @property
+    def _initial_default_value(self) -> object:
+        """Return the initial-default as bound literals hold it: days or microseconds for temporal types."""
+        if self.initial_default is not None and isinstance(self.field_type, (DateType, TimeType, TimestampType, TimestamptzType)):
+            from pyiceberg.expressions.literals import literal
+
+            return literal(self.initial_default).to(self.field_type).value
+        return self.initial_default
+
     @field_validator("field_type", mode="before")
     def convert_field_type(cls, v: Any) -> IcebergType:
         """Convert string values into IcebergType instances."""
