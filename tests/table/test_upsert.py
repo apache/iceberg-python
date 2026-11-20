@@ -674,6 +674,125 @@ def test_upsert_with_struct_field_as_join_key(catalog: Catalog) -> None:
         _ = tbl.upsert(update_data, join_cols=["nested_type"])
 
 
+@pytest.mark.parametrize("branch", ["main", "dev"])
+def test_upsert_after_union_by_name(catalog: Catalog, branch: str) -> None:
+    original = pa.table({"id": [1, 2], "value": ["one", "two"]})
+    table = catalog.create_table("default.test_upsert_after_union_by_name", original.schema)
+    table.append(original)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    table.manage_snapshots().create_branch(snapshot_id=snapshot.snapshot_id, branch_name="dev").commit()
+
+    source = pa.table({"id": [1, 2, 3], "value": ["one", "two", "three"], "note": ["updated", None, "inserted"]})
+    with table.update_schema() as update_schema:
+        update_schema.union_by_name(source.schema)
+
+    result = table.upsert(source, join_cols=["id"], branch=branch)
+
+    assert_upsert_result(result, expected_updated=1, expected_inserted=1)
+    assert table.scan().use_ref(branch).to_arrow().sort_by([("id", "ascending")]).to_pylist() == [
+        {"id": 1, "value": "one", "note": "updated"},
+        {"id": 2, "value": "two", "note": None},
+        {"id": 3, "value": "three", "note": "inserted"},
+    ]
+
+
+@pytest.mark.parametrize("branch", ["main", "dev"])
+def test_upsert_without_new_optional_column(catalog: Catalog, branch: str) -> None:
+    original = pa.table({"id": [1, 2], "value": ["one", "two"]})
+    table = catalog.create_table("default.test_upsert_without_new_optional_column", original.schema)
+    table.append(original)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    table.manage_snapshots().create_branch(snapshot_id=snapshot.snapshot_id, branch_name="dev").commit()
+    table.update_schema().add_column("note", StringType()).commit()
+
+    source = pa.table({"id": pa.array([1, 2, 3], type=pa.int32()), "value": ["updated", "two", "inserted"]})
+    result = table.upsert(source, join_cols=["id"], branch=branch)
+
+    assert_upsert_result(result, expected_updated=1, expected_inserted=1)
+    assert table.scan().use_ref(branch).to_arrow().sort_by([("id", "ascending")]).to_pylist() == [
+        {"id": 1, "value": "updated", "note": None},
+        {"id": 2, "value": "two", "note": None},
+        {"id": 3, "value": "inserted", "note": None},
+    ]
+
+
+def test_upsert_without_new_optional_struct_field(catalog: Catalog) -> None:
+    original = pa.table({"id": [1, 2], "payload": [{"value": "one"}, {"value": "two"}]})
+    table = catalog.create_table("default.test_upsert_without_new_optional_struct_field", original.schema)
+    table.append(original)
+    table.update_schema().add_column(("payload", "note"), StringType()).commit()
+
+    source = pa.table({"id": [1, 2, 3], "payload": [{"value": "updated"}, {"value": "two"}, {"value": "inserted"}]})
+    result = table.upsert(source, join_cols=["id"])
+
+    assert_upsert_result(result, expected_updated=1, expected_inserted=1)
+    assert table.scan().to_arrow().sort_by([("id", "ascending")]).to_pylist() == [
+        {"id": 1, "payload": {"value": "updated", "note": None}},
+        {"id": 2, "payload": {"value": "two", "note": None}},
+        {"id": 3, "payload": {"value": "inserted", "note": None}},
+    ]
+
+
+def test_upsert_matches_renamed_struct_fields_by_id(catalog: Catalog) -> None:
+    original = pa.table({"id": [1], "payload": [{"a": 1, "b": 2}]})
+    table = catalog.create_table("default.test_upsert_matches_renamed_struct_fields_by_id", original.schema)
+    table.append(original)
+    original_schema = table.schema().as_arrow()
+    with table.update_schema() as update_schema:
+        update_schema.rename_column(("payload", "a"), "b")
+        update_schema.rename_column(("payload", "b"), "a")
+
+    source = pa.Table.from_pylist([{"id": 1, "payload": {"a": 2, "b": 1}}], schema=original_schema)
+    result = table.upsert(source, join_cols=["id"])
+
+    assert_upsert_result(result, expected_updated=1, expected_inserted=0)
+    assert table.scan().to_arrow().to_pylist() == [{"id": 1, "payload": {"b": 2, "a": 1}}]
+    assert_upsert_result(table.upsert(source, join_cols=["id"]), expected_updated=0, expected_inserted=0)
+
+
+def test_upsert_matches_renamed_column_by_id(catalog: Catalog) -> None:
+    original = pa.table({"id": [1], "value": ["old"]})
+    table = catalog.create_table("default.test_upsert_matches_renamed_column_by_id", original.schema)
+    table.append(original)
+    original_schema = table.schema().as_arrow()
+    table.update_schema().rename_column("value", "renamed").commit()
+
+    source = pa.Table.from_pylist([{"id": 1, "value": "updated"}], schema=original_schema)
+    result = table.upsert(source, join_cols=["id"])
+
+    assert_upsert_result(result, expected_updated=1, expected_inserted=0)
+    assert table.scan().to_arrow().to_pylist() == [{"id": 1, "renamed": "updated"}]
+
+
+def test_upsert_ignores_dropped_field_with_reused_name(catalog: Catalog) -> None:
+    original = pa.table({"id": [1, 2], "value": ["old one", "old two"], "label": ["one", "two"]})
+    table = catalog.create_table("default.test_upsert_ignores_dropped_field_with_reused_name", original.schema)
+    table.append(original)
+    original_schema = table.schema()
+    table.update_schema().delete_column("value").commit()
+    table.update_schema().add_column("value", StringType()).commit()
+    assert table.schema().find_field("value").field_id != original_schema.find_field("value").field_id
+
+    source = pa.Table.from_pylist(
+        [
+            {"id": 1, "value": "stale update", "label": "updated"},
+            {"id": 2, "value": "stale unchanged", "label": "two"},
+            {"id": 3, "value": "stale insert", "label": "inserted"},
+        ],
+        schema=original_schema.as_arrow(),
+    )
+    result = table.upsert(source, join_cols=["id"])
+
+    assert_upsert_result(result, expected_updated=1, expected_inserted=1)
+    assert table.scan().to_arrow().sort_by([("id", "ascending")]).to_pylist() == [
+        {"id": 1, "label": "updated", "value": None},
+        {"id": 2, "label": "two", "value": None},
+        {"id": 3, "label": "inserted", "value": None},
+    ]
+
+
 def test_upsert_with_nulls(catalog: Catalog) -> None:
     identifier = "default.test_upsert_with_nulls"
     _drop_table(catalog, identifier)
