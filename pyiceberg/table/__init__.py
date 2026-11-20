@@ -569,6 +569,9 @@ class Transaction:
             df: An Arrow Table or a RecordBatchReader of records to append.
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the append operation
+
+        Raises:
+            ValueError: If the schema of ``df`` is not compatible with the table schema.
         """
         try:
             import pyarrow as pa
@@ -586,6 +589,7 @@ class Transaction:
             provided_schema=df.schema,
             downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             format_version=self.table_metadata.format_version,
+            reject_unknown_field_ids=True,
         )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
@@ -615,6 +619,9 @@ class Transaction:
             df: The Arrow dataframe that will be used to overwrite the table
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the dynamic partition overwrite operation
+
+        Raises:
+            ValueError: If the schema of ``df`` is not compatible with the table schema.
         """
         try:
             import pyarrow as pa
@@ -642,6 +649,7 @@ class Transaction:
             provided_schema=df.schema,
             downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             format_version=self.table_metadata.format_version,
+            reject_unknown_field_ids=True,
         )
 
         # If dataframe does not have data, there is no need to overwrite
@@ -734,6 +742,9 @@ class Transaction:
             snapshot_properties: Custom properties to be added to the snapshot summary
             case_sensitive: A bool determine if the provided `overwrite_filter` is case-sensitive
             branch: Branch Reference to run the overwrite operation
+
+        Raises:
+            ValueError: If the schema of ``df`` is not compatible with the table schema.
         """
         try:
             import pyarrow as pa
@@ -751,6 +762,7 @@ class Transaction:
             provided_schema=df.schema,
             downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             format_version=self.table_metadata.format_version,
+            reject_unknown_field_ids=True,
         )
 
         if overwrite_filter != AlwaysFalse():
@@ -928,6 +940,9 @@ class Transaction:
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
+
+        Raises:
+            ValueError: If the schema of ``df`` is not compatible with the table schema.
         """
         try:
             import pyarrow as pa  # noqa: F401
@@ -963,6 +978,7 @@ class Transaction:
             provided_schema=df.schema,
             downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             format_version=self.table_metadata.format_version,
+            reject_unknown_field_ids=True,
         )
 
         # get list of rows that exist so we don't have to load the entire target table
@@ -1805,6 +1821,9 @@ class Table:
 
         Returns:
             An UpsertResult class (contains details of rows updated and inserted)
+
+        Raises:
+            ValueError: If the schema of ``df`` is not compatible with the table schema.
         """
         with self.transaction() as tx:
             return tx.upsert(
@@ -1834,6 +1853,9 @@ class Table:
             df: An Arrow Table or a RecordBatchReader of records to append.
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the append operation
+
+        Raises:
+            ValueError: If the schema of ``df`` is not compatible with the table schema.
         """
         with self.transaction() as tx:
             tx.append(df=df, snapshot_properties=snapshot_properties, branch=branch)
@@ -1848,6 +1870,9 @@ class Table:
             df: The Arrow dataframe that will be used to overwrite the table
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the dynamic partition overwrite operation
+
+        Raises:
+            ValueError: If the schema of ``df`` is not compatible with the table schema.
         """
         with self.transaction() as tx:
             tx.dynamic_partition_overwrite(df=df, snapshot_properties=snapshot_properties, branch=branch)
@@ -1880,6 +1905,9 @@ class Table:
             snapshot_properties: Custom properties to be added to the snapshot summary
             case_sensitive: A bool determine if the provided `overwrite_filter` is case-sensitive
             branch: Branch Reference to run the overwrite operation
+
+        Raises:
+            ValueError: If the schema of ``df`` is not compatible with the table schema.
         """
         with self.transaction() as tx:
             tx.overwrite(
