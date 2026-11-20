@@ -1260,7 +1260,10 @@ class RestCatalog(Catalog):
             TableVersion, int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
         )
         iceberg_schema = self._convert_schema_if_needed(schema, format_version)
-        fresh_schema = assign_fresh_schema_ids(iceberg_schema, preserve_defaults=format_version >= 3)
+        # The server may choose v3 when no format version is requested.
+        fresh_schema = assign_fresh_schema_ids(
+            iceberg_schema, preserve_defaults=format_version >= 3 or TableProperties.FORMAT_VERSION not in properties
+        )
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 

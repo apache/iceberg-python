@@ -1707,19 +1707,23 @@ def test_create_table_200(
     assert actual == expected
 
 
-@pytest.mark.parametrize(("format_version", "expected_defaults"), [(2, {}), (3, {"initial-default": 1, "write-default": 0})])
+@pytest.mark.parametrize(
+    ("format_version", "expected_defaults"),
+    [(2, {}), (3, {"initial-default": 1, "write-default": 0}), (None, {"initial-default": 1, "write-default": 0})],
+    ids=["v2", "v3", "server-selected-v3"],
+)
 def test_create_table_preserves_schema_defaults_in_v3(
     rest_mock: Mocker,
     example_table_metadata_v2: dict[str, Any],
     example_table_metadata_v3: dict[str, Any],
-    format_version: int,
+    format_version: int | None,
     expected_defaults: dict[str, int],
 ) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
         json={
             "metadata-location": "file:///warehouse/jobs/metadata/v1.metadata.json",
-            "metadata": example_table_metadata_v3 if format_version == 3 else example_table_metadata_v2,
+            "metadata": example_table_metadata_v2 if format_version == 2 else example_table_metadata_v3,
         },
         request_headers=TEST_HEADERS,
     )
@@ -1727,10 +1731,13 @@ def test_create_table_preserves_schema_defaults_in_v3(
     schema = Schema(NestedField(41, "config", StructType(retries)))
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
 
-    catalog.create_table(("fokko", "jobs"), schema, properties={"format-version": str(format_version)})
+    properties = {"format-version": str(format_version)} if format_version is not None else {}
+    catalog.create_table(("fokko", "jobs"), schema, properties=properties)
 
     assert rest_mock.last_request is not None
-    field = rest_mock.last_request.json()["schema"]["fields"][0]["type"]["fields"][0]
+    request = rest_mock.last_request.json()
+    assert request["properties"] == properties
+    field = request["schema"]["fields"][0]["type"]["fields"][0]
     assert field == {"id": 2, "name": "retries", "type": "int", "required": False, **expected_defaults}
 
 
