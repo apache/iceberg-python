@@ -3235,6 +3235,11 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "compression": compression_codec,
         "compression_level": compression_level,
+        "write_page_index": property_as_bool(
+            properties=table_properties,
+            property_name=TableProperties.PARQUET_PAGE_INDEX_ENABLED,
+            default=TableProperties.PARQUET_PAGE_INDEX_ENABLED_DEFAULT,
+        ),
         "data_page_size": property_as_int(
             properties=table_properties,
             property_name=TableProperties.PARQUET_PAGE_SIZE_BYTES,
