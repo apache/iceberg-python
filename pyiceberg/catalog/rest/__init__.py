@@ -16,6 +16,7 @@
 #  under the License.
 from __future__ import annotations
 
+import json
 import logging
 import os
 import platform
@@ -357,6 +358,45 @@ else:
         return uuid.UUID(int=value)
 
 
+def _normalize_auth_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Normalize option names so dashed keys from configuration files and environment variables work."""
+    return {
+        key.replace("-", "_"): _normalize_auth_config(value) if isinstance(value, dict) else value
+        for key, value in config.items()
+    }
+
+
+def _parse_auth_config(properties: Properties) -> dict[str, Any]:
+    """Build the auth configuration from an object, a JSON string, or flattened dot-separated keys."""
+    auth: Any = properties.get(AUTH)
+    if auth is None:
+        auth = {}
+    elif isinstance(auth, str):
+        try:
+            auth = json.loads(auth)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid auth configuration, expected a JSON object: {e}") from e
+
+    if not isinstance(auth, dict):
+        raise ValueError("Invalid auth configuration, expected an object")
+
+    auth = dict(auth)
+    prefix = f"{AUTH}."
+    for key, value in properties.items():
+        if not key.startswith(prefix):
+            continue
+        *parents, leaf = key[len(prefix) :].replace("-", "_").split(".")
+        target = auth
+        for parent in parents:
+            child = target.setdefault(parent, {})
+            if not isinstance(child, dict):
+                raise ValueError(f"Invalid auth configuration, {parent} is not an object")
+            target = child
+        target[leaf] = value
+
+    return _normalize_auth_config(auth)
+
+
 def _retry_hook(retry_state: RetryCallState) -> None:
     rest_catalog: RestCatalog = retry_state.args[0]
     rest_catalog._refresh_token()  # pylint: disable=protected-access
@@ -624,7 +664,8 @@ class RestCatalog(Catalog):
                 elif ssl_client_cert := ssl_client.get(CERT):
                     session.cert = ssl_client_cert
 
-        if auth_config := self.properties.get(AUTH):
+        auth_config = _parse_auth_config(self.properties)
+        if auth_config:
             auth_type = auth_config.get("type")
             if auth_type is None:
                 raise ValueError("auth.type must be defined")
