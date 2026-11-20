@@ -506,8 +506,8 @@ resolution-markers = [
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "soupsieve" },
-    { name = "typing-extensions" },
+    { name = "soupsieve", marker = "python_full_version >= '3.11.5'" },
+    { name = "typing-extensions", marker = "python_full_version >= '3.11.5'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/43/65/318323f98dbee45d42dff61d8f047181bc6f2268a9068cfad035a46be5af/beautifulsoup4-4.15.0.tar.gz", hash = "sha256:288e3ca7d54b06f2ac191970bc275c1939cb46d450b255bf6718b04aa37ab4f7", size = 632571, upload-time = "2026-06-07T16:44:20.453Z" }
 wheels = [
@@ -4511,7 +4511,7 @@ dependencies = [
     { name = "rich" },
     { name = "strictyaml" },
     { name = "tenacity" },
-    { name = "zstandard" },
+    { name = "zstandard", marker = "python_full_version < '3.14'" },
 ]
 
 [package.optional-dependencies]
@@ -4692,7 +4692,7 @@ requires-dist = [
     { name = "thrift", marker = "extra == 'hive'", specifier = ">=0.13.0" },
     { name = "thrift", marker = "extra == 'hive-kerberos'", specifier = ">=0.13.0" },
     { name = "thrift-sasl", marker = "extra == 'hive-kerberos'", specifier = ">=0.4.3" },
-    { name = "zstandard", specifier = ">=0.13.0" },
+    { name = "zstandard", marker = "python_full_version < '3.14'", specifier = ">=0.13.0" },
 ]
 provides-extras = ["pyarrow", "pandas", "duckdb", "ray", "bodo", "daft", "polars", "snappy", "hive", "hive-kerberos", "s3fs", "glue", "adlfs", "dynamodb", "bigquery", "sql-postgres", "sql-sqlite", "gcsfs", "rest-sigv4", "hf", "pyiceberg-core", "datafusion", "gcp-auth", "entra-auth", "geoarrow", "encryption"]
 
