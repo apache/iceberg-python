@@ -2615,7 +2615,10 @@ def test_delete_files_removes_data_files(catalog: Catalog) -> None:
 
     table = catalog.load_table("default.delete_files")
     assert table.scan().to_arrow().to_pylist() == [{"x": 1}, {"x": 2}]
-    assert table.current_snapshot().summary.additional_properties["source"] == "test"
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.summary is not None
+    assert snapshot.summary.additional_properties["source"] == "test"
 
 
 def test_delete_files_rejects_missing_and_duplicate_paths(catalog: Catalog) -> None:
