@@ -569,11 +569,6 @@ class BoundUnaryPredicate(BoundPredicate, ABC):
 
 
 class BoundIsNull(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # pylint: disable=W0221
-        if term.ref().field.required:
-            return AlwaysFalse()
-        return super().__new__(cls)
-
     def __invert__(self) -> BoundNotNull:
         """Transform the Expression into its negated version."""
         return BoundNotNull(self.term)
@@ -584,11 +579,6 @@ class BoundIsNull(BoundUnaryPredicate):
 
 
 class BoundNotNull(BoundUnaryPredicate):
-    def __new__(cls, term: BoundTerm) -> BooleanExpression:  # pylint: disable=W0221
-        if term.ref().field.required:
-            return AlwaysTrue()
-        return super().__new__(cls)
-
     def __invert__(self) -> BoundIsNull:
         """Transform the Expression into its negated version."""
         return BoundIsNull(self.term)
@@ -608,6 +598,13 @@ class IsNull(UnaryPredicate):
         """Transform the Expression into its negated version."""
         return NotNull(self.term)
 
+    def bind(self, schema: Schema, case_sensitive: bool = True) -> BooleanExpression:
+        """Bind the term, folding to AlwaysFalse() if the field and all its ancestors are required."""
+        bound_term = self.term.bind(schema, case_sensitive)
+        if schema.is_field_required_in_path(bound_term.ref().field.field_id):
+            return AlwaysFalse()
+        return BoundIsNull(bound_term)
+
     @property
     def as_bound(self) -> type[BoundIsNull]:  # type: ignore
         return BoundIsNull
@@ -622,6 +619,13 @@ class NotNull(UnaryPredicate):
     def __invert__(self) -> IsNull:
         """Transform the Expression into its negated version."""
         return IsNull(self.term)
+
+    def bind(self, schema: Schema, case_sensitive: bool = True) -> BooleanExpression:
+        """Bind the term, folding to AlwaysTrue() if the field and all its ancestors are required."""
+        bound_term = self.term.bind(schema, case_sensitive)
+        if schema.is_field_required_in_path(bound_term.ref().field.field_id):
+            return AlwaysTrue()
+        return BoundNotNull(bound_term)
 
     @property
     def as_bound(self) -> type[BoundNotNull]:  # type: ignore
