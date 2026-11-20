@@ -917,7 +917,9 @@ def _human_string(value: Any, _type: IcebergType) -> str:
 
 @_human_string.register(Decimal)
 def _(value: Decimal, _type: IcebergType) -> str:
-    if isinstance(value.as_tuple().exponent, int) and value.as_tuple().exponent <= 0:
+    # as_tuple's exponent is the string 'n'/'N'/'F' for NaN and Infinity specials
+    exponent = value.as_tuple().exponent
+    if isinstance(exponent, int) and exponent <= 0:
         # str() switches to scientific notation for small magnitudes, such as 0E-8
         return f"{value:f}"
     return str(value)
