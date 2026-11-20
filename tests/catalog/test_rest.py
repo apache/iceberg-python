@@ -82,7 +82,7 @@ from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import RecursiveDict
-from pyiceberg.types import StringType
+from pyiceberg.types import IntegerType, NestedField, StringType, StructType
 from pyiceberg.utils.config import Config
 from pyiceberg.view import View
 from pyiceberg.view.metadata import ViewMetadata, ViewVersion
@@ -1705,6 +1705,40 @@ def test_create_table_200(
         catalog=catalog,
     )
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    ("format_version", "expected_defaults"),
+    [(2, {}), (3, {"initial-default": 1, "write-default": 0}), (None, {"initial-default": 1, "write-default": 0})],
+    ids=["v2", "v3", "server-selected-v3"],
+)
+def test_create_table_preserves_schema_defaults_in_v3(
+    rest_mock: Mocker,
+    example_table_metadata_v2: dict[str, Any],
+    example_table_metadata_v3: dict[str, Any],
+    format_version: int | None,
+    expected_defaults: dict[str, int],
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json={
+            "metadata-location": "file:///warehouse/jobs/metadata/v1.metadata.json",
+            "metadata": example_table_metadata_v2 if format_version == 2 else example_table_metadata_v3,
+        },
+        request_headers=TEST_HEADERS,
+    )
+    retries = NestedField(42, "retries", IntegerType(), initial_default=1, write_default=0)
+    schema = Schema(NestedField(41, "config", StructType(retries)))
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    properties = {"format-version": str(format_version)} if format_version is not None else {}
+    catalog.create_table(("fokko", "jobs"), schema, properties=properties)
+
+    assert rest_mock.last_request is not None
+    request = rest_mock.last_request.json()
+    assert request["properties"] == properties
+    field = request["schema"]["fields"][0]["type"]["fields"][0]
+    assert field == {"id": 2, "name": "retries", "type": "int", "required": False, **expected_defaults}
 
 
 def test_create_table_with_given_location_removes_trailing_slash_200(

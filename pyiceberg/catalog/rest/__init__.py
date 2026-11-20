@@ -28,6 +28,7 @@ from enum import Enum, StrEnum
 from typing import (
     TYPE_CHECKING,
     Any,
+    cast,
 )
 from urllib.parse import quote, unquote
 
@@ -100,7 +101,7 @@ from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
 )
-from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
+from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties, TableVersion
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import (
@@ -1255,11 +1256,14 @@ class RestCatalog(Catalog):
         stage_create: bool = False,
     ) -> TableResponse:
         self._check_endpoint(Capability.V1_CREATE_TABLE)
-        iceberg_schema = self._convert_schema_if_needed(
-            schema,
-            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore
+        format_version = cast(
+            TableVersion, int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
         )
-        fresh_schema = assign_fresh_schema_ids(iceberg_schema)
+        iceberg_schema = self._convert_schema_if_needed(schema, format_version)
+        # The server may choose v3 when no format version is requested.
+        fresh_schema = assign_fresh_schema_ids(
+            iceberg_schema, preserve_defaults=format_version >= 3 or TableProperties.FORMAT_VERSION not in properties
+        )
         fresh_partition_spec = assign_fresh_partition_spec_ids(partition_spec, iceberg_schema, fresh_schema)
         fresh_sort_order = assign_fresh_sort_order_ids(sort_order, iceberg_schema, fresh_schema)
 
