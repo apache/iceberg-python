@@ -159,6 +159,7 @@ from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
+from pyiceberg.table.sorting import NullOrder, SortDirection
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
@@ -3056,10 +3057,7 @@ def write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[WriteT
             file_format=file_format,
             partition=task.partition_key.partition if task.partition_key else Record(),
             file_size_in_bytes=len(fo),
-            # After this has been fixed:
-            # https://github.com/apache/iceberg-python/issues/271
-            # sort_order_id=task.sort_order_id,
-            sort_order_id=None,
+            sort_order_id=task.sort_order_id,
             # Just copy these from the table for now
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
@@ -3304,6 +3302,11 @@ def _dataframe_to_data_files(
                 "Materialise the reader as a pa.Table first, or follow "
                 "https://github.com/apache/iceberg-python/issues/2152 for partitioned streaming support."
             )
+        if not table_metadata.sort_order().is_unsorted:
+            warnings.warn(
+                "Sort order is not applied to streaming RecordBatchReader writes; data files are marked unsorted",
+                stacklevel=2,
+            )
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
@@ -3315,16 +3318,7 @@ def _dataframe_to_data_files(
         return
 
     if table_metadata.spec().is_unpartitioned():
-        yield from write_file(
-            io=io,
-            table_metadata=table_metadata,
-            tasks=(
-                WriteTask(write_uuid=write_uuid, task_id=next(counter), record_batches=batches, schema=task_schema)
-                for batches in bin_pack_arrow_table(df, target_file_size)
-            ),
-        )
-    else:
-        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        sorted_df, sort_order_id = _sort_table_for_write(table_metadata, df)
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
@@ -3333,13 +3327,73 @@ def _dataframe_to_data_files(
                     write_uuid=write_uuid,
                     task_id=next(counter),
                     record_batches=batches,
-                    partition_key=partition.partition_key,
                     schema=task_schema,
+                    sort_order_id=sort_order_id,
                 )
-                for partition in partitions
-                for batches in bin_pack_arrow_table(partition.arrow_table_partition, target_file_size)
+                for batches in bin_pack_arrow_table(sorted_df, target_file_size)
             ),
         )
+    else:
+        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        tasks: list[WriteTask] = []
+        for partition in partitions:
+            sorted_partition, sort_order_id = _sort_table_for_write(table_metadata, partition.arrow_table_partition)
+            tasks.extend(
+                WriteTask(
+                    write_uuid=write_uuid,
+                    task_id=next(counter),
+                    record_batches=batches,
+                    partition_key=partition.partition_key,
+                    schema=task_schema,
+                    sort_order_id=sort_order_id,
+                )
+                for batches in bin_pack_arrow_table(sorted_partition, target_file_size)
+            )
+        yield from write_file(io=io, table_metadata=table_metadata, tasks=tasks)
+
+
+def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tuple[pa.Table, int | None]:
+    """Sort the table for the table's sort order and return its file sort-order id.
+
+    Returns the table unchanged and ``None`` when the sort order cannot be applied, so the
+    written files are marked unsorted.
+    """
+    sort_order = table_metadata.sort_order()
+    if sort_order.is_unsorted:
+        return table, None
+
+    schema = table_metadata.schema()
+    sort_keys: list[tuple[str, str]] = []
+    null_orders: set[NullOrder] = set()
+    for sort_field in sort_order.fields:
+        if not isinstance(sort_field.transform, IdentityTransform):
+            warnings.warn(
+                f"Sort transform {sort_field.transform} is not supported for writes; data files are marked unsorted",
+                stacklevel=2,
+            )
+            return table, None
+        column_name = schema.find_column_name(sort_field.source_id)
+        if column_name is None or column_name not in table.column_names:
+            warnings.warn(
+                f"Sort field with source id {sort_field.source_id} refers to a nested or missing column; "
+                "data files are marked unsorted",
+                stacklevel=2,
+            )
+            return table, None
+        sort_keys.append((column_name, "descending" if sort_field.direction == SortDirection.DESC else "ascending"))
+        null_orders.add(sort_field.null_order)
+
+    if len(null_orders) != 1:
+        warnings.warn("Mixed null ordering is not supported for writes; data files are marked unsorted", stacklevel=2)
+        return table, None
+
+    null_placement = "at_start" if NullOrder.NULLS_FIRST in null_orders else "at_end"
+    if int(pa.__version__.split(".")[0]) >= 25:
+        # Per-key null placement replaced the SortOptions-level argument in Arrow 25.
+        indices = pc.sort_indices(table, sort_keys=cast(Any, [(*key, null_placement) for key in sort_keys]))
+    else:
+        indices = pc.sort_indices(table, sort_keys=cast(Any, sort_keys), null_placement=cast(Any, null_placement))
+    return table.take(indices), sort_order.order_id
 
 
 @dataclass(frozen=True)
