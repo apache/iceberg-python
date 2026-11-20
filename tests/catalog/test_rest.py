@@ -2775,7 +2775,7 @@ def test_rest_catalog_with_json_string_auth(rest_mock: Mocker) -> None:
         ),
     }
 
-    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    catalog = RestCatalog("rest", **catalog_properties)
 
     assert catalog.uri == TEST_URI
     encoded_user_pass = base64.b64encode(b"one:two").decode()
@@ -2796,7 +2796,7 @@ def test_rest_catalog_with_flattened_auth_properties(rest_mock: Mocker) -> None:
         "auth.basic.password": "two",
     }
 
-    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+    catalog = RestCatalog("rest", **catalog_properties)
 
     assert catalog.uri == TEST_URI
     encoded_user_pass = base64.b64encode(b"one:two").decode()
@@ -2829,7 +2829,7 @@ def test_rest_catalog_with_invalid_json_auth() -> None:
     }
 
     with pytest.raises(ValueError, match="Invalid auth configuration"):
-        RestCatalog("rest", **catalog_properties)  # type: ignore
+        RestCatalog("rest", **catalog_properties)
 
 
 def test_rest_catalog_with_custom_auth_type() -> None:
