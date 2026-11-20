@@ -145,13 +145,20 @@ def test_create_v1_table(
     catalog_name = "glue"
     test_catalog = GlueCatalog(catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url})
     test_catalog.create_namespace(namespace=database_name, properties={"location": f"s3://{BUCKET_NAME}/{database_name}.db"})
-    table = test_catalog.create_table((database_name, table_name), table_schema_nested, properties={"format-version": "1"})
+    table = test_catalog.create_table(
+        (database_name, table_name), table_schema_nested, properties={"format-version": "1", "enabled": True}
+    )
     assert table.format_version == 1
 
     table_info = _glue.get_table(
         DatabaseName=database_name,
         Name=table_name,
     )
+    assert table_info["Table"]["Parameters"] == {
+        "table_type": "ICEBERG",
+        "metadata_location": table.metadata_location,
+        "enabled": "true",
+    }
 
     storage_descriptor = table_info["Table"]["StorageDescriptor"]
     columns = storage_descriptor["Columns"]
@@ -1254,12 +1261,14 @@ def test_create_table_s3tables(
     test_catalog = GlueCatalog("s3tables", client=None, **{"s3.endpoint": moto_endpoint_url})
     _create_s3tables_database(test_catalog, database_name)
 
-    table = test_catalog.create_table(identifier, table_schema_nested)
+    table = test_catalog.create_table(identifier, table_schema_nested, properties={"format-version": "2"})
     assert table.name() == identifier
     assert table.location() == f"s3://{S3TABLES_WAREHOUSE_LOCATION}/{database_name}/{table_name}"
     assert table.metadata_location.startswith(f"s3://{S3TABLES_WAREHOUSE_LOCATION}/{database_name}/{table_name}/metadata/00000-")
     assert table.metadata_location.endswith(".metadata.json")
     assert test_catalog._parse_metadata_version(table.metadata_location) == 0
+    parameters = test_catalog.glue.get_table(DatabaseName=database_name, Name=table_name)["Table"]["Parameters"]
+    assert parameters == {"table_type": "ICEBERG", "metadata_location": table.metadata_location}
 
 
 @mock_aws
