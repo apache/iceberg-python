@@ -15,9 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 import uuid
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.catalog import Catalog
@@ -95,6 +97,28 @@ def test_commit_retry_on_commit_failed(catalog: Catalog) -> None:
     refreshed = catalog.load_table("default.retry_test")
     result = refreshed.scan().to_arrow()
     assert len(result) == 6
+
+
+def test_concurrent_add_files_retry_rechecks_duplicate_paths(catalog: Catalog, tmp_path: Path) -> None:
+    """A retried add_files call rejects a file committed concurrently."""
+    catalog.create_namespace("default")
+    catalog.create_table("default.add_files_retry_test", schema=_test_schema())
+
+    import pyarrow as pa
+
+    data_file = tmp_path / "data.parquet"
+    pq.write_table(pa.table({"x": [1, 2]}), data_file)
+
+    tbl1 = catalog.load_table("default.add_files_retry_test")
+    tbl2 = catalog.load_table("default.add_files_retry_test")
+
+    tbl1.add_files([str(data_file)])
+
+    with pytest.raises(ValueError, match="Cannot add files that are already referenced by table"):
+        tbl2.add_files([str(data_file)])
+
+    refreshed = catalog.load_table("default.add_files_retry_test")
+    assert refreshed.scan().to_arrow()["x"].to_pylist() == [1, 2]
 
 
 def test_no_retry_without_snapshot_producers(catalog: Catalog) -> None:

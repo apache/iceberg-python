@@ -152,6 +152,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _uncommitted_manifests: list[str]
     _written_manifest_lists: list[str]
     _isolation_operation: Operation
+    _retry_validator: Callable[[], None] | None
 
     def __init__(
         self,
@@ -186,6 +187,14 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._case_sensitive = True
         self._commit_window = None
         self._isolation_operation: Operation = Operation.DELETE
+        self._retry_validator = None
+
+    def _set_retry_validator(self, validator: Callable[[], None]) -> None:
+        self._retry_validator = validator
+
+    def _validate_retry(self) -> None:
+        if self._retry_validator is not None:
+            self._retry_validator()
 
     def _validate_target_branch(self, branch: str | None) -> str | None:
         # if branch is none, write will be written into a staging snapshot
