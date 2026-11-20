@@ -575,7 +575,7 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
 
         if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
             raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
@@ -589,17 +589,24 @@ class Transaction:
         )
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
-            # For pa.Table we can short-circuit empty inputs cheaply. For a
-            # RecordBatchReader the stream is consumed lazily by
-            # _dataframe_to_data_files and an empty reader simply yields zero
-            # data files (the snapshot is still committed for symmetry with the
-            # pa.Table case where empty inputs also produce a snapshot).
-            if isinstance(df, pa.RecordBatchReader) or df.shape[0] > 0:
-                data_files = _dataframe_to_data_files(
-                    table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
-                )
-                for data_file in data_files:
-                    append_files.append_data_file(data_file)
+            self._write_append_data(df, append_files)
+
+    def _write_append_data(self, df: pa.Table | pa.RecordBatchReader, append_files: _FastAppendFiles) -> None:
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import _dataframe_to_data_files
+
+        # For pa.Table we can short-circuit empty inputs cheaply. For a
+        # RecordBatchReader the stream is consumed lazily by
+        # _dataframe_to_data_files and an empty reader simply yields zero
+        # data files (the snapshot is still committed for symmetry with the
+        # pa.Table case where empty inputs also produce a snapshot).
+        if isinstance(df, pa.RecordBatchReader) or df.shape[0] > 0:
+            data_files = _dataframe_to_data_files(
+                table_metadata=self.table_metadata, write_uuid=append_files.commit_uuid, df=df, io=self._table.io
+            )
+            for data_file in data_files:
+                append_files.append_data_file(data_file)
 
     def dynamic_partition_overwrite(
         self, df: pa.Table, snapshot_properties: dict[str, str] = EMPTY_DICT, branch: str | None = MAIN_BRANCH
@@ -1027,7 +1034,11 @@ class Transaction:
         if when_not_matched_insert_all:
             insert_row_cnt = len(rows_to_insert)
             if rows_to_insert:
-                self.append(rows_to_insert, branch=branch, snapshot_properties=snapshot_properties)
+                with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
+                    append_files.validate_no_conflicting_data(
+                        upsert_util.create_match_filter(rows_to_insert, join_cols), case_sensitive
+                    )
+                    self._write_append_data(rows_to_insert, append_files)
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
