@@ -3464,6 +3464,31 @@ def test_add_files_matches_columns_by_field_id(catalog: InMemoryCatalog, tmp_pat
         assert dict(table.inspect.files().to_pylist()[0]["value_counts"]) == value_counts
 
 
+def test_add_files_with_field_ids_swapped_relative_to_names(catalog: InMemoryCatalog, tmp_path: str) -> None:
+    # The file's "a" is field ID 2 and its "b" is field ID 1, the reverse of the table, as after renames.
+    # Its bounds have to be recorded by field ID, or both filters below prune the file.
+    catalog.create_namespace("default")
+    identifier = "default.add_files_swapped_field_ids"
+    catalog.create_table(
+        identifier,
+        schema=Schema(NestedField(1, "a", LongType(), required=False), NestedField(2, "b", LongType(), required=False)),
+    )
+    file_schema = pa.schema(
+        [
+            pa.field("a", pa.int64(), metadata={"PARQUET:field_id": "2"}),
+            pa.field("b", pa.int64(), metadata={"PARQUET:field_id": "1"}),
+        ]
+    )
+    file_loc = f"{tmp_path}/swapped.parquet"
+    pq.write_table(pa.table({"a": [1], "b": [2]}, schema=file_schema), file_loc)
+
+    catalog.load_table(identifier).add_files([file_loc])
+
+    table = catalog.load_table(identifier)
+    for row_filter in ("a = 2", "b = 1"):
+        assert table.scan(row_filter=row_filter).to_arrow().to_pylist() == [{"a": 2, "b": 1}]
+
+
 def test_add_files_rejects_columns_missing_from_table(catalog: InMemoryCatalog, tmp_path: str) -> None:
     table_schema = Schema(
         NestedField(1, "a", LongType(), required=False),
