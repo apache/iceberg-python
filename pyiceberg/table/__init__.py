@@ -79,6 +79,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
     AddSchemaUpdate,
+    AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
     AssertRefSnapshotId,
@@ -1238,7 +1239,7 @@ class Transaction:
         return self._table
 
     def _attempt_landed(self) -> bool:
-        """Refresh the table and return whether a snapshot written by this transaction is present.
+        """Refresh the table and return whether the snapshots added by this transaction are present.
 
         Raises:
             CommitStateUnknownException: If the table cannot be refreshed, the outcome is unknown and
@@ -1251,8 +1252,9 @@ class Transaction:
                 f"Commit failed and the table could not be refreshed to check whether it landed: {e}"
             ) from e
 
-        return all(
-            self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None for producer in self._snapshot_producers
+        added_snapshot_ids = {update.snapshot.snapshot_id for update in self._updates if isinstance(update, AddSnapshotUpdate)}
+        return bool(added_snapshot_ids) and all(
+            self._table.metadata.snapshot_by_id(snapshot_id) is not None for snapshot_id in added_snapshot_ids
         )
 
     def _cleanup_uncommitted_manifests(self) -> None:
