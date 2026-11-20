@@ -1514,21 +1514,34 @@ Fast-forward `from_branch` to point at the snapshot referenced by `to_ref`.
 
 #### Cherry-picking a snapshot
 
-Apply the changes of a snapshot from another branch, or of a staged snapshot, to `main`:
+Cherry-pick the latest snapshot of the `audit-branch` branch onto `main`:
 
 ```python
+snapshot_id = table.snapshot_by_name("audit-branch").snapshot_id
 table.manage_snapshots().cherrypick(snapshot_id).commit()
 ```
 
-If the snapshot's parent is the current snapshot of `main`, `main` is fast-forwarded to it.
-Otherwise, an `append` snapshot is replayed as a new snapshot on top of `main`, which records the
-picked snapshot in its `source-snapshot-id` summary property. Other operations can only be fast-forwarded.
+<!-- markdownlint-disable MD046 -- Allowing indented multi-line formatting in admonition-->
 
-A snapshot written with a `wap.id` summary property, for example with
-`table.append(df, branch=None, snapshot_properties={"wap.id": "nightly-2024-01-01"})`, records it
-as `published-wap-id` when picked, and a `wap.id` can only be published once.
-Picking a snapshot that is already an ancestor of `main`, or was already picked, raises
-`CherrypickAncestorCommitException`.
+!!! info "Cherry-pick Behavior"
+
+    * Case 1: If the snapshot's parent is the current snapshot of `main`, `main` is fast-forwarded to it.
+    * Case 2: Otherwise, if the snapshot is an `append`, its data files are committed to `main` as a new
+        snapshot. The new snapshot's `source-snapshot-id` summary property is set to the picked snapshot.
+    * Case 3: Any other operation raises `ValidationException`.
+    * Picking a snapshot that is already an ancestor of `main`, or was already cherry-picked, raises
+        `CherrypickAncestorCommitException`.
+
+<!-- markdownlint-enable MD046 -->
+
+Cherry-picking can also publish a staged write-audit-publish snapshot. Stage it with a `wap.id`:
+
+```python
+table.append(df, branch=None, snapshot_properties={"wap.id": "nightly-2024-01-01"})
+```
+
+When the snapshot is replayed onto `main`, the new snapshot records the id as `published-wap-id`.
+Publishing the same `wap.id` twice raises `DuplicateWAPCommitException`.
 
 #### Example Use-Case: write-audit-publish (WAP)
 

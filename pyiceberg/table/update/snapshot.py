@@ -772,7 +772,6 @@ def _validate_wap_publish(metadata: TableMetadata, snapshot_id: int) -> str | No
 
 
 def _added_data_files(snapshot: Snapshot, io: FileIO) -> list[DataFile]:
-    """Return the data files added by the given snapshot."""
     added_data_files = []
     for manifest in snapshot.manifests(io=io):
         if manifest.content == ManifestContent.DATA and manifest.added_snapshot_id == snapshot.snapshot_id:
