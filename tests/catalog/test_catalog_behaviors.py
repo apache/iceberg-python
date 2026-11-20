@@ -744,6 +744,72 @@ def test_table_properties_raise_for_none_value(
 # Append table
 
 
+def test_append_to_identity_partitioned_table_with_dotted_names(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    # The names from the top-level column down to the partition source, where a name can contain dots
+    paths = [("a.b",), ("bar", "baz"), ("foo", "bar", "baz"), ("a.b", "c"), ("a", "b.c"), ("root", "a.b", "c")]
+    for i, path in enumerate(paths):
+        column_type: pa.DataType = pa.string()
+        values: list[Any] = ["x", "y", None]
+        for name in reversed(path[1:]):
+            column_type = pa.struct([(name, column_type)])
+            values = [{name: value} for value in values]
+        arrow_schema = pa.schema([("id", pa.int64()), (path[0], column_type)])
+        df = pa.Table.from_pydict({"id": [1, 2, 3], path[0]: values}, schema=arrow_schema)
+        tbl = catalog.create_table(f"default.dotted_partition_source_{i}", schema=df.schema)
+        with tbl.update_spec() as update:
+            update.add_field(".".join(path), IdentityTransform(), "p")
+
+        tbl.append(df)
+
+        assert sorted(tbl.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == df.to_pylist(), path
+        assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {"x", "y", None}, path
+
+
+def test_append_with_field_ids_after_swapping_column_names(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    struct_type = pa.struct([("c", pa.string())])
+    # Each case swaps the names of the two columns after the Arrow table took its field IDs from the table schema
+    cases: list[tuple[pa.Schema, dict[str, Any], str, str]] = [
+        (pa.schema([("a", pa.string()), ("b", pa.string())]), {"a": "x", "b": "y"}, "a", "b"),
+        (pa.schema([("left", struct_type), ("a.b", struct_type)]), {"left": {"c": "x"}, "a.b": {"c": "y"}}, "left.c", "a.b.c"),
+    ]
+    for i, (arrow_schema, row, source_name, renamed_source_name) in enumerate(cases):
+        tbl = catalog.create_table(f"default.swapped_names_{i}", schema=arrow_schema)
+        with tbl.update_spec() as spec_update:
+            spec_update.add_field(source_name, IdentityTransform(), "p")
+        df = pa.Table.from_pylist([row], schema=tbl.schema().as_arrow())
+        first, second = arrow_schema.names
+        for old_name, new_name in [(first, "tmp"), (second, first), ("tmp", second)]:
+            with tbl.update_schema() as schema_update:
+                schema_update.rename_column(old_name, new_name)
+
+        tbl.append(df)
+
+        # The partition value comes from the column that the source field is written from
+        assert [task.file.partition[0] for task in tbl.scan().plan_files()] == ["x"], source_name
+        swapped_row = {first: row[second], second: row[first]}
+        assert tbl.scan(row_filter=f"{renamed_source_name} = 'x'").to_arrow().to_pylist() == [swapped_row], source_name
+
+
+def test_partition_values_follow_writer_struct_path(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    struct_type = pa.struct([("x", pa.string())])
+    tbl = catalog.create_table("default.partition_input_parents", schema=pa.schema([("s", struct_type), ("t", struct_type)]))
+    with tbl.update_spec() as spec_update:
+        spec_update.add_field("s.x", IdentityTransform(), "p")
+    # Swap the struct types, so that each leaf field ID of the input is under the other parent
+    s_field, t_field = tbl.schema().as_arrow()
+    input_schema = pa.schema([s_field.with_type(t_field.type), t_field.with_type(s_field.type)])
+    tbl.append(pa.Table.from_pylist([{"s": {"x": "X"}, "t": {"x": "Y"}}], schema=input_schema))
+
+    # The partition value and the filtered scan agree with the row that was written
+    written_rows = tbl.scan().to_arrow().to_pylist()
+    value = written_rows[0]["s"]["x"]
+    assert [task.file.partition[0] for task in tbl.scan().plan_files()] == [value]
+    assert tbl.scan(row_filter=f"s.x = '{value}'").to_arrow().to_pylist() == written_rows
+
+
 def test_append_table(catalog: Catalog, table_schema_simple: Schema, test_table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(test_table_identifier)
     catalog.create_namespace(namespace)
