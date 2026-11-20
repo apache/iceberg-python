@@ -2595,6 +2595,47 @@ def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> Non
     assert table.scan().to_arrow().num_rows == 0
 
 
+def test_delete_files_removes_data_files(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+    table = catalog.create_table("default.delete_files", schema=schema)
+    table.append(pa.table({"x": [1, 2]}, schema=schema_to_pyarrow(schema)))
+    table.append(pa.table({"x": [3]}, schema=schema_to_pyarrow(schema)))
+    table = catalog.load_table("default.delete_files")
+
+    files = table.inspect.files().to_pylist()
+    assert len(files) == 2
+    file_to_delete = next(data_file["file_path"] for data_file in files if data_file["record_count"] == 1)
+
+    table.delete_files([file_to_delete], snapshot_properties={"source": "test"})
+
+    table = catalog.load_table("default.delete_files")
+    assert table.scan().to_arrow().to_pylist() == [{"x": 1}, {"x": 2}]
+    assert table.current_snapshot().summary.additional_properties["source"] == "test"
+
+
+def test_delete_files_rejects_missing_and_duplicate_paths(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+    table = catalog.create_table("default.delete_files_errors", schema=schema)
+    table.append(pa.table({"x": [1]}, schema=schema_to_pyarrow(schema)))
+    file_path = next(data_file["file_path"] for data_file in table.inspect.files().to_pylist())
+
+    with pytest.raises(ValueError, match="File paths must be unique"):
+        table.delete_files([file_path, file_path])
+
+    with pytest.raises(ValueError, match="not referenced by table"):
+        table.delete_files(["file:///missing.parquet"])
+
+
 def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalog) -> None:
     """Rewriting a file applies all of its delete files, not only those whose bounds can match the delete filter."""
     import pyarrow as pa
