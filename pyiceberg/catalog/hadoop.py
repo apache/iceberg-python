@@ -165,7 +165,7 @@ class HadoopCatalog(MetastoreCatalog):
     def _next_metadata_version(self, location: str) -> int:
         return max((version for version, _ in self._metadata_versions(location)), default=0) + 1
 
-    def _write_metadata(self, metadata: TableMetadata, metadata_location: str, version: int) -> None:
+    def _write_table_metadata(self, metadata: TableMetadata, metadata_location: str, version: int) -> None:
         try:
             ToOutputFile.table_metadata(metadata, self._io.new_output(metadata_location), overwrite=False)
         except FileExistsError as e:
@@ -194,7 +194,8 @@ class HadoopCatalog(MetastoreCatalog):
         if location is not None and location.rstrip("/") != table_location:
             raise ValueError(f"Cannot set a custom location for a path-based table, expected {table_location}")
         schema = self._convert_schema_if_needed(
-            schema, int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
+            schema,
+            int(properties.get(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION)),  # type: ignore[arg-type]
         )
         return new_table_metadata(
             location=table_location,
@@ -218,7 +219,7 @@ class HadoopCatalog(MetastoreCatalog):
             raise TableAlreadyExistsError(f"Table {identifier} already exists")
 
         metadata = self._new_table_metadata(table_identifier, schema, location, partition_spec, sort_order, properties)
-        self._write_metadata(metadata, f"{self._metadata_dir(metadata.location)}/v1.metadata.json", 1)
+        self._write_table_metadata(metadata, f"{self._metadata_dir(metadata.location)}/v1.metadata.json", 1)
         return self.load_table(identifier)
 
     def create_table_transaction(
@@ -274,10 +275,10 @@ class HadoopCatalog(MetastoreCatalog):
 
         version = self._next_metadata_version(staged.metadata.location)
         metadata_location = f"{self._metadata_dir(staged.metadata.location)}/v{version}.metadata.json"
-        self._write_metadata(staged.metadata, metadata_location, version)
+        self._write_table_metadata(staged.metadata, metadata_location, version)
         return CommitTableResponse(metadata=staged.metadata, metadata_location=metadata_location)
 
-    def register_table(self, identifier: str | Identifier, metadata_location: str) -> Table:
+    def register_table(self, identifier: str | Identifier, metadata_location: str, overwrite: bool = False) -> Table:
         raise NotImplementedError("Cannot register tables in HadoopCatalog")
 
     def drop_table(self, identifier: str | Identifier) -> None:
