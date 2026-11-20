@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import pickle
 import platform
@@ -2752,6 +2753,83 @@ def test_rest_catalog_with_basic_auth_type(rest_mock: Mocker) -> None:
     encoded_user_pass = base64.b64encode(b"one:two").decode()
     expected_auth_header = f"Basic {encoded_user_pass}"
     assert rest_mock.last_request.headers["Authorization"] == expected_auth_header
+
+
+def test_rest_catalog_with_json_string_auth(rest_mock: Mocker) -> None:
+    # Given
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": json.dumps(
+            {
+                "type": "basic",
+                "basic": {
+                    "username": "one",
+                    "password": "two",
+                },
+            }
+        ),
+    }
+
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+
+    assert catalog.uri == TEST_URI
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    assert rest_mock.last_request.headers["Authorization"] == f"Basic {encoded_user_pass}"
+
+
+def test_rest_catalog_with_flattened_auth_properties(rest_mock: Mocker) -> None:
+    # Given
+    rest_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}},
+        status_code=200,
+    )
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth.type": "basic",
+        "auth.basic.username": "one",
+        "auth.basic.password": "two",
+    }
+
+    catalog = RestCatalog("rest", **catalog_properties)  # type: ignore
+
+    assert catalog.uri == TEST_URI
+    encoded_user_pass = base64.b64encode(b"one:two").decode()
+    assert rest_mock.last_request.headers["Authorization"] == f"Basic {encoded_user_pass}"
+
+
+def test_parse_auth_config_normalizes_dashed_keys() -> None:
+    from pyiceberg.catalog.rest import _parse_auth_config
+
+    assert _parse_auth_config(
+        {
+            "auth.type": "oauth2",
+            "auth.oauth2.client-id": "id",
+            "auth.oauth2.token-url": "https://auth.example/token",
+        }
+    ) == {
+        "type": "oauth2",
+        "oauth2": {
+            "client_id": "id",
+            "token_url": "https://auth.example/token",
+        },
+    }
+
+
+def test_rest_catalog_with_invalid_json_auth() -> None:
+    # Given
+    catalog_properties = {
+        "uri": TEST_URI,
+        "auth": "{not valid json}",
+    }
+
+    with pytest.raises(ValueError, match="Invalid auth configuration"):
+        RestCatalog("rest", **catalog_properties)  # type: ignore
 
 
 def test_rest_catalog_with_custom_auth_type() -> None:
