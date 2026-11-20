@@ -106,6 +106,7 @@ from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
+    ArrowStreamExportable,
     IcebergBaseModel,
     IcebergRootModel,
     Identifier,
@@ -522,15 +523,16 @@ class Transaction:
 
     def append(
         self,
-        df: pa.Table | pa.RecordBatchReader,
+        df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for appending PyArrow data to a table transaction.
 
-        Accepts either a fully materialised ``pa.Table`` or a streaming
-        ``pa.RecordBatchReader``. Streaming is microbatched by
+        Accepts either a fully materialised ``pa.Table``, a streaming
+        ``pa.RecordBatchReader``, or an object implementing the Arrow PyCapsule
+        stream interface, which is imported as a ``pa.Table``. Streaming is microbatched by
         ``write.target-file-size-bytes`` so memory stays bounded; the reader is
         consumed once and cannot be reused.
 
@@ -577,8 +579,11 @@ class Transaction:
 
         from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
 
+        if isinstance(df, ArrowStreamExportable) and not isinstance(df, (pa.Table, pa.RecordBatchReader)):
+            df = pa.table(df)
+
         if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
-            raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
+            raise ValueError(f"Expected pa.Table, pa.RecordBatchReader, or an Arrow PyCapsule exporter, got: {df}")
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
@@ -676,7 +681,7 @@ class Transaction:
 
     def overwrite(
         self,
-        df: pa.Table | pa.RecordBatchReader,
+        df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable,
         overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
@@ -685,8 +690,9 @@ class Transaction:
         """
         Shorthand for adding a table overwrite with a PyArrow table or RecordBatchReader to the transaction.
 
-        Accepts either a fully materialised ``pa.Table`` or a streaming
-        ``pa.RecordBatchReader``. Streaming is microbatched by
+        Accepts either a fully materialised ``pa.Table``, a streaming
+        ``pa.RecordBatchReader``, or an object implementing the Arrow PyCapsule
+        stream interface, which is imported as a ``pa.Table``. Streaming is microbatched by
         ``write.target-file-size-bytes`` so memory stays bounded; the reader is
         consumed once and cannot be reused.
 
@@ -742,8 +748,11 @@ class Transaction:
 
         from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
 
+        if isinstance(df, ArrowStreamExportable) and not isinstance(df, (pa.Table, pa.RecordBatchReader)):
+            df = pa.table(df)
+
         if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
-            raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
+            raise ValueError(f"Expected pa.Table, pa.RecordBatchReader, or an Arrow PyCapsule exporter, got: {df}")
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
         _check_pyarrow_schema_compatible(
@@ -1819,14 +1828,15 @@ class Table:
 
     def append(
         self,
-        df: pa.Table | pa.RecordBatchReader,
+        df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for appending PyArrow data to the table.
 
-        Accepts either a ``pa.Table`` or a streaming ``pa.RecordBatchReader``.
+        Accepts a ``pa.Table``, a streaming ``pa.RecordBatchReader``, or any object
+        implementing the Arrow PyCapsule stream interface.
         See :meth:`Transaction.append` for streaming semantics and partition
         limitations.
 
@@ -1854,7 +1864,7 @@ class Table:
 
     def overwrite(
         self,
-        df: pa.Table | pa.RecordBatchReader,
+        df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable,
         overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
@@ -1863,7 +1873,8 @@ class Table:
         """
         Shorthand for overwriting the table with a PyArrow Table or RecordBatchReader.
 
-        Accepts either a ``pa.Table`` or a streaming ``pa.RecordBatchReader``.
+        Accepts a ``pa.Table``, a streaming ``pa.RecordBatchReader``, or any object
+        implementing the Arrow PyCapsule stream interface.
         See :meth:`Transaction.overwrite` for streaming semantics and partition
         limitations.
 

@@ -324,6 +324,8 @@ tbl.append(df)
 tbl.overwrite(df)
 ```
 
+`append` and `overwrite` also accept any object that implements the Arrow PyCapsule stream interface, such as a Polars DataFrame or an arro3 table, and import it as a PyArrow table.
+
 Now, the data is written to the table, and the table can be read using `tbl.scan().to_arrow()`:
 
 ```python
