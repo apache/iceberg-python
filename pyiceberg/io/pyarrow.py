@@ -2637,7 +2637,9 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[list[StatisticsCollector]
             TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS,
             TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT,
         )
-        if max_inferred < 0:
+        if max_inferred is None:
+            max_inferred = TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT
+        elif max_inferred < 0:
             logger.warning(
                 "Invalid value for %s (negative): %s, falling back to %s",
                 TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS,
