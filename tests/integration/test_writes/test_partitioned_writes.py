@@ -748,8 +748,11 @@ def test_dynamic_partition_overwrite_evolve_partition(spark: SparkSession, sessi
     tbl.dynamic_partition_overwrite(arrow_table)
     result = tbl.scan().to_arrow()
 
-    assert result["place"].to_pylist() == ["Groningen", "Amsterdam", "Drachten"]
-    assert result["inhabitants"].to_pylist() == [238147, 921402, 44940]
+    assert sorted(zip(result["place"].to_pylist(), result["inhabitants"].to_pylist(), strict=True)) == [
+        ("Amsterdam", 921402),
+        ("Drachten", 44940),
+        ("Groningen", 238147),
+    ]
 
 
 @pytest.mark.integration

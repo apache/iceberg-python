@@ -226,7 +226,7 @@ class TableProperties:
     MANIFEST_MIN_MERGE_COUNT_DEFAULT = 100
 
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
-    MANIFEST_MERGE_ENABLED_DEFAULT = False
+    MANIFEST_MERGE_ENABLED_DEFAULT = True
 
     METADATA_COMPRESSION = "write.metadata.compression-codec"
     METADATA_COMPRESSION_DEFAULT = "none"
