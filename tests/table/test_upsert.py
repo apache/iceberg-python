@@ -391,6 +391,33 @@ def test_upsert_with_identifier_fields(catalog: Catalog) -> None:
     assert [snap.summary.operation for snap in tbl.snapshots() if snap.summary is not None] == expected_operations
 
 
+def test_upsert_with_difference_cols(catalog: Catalog) -> None:
+    identifier = "default.test_upsert_with_difference_cols"
+    _drop_table(catalog, identifier)
+
+    schema = Schema(
+        NestedField(1, "city", StringType(), required=True),
+        NestedField(2, "population", IntegerType(), required=True),
+        NestedField(3, "note", StringType(), required=False),
+        identifier_field_ids=[1],
+    )
+    arrow_schema = schema_to_pyarrow(schema)
+    tbl = catalog.create_table(identifier, schema=schema)
+    tbl.append(pa.Table.from_pylist([{"city": "Paris", "population": 1, "note": "a"}], schema=arrow_schema))
+
+    # population changed, which is the only compared column
+    df = pa.Table.from_pylist([{"city": "Paris", "population": 2, "note": "a"}], schema=arrow_schema)
+    result = tbl.upsert(df, difference_cols=["population"])
+    assert result.rows_updated == 1
+
+    # note changed, but it is not compared
+    df = pa.Table.from_pylist([{"city": "Paris", "population": 2, "note": "b"}], schema=arrow_schema)
+    result = tbl.upsert(df, difference_cols=["population"])
+    assert result.rows_updated == 0
+
+    assert tbl.scan().to_arrow().to_pylist() == [{"city": "Paris", "population": 2, "note": "a"}]
+
+
 def test_upsert_into_empty_table(catalog: Catalog) -> None:
     identifier = "default.test_upsert_into_empty_table"
     _drop_table(catalog, identifier)
@@ -955,3 +982,35 @@ def test_get_rows_to_update_compares_nested_values() -> None:
     target = pa.table({"pk": [1, 2], "value": pa.array([{"a": 1}, {"a": 3}])})
 
     assert get_rows_to_update(source, target, ["pk"]).to_pydict() == {"pk": [2], "value": [{"a": 2}]}
+
+
+def test_get_rows_to_update_only_compares_difference_cols() -> None:
+    source = pa.table({"pk": [1, 2], "value": [10, 21], "ignored": [1, 2]})
+    target = pa.table({"pk": [1, 2], "value": [10, 20], "ignored": [9, 9]})
+
+    assert get_rows_to_update(source, target, ["pk"], difference_cols=["value"]).to_pydict() == {
+        "pk": [2],
+        "value": [21],
+        "ignored": [2],
+    }
+
+
+def test_get_rows_to_update_returns_nothing_when_difference_cols_are_unchanged() -> None:
+    source = pa.table({"pk": [1], "value": [10], "ignored": [1]})
+    target = pa.table({"pk": [1], "value": [10], "ignored": [2]})
+
+    assert len(get_rows_to_update(source, target, ["pk"], difference_cols=["value"])) == 0
+
+
+def test_get_rows_to_update_rejects_unknown_difference_cols() -> None:
+    source = pa.table({"pk": [1], "value": [10]})
+
+    with pytest.raises(ValueError, match="Difference columns not found"):
+        get_rows_to_update(source, source, ["pk"], difference_cols=["missing"])
+
+
+def test_get_rows_to_update_rejects_key_only_difference_cols() -> None:
+    source = pa.table({"pk": [1], "value": [10]})
+
+    with pytest.raises(ValueError, match="at least one non-key column"):
+        get_rows_to_update(source, source, ["pk"], difference_cols=["pk"])
