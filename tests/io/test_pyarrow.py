@@ -3336,6 +3336,41 @@ def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
         _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
 
 
+def test_schema_mismatch_additional_field_without_id(table_schema_simple: Schema) -> None:
+    # Appending a table read from a data file (with field IDs) plus a new column without one
+    # must still be rejected, rather than dropping the new column
+    other_schema = pa.schema(
+        (
+            pa.field("foo", pa.string(), nullable=True, metadata={"PARQUET:field_id": "1"}),
+            pa.field("bar", pa.int32(), nullable=False, metadata={"PARQUET:field_id": "2"}),
+            pa.field("baz", pa.bool_(), nullable=True, metadata={"PARQUET:field_id": "3"}),
+            pa.field("country", pa.string(), nullable=True),
+        )
+    )
+
+    with pytest.raises(
+        ValueError, match=r"PyArrow table contains more columns: country. Update the schema first \(hint, use union_by_name\)."
+    ):
+        _check_pyarrow_schema_compatible(table_schema_simple, other_schema)
+
+
+def test_projection_partial_field_ids(tmpdir: str) -> None:
+    # Columns without a field ID are ignored on read, even if their type is not supported
+    schema = Schema(NestedField(1, "foo", StringType(), required=False))
+    arrow_schema = pa.schema(
+        [
+            pa.field("col-2b93b371", pa.string(), metadata={"PARQUET:field_id": "1"}),
+            pa.field("_row-id-col-922d6355", pa.time32("ms")),
+        ]
+    )
+    table = pa.Table.from_arrays([pa.array(["a", "b", "c"]), pa.array([1, 2, 3], type=pa.time32("ms"))], schema=arrow_schema)
+    file = _write_table_to_file(f"{tmpdir}/partial-ids.parquet", arrow_schema, table)
+
+    result = project(schema, [file])
+    assert result.column_names == ["foo"]
+    assert result["foo"].to_pylist() == ["a", "b", "c"]
+
+
 def test_schema_compatible(table_schema_simple: Schema) -> None:
     try:
         _check_pyarrow_schema_compatible(table_schema_simple, table_schema_simple.as_arrow())

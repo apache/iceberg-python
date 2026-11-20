@@ -1265,7 +1265,26 @@ def pyarrow_to_schema(
     name_mapping: NameMapping | None = None,
     downcast_ns_timestamp_to_us: bool = False,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
+    prune_fields_without_ids: bool = False,
 ) -> Schema:
+    """Convert a PyArrow schema to an Iceberg schema.
+
+    Args:
+        schema: The PyArrow schema to convert.
+        name_mapping: Used when the schema has no field IDs.
+        downcast_ns_timestamp_to_us: Downcast nanosecond timestamps to microseconds.
+        format_version: The Iceberg table format version.
+        prune_fields_without_ids: If some fields have field IDs, drop the ones that do not
+            (including lists and maps with an element, key, or value without one) instead of
+            falling back to the name mapping, like the Java Parquet reader does. Only meant for
+            reading data files. Writes keep the stricter check, so extra columns are rejected
+            instead of silently dropped.
+    """
+    if prune_fields_without_ids:
+        # Prune before conversion, so an unsupported type in a column without an ID does not fail the read
+        pruned_schema = _prune_fields_without_ids(schema)
+        if len(pruned_schema) > 0:
+            schema = pruned_schema
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
         return visit_pyarrow(
@@ -1280,6 +1299,50 @@ def pyarrow_to_schema(
         raise ValueError(
             "Parquet file does not have field-ids and the Iceberg table does not have 'schema.name-mapping.default' defined"
         )
+
+
+def _prune_fields_without_ids(schema: pa.Schema) -> pa.Schema:
+    """Drop fields without a field ID, so only the columns with IDs are read.
+
+    A list is dropped when its element has no ID, and a map when its key or value has none,
+    since neither can be represented in Iceberg without them. A struct whose children all
+    get dropped is dropped as well.
+    """
+    fields = [pruned for field in schema if (pruned := _prune_field_without_id(field)) is not None]
+    return pa.schema(fields, metadata=schema.metadata)
+
+
+def _prune_field_without_id(field: pa.Field) -> pa.Field | None:
+    if _get_field_id(field) is None:
+        return None
+    pruned_type = _prune_type_without_ids(field.type)
+    if pruned_type is None:
+        return None
+    return field.with_type(pruned_type)
+
+
+def _prune_type_without_ids(arrow_type: pa.DataType) -> pa.DataType | None:
+    if pa.types.is_struct(arrow_type):
+        children = [arrow_type.field(i) for i in range(arrow_type.num_fields)]
+        pruned_children = [pruned for child in children if (pruned := _prune_field_without_id(child)) is not None]
+        return pa.struct(pruned_children) if pruned_children else None
+    elif isinstance(arrow_type, (pa.ListType, pa.LargeListType, pa.FixedSizeListType)):
+        element_field = _prune_field_without_id(arrow_type.value_field)
+        if element_field is None:
+            return None
+        if isinstance(arrow_type, pa.LargeListType):
+            return pa.large_list(element_field)
+        if isinstance(arrow_type, pa.FixedSizeListType):
+            return pa.list_(element_field, arrow_type.list_size)
+        return pa.list_(element_field)
+    elif isinstance(arrow_type, pa.MapType):
+        key_field = _prune_field_without_id(arrow_type.key_field)
+        value_field = _prune_field_without_id(arrow_type.item_field)
+        if key_field is None or value_field is None:
+            # Keeping a map without its value (or key) would change its type, so drop the whole map
+            return None
+        return pa.map_(key_field, value_field, keys_sorted=arrow_type.keys_sorted)
+    return arrow_type
 
 
 def _pyarrow_to_schema_without_ids(
@@ -1779,7 +1842,11 @@ def _task_to_record_batches(
             downcast_ns_timestamp_to_us if downcast_ns_timestamp_to_us is not None else format_version <= 2
         )
         file_schema = pyarrow_to_schema(
-            physical_schema, name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
+            physical_schema,
+            name_mapping,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+            format_version=format_version,
+            prune_fields_without_ids=True,
         )
 
         # Apply column projection rules: https://iceberg.apache.org/spec/#column-projection
