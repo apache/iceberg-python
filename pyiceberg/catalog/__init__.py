@@ -304,14 +304,14 @@ def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
     catalog_type: CatalogType | None
     provided_catalog_type = conf.get(TYPE)
 
-    if catalog_impl := properties.get(PY_CATALOG_IMPL):
+    if catalog_impl := conf.get(PY_CATALOG_IMPL):
         if provided_catalog_type:
             raise ValueError(
                 "Must not set both catalog type and py-catalog-impl configurations, "
                 f"but found type {provided_catalog_type} and py-catalog-impl {catalog_impl}"
             )
 
-        if catalog := _import_catalog(name, catalog_impl, properties):
+        if catalog := _import_catalog(name, cast(str, catalog_impl), cast(dict[str, str], conf)):
             logger.info("Loaded Catalog: %s", catalog_impl)
             return catalog
         else:
