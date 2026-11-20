@@ -3349,7 +3349,7 @@ def _dataframe_to_data_files(
                 )
                 for batches in bin_pack_arrow_table(sorted_partition, target_file_size)
             )
-        yield from write_file(io=io, table_metadata=table_metadata, tasks=tasks)
+        yield from write_file(io=io, table_metadata=table_metadata, tasks=iter(tasks))
 
 
 def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tuple[pa.Table, int | None]:
