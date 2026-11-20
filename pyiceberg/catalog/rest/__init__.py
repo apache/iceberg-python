@@ -42,7 +42,6 @@ from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_
 from typing_extensions import override
 from urllib3.connectionpool import ConnectionPool
 from urllib3.exceptions import MaxRetryError, ResponseError
-from urllib3.response import BaseHTTPResponse
 from urllib3.util.retry import Retry
 
 from pyiceberg import __version__
@@ -122,6 +121,7 @@ from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from urllib3.response import BaseHTTPResponse
 
 logger = logging.getLogger(__name__)
 
@@ -564,8 +564,8 @@ class _IdempotencyKeyLifetimeRetry(Retry):
         if self.respect_retry_after_header and response is not None:
             if retry_after := self.get_retry_after(response):
                 return retry_after
-        # `get_backoff_time` adds a random jitter in [0, backoff_jitter), so take the worst case.
-        return min(self.backoff_max, self.new(backoff_jitter=0.0).get_backoff_time() + self.backoff_jitter)
+        # No jitter is configured, so this is exactly what the next backoff will be.
+        return self.get_backoff_time()
 
 
 class _RetryTimeoutHTTPAdapter(HTTPAdapter):

@@ -21,6 +21,7 @@ import base64
 import os
 import pickle
 import platform
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -2713,6 +2714,37 @@ def test_session_does_not_retry_keyed_post_past_the_key_lifetime_due_to_backoff(
         with pytest.raises(ServiceUnavailableError):
             catalog.create_namespace("foo")
         assert server["namespace_calls"] == 2
+
+
+def test_session_counts_time_already_spent_toward_the_key_lifetime() -> None:
+    # Each Retry-After (4s) alone fits in the lifetime (PT10S), but after two of them (8s) the third would not.
+    # A fake clock stands in for the real one so the test does not wait out the sleeps.
+    clock = {"now": 1000.0}
+
+    def fake_sleep(seconds: float) -> None:
+        clock["now"] += seconds
+
+    fake_time = mock.Mock(wraps=time)
+    fake_time.monotonic.side_effect = lambda: clock["now"]
+    fake_time.sleep.side_effect = fake_sleep
+
+    with (
+        _local_rest_server_503_then_200(num_failures=3, idempotency_key_lifetime="PT10S", retry_after="4") as server,
+        mock.patch("pyiceberg.catalog.rest.time", fake_time),
+        mock.patch("urllib3.util.retry.time", fake_time),
+    ):
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                REST_CLIENT_MAX_RETRIES: "3",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+            },
+        )
+        with pytest.raises(ServiceUnavailableError):
+            catalog.create_namespace("foo")
+        assert server["namespace_calls"] == 3
 
 
 def test_session_retries_keyed_post_within_the_key_lifetime_with_retry_after() -> None:
