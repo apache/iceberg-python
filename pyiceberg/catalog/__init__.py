@@ -40,6 +40,7 @@ from pyiceberg.exceptions import (
     NotInstalledError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io import BOTOCORE_SESSION as BOTOCORE_SESSION
 from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.manifest import ManifestFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec
@@ -96,7 +97,6 @@ METADATA = "metadata"
 URI = "uri"
 LOCATION = "location"
 EXTERNAL_TABLE = "EXTERNAL_TABLE"
-BOTOCORE_SESSION = "botocore_session"
 
 DEFAULT_ROLE_SESSION_NAME = "pyiceberg"
 
