@@ -690,8 +690,41 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
+    _conflict_detection_filter: BooleanExpression | None = None
+    _conflict_detection_case_sensitive: bool = True
+
+    def validate_no_conflicting_data(self, data_filter: BooleanExpression, case_sensitive: bool = True) -> None:
+        """Fail a retry when a concurrent commit added data matching the filter."""
+        self._conflict_detection_filter = data_filter
+        self._conflict_detection_case_sensitive = case_sensitive
+
     def _validate_concurrency(self) -> None:
-        """Skip validation; appends do not conflict with other operations."""
+        """Skip validation for plain appends.
+
+        An append that declares a conflict detection filter fails when a concurrent commit added
+        data matching it, instead of replaying the append on retry.
+        """
+        if self._conflict_detection_filter is None or self._commit_window is None or self._commit_window.is_empty():
+            return
+
+        from pyiceberg.table.snapshots import IsolationLevel
+        from pyiceberg.table.update.validate import _validate_added_data_files
+
+        table = self._transaction._table
+        if table.metadata.isolation_level(Operation.OVERWRITE) != IsolationLevel.SERIALIZABLE:
+            return
+
+        catalog_head = self._commit_window.head
+        if catalog_head is None:
+            return
+
+        _validate_added_data_files(
+            table,
+            catalog_head,
+            self._conflict_detection_filter,
+            self._commit_window.base,
+            self._conflict_detection_case_sensitive,
+        )
 
     def _existing_manifests(self) -> list[ManifestFile]:
         """To determine if there are any existing manifest files.
