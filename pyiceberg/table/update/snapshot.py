@@ -192,9 +192,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _set_retry_validator(self, validator: Callable[[], None]) -> None:
         self._retry_validator = validator
 
-    def _validate_retry(self) -> None:
+    def _validate_concurrency(self) -> None:
+        """Validate retry-specific invariants and conflicts with concurrent changes."""
         if self._retry_validator is not None:
             self._retry_validator()
+        self._validate_concurrent_changes()
 
     def _validate_target_branch(self, branch: str | None) -> str | None:
         # if branch is none, write will be written into a staging snapshot
@@ -477,7 +479,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._manifest_num_counter = itertools.count(0)
         self.commit_uuid = uuid.uuid4()
 
-    def _validate_concurrency(self) -> None:
+    def _validate_concurrent_changes(self) -> None:
         """Validate that concurrent changes do not conflict with this operation.
 
         Uses the CommitWindow to determine which catalog commits to validate against.
@@ -699,7 +701,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
-    def _validate_concurrency(self) -> None:
+    def _validate_concurrent_changes(self) -> None:
         """Skip validation; appends do not conflict with other operations."""
 
     def _existing_manifests(self) -> list[ManifestFile]:

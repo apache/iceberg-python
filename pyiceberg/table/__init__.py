@@ -1295,7 +1295,6 @@ class Transaction:
         self._resolve_commit_windows()
         for producer in self._snapshot_producers:
             producer._refresh_for_retry()
-            producer._validate_retry()
             producer._validate_concurrency()
             updates, requirements = producer._commit()
             self._stage(updates, requirements)
