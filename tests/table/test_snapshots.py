@@ -814,6 +814,25 @@ def test_overwrite_rejects_explicit_delete_missing_from_base_snapshot(catalog: C
     assert _total_data_file_count(committed) == 0
 
 
+def test_append_producer_defaults_to_merge_append(table_v2: Table) -> None:
+    from pyiceberg.table.update.snapshot import _MergeAppendFiles
+
+    append = table_v2.transaction()._append_snapshot_producer({})
+
+    assert isinstance(append, _MergeAppendFiles)
+
+
+def test_append_producer_uses_fast_append_when_merge_disabled(table_v2: Table) -> None:
+    from pyiceberg.table.update.snapshot import _FastAppendFiles
+
+    transaction = table_v2.transaction()
+    transaction.set_properties({"commit.manifest-merge.enabled": "false"})
+
+    append = transaction._append_snapshot_producer({})
+
+    assert isinstance(append, _FastAppendFiles)
+
+
 def test_overwrite_rejects_explicit_delete_without_parent_snapshot(
     catalog: Catalog, overwrite_table: Table, arrow_table_simple: pa.Table
 ) -> None:
