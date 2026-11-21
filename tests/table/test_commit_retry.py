@@ -543,11 +543,17 @@ def test_file_overwrite_validates_concurrent_file_delete(
     assert sorted(result["value"].to_pylist()) == expected_values
 
 
-def _commit_partition_position_delete(table: Table, partition: Record, file_path: str, pos: int) -> None:
-    """PyIceberg cannot write delete files, so commit one without path bounds, as other engines write them."""
+def commit_partition_position_delete(
+    table: Table, partition: Record, file_path: str, pos: int, row: dict[str, Any] | None = None
+) -> None:
+    """PyIceberg cannot write delete files, so commit one without path bounds, as other engines write them.
+
+    If ``row`` is given, it is stored as the deleted row, which gives the delete file bounds on the data columns.
+    """
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from pyiceberg.conversions import to_bytes
     from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestContent, ManifestWriter, ManifestWriterV2
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.table.update.snapshot import _OverwriteFiles
@@ -565,9 +571,15 @@ def _commit_partition_position_delete(table: Table, partition: Record, file_path
             spec, producer.schema(), producer.new_manifest_output(), producer._snapshot_id, producer._compression
         )
 
+    columns: dict[str, list[Any]] = {"file_path": [file_path], "pos": [pos]}
+    bounds = None
+    if row is not None:
+        columns["row"] = [row]
+        bounds = {field.field_id: to_bytes(field.field_type, row[field.name]) for field in table.schema().fields}
+
     delete_path = table.location_provider().new_data_location(f"pos-delete-{uuid.uuid4()}.parquet")
     with table.io.new_output(delete_path).create() as output:
-        pq.write_table(pa.table({"file_path": [file_path], "pos": [pos]}), output)
+        pq.write_table(pa.table(columns), output)
     delete_file = DataFile.from_args(
         content=DataFileContent.POSITION_DELETES,
         file_path=delete_path,
@@ -575,6 +587,8 @@ def _commit_partition_position_delete(table: Table, partition: Record, file_path
         partition=partition,
         record_count=1,
         file_size_in_bytes=len(table.io.new_input(delete_path)),
+        lower_bounds=bounds,
+        upper_bounds=bounds,
         spec_id=table.spec().spec_id,
     )
 
@@ -614,12 +628,34 @@ def test_file_overwrite_validates_concurrent_position_delete_in_nan_partition(ca
         overwrite.delete_data_file(file_to_replace)
         overwrite.append_data_file(replacement_file)
 
-    _commit_partition_position_delete(deleting_table, Record(float("nan")), file_to_replace.file_path, pos=0)
+    commit_partition_position_delete(deleting_table, Record(float("nan")), file_to_replace.file_path, pos=0)
 
     with pytest.raises(ValidationException, match="found new delete for replace data file"):
         replacing_transaction.commit_transaction()
 
     assert catalog.load_table(identifier).scan().to_arrow()["id"].to_pylist() == [2]
+
+
+def test_partial_delete_validates_concurrent_delete_outside_the_filter(catalog: Catalog) -> None:
+    """A retried partial delete must fail when a concurrent delete file applies to a rewritten file, whatever its bounds."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "k", LongType(), required=False), NestedField(2, "v", StringType(), required=False))
+    identifier = "default.concurrent_delete_outside_the_filter"
+    table = catalog.create_table(identifier, schema=schema, properties={"format-version": "2"})
+    table.append(pa.table({"k": [1, 2, 3], "v": ["a", "b", "c"]}))
+    data_file = next(iter(table.scan().plan_files())).file
+
+    deleting_table = catalog.load_table(identifier)
+
+    # The delete file stores the deleted row (2, 'b'), so its bounds can't match k = 1.
+    commit_partition_position_delete(table, Record(), data_file.file_path, pos=1, row={"k": 2, "v": "b"})
+
+    with pytest.raises(ValidationException, match="found new delete for replace data file"):
+        deleting_table.delete("k = 1")
+
+    assert catalog.load_table(identifier).scan().to_arrow()["k"].to_pylist() == [1, 3]
 
 
 def test_concurrent_overwrite_append_retries_successfully(catalog: Catalog) -> None:
@@ -1577,6 +1613,36 @@ def test_lost_response_on_the_final_retry_keeps_the_landed_snapshot(catalog: Cat
         table.append(pa.table({"x": [1, 2, 3]}))
 
     _assert_single_readable_snapshot(catalog, "default.lost_response_final_retry", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_lost_response_on_overwrite_of_an_empty_table_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """A producer that stages no snapshot must not make the landed-attempt check fail."""
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.lost_response_empty_overwrite", schema=_test_schema())
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"), pytest.warns(UserWarning, match="Delete operation did not match any records"):
+        table.overwrite(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_empty_overwrite", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_lost_response_on_empty_table_overwrite_before_any_retry_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """The landed attempt is detected before the retry budget is consulted."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.lost_response_empty_overwrite_no_retries",
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_NUM_RETRIES: "0"},
+    )
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"), pytest.warns(UserWarning, match="Delete operation did not match any records"):
+        table.overwrite(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_empty_overwrite_no_retries", [{"x": 1}, {"x": 2}, {"x": 3}])
 
 
 def test_unreadable_commit_outcome_raises_commit_state_unknown(catalog: Catalog) -> None:

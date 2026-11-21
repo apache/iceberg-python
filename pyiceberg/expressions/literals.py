@@ -165,7 +165,7 @@ def literal(value: L) -> Literal[L]:
     elif isinstance(value, str):
         return StringLiteral(value)
     elif isinstance(value, UUID):
-        return UUIDLiteral(value.bytes)
+        return UUIDLiteral(value)
     elif isinstance(value, bytes):
         return BinaryLiteral(value)
     elif isinstance(value, Decimal):
@@ -374,10 +374,11 @@ class LongLiteral(Literal[int]):
 def _float_to_decimal(value: float, type_var: DecimalType) -> Decimal:
     if not isfinite(value):
         raise ValueError(f"Could not convert {value} into a {type_var}, value is not finite")
-    exact = Decimal(value)
+    # Use the shortest repr of the float, like BigDecimal.valueOf in Java, so 2.675 rounds to 2.68
+    shortest = Decimal(str(value))
     # Quantize needs a context precision that covers every digit of the result, which can exceed the default 28 digits
-    with localcontext(prec=max(getcontext().prec, exact.adjusted() + type_var.scale + 2)):
-        return exact.quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP)
+    with localcontext(prec=max(getcontext().prec, shortest.adjusted() + type_var.scale + 2)):
+        return shortest.quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP)
 
 
 class FloatLiteral(Literal[float]):
@@ -595,12 +596,16 @@ class StringLiteral(Literal[str]):
     def _(self, type_var: IntegerType) -> Literal[int]:
         try:
             number = _parse_numeric_string(self.value)
+            # Check the fractional part before the range check, mirroring
+            # DecimalLiteral: a fractional value is not representable at all,
+            # so it raises instead of returning AboveMax/BelowMin
+            value_int = _to_integral(number, type_var)
 
-            if IntegerType.max < number:
+            if IntegerType.max < value_int:
                 return IntAboveMax()
-            elif IntegerType.min > number:
+            elif IntegerType.min > value_int:
                 return IntBelowMin()
-            return LongLiteral(int(number))
+            return LongLiteral(value_int)
         except (ArithmeticError, OverflowError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
@@ -608,12 +613,13 @@ class StringLiteral(Literal[str]):
     def _(self, type_var: LongType) -> Literal[int]:
         try:
             long_value = _parse_numeric_string(self.value)
-            if LongType.max < long_value:
+            value_long = _to_integral(long_value, type_var)
+            if LongType.max < value_long:
                 return LongAboveMax()
-            elif LongType.min > long_value:
+            elif LongType.min > value_long:
                 return LongBelowMin()
             else:
-                return LongLiteral(int(long_value))
+                return LongLiteral(value_long)
         except (ArithmeticError, OverflowError, TypeError, ValueError) as e:
             raise ValueError(f"Could not convert {self.value} into a {type_var}") from e
 
@@ -640,8 +646,8 @@ class StringLiteral(Literal[str]):
         return TimestampLiteral(timestamptz_to_micros(self.value))
 
     @to.register(UUIDType)
-    def _(self, _: UUIDType) -> Literal[bytes]:
-        return UUIDLiteral(UUID(self.value).bytes)
+    def _(self, _: UUIDType) -> Literal[UUID]:
+        return UUIDLiteral(UUID(self.value))
 
     @to.register(DecimalType)
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
@@ -685,26 +691,26 @@ class StringLiteral(Literal[str]):
         return f"literal({repr(self.value)})"
 
 
-class UUIDLiteral(Literal[bytes]):
-    def __init__(self, value: bytes) -> None:
-        super().__init__(value, bytes)
+class UUIDLiteral(Literal[UUID]):
+    def __init__(self, value: UUID) -> None:
+        super().__init__(value, UUID)
 
     @model_serializer
     def ser_model(self) -> UUID:
-        return UUID(bytes=self.root)
+        return self.root
 
     @singledispatchmethod
     def to(self, type_var: IcebergType) -> Literal:  # type: ignore
         raise TypeError(f"Cannot convert UUIDLiteral into {type_var}")
 
     @to.register(UUIDType)
-    def _(self, _: UUIDType) -> Literal[bytes]:
+    def _(self, _: UUIDType) -> Literal[UUID]:
         return self
 
     @to.register(FixedType)
     def _(self, type_var: FixedType) -> Literal[bytes]:
         if len(type_var) == UUID_BYTES_LENGTH:
-            return FixedLiteral(self.value)
+            return FixedLiteral(self.value.bytes)
         else:
             raise TypeError(
                 f"Cannot convert UUIDLiteral into {type_var}, different length: {len(type_var)} <> {UUID_BYTES_LENGTH}"
@@ -712,7 +718,7 @@ class UUIDLiteral(Literal[bytes]):
 
     @to.register(BinaryType)
     def _(self, _: BinaryType) -> Literal[bytes]:
-        return BinaryLiteral(self.value)
+        return BinaryLiteral(self.value.bytes)
 
 
 class FixedLiteral(Literal[bytes]):
@@ -741,9 +747,9 @@ class FixedLiteral(Literal[bytes]):
         return BinaryLiteral(self.value)
 
     @to.register(UUIDType)
-    def _(self, type_var: UUIDType) -> Literal[bytes]:
+    def _(self, type_var: UUIDType) -> Literal[UUID]:
         if len(self.value) == UUID_BYTES_LENGTH:
-            return UUIDLiteral(self.value)
+            return UUIDLiteral(UUID(bytes=self.value))
         else:
             raise TypeError(
                 f"Could not convert {self.value!r} into a {type_var}, lengths differ {len(self.value)} <> {UUID_BYTES_LENGTH}"
@@ -776,9 +782,9 @@ class BinaryLiteral(Literal[bytes]):
             )
 
     @to.register(UUIDType)
-    def _(self, type_var: UUIDType) -> Literal[bytes]:
+    def _(self, type_var: UUIDType) -> Literal[UUID]:
         if len(self.value) == UUID_BYTES_LENGTH:
-            return UUIDLiteral(self.value)
+            return UUIDLiteral(UUID(bytes=self.value))
         else:
             raise TypeError(
                 f"Cannot convert BinaryLiteral into {type_var}, different length: {UUID_BYTES_LENGTH} <> {len(self.value)}"

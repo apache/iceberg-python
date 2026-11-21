@@ -47,7 +47,7 @@ from pyiceberg.table import Table, TableProperties
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.table.update import AddSchemaUpdate, SetCurrentSchemaUpdate
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import BucketTransform, IdentityTransform
 from pyiceberg.typedef import Identifier
 from pyiceberg.types import BooleanType, DoubleType, IntegerType, LongType, NestedField, StringType
 
@@ -237,6 +237,32 @@ def test_create_table_custom_sort_order(catalog: Catalog, table_schema_nested: S
     assert given_sort_order.fields[0].direction == SortDirection.ASC, "Direction must match"
     assert given_sort_order.fields[0].null_order == NullOrder.NULLS_FIRST, "Null order must match"
     assert isinstance(given_sort_order.fields[0].transform, IdentityTransform), "Transform must match"
+    catalog.drop_table(test_table_identifier)
+
+
+def test_update_sort_order_default_null_order(
+    catalog: Catalog, table_schema_simple: Schema, test_table_identifier: Identifier
+) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    table = catalog.create_table(test_table_identifier, table_schema_simple)
+
+    # Without a null order, ascending fields are nulls-first and descending fields are nulls-last
+    table.update_sort_order().asc("foo", IdentityTransform()).desc("bar", IdentityTransform()).commit()
+    assert table.sort_order() == SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_FIRST),
+        SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.DESC, null_order=NullOrder.NULLS_LAST),
+        order_id=1,
+    )
+
+    # An explicit null order is kept
+    table.update_sort_order().asc("foo", IdentityTransform(), NullOrder.NULLS_LAST).desc(
+        "bar", IdentityTransform(), NullOrder.NULLS_FIRST
+    ).commit()
+    assert table.sort_order() == SortOrder(
+        SortField(source_id=1, transform=IdentityTransform(), direction=SortDirection.ASC, null_order=NullOrder.NULLS_LAST),
+        SortField(source_id=2, transform=IdentityTransform(), direction=SortDirection.DESC, null_order=NullOrder.NULLS_FIRST),
+        order_id=2,
+    )
     catalog.drop_table(test_table_identifier)
 
 
@@ -834,6 +860,106 @@ def test_table_metadata_writes_reflect_latest_path(
     assert table.location_provider().new_metadata_location("metadata.json") == f"{new_metadata_path}/metadata.json"
 
 
+def test_table_writes_gzip_metadata_when_compression_codec_is_set(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    table_schema_simple: Schema,
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        identifier=test_table_identifier,
+        schema=table_schema_simple,
+        properties={TableProperties.METADATA_COMPRESSION: "gzip"},
+    )
+    assert table.metadata_location.endswith(".gz.metadata.json")
+    with table.io.new_input(table.metadata_location).open() as stream:
+        assert stream.read(2) == b"\x1f\x8b"  # gzip magic number
+
+    df = pa.Table.from_pydict(
+        {"foo": ["a"], "bar": [1], "baz": [True]},
+        schema=schema_to_pyarrow(table_schema_simple),
+    )
+    table.append(df)
+
+    # a later commit keeps the codec, and the version is parsed from the gzip file name
+    assert table.metadata_location.endswith(".gz.metadata.json")
+    assert table.metadata_location.split("/")[-1].startswith("00001-")
+    loaded_table = catalog.load_table(test_table_identifier)
+    assert loaded_table.metadata_location == table.metadata_location
+    assert loaded_table.metadata == table.metadata
+
+
+def test_table_metadata_compression_codec_default_and_set_on_commit(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    table_schema_simple: Schema,
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(identifier=test_table_identifier, schema=table_schema_simple)
+    assert table.metadata_location.endswith(".metadata.json")
+    assert not table.metadata_location.endswith(".gz.metadata.json")
+
+    # the codec set in a commit applies to the metadata file that the commit writes
+    table.transaction().set_properties({TableProperties.METADATA_COMPRESSION: "gzip"}).commit_transaction()
+    assert table.metadata_location.endswith(".gz.metadata.json")
+    assert catalog.load_table(test_table_identifier).metadata_location == table.metadata_location
+
+
+def test_table_metadata_invalid_compression_codec_raises(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    table_schema_simple: Schema,
+) -> None:
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    with pytest.raises(ValueError, match="snappy"):
+        catalog.create_table(
+            identifier=test_table_identifier,
+            schema=table_schema_simple,
+            properties={TableProperties.METADATA_COMPRESSION: "snappy"},
+        )
+    assert not catalog.table_exists(test_table_identifier)
+
+    table = catalog.create_table(identifier=test_table_identifier, schema=table_schema_simple)
+    with pytest.raises(ValueError, match="snappy"):
+        table.transaction().set_properties({TableProperties.METADATA_COMPRESSION: "snappy"}).commit_transaction()
+    assert catalog.load_table(test_table_identifier).metadata_location == table.metadata_location
+
+
+def test_table_metadata_legacy_invalid_compression_codec_on_commit(
+    catalog: Catalog,
+    test_table_identifier: Identifier,
+    metadata_location: str,
+    tmp_path: Path,
+) -> None:
+    # metadata registered with a codec this version rejects: commits without changes still work
+    # the table location is local, so the commit that removes the codec can write its metadata file
+    metadata = json.loads(Path(metadata_location).read_text())
+    metadata["location"] = f"file://{tmp_path}/table"
+    metadata.setdefault("properties", {})[TableProperties.METADATA_COMPRESSION] = "snappy"
+    legacy_location = str(tmp_path / "table" / "metadata" / "00000-6c97e413-d51b-4538-ac70-12fe2a85cb83.metadata.json")
+    Path(legacy_location).parent.mkdir(parents=True)
+    Path(legacy_location).write_text(json.dumps(metadata))
+    namespace = Catalog.namespace_from(test_table_identifier)
+    catalog.create_namespace(namespace)
+    table = catalog.register_table(test_table_identifier, legacy_location)
+
+    table.transaction().set_properties({}).commit_transaction()
+    assert table.metadata_location == legacy_location
+
+    # a change writes new metadata, so the unsupported codec raises
+    with pytest.raises(ValueError, match="snappy"):
+        table.transaction().set_properties({"owner": "test"}).commit_transaction()
+    assert catalog.load_table(test_table_identifier).metadata_location == legacy_location
+
+    # removing the property writes new metadata with the default codec
+    table.transaction().remove_properties(TableProperties.METADATA_COMPRESSION).commit_transaction()
+    assert table.metadata_location != legacy_location
+    assert table.metadata_location.endswith(".metadata.json")
+
+
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_write_and_evolve(catalog: Catalog, format_version: int) -> None:
     identifier = f"default.arrow_write_data_and_evolve_schema_v{format_version}"
@@ -1376,6 +1502,73 @@ def test_append_nan_to_identity_partitioned_table(catalog: Catalog) -> None:
     assert sorted(tbl.scan(row_filter="value is nan").to_arrow()["id"].to_pylist()) == [2, 4]
 
 
+def _table_with_null_partition(catalog: Catalog, name: str, partition_spec: PartitionSpec) -> Table:
+    schema = Schema(NestedField(1, "p", StringType(), required=False), NestedField(2, "f", DoubleType(), required=False))
+    catalog.create_namespace_if_not_exists("default")
+    tbl = catalog.create_table(identifier=f"default.{name}_{catalog.name}", schema=schema, partition_spec=partition_spec)
+    tbl.append(
+        pa.Table.from_pydict(
+            {
+                "p": ["a", "a", "b", "b", "c", "c", None, None, "b", "b"],
+                "f": [1.0, 1.0, 2.0, 2.0, float("nan"), float("nan"), 1.0, 1.0, None, None],
+            },
+            schema=schema_to_pyarrow(schema),
+        )
+    )
+    return tbl
+
+
+def test_count_matches_to_arrow_with_null_partition_values(catalog: Catalog) -> None:
+    identity = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="p"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="f"),
+    )
+    bucket = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=BucketTransform(4), name="p_bucket"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="f"),
+    )
+    evolved = _table_with_null_partition(
+        catalog,
+        "count_null_partition_evolved",
+        PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="p")),
+    )
+    # Files written under the old spec keep a NULL p partition value that the current spec no longer has
+    with evolved.update_spec() as update:
+        update.remove_field("p")
+    evolved.append(evolved.scan().to_arrow())
+    tables = [
+        _table_with_null_partition(catalog, "count_null_partition_identity", identity),
+        _table_with_null_partition(catalog, "count_null_partition_bucket", bucket),
+        evolved,
+    ]
+    row_filters = ["p != 'a'", "p not in ('a', 'c')", "not p = 'a'", "p not like 'a%'", "f is not nan", "p is null", "true"]
+    for tbl in tables:
+        for row_filter in row_filters:
+            scan = tbl.scan(row_filter=row_filter)
+            assert scan.count() == len(scan.to_arrow()), (tbl.name(), row_filter)
+
+
+def test_count_reads_null_partition_only_when_filter_compares_it(catalog: Catalog) -> None:
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="p"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="f"),
+    )
+    # Each row filter maps to (filter selecting files to delete, expected count), and count() must not read those files
+    cases = {
+        "true": ("true", 10),
+        "p is null": ("p is null", 2),
+        "p is not null or f = 1.0": ("p is null", 10),
+        "p != 'a'": ("p is not null", 6),
+        "f = 1.0": ("f = 1.0", 4),
+    }
+    for i, (row_filter, (metadata_only_filter, expected)) in enumerate(cases.items()):
+        tbl = _table_with_null_partition(catalog, f"count_metadata_only_{i}", partition_spec)
+        # Deleting those files makes any read of them fail
+        for task in tbl.scan(row_filter=metadata_only_filter).plan_files():
+            tbl.io.delete(task.file.file_path)
+        assert tbl.scan(row_filter=row_filter).count() == expected, row_filter
+
+
 def _nan_partitioned_table(catalog: Catalog, name: str) -> Table:
     iceberg_schema = Schema(
         NestedField(1, "id", IntegerType(), required=False),
@@ -1427,6 +1620,25 @@ def test_scan_integer_column_with_decimal_literal(catalog: Catalog) -> None:
     # Rounding 2.6 to 3 would turn x > 2.6 into x > 3 and silently drop x = 3
     with pytest.raises(ValueError, match="Could not convert 2.6 into a int"):
         tbl.scan(row_filter="x > 2.6").to_arrow()
+
+
+def test_scan_null_filter_on_list_and_map_columns(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    data = pa.table(
+        {
+            "id": pa.array([1, 2, 3], pa.int32()),
+            "tags": pa.array([["a"], [], None], pa.list_(pa.string())),
+            "props": pa.array([[("k", 1)], [], None], pa.map_(pa.string(), pa.int32())),
+            "points": pa.array([[{"x": 1}], [], None], pa.list_(pa.struct([("x", pa.int32())]))),
+        }
+    )
+    tbl = catalog.create_table(f"default.scan_null_filter_list_map_{catalog.name}", schema=data.schema)
+    tbl.append(data)
+
+    for column in ("tags", "props", "points"):
+        assert tbl.scan(row_filter=f"{column} is null").to_arrow()["id"].to_pylist() == [3], column
+        assert sorted(tbl.scan(row_filter=f"{column} is not null").to_arrow()["id"].to_pylist()) == [1, 2], column
+        assert tbl.scan(row_filter=f"{column} is null", selected_fields=("id",)).to_arrow().to_pydict() == {"id": [3]}, column
 
 
 def test_scan_negated_comparison_matches_file_pruning_for_nan(catalog: Catalog) -> None:

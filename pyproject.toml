@@ -40,7 +40,7 @@ dependencies = [
     "fsspec>=2023.1.0",
     "pyparsing>=3.1.0",
     "tenacity>=8.2.3",
-    "pyroaring>=1.0.0",
+    "pyroaring>=1.1.0",
     "cachetools>=5.5",
     "zstandard>=0.13.0"
 ]

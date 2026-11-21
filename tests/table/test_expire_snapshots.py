@@ -22,7 +22,8 @@ from uuid import uuid4
 import pytest
 
 from pyiceberg.table import CommitTableResponse, Table
-from pyiceberg.table.update import RemoveSnapshotsUpdate, update_table_metadata
+from pyiceberg.table.statistics import PartitionStatisticsFile
+from pyiceberg.table.update import RemoveSnapshotsUpdate, SetPartitionStatisticsUpdate, update_table_metadata
 from pyiceberg.table.update.snapshot import ExpireSnapshots
 
 
@@ -316,3 +317,29 @@ def test_update_remove_snapshots_with_statistics(table_v2_with_statistics: Table
     assert not any(stat.snapshot_id == REMOVE_SNAPSHOT for stat in new_metadata.statistics), (
         "Statistics for removed snapshot should be gone"
     )
+
+
+def test_update_remove_snapshots_with_partition_statistics(table_v2: Table) -> None:
+    """Removing a snapshot also removes its partition statistics, as Iceberg Java does."""
+    REMOVE_SNAPSHOT = 3051729675574597004
+    KEEP_SNAPSHOT = 3055729675574597004
+
+    metadata = update_table_metadata(
+        table_v2.metadata,
+        tuple(
+            SetPartitionStatisticsUpdate(
+                partition_statistics=PartitionStatisticsFile(
+                    snapshot_id=snapshot_id,
+                    statistics_path=f"s3://bucket/warehouse/partition-stats-{snapshot_id}.parquet",
+                    file_size_in_bytes=124,
+                )
+            )
+            for snapshot_id in (REMOVE_SNAPSHOT, KEEP_SNAPSHOT)
+        ),
+    )
+    assert len(metadata.partition_statistics) == 2
+
+    new_metadata = update_table_metadata(metadata, (RemoveSnapshotsUpdate(snapshot_ids=[REMOVE_SNAPSHOT]),))
+
+    assert [snapshot.snapshot_id for snapshot in new_metadata.snapshots] == [KEEP_SNAPSHOT]
+    assert [stat.snapshot_id for stat in new_metadata.partition_statistics] == [KEEP_SNAPSHOT]

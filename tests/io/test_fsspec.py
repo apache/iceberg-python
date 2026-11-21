@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import os
 import pickle
 import tempfile
@@ -24,6 +25,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from botocore import UNSIGNED
 from botocore.auth import S3SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.config import Config
@@ -32,6 +34,7 @@ from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
 from requests_mock import Mocker
 
+from pyiceberg.catalog.rest import _user_agent
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import fsspec
@@ -959,6 +962,64 @@ def _test_fsspec_pickle_round_trip(fsspec_fileio: FsspecFileIO, location: str) -
 TEST_URI = "https://iceberg-test-signer"
 
 
+def _sign_with_session(session: Any, uri: str) -> AWSRequest:
+    request = AWSRequest(method="PUT", url=uri, headers={}, data=b"", params={})
+    request.context = {"client_region": "us-east-1"}
+    asyncio.run(
+        session.get_component("event_emitter").emit(
+            "before-sign.s3",
+            request=request,
+            signing_name="s3",
+            region_name="us-east-1",
+            signature_version=UNSIGNED,
+            request_signer=None,
+            operation_name="PutObject",
+        )
+    )
+    return request
+
+
+def test_s3_registers_the_signer_on_the_session(requests_mock: Mocker) -> None:
+    new_uri = "https://other-bucket/object"
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={"uri": new_uri, "headers": {"Authorization": ["AWS4-HMAC-SHA256 Credential=abc"]}, "extensions": {}},
+        status_code=200,
+    )
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        fsspec._s3({"s3.signer": "S3V4RestSigner", "uri": TEST_URI, "s3.endpoint": "http://localhost:9000"})
+
+    session = mock_s3fs.call_args.kwargs["session"]
+    request = _sign_with_session(session, "https://bucket/object")
+
+    assert request.url == new_uri
+    assert request.headers["Authorization"] == "AWS4-HMAC-SHA256 Credential=abc"
+
+
+def test_s3_registers_the_signer_per_session(requests_mock: Mocker) -> None:
+    signers = [
+        ("https://first-signer", "https://bucket/first"),
+        ("https://second-signer", "https://bucket/second"),
+    ]
+    for signer_uri, signed_uri in signers:
+        requests_mock.post(
+            f"{signer_uri}/v1/aws/s3/sign",
+            json={"uri": signed_uri, "headers": {"Authorization": ["AWS4-HMAC-SHA256 Credential=abc"]}, "extensions": {}},
+            status_code=200,
+        )
+
+    sessions = []
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        for signer_uri, _ in signers:
+            fsspec._s3({"s3.signer": "S3V4RestSigner", "uri": signer_uri, "s3.endpoint": "http://localhost:9000"})
+            sessions.append(mock_s3fs.call_args.kwargs["session"])
+
+    assert sessions[0] is not sessions[1]
+    for session, (_, signed_uri) in zip(sessions, signers, strict=True):
+        assert _sign_with_session(session, "https://bucket/object").url == signed_uri
+
+
 def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
     new_uri = "https://other-bucket/metadata/snap-8048355899640248710-1-a5c8ea2d-aa1f-48e8-89f4-1fa69db8c742.avro"
     requests_mock.post(
@@ -1028,6 +1089,43 @@ def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
         "X-Custom-Header": "value",
     }
+    assert requests_mock.last_request.headers["User-Agent"] == _user_agent()
+
+
+def test_s3v4_rest_signer_replaces_existing_headers(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={
+            "uri": "https://bucket/metadata/file.avro",
+            "headers": {
+                "Authorization": ["AWS4-HMAC-SHA256 Credential=..., SignedHeaders=..., Signature=..."],
+                "x-amz-content-sha256": ["UNSIGNED-PAYLOAD"],
+                "User-Agent": ["Botocore/1.27.59"],
+            },
+            "extensions": {},
+        },
+        status_code=200,
+    )
+
+    request = AWSRequest(
+        method="PUT",
+        url="https://bucket/metadata/file.avro",
+        headers={
+            "User-Agent": "Botocore/1.27.59",
+            "X-Amz-Content-SHA256": "STREAMING-UNSIGNED-PAYLOAD-TRAILER",
+        },
+        data=b"",
+        params={},
+        auth_path="/metadata/file.avro",
+    )
+    request.context = {"client_region": "us-west-2"}
+
+    signer = S3V4RestSigner(properties={"token": "abc", "uri": TEST_URI})
+    signer(request)
+
+    assert request.headers.get_all("x-amz-content-sha256") == ["UNSIGNED-PAYLOAD"]
+    assert request.headers.get_all("User-Agent") == ["Botocore/1.27.59"]
+    assert len(request.headers.get_all("Authorization")) == 1
 
 
 @pytest.mark.s3
