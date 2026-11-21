@@ -1409,6 +1409,19 @@ def test_drop_namespace_raises_error_when_namespace_not_empty(
         catalog.drop_namespace(namespace)
 
 
+def test_drop_namespace_raises_error_when_namespace_has_child_namespaces(catalog: Catalog, test_namespace: Identifier) -> None:
+    child_namespace = test_namespace + ("child",)
+    catalog.create_namespace(test_namespace)
+    catalog.create_namespace(child_namespace)
+    with pytest.raises(NamespaceNotEmptyError, match=f"Namespace {'.'.join(test_namespace)} is not empty. 1 namespaces exist."):
+        catalog.drop_namespace(test_namespace)
+    assert catalog.namespace_exists(test_namespace)
+    assert catalog.namespace_exists(child_namespace)
+    catalog.drop_namespace(child_namespace)
+    catalog.drop_namespace(test_namespace)
+    assert not catalog.namespace_exists(test_namespace)
+
+
 # RecordBatchReader streaming append/overwrite tests
 #
 # Streaming writes accept a pa.RecordBatchReader and microbatch it into target-sized
