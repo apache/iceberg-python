@@ -1406,6 +1406,18 @@ def test_detect_invalid_promotion_string_to_float(table_v2: Table) -> None:
         _ = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).union_by_name(new_schema)._apply()
 
 
+def test_update_column_allows_non_spec_promotions(table_v2: Table) -> None:
+    # Not valid promotions in the spec, but allowed on purpose, see promote()
+    for current_type, new_type in [(StringType(), BinaryType()), (BinaryType(), StringType()), (FixedType(16), UUIDType())]:
+        current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=current_type, required=False))
+        update = UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).update_column("aCol", new_type)
+        assert update._apply().find_field("aCol").field_type == new_type
+
+    current_schema = Schema(NestedField(field_id=1, name="aCol", field_type=FixedType(15), required=False))
+    with pytest.raises(ValidationError, match=r"^Cannot change column type: aCol: fixed\[15\] -> uuid$"):
+        UpdateSchema(transaction=Transaction(table_v2), schema=current_schema).update_column("aCol", UUIDType())
+
+
 # decimal(P,S) Fixed-point decimal; precision P, scale S -> Scale is fixed [1],
 # precision must be 38 or less
 def test_type_promote_decimal_to_fixed_scale_with_wider_precision(table_v2: Table) -> None:

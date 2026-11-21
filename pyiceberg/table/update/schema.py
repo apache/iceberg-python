@@ -467,6 +467,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 raise ValidationError(f"Cannot change column type: {field.field_type} is not a primitive")
 
             if not self._allow_incompatible_changes and field.field_type != field_type:
+                # promote() is the one place for the allowed type changes. It also allows string <-> binary and
+                # fixed(16) -> uuid, which are not in the spec, see the comments there.
                 try:
                     promote(field.field_type, field_type)
                 except ResolveError as e:
