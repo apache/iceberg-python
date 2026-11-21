@@ -81,6 +81,16 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         transform: str | Transform[Any, Any],
         partition_field_name: str | None = None,
     ) -> UpdateSpec:
+        """Add a partition field on a source column.
+
+        A field removed in this update is kept, with its id and position, when it is added back with the same name,
+        source and transform.
+
+        Raises:
+            ValueError: If the source column does not exist, the transform cannot be applied to its type, the field
+                is already in the spec or added in this update, the name is already used, or the field is a time
+                transform that conflicts with a time transform added in this update.
+        """
         ref = Reference(source_column_name)
         bound_ref = ref.bind(self._transaction.table_metadata.schema(), self._case_sensitive)
         if isinstance(transform, str):
@@ -98,6 +108,17 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
         added = self._transform_to_added_field.get(transform_key)
         if added:
             raise ValueError(f"Already added partition: {added.name}")
+
+        if (
+            existing_partition_field
+            and existing_partition_field.field_id in self._deletes
+            and partition_field_name in (None, existing_partition_field.name)
+            and existing_partition_field.name not in self._name_to_added_field
+        ):
+            # Added back with the same name, source and transform: keep the removed field with its id and position,
+            # as Java's rewriteDeleteAndAddField does
+            self._deletes.remove(existing_partition_field.field_id)
+            return self
 
         new_field = self._partition_field((bound_ref.field.field_id, transform), partition_field_name)
         if new_field.name in self._name_to_added_field:

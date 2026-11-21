@@ -100,6 +100,8 @@ from pyiceberg.table.update import (
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.transforms import (
     BucketTransform,
+    DayTransform,
+    HourTransform,
     IdentityTransform,
     VoidTransform,
 )
@@ -1687,7 +1689,7 @@ def test_update_spec_reuses_removed_partition_field_id(table: Table) -> None:
     assert txn.table_metadata.last_partition_id == 1001
 
 
-@pytest.mark.parametrize("table", [lf("table_v2"), lf("table_v3")])
+@pytest.mark.parametrize("table", [lf("table_v1"), lf("table_v2"), lf("table_v3")])
 def test_update_spec_remove_and_add_same_field_reuses_id(table: Table) -> None:
     txn = table.transaction()
     txn.update_spec().remove_field("x").add_identity("x").commit()
@@ -1696,6 +1698,210 @@ def test_update_spec_remove_and_add_same_field_reuses_id(table: Table) -> None:
         PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
     )
     assert txn.table_metadata.last_partition_id == 1000
+
+
+@pytest.mark.parametrize("table", [lf("table_v1"), lf("table_v2")])
+def test_update_spec_remove_field_added_back_in_same_update(table: Table) -> None:
+    txn = table.transaction()
+    txn.update_spec().remove_field("x").add_identity("x").remove_field("x").commit()
+
+    # the field is an original field again, so removing it voids it on v1 tables and drops it on v2
+    expected: tuple[PartitionField, ...] = ()
+    if table.format_version == 1:
+        expected = (PartitionField(source_id=1, field_id=1000, transform=VoidTransform(), name="x"),)
+    assert txn.table_metadata.spec().fields == expected
+
+
+def test_update_spec_remove_and_add_same_field_in_one_update(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "x", IntegerType(), required=False),
+        NestedField(2, "y", IntegerType(), required=False),
+    )
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+        PartitionField(source_id=2, field_id=1001, transform=BucketTransform(16), name="y_shard"),
+    )
+    # The removed field is the first (x) or the last (y_shard) one. Added back under the same name in the same
+    # update, it keeps its id and position, so the spec is unchanged.
+    for format_version in (1, 2):
+        for removed, source, transform in (("x", "x", IdentityTransform()), ("y_shard", "y", BucketTransform(16))):
+            identifier = f"default.readd_v{format_version}_{removed}"
+            catalog.create_table(
+                identifier, schema=schema, partition_spec=spec, properties={"format-version": str(format_version)}
+            ).update_spec().remove_field(removed).add_field(source, transform, removed).commit()
+
+            table = catalog.load_table(identifier)
+            assert table.spec().fields == spec.fields
+            assert table.metadata.last_partition_id == 1001
+            assert sorted(table.metadata.specs().keys()) == [0]
+
+
+def test_update_spec_restore_time_transform_after_added_time_transform(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "ts", TimestampType(), required=False))
+    day = PartitionField(source_id=1, field_id=1000, transform=DayTransform(), name="ts_day")
+    hour = PartitionField(source_id=1, field_id=1001, transform=HourTransform(), name="ts_hour")
+    for format_version in (1, 2):
+        for order in ("hour_first", "day_first"):
+            identifier = f"default.time_{order}_v{format_version}"
+            table = catalog.create_table(
+                identifier,
+                schema=schema,
+                partition_spec=PartitionSpec(day),
+                properties={"format-version": str(format_version)},
+            )
+            update = table.update_spec().remove_field("ts_day")
+            if order == "hour_first":
+                update.add_field("ts", HourTransform(), "ts_hour").add_field("ts", DayTransform())
+            else:
+                update.add_field("ts", DayTransform()).add_field("ts", HourTransform(), "ts_hour")
+            update.commit()
+
+            # the restored day keeps its id and position, and the new hour field is appended
+            loaded = catalog.load_table(identifier)
+            assert loaded.spec().fields == (day, hour)
+            assert loaded.metadata.last_partition_id == 1001
+            assert sorted(loaded.metadata.specs().keys()) == [0, 1]
+
+
+def test_update_spec_add_field_with_new_name_after_remove(catalog: Catalog) -> None:
+    # A field added back under another name is a new field, as on main: the removed field is not renamed
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "x", IntegerType(), required=False),
+        NestedField(2, "y", IntegerType(), required=False),
+    )
+    p = PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="p")
+    q = PartitionField(source_id=2, field_id=1001, transform=BucketTransform(16), name="q")
+    for format_version in (1, 2):
+        table = catalog.create_table(
+            f"default.new_name_v{format_version}",
+            schema=schema,
+            partition_spec=PartitionSpec(p),
+            properties={"format-version": str(format_version)},
+        )
+        table.update_spec().remove_field("p").add_field("x", IdentityTransform(), "q").add_field(
+            "y", BucketTransform(8), "p"
+        ).commit()
+        loaded = catalog.load_table(f"default.new_name_v{format_version}")
+        expected: tuple[PartitionField, ...]
+        if format_version == 1:
+            expected = (
+                PartitionField(source_id=1, field_id=1000, transform=VoidTransform(), name="p_1000"),
+                PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="q"),
+                PartitionField(source_id=2, field_id=1002, transform=BucketTransform(8), name="p"),
+            )
+        else:
+            expected = (
+                PartitionField(source_id=1, field_id=1001, transform=IdentityTransform(), name="q"),
+                PartitionField(source_id=2, field_id=1002, transform=BucketTransform(8), name="p"),
+            )
+        assert loaded.spec().fields == expected
+        assert sorted(loaded.metadata.specs().keys()) == [0, 1]
+
+        # two removed names taken over by each other
+        swap = catalog.create_table(
+            f"default.swap_v{format_version}",
+            schema=schema,
+            partition_spec=PartitionSpec(p, q),
+            properties={"format-version": str(format_version)},
+        )
+        swap.update_spec().remove_field("p").remove_field("q").add_field("x", IdentityTransform(), "q").add_field(
+            "y", BucketTransform(16), "p"
+        ).commit()
+        loaded = catalog.load_table(f"default.swap_v{format_version}")
+        if format_version == 1:
+            expected = (
+                PartitionField(source_id=1, field_id=1000, transform=VoidTransform(), name="p_1000"),
+                PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="q_1001"),
+                PartitionField(source_id=1, field_id=1002, transform=IdentityTransform(), name="q"),
+                PartitionField(source_id=2, field_id=1003, transform=BucketTransform(16), name="p"),
+            )
+        else:
+            expected = (
+                PartitionField(source_id=1, field_id=1002, transform=IdentityTransform(), name="q"),
+                PartitionField(source_id=2, field_id=1003, transform=BucketTransform(16), name="p"),
+            )
+        assert loaded.spec().fields == expected
+        assert sorted(loaded.metadata.specs().keys()) == [0, 1]
+
+
+def test_update_spec_add_field_conflicts_with_added_field(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "x", IntegerType(), required=False),
+        NestedField(2, "y", IntegerType(), required=False),
+    )
+    p = PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="p")
+    q = PartitionField(source_id=2, field_id=1001, transform=BucketTransform(16), name="q")
+    for format_version in (1, 2):
+        # a new field takes the name of a removed field, so the removed field cannot be added back under that name
+        taken_p = catalog.create_table(
+            f"default.taken_p_v{format_version}",
+            schema=schema,
+            partition_spec=PartitionSpec(p),
+            properties={"format-version": str(format_version)},
+        )
+        with pytest.raises(ValueError, match="^Already added partition field with name: p$"):
+            taken_p.update_spec().remove_field("p").add_field("y", BucketTransform(16), "p").add_field(
+                "x", IdentityTransform(), "p"
+            ).commit()
+
+        taken_q = catalog.create_table(
+            f"default.taken_q_v{format_version}",
+            schema=schema,
+            partition_spec=PartitionSpec(p, q),
+            properties={"format-version": str(format_version)},
+        )
+        with pytest.raises(ValueError, match="^Already added partition field with name: q$"):
+            taken_q.update_spec().remove_field("p").remove_field("q").add_field("x", IdentityTransform(), "q").add_field(
+                "y", BucketTransform(16), "q"
+            ).commit()
+
+        # the same source and transform is already added in this update
+        added_key = catalog.create_table(
+            f"default.added_key_v{format_version}",
+            schema=schema,
+            partition_spec=PartitionSpec(p),
+            properties={"format-version": str(format_version)},
+        )
+        with pytest.raises(ValueError, match="^Already added partition: q$"):
+            added_key.update_spec().remove_field("p").add_field("x", IdentityTransform(), "q").add_field(
+                "x", IdentityTransform()
+            ).commit()
+
+
+def test_update_spec_remove_and_add_renamed_field_in_one_update(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "x", IntegerType(), required=False),
+        NestedField(2, "y", IntegerType(), required=False),
+    )
+    expected = (PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="r"),)
+    for format_version in (1, 2):
+        identifier = f"default.renamed_v{format_version}"
+        catalog.create_table(
+            identifier,
+            schema=schema,
+            partition_spec=PartitionSpec(
+                PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="p"),
+            ),
+            properties={"format-version": str(format_version)},
+        ).update_spec().rename_field("p", "r").commit()
+
+        # the renamed field is removed and added back under its name in one update: the spec does not change
+        renamed = catalog.load_table(identifier)
+        assert renamed.spec().fields == expected
+        renamed.update_spec().remove_field("r").add_identity("x").commit()
+        restored = catalog.load_table(identifier)
+        assert restored.spec().fields == expected
+        assert restored.metadata.default_spec_id == renamed.metadata.default_spec_id == 1
+        assert restored.metadata.last_partition_id == renamed.metadata.last_partition_id == 1000
+
+        # a later add in the same update cannot take the restored name
+        with pytest.raises(ValueError, match="^Cannot add duplicate partition field name: r$"):
+            restored.update_spec().remove_field("r").add_identity("x").add_field("y", BucketTransform(8), "r").commit()
 
 
 def test_update_spec_remove_and_add_field_with_same_name(table_v1: Table, table_v2: Table) -> None:
