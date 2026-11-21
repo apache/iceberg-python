@@ -20,6 +20,7 @@ import datetime as py_datetime
 import struct
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from decimal import Decimal
 from enum import IntEnum
 from functools import singledispatch
 from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
@@ -911,6 +912,16 @@ class TruncateTransform(Transform[S, S]):
 
 @singledispatch
 def _human_string(value: Any, _type: IcebergType) -> str:
+    return str(value)
+
+
+@_human_string.register(Decimal)
+def _(value: Decimal, _type: IcebergType) -> str:
+    # as_tuple's exponent is the string 'n'/'N'/'F' for NaN and Infinity specials
+    exponent = value.as_tuple().exponent
+    if isinstance(exponent, int) and exponent <= 0:
+        # str() switches to scientific notation for small magnitudes, such as 0E-8
+        return f"{value:f}"
     return str(value)
 
 
