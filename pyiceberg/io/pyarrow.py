@@ -3141,11 +3141,15 @@ def _check_pyarrow_schema_compatible(
     provided_schema: pa.Schema,
     downcast_ns_timestamp_to_us: bool = False,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
+    *,
+    reject_unknown_field_ids: bool = False,
 ) -> None:
     """
     Check if the `requested_schema` is compatible with `provided_schema`.
 
     Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
+    `reject_unknown_field_ids` also rejects the fields of `provided_schema` whose field ID is not in `requested_schema`.
+    Writes set it, because the writer only writes the fields of `requested_schema`.
 
     Raises:
         ValueError: If the schemas are not compatible.
@@ -3168,6 +3172,13 @@ def _check_pyarrow_schema_compatible(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. "
             "Update the schema first (hint, use union_by_name)."
         ) from e
+    if reject_unknown_field_ids and (unknown_field_ids := provided_schema.field_ids - requested_schema.field_ids):
+        unknown_columns = sorted(
+            f"{provided_schema.find_column_name(field_id)} (field ID {field_id})" for field_id in unknown_field_ids
+        )
+        raise ValueError(
+            f"PyArrow table contains columns whose field IDs are not in the table schema: {', '.join(unknown_columns)}."
+        )
     _check_schema_compatible(requested_schema, provided_schema)
 
 

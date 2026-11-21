@@ -1005,6 +1005,54 @@ def test_write_and_evolve(catalog: Catalog, format_version: int) -> None:
         txn.delete("foo = 'a'")
 
 
+def test_write_rejects_field_ids_not_in_table_schema(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    identifier = f"default.write_unknown_field_ids_{catalog.name}"
+    old_schema = Schema(NestedField(1, "id", LongType()), NestedField(2, "x", LongType()), NestedField(3, "y", LongType()))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="id"))
+    tbl = catalog.create_table(identifier, schema=old_schema, partition_spec=spec)
+    # Drop x and add it back, so the new x has field ID 4, and rename y (field ID 3) to w
+    with tbl.update_schema() as update:
+        update.delete_column("x")
+        update.rename_column("y", "w")
+    with tbl.update_schema() as update:
+        update.add_column("x", LongType())
+
+    writes: list[Callable[[pa.Table], Any]] = [
+        tbl.append,
+        tbl.overwrite,
+        tbl.dynamic_partition_overwrite,
+        # The table is empty and inserts are off, so only the check in upsert itself can reject the input
+        lambda df: tbl.upsert(df, join_cols=["id"], when_not_matched_insert_all=False),
+    ]
+    schema_with_z = Schema(*tbl.schema().fields, NestedField(99, "z", LongType()))
+    for input_schema, unknown_columns in [(schema_with_z, "z (field ID 99)"), (old_schema, "x (field ID 2)")]:
+        df = pa.Table.from_pylist([{"id": 1, "x": 2, "y": 3, "w": 3, "z": 4}], schema=input_schema.as_arrow())
+        for write in writes:
+            with pytest.raises(ValueError) as exc_info:
+                write(df)
+            assert (
+                str(exc_info.value)
+                == f"PyArrow table contains columns whose field IDs are not in the table schema: {unknown_columns}."
+            )
+    assert catalog.load_table(identifier).metadata.snapshots == []
+
+    # Still accepted: y is the old name of w (field ID 3), the columns are reordered, y is an int and x is missing
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"y": 5, "id": 1}], schema=Schema(NestedField(3, "y", IntegerType()), NestedField(1, "id", LongType())).as_arrow()
+        )
+    )
+    # Without field IDs, the columns are matched by name
+    tbl.append(
+        pa.Table.from_pylist([{"id": 2, "x": 6}], schema=pa.schema([pa.field("id", pa.int64()), pa.field("x", pa.int64())]))
+    )
+    assert sorted(catalog.load_table(identifier).scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == [
+        {"id": 1, "w": 5, "x": None},
+        {"id": 2, "w": None, "x": 6},
+    ]
+
+
 # Merge manifests
 @pytest.mark.parametrize("format_version", [1, 2])
 def test_merge_manifests_local_file_system(catalog: Catalog, arrow_table_with_null: pa.Table, format_version: int) -> None:
