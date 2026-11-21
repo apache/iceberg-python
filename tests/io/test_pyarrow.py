@@ -86,10 +86,12 @@ from pyiceberg.io.pyarrow import (
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
     _create_arrow_read_format,
+    _dataframe_to_data_files,
     _determine_partitions,
     _primitive_to_physical,
     _read_all_delete_files,
     _read_deletes,
+    _sort_table_for_write,
     _task_to_record_batches,
     _to_requested_schema,
     bin_pack_arrow_table,
@@ -111,10 +113,11 @@ from pyiceberg.table.deletion_vector import (
     PROPERTY_REFERENCED_DATA_FILE,
     deletion_vectors_from_puffin_file,
 )
-from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
+from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3, new_table_metadata
 from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
@@ -3109,6 +3112,125 @@ def test_bin_pack_arrow_table_target_size_smaller_than_row(arrow_table_with_null
     bin_packed = list(bin_pack_arrow_table(arrow_table_with_null, target_file_size=1))
     assert len(bin_packed) == arrow_table_with_null.num_rows
     assert sum(batch.num_rows for bin_ in bin_packed for batch in bin_) == arrow_table_with_null.num_rows
+
+
+def test_sort_table_for_write_uses_identity_sort_order() -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "value", StringType(), required=False),
+    )
+    cases = [
+        (SortDirection.ASC, NullOrder.NULLS_LAST, [1, 2, None]),
+        (SortDirection.ASC, NullOrder.NULLS_FIRST, [None, 1, 2]),
+        (SortDirection.DESC, NullOrder.NULLS_LAST, [2, 1, None]),
+        (SortDirection.DESC, NullOrder.NULLS_FIRST, [None, 2, 1]),
+    ]
+
+    for direction, null_order, expected in cases:
+        metadata = new_table_metadata(
+            schema=schema,
+            partition_spec=PartitionSpec(),
+            sort_order=SortOrder(SortField(1, IdentityTransform(), direction, null_order)),
+            location="file:///tmp/sorted",
+        )
+        table = pa.table({"id": [2, None, 1], "value": ["b", "null", "a"]})
+
+        sorted_table, sort_order_id = _sort_table_for_write(metadata, table)
+
+        assert sorted_table["id"].to_pylist() == expected
+        assert sort_order_id == metadata.default_sort_order_id
+
+
+def test_sort_table_for_write_leaves_unsupported_sort_orders_unsorted() -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "value", StringType(), required=False),
+    )
+    table = pa.table({"id": [2, 1], "value": ["b", "a"]})
+    cases = [
+        (
+            SortOrder(SortField(1, TruncateTransform(10))),
+            "Sort transform truncate\\[10\\] is not supported",
+        ),
+        (
+            SortOrder(
+                SortField(1, IdentityTransform(), null_order=NullOrder.NULLS_FIRST),
+                SortField(2, IdentityTransform(), null_order=NullOrder.NULLS_LAST),
+            ),
+            "Mixed null ordering",
+        ),
+    ]
+
+    for sort_order, message in cases:
+        metadata = new_table_metadata(
+            schema=schema,
+            partition_spec=PartitionSpec(),
+            sort_order=sort_order,
+            location="file:///tmp/unsorted",
+        )
+
+        with pytest.warns(UserWarning, match=message):
+            sorted_table, sort_order_id = _sort_table_for_write(metadata, table)
+
+        assert sorted_table is table
+        assert sort_order_id is None
+
+    metadata = new_table_metadata(
+        schema=schema,
+        partition_spec=PartitionSpec(),
+        sort_order=SortOrder(SortField(2, IdentityTransform())),
+        location="file:///tmp/unsorted-missing-column",
+    )
+    table_without_sort_column = pa.table({"id": [2, 1]})
+
+    with pytest.warns(UserWarning, match="nested or missing column"):
+        sorted_table, sort_order_id = _sort_table_for_write(metadata, table_without_sort_column)
+
+    assert sorted_table is table_without_sort_column
+    assert sort_order_id is None
+
+
+def test_write_sorted_data_files_per_partition(tmp_path: Path) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "category", StringType(), required=False),
+    )
+    metadata = new_table_metadata(
+        schema=schema,
+        partition_spec=PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="category")),
+        sort_order=SortOrder(SortField(1, IdentityTransform(), SortDirection.ASC, NullOrder.NULLS_LAST)),
+        location=f"file://{tmp_path}/sorted-partitioned",
+    )
+    table = pa.table({"id": [3, None, 1, 2, None, 4], "category": ["a", "b", "b", "a", "a", "b"]})
+    io = PyArrowFileIO()
+
+    data_files = list(_dataframe_to_data_files(table_metadata=metadata, df=table, io=io))
+
+    assert len(data_files) == 2
+    for data_file in data_files:
+        assert data_file.sort_order_id == metadata.default_sort_order_id
+        with io.new_input(data_file.file_path).open() as f:
+            read_table = pq.read_table(f)
+        assert len(read_table["category"].unique()) == 1
+        ids = read_table["id"].to_pylist()
+        assert ids == sorted(ids, key=lambda value: (value is None, value))
+
+
+def test_streaming_write_ignores_sort_order(tmp_path: Path) -> None:
+    schema = Schema(NestedField(1, "id", LongType(), required=False))
+    metadata = new_table_metadata(
+        schema=schema,
+        partition_spec=PartitionSpec(),
+        sort_order=SortOrder(SortField(1, IdentityTransform())),
+        location=f"file://{tmp_path}/sorted-streaming",
+    )
+    table = pa.table({"id": [2, 1]})
+
+    with pytest.warns(UserWarning, match="streaming RecordBatchReader writes"):
+        data_files = list(_dataframe_to_data_files(table_metadata=metadata, df=table.to_reader(), io=PyArrowFileIO()))
+
+    assert data_files
+    assert all(data_file.sort_order_id is None for data_file in data_files)
 
 
 def test_bin_pack_record_batches_single_bin(arrow_table_with_null: pa.Table) -> None:
