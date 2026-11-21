@@ -277,6 +277,19 @@ def test_double_to_decimal_conversion(decimal_type: DecimalType, decimal_value: 
     assert lit.to(decimal_type).value.as_tuple() == Decimal(decimal_value).as_tuple()  # type: ignore
 
 
+@pytest.mark.parametrize("literal_class", [FloatLiteral, DoubleLiteral])
+@pytest.mark.parametrize(
+    "value, decimal_value",
+    [(2.675, "2.68"), (1.005, "1.01"), (-2.675, "-2.68"), (0.125, "0.13"), (2.674, "2.67")],
+)
+def test_float_and_double_to_decimal_round_half_up_on_shortest_repr(
+    literal_class: type[FloatLiteral] | type[DoubleLiteral], value: float, decimal_value: str
+) -> None:
+    lit = literal_class(value)
+
+    assert lit.to(DecimalType(10, 2)).value.as_tuple() == Decimal(decimal_value).as_tuple()
+
+
 def test_float_to_decimal_conversion_with_infinity() -> None:
     lit = FloatLiteral(float("inf"))
 

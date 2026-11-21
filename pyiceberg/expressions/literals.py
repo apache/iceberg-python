@@ -416,7 +416,8 @@ class FloatLiteral(Literal[float]):
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
         if not isfinite(self.value):
             raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
-        return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
+        # Use the shortest repr of the float, like BigDecimal.valueOf in Java, so 2.675 rounds to 2.68
+        return DecimalLiteral(Decimal(str(self.value)).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
 
 
 class DoubleLiteral(Literal[float]):
@@ -443,7 +444,8 @@ class DoubleLiteral(Literal[float]):
     def _(self, type_var: DecimalType) -> Literal[Decimal]:
         if not isfinite(self.value):
             raise ValueError(f"Could not convert {self.value} into a {type_var}, value is not finite")
-        return DecimalLiteral(Decimal(self.value).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
+        # Use the shortest repr of the float, like BigDecimal.valueOf in Java, so 2.675 rounds to 2.68
+        return DecimalLiteral(Decimal(str(self.value)).quantize(Decimal((0, (1,), -type_var.scale)), rounding=ROUND_HALF_UP))
 
 
 class DateLiteral(Literal[int]):
