@@ -1156,6 +1156,33 @@ assert tbl.name_mapping() is not None
 assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
 ```
 
+## Delete Files
+
+Data files can be removed from the current snapshot by path without rewriting the remaining files. Every path must reference a live data file in the target branch.
+
+| Parameter               | Required? | Type           | Description                                                             |
+| ----------------------- | --------- | -------------- | ----------------------------------------------------------------------- |
+| `file_paths`            | ✔️      | List[str]      | The full paths of the data files to remove                              |
+| `snapshot_properties`   |           | Dict[str, str] | Properties to set for the new snapshot. Defaults to an empty dictionary |
+| `branch`                |           | str            | Branch to remove the files from. Defaults to `main`                     |
+
+### Example
+
+```python
+# Assume an existing Iceberg table object `tbl`
+
+file_paths = [
+    "s3a://warehouse/default/existing-1.parquet",
+]
+
+tbl.delete_files(file_paths=file_paths)
+
+# The files are no longer part of the current snapshot and their rows are not scanned
+```
+
+!!! note "Concurrent changes"
+    If a file is no longer referenced when the delete commits, the commit fails. Reload the table and retry.
+
 ## Schema evolution
 
 PyIceberg supports full schema evolution through the Python API. It takes care of setting the field-IDs and makes sure that only non-breaking changes are done (can be overridden).
