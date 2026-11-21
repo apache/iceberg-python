@@ -2267,7 +2267,8 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
         return pa.StructArray.from_arrays(
             arrays=field_arrays,
             fields=pa.struct(fields),
-            mask=struct_array.is_null() if isinstance(struct_array, pa.StructArray) else None,
+            # Avoid unknown null counts for non-null map keys: https://github.com/apache/arrow/issues/51029
+            mask=struct_array.is_null() if isinstance(struct_array, pa.StructArray) and struct_array.null_count else None,
         )
 
     def field(self, field: NestedField, _: pa.Array | None, field_array: pa.Array | None) -> pa.Array | None:
@@ -2276,18 +2277,23 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
     def list(self, list_type: ListType, list_array: pa.Array | None, value_array: pa.Array | None) -> pa.Array | None:
         if isinstance(list_array, (pa.ListArray, pa.LargeListArray, pa.FixedSizeListArray)) and value_array is not None:
             list_initializer = pa.large_list if isinstance(list_array, pa.LargeListArray) else pa.list_
-            if isinstance(value_array, pa.StructArray):
-                # This can be removed once this has been fixed:
-                # https://github.com/apache/arrow/issues/38809
-                # Keep the validity and offsets buffers of the original array, otherwise null lists become empty lists
-                list_array = pa.Array.from_buffers(
-                    list_initializer(value_array.type),
-                    len(list_array),
-                    list_array.buffers()[:2],
-                    list_array.null_count,
-                    list_array.offset,
-                    [value_array],
-                )
+            # Rebuild the list around the projected values, so the cast below does not cast the unprojected children.
+            # Keep the validity and offsets buffers of the original array, otherwise null lists become empty lists.
+            # A fixed-size list has no offsets buffer, so keep its validity buffer and list size instead.
+            if isinstance(list_array, pa.FixedSizeListArray):
+                arrow_list_type = pa.list_(value_array.type, list_array.type.list_size)
+                buffers = list_array.buffers()[:1]
+            else:
+                arrow_list_type = list_initializer(value_array.type)
+                buffers = list_array.buffers()[:2]
+            list_array = pa.Array.from_buffers(
+                arrow_list_type,
+                len(list_array),
+                buffers,
+                list_array.null_count,
+                list_array.offset,
+                [value_array],
+            )
             value_array = self._cast_if_needed(list_type.element_field, value_array)
             arrow_field = list_initializer(self._construct_field(list_type.element_field, value_array.type))
             return list_array.cast(arrow_field)
@@ -2304,22 +2310,18 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                 self._construct_field(map_type.key_field, key_result.type),
                 self._construct_field(map_type.value_field, value_result.type),
             )
-            if isinstance(value_result, pa.StructArray):
-                # Arrow does not allow reordering of fields, therefore we have to copy the array :(
-                entries = pa.StructArray.from_arrays(
-                    [key_result, value_result], fields=[arrow_field.key_field, arrow_field.item_field]
-                )
-                # Keep the validity and offsets buffers of the original array, otherwise null maps become empty maps
-                return pa.Array.from_buffers(
-                    arrow_field,
-                    len(map_array),
-                    map_array.buffers()[:2],
-                    map_array.null_count,
-                    map_array.offset,
-                    [entries],
-                )
-            else:
-                return map_array.cast(arrow_field)
+            entries = pa.StructArray.from_arrays(
+                [key_result, value_result], fields=[arrow_field.key_field, arrow_field.item_field]
+            )
+            # Keep the validity and offsets buffers of the original array, otherwise null maps become empty maps
+            return pa.Array.from_buffers(
+                arrow_field,
+                len(map_array),
+                map_array.buffers()[:2],
+                map_array.null_count,
+                map_array.offset,
+                [entries],
+            )
         else:
             return None
 
