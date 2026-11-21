@@ -182,6 +182,30 @@ def test_struct_field_by_name() -> None:
     assert type_var.field_by_name("nonexistent_field", case_sensitive=True) is None
 
 
+def test_struct_field_by_name_case_insensitive_duplicates() -> None:
+    upper_field = NestedField(1, "ID", LongType(), required=False)
+    lower_field = NestedField(2, "id", LongType(), required=False)
+    safe_field = NestedField(3, "safe", LongType(), required=False)
+    type_var = StructType(upper_field, lower_field, safe_field)
+
+    assert type_var.field_by_name("ID", case_sensitive=True) == upper_field
+    assert type_var.field_by_name("id", case_sensitive=True) == lower_field
+    assert type_var.field_by_name("safe", case_sensitive=True) == safe_field
+
+    # As in Java's caseInsensitiveField, every case-insensitive lookup fails while the index cannot be built
+    for name in ("ID", "Id", "id", "safe", "nonexistent_field"):
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            type_var.field_by_name(name, case_sensitive=False)
+
+    # The same holds for a struct nested in another struct
+    profile_field = NestedField(4, "profile", type_var, required=False)
+    assert StructType(profile_field).field_by_name("PROFILE", case_sensitive=False) == profile_field
+    profile_type = profile_field.field_type
+    assert isinstance(profile_type, StructType)
+    with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+        profile_type.field_by_name("Id", case_sensitive=False)
+
+
 def test_list_type() -> None:
     type_var = ListType(
         1,
