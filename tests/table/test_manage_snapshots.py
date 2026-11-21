@@ -18,17 +18,23 @@ from typing import Any
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import pyarrow as pa
 import pytest
 
+from pyiceberg.catalog import Catalog
 from pyiceberg.exceptions import (
+    CherrypickAncestorCommitException,
+    DuplicateWAPCommitException,
     NoSuchSnapshotRefError,
     NotAncestorError,
     SnapshotRefTypeError,
+    ValidationException,
 )
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.metadata import TableMetadataUtil
 from pyiceberg.table.refs import SnapshotRef, SnapshotRefType
+from pyiceberg.table.snapshots import PUBLISHED_WAP_ID, SOURCE_SNAPSHOT_ID, STAGED_WAP_ID, Operation, Snapshot
 from pyiceberg.table.update import RemoveSnapshotRefUpdate, SetSnapshotRefUpdate, TableRequirement, TableUpdate
 
 # The two snapshots in the table_v2 fixture: CHILD's parent is PARENT.
@@ -585,3 +591,106 @@ class TestFastForwardRetentionCases:
         assert feature_updates[1].max_ref_age_ms == 5000
         assert feature_updates[1].max_snapshot_age_ms == 6000
         assert feature_updates[1].min_snapshots_to_keep == 7
+
+
+def _cherrypick_table(catalog: Catalog) -> Table:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.cherrypick", schema=pa.schema([pa.field("x", pa.int64())]))
+    table.append(pa.table({"x": [1]}))
+    return table
+
+
+def _stage(table: Table, rows: list[int], wap_id: str | None = None) -> Snapshot:
+    """Write a snapshot on top of main without moving any ref, as a write-audit-publish stage does."""
+    table.append(pa.table({"x": rows}), branch=None, snapshot_properties={STAGED_WAP_ID: wap_id} if wap_id else {})
+    return table.snapshots()[-1]
+
+
+def _main_rows(table: Table) -> list[int]:
+    return sorted(table.scan().to_arrow()["x"].to_pylist())
+
+
+def test_cherrypick_replays_append_onto_diverged_main(catalog: Catalog) -> None:
+    table = _cherrypick_table(catalog)
+    main_snapshot = table.current_snapshot()
+    assert main_snapshot is not None
+    table.manage_snapshots().create_branch(main_snapshot.snapshot_id, "audit").commit()
+    table.append(pa.table({"x": [2]}), branch="audit")
+    audit_snapshot = table.snapshot_by_name("audit")
+    assert audit_snapshot is not None
+    table.append(pa.table({"x": [3]}))
+    head = table.current_snapshot()
+    assert head is not None
+
+    table.manage_snapshots().cherrypick(audit_snapshot.snapshot_id).commit()
+
+    picked = table.current_snapshot()
+    assert picked is not None
+    assert picked.snapshot_id not in (audit_snapshot.snapshot_id, head.snapshot_id)
+    assert picked.parent_snapshot_id == head.snapshot_id
+    assert picked.summary is not None
+    assert picked.summary.operation == Operation.APPEND
+    assert picked.summary[SOURCE_SNAPSHOT_ID] == str(audit_snapshot.snapshot_id)
+    assert picked.summary.get(PUBLISHED_WAP_ID) is None
+    assert _main_rows(table) == [1, 2, 3]
+
+    with pytest.raises(CherrypickAncestorCommitException, match="already picked to create ancestor"):
+        table.manage_snapshots().cherrypick(audit_snapshot.snapshot_id).commit()
+
+
+def test_cherrypick_fast_forwards_when_parent_is_current(catalog: Catalog) -> None:
+    table = _cherrypick_table(catalog)
+    staged = _stage(table, [2], wap_id="wap-1")
+    assert _main_rows(table) == [1]
+
+    table.manage_snapshots().cherrypick(staged.snapshot_id).commit()
+
+    current = table.current_snapshot()
+    assert current is not None
+    assert current.snapshot_id == staged.snapshot_id
+    assert _main_rows(table) == [1, 2]
+
+
+def test_cherrypick_publishes_wap_id_once(catalog: Catalog) -> None:
+    table = _cherrypick_table(catalog)
+    staged = _stage(table, [2], wap_id="wap-1")
+    table.append(pa.table({"x": [3]}))
+
+    table.manage_snapshots().cherrypick(staged.snapshot_id).commit()
+
+    picked = table.current_snapshot()
+    assert picked is not None and picked.summary is not None
+    assert picked.summary[PUBLISHED_WAP_ID] == "wap-1"
+    assert _main_rows(table) == [1, 2, 3]
+
+    duplicate = _stage(table, [4], wap_id="wap-1")
+    table.append(pa.table({"x": [5]}))
+    with pytest.raises(DuplicateWAPCommitException, match="wap-1"):
+        table.manage_snapshots().cherrypick(duplicate.snapshot_id).commit()
+
+
+def test_cherrypick_rejects_ancestor(catalog: Catalog) -> None:
+    table = _cherrypick_table(catalog)
+    first = table.current_snapshot()
+    assert first is not None
+    table.append(pa.table({"x": [2]}))
+
+    with pytest.raises(CherrypickAncestorCommitException, match="already an ancestor"):
+        table.manage_snapshots().cherrypick(first.snapshot_id).commit()
+
+
+def test_cherrypick_rejects_unknown_snapshot(catalog: Catalog) -> None:
+    table = _cherrypick_table(catalog)
+
+    with pytest.raises(ValidationException, match="Cannot cherry-pick unknown snapshot ID: 42"):
+        table.manage_snapshots().cherrypick(42).commit()
+
+
+def test_cherrypick_rejects_non_append_that_is_not_fast_forward(catalog: Catalog) -> None:
+    table = _cherrypick_table(catalog)
+    table.delete("x == 1", branch=None)
+    staged_delete = table.snapshots()[-1]
+    table.append(pa.table({"x": [2]}))
+
+    with pytest.raises(ValidationException, match="not append or fast-forward"):
+        table.manage_snapshots().cherrypick(staged_delete.snapshot_id).commit()

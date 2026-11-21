@@ -1512,6 +1512,37 @@ Fast-forward `from_branch` to point at the snapshot referenced by `to_ref`.
 
 <!-- markdownlint-enable MD046 -->
 
+#### Cherry-picking a snapshot
+
+Cherry-pick the latest snapshot of the `audit-branch` branch onto `main`:
+
+```python
+snapshot_id = table.snapshot_by_name("audit-branch").snapshot_id
+table.manage_snapshots().cherrypick(snapshot_id).commit()
+```
+
+<!-- markdownlint-disable MD046 -- Allowing indented multi-line formatting in admonition-->
+
+!!! info "Cherry-pick Behavior"
+
+    * Case 1: If the snapshot's parent is the current snapshot of `main`, `main` is fast-forwarded to it.
+    * Case 2: Otherwise, if the snapshot is an `append`, its data files are committed to `main` as a new
+        snapshot. The new snapshot's `source-snapshot-id` summary property is set to the picked snapshot.
+    * Case 3: Any other operation raises `ValidationException`.
+    * Picking a snapshot that is already an ancestor of `main`, or was already cherry-picked, raises
+        `CherrypickAncestorCommitException`.
+
+<!-- markdownlint-enable MD046 -->
+
+Cherry-picking can also publish a staged write-audit-publish snapshot. Stage it with a `wap.id`:
+
+```python
+table.append(df, branch=None, snapshot_properties={"wap.id": "nightly-2024-01-01"})
+```
+
+When the snapshot is replayed onto `main`, the new snapshot records the id as `published-wap-id`.
+Publishing the same `wap.id` twice raises `DuplicateWAPCommitException`.
+
 #### Example Use-Case: write-audit-publish (WAP)
 
 The use of branching & fast-forwarding enable the usage of the write-audit-publish (WAP) process:
