@@ -1596,6 +1596,21 @@ with table.manage_snapshots() as ms:
 
 PyIceberg provides table maintenance operations through the `table.maintenance` API. This provides a clean interface for performing maintenance tasks like snapshot expiration.
 
+### Compute Partition Statistics
+
+Compute the partition statistics of a snapshot, write them to a Parquet file in the metadata directory, and register the file in the table metadata. The current snapshot is used by default:
+
+```python
+partition_statistics_file = table.maintenance.compute_partition_statistics()
+
+# Or for a specific snapshot
+partition_statistics_file = table.maintenance.compute_partition_statistics(snapshot_id=12345)
+```
+
+When no statistics file is registered for the requested snapshot, statistics are computed from its manifests; files from earlier snapshots are not reused. The `total_record_count` column is left empty. If the snapshot already has a partition statistics file, that file is returned and nothing is written.
+
+UUID partition fields currently raise `ArrowNotImplementedError` before a statistics file is registered; see #4358 for the related inspection limitation. Historical partition fields that share a name but have different field IDs raise `ValueError` before registration because the unified schema requires unique field names.
+
 ### Snapshot Expiration
 
 Expire old snapshots to clean up table metadata and reduce storage costs:
