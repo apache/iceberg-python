@@ -487,6 +487,16 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
             else:
                 data[PARTITION_SPECS] = [{"field-id": 0, "fields": ()}]
 
+        # In v1 the partition field ids were not tracked, but assigned sequentially from 1000 in each spec
+        for spec in data[PARTITION_SPECS]:
+            fields = spec[FIELDS]
+            missing = sum(1 for field in fields if field.get(FIELD_ID) is None)
+            if missing == len(fields):
+                for pos, field in enumerate(fields):
+                    field[FIELD_ID] = PARTITION_FIELD_ID_START + pos
+            elif missing:
+                raise ValueError(f"Cannot parse spec with missing field IDs: {missing} missing of {len(fields)} fields.")
+
         data[LAST_PARTITION_ID] = max(
             [field.get(FIELD_ID) for spec in data[PARTITION_SPECS] for field in spec[FIELDS]],
             default=PARTITION_FIELD_ID_START - 1,
