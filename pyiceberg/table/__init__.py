@@ -189,6 +189,8 @@ class TableProperties:
     DEFAULT_WRITE_METRICS_MODE_DEFAULT = "truncate(16)"
 
     METRICS_MODE_COLUMN_CONF_PREFIX = "write.metadata.metrics.column"
+    METRICS_MAX_INFERRED_COLUMN_DEFAULTS = "write.metadata.metrics.max-inferred-column-defaults"
+    METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT = 100
 
     WRITE_PARTITION_SUMMARY_LIMIT = "write.summary.partition-limit"
     WRITE_PARTITION_SUMMARY_LIMIT_DEFAULT = 0
