@@ -338,3 +338,17 @@ For the type annotation the types from the `Typing` package are used.
 ### Third party libraries
 
 PyIceberg naturally integrates into the rich Python ecosystem, however it is important to be hesitant adding third party packages. Adding a lot of packages makes the library heavyweight, and causes incompatibilities with other projects if they use a different version of the library. Also, big libraries such as `s3fs`, `adlfs`, `pyarrow`, `thrift` should be optional to avoid downloading everything, while not being sure if is actually being used.
+
+## Merging an urgent PR
+
+Committers can merge an urgent, approved pull request without waiting for the merge queue or required checks (for example, a security fix while CI is stuck). Use this only when necessary; otherwise, let the merge queue run.
+
+<!-- markdown-link-check-disable-next-line -->
+1. Join the [`apache/iceberg-public`](https://github.com/orgs/apache/teams/iceberg-public) team via [Boxer](https://gitbox.apache.org/boxer/) (one-time; membership syncs in about 15 minutes).
+2. Get the pull request approved by a committer.
+3. If the pull request is in the merge queue, click **Remove from queue**.
+4. Merge it directly:
+
+    ```sh
+    gh pr merge <number> --squash --admin
+    ```

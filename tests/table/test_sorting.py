@@ -138,6 +138,14 @@ def test_serialize_sort_field_v3() -> None:
     assert SortField.model_validate_json(payload) == expected
 
 
+def test_deserialize_sort_field_str_direction() -> None:
+    # A str direction gets the same default null order as the SortDirection member
+    for direction, null_order in [(SortDirection.ASC, NullOrder.NULLS_FIRST), (SortDirection.DESC, NullOrder.NULLS_LAST)]:
+        payload = {"source-id": 19, "transform": "identity", "direction": direction.value}
+        expected = SortField(source_id=19, transform=IdentityTransform(), direction=direction, null_order=null_order)
+        assert SortField.model_validate(payload) == expected
+
+
 def test_deserialize_sort_field_empty_source_ids_rejected() -> None:
     payload = '{"source-ids":[],"transform":"identity","direction":"asc","null-order":"nulls-first"}'
     with pytest.raises(Exception, match="Empty source-ids is not allowed"):

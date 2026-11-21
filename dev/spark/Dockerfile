@@ -13,17 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE_SPARK_VERSION=4.0.1
+ARG BASE_IMAGE_SPARK_VERSION=4.1.3
 
 FROM apache/spark:${BASE_IMAGE_SPARK_VERSION}
 
 # Dependency versions - keep these compatible
 # Changing these will invalidate the JAR download cache layer
-ARG ICEBERG_VERSION=1.11.0
-ARG ICEBERG_SPARK_RUNTIME_VERSION=4.0_2.13
-ARG HADOOP_VERSION=3.4.1
-ARG AWS_SDK_VERSION=2.24.6
-ARG HIVE_METASTORE_VERSION=4.0.1
+ARG ICEBERG_VERSION=1.12.0
+ARG ICEBERG_SPARK_RUNTIME_VERSION=4.1_2.13
+ARG HADOOP_VERSION=3.4.2
+ARG AWS_SDK_VERSION=2.57.3
+ARG HIVE_METASTORE_VERSION=4.2.1
 ARG MAVEN_MIRROR=https://repo.maven.apache.org/maven2
 
 USER root
@@ -51,6 +51,7 @@ RUN set -e && \
         "org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar" \
         "org/apache/hadoop/hadoop-aws/${HADOOP_VERSION}/hadoop-aws-${HADOOP_VERSION}.jar" \
         "org/apache/hive/hive-standalone-metastore-common/${HIVE_METASTORE_VERSION}/hive-standalone-metastore-common-${HIVE_METASTORE_VERSION}.jar" \
+        "org/apache/hive/hive-standalone-metastore-client/${HIVE_METASTORE_VERSION}/hive-standalone-metastore-client-${HIVE_METASTORE_VERSION}.jar" \
         "software/amazon/awssdk/bundle/${AWS_SDK_VERSION}/bundle-${AWS_SDK_VERSION}.jar"; \
     do \
         jar_name=$(basename "${jar_path}") && \

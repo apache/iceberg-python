@@ -44,11 +44,12 @@ Options:
 
 Commands:
   create      Operation to create a namespace.
-  describe    Describe a namespace or a table.
+  describe    Describe a namespace, a table, or a view.
   drop        Operations to drop a namespace or table.
   files       List all the files of the table.
   list        List tables or namespaces.
   list-refs   List all the refs in the provided table.
+  list-views  List all views in a namespace.
   location    Return the location of the table.
   properties  Properties on tables/namespaces.
   rename      Rename a table.
@@ -253,4 +254,27 @@ To request purge for the underlying table files through the configured catalog, 
 ```sh
 ➜  pyiceberg drop table nyc.taxis --purge
 Dropped table: nyc.taxis (purge requested)
+```
+
+For catalogs that support views, you can also list, describe, and drop views:
+
+```sh
+➜  pyiceberg list-views nyc
+nyc.taxi_trips
+
+➜  pyiceberg describe --entity view nyc.taxi_trips
+View format version  1
+Metadata location    s3://warehouse/nyc/taxi_trips/metadata/00001-b3a9c6e2-6c1f-4e47-9d4f-2f9a1d0e5c7b.metadata.json
+View UUID            fa6506c3-7681-40c8-86dc-e36561f83385
+Location             s3://warehouse/nyc/taxi_trips
+Current version      1
+Current schema       Schema, id=1
+                     ├── 1: VendorID: optional long
+                     └── 2: trip_distance: optional double
+SQL                  SQL representations
+                     └── spark: SELECT VendorID, trip_distance FROM nyc.taxis
+Properties           comment  Taxi trip distances
+
+➜  pyiceberg drop view nyc.taxi_trips
+Dropped view: nyc.taxi_trips
 ```

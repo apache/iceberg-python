@@ -14,13 +14,16 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+from datetime import UTC, datetime, timedelta
 from unittest import mock
 
 import boto3
 import pyarrow as pa
 import pytest
+from botocore.credentials import AssumeRoleCredentialFetcher
 from moto import mock_aws
 
+from pyiceberg.catalog import _get_aws_session_with_assumed_role
 from pyiceberg.catalog.glue import GLUE_CONNECTION_S3_TABLES, GlueCatalog
 from pyiceberg.exceptions import (
     NamespaceAlreadyExistsError,
@@ -762,6 +765,135 @@ def test_passing_unified_session_properties_to_glue() -> None:
 
 
 @mock_aws
+def test_glue_assume_role_with_unified_role_properties() -> None:
+    role_arn = "arn:aws:iam::123456789012:role/my-glue-role"
+    session_properties: Properties = {
+        "client.role-arn": role_arn,
+        "client.role-session-name": "my-session",
+        "client.region": "us-east-1",
+    }
+
+    with mock.patch(
+        "pyiceberg.catalog.glue._get_aws_session_with_assumed_role",
+        wraps=_get_aws_session_with_assumed_role,
+    ) as mock_assume_role:
+        GlueCatalog("glue", **session_properties)
+
+    mock_assume_role.assert_called_once_with(
+        session=mock.ANY,
+        role_arn=role_arn,
+        role_session_name="my-session",
+        region_name="us-east-1",
+    )
+
+
+@mock_aws
+def test_glue_assume_role_prefixed_properties_take_precedence() -> None:
+    session_properties: Properties = {
+        "glue.role-arn": "arn:aws:iam::123456789012:role/glue-specific-role",
+        "glue.role-session-name": "glue-session",
+        "client.role-arn": "arn:aws:iam::123456789012:role/unified-role",
+        "client.role-session-name": "unified-session",
+        "client.region": "us-east-1",
+    }
+
+    with mock.patch(
+        "pyiceberg.catalog.glue._get_aws_session_with_assumed_role",
+        wraps=_get_aws_session_with_assumed_role,
+    ) as mock_assume_role:
+        GlueCatalog("glue", **session_properties)
+
+    mock_assume_role.assert_called_once_with(
+        session=mock.ANY,
+        role_arn="arn:aws:iam::123456789012:role/glue-specific-role",
+        role_session_name="glue-session",
+        region_name="us-east-1",
+    )
+
+
+@mock_aws
+def test_glue_assume_role_properties_take_precedence_over_role_properties() -> None:
+    session_properties: Properties = {
+        "client.assume-role.arn": "arn:aws:iam::123456789012:role/assume-role",
+        "client.assume-role.session-name": "assume-role-session",
+        "client.role-arn": "arn:aws:iam::123456789012:role/role",
+        "client.role-session-name": "role-session",
+        "client.region": "us-east-1",
+    }
+
+    with mock.patch(
+        "pyiceberg.catalog.glue._get_aws_session_with_assumed_role",
+        wraps=_get_aws_session_with_assumed_role,
+    ) as mock_assume_role:
+        GlueCatalog("glue", **session_properties)
+
+    mock_assume_role.assert_called_once_with(
+        session=mock.ANY,
+        role_arn="arn:aws:iam::123456789012:role/assume-role",
+        role_session_name="assume-role-session",
+        region_name="us-east-1",
+    )
+
+
+@mock_aws
+def test_glue_no_role_arn_does_not_assume_role() -> None:
+    with mock.patch("pyiceberg.catalog.glue._get_aws_session_with_assumed_role") as mock_assume_role:
+        GlueCatalog("glue", **{"client.region": "us-east-1"})
+
+    mock_assume_role.assert_not_called()
+
+
+@mock_aws
+def test_get_aws_session_with_assumed_role_returns_temporary_credentials() -> None:
+    base_session = boto3.Session(
+        aws_access_key_id="base-access-key",
+        aws_secret_access_key="base-secret-key",
+        region_name="us-east-1",
+    )
+
+    assumed_session = _get_aws_session_with_assumed_role(
+        session=base_session,
+        role_arn="arn:aws:iam::123456789012:role/my-role",
+        role_session_name="test-session",
+        region_name="us-east-1",
+    )
+
+    credentials = assumed_session.get_credentials()
+    assert credentials is not None
+    # Temporary credentials from STS AssumeRole always carry a session token.
+    assert credentials.token is not None
+    assert assumed_session.region_name == "us-east-1"
+
+
+@mock_aws
+def test_glue_assume_role_credentials_are_refreshed_before_expiry() -> None:
+    catalog = GlueCatalog(
+        "glue",
+        **{"client.role-arn": "arn:aws:iam::123456789012:role/my-glue-role", "client.region": "us-east-1"},
+    )
+    credentials = catalog.glue._request_signer._credentials
+    now = datetime.now(UTC)
+
+    with mock.patch.object(
+        AssumeRoleCredentialFetcher,
+        "_get_credentials",
+        autospec=True,
+        side_effect=AssumeRoleCredentialFetcher._get_credentials,
+    ) as mock_assume_role:
+        catalog.list_namespaces()
+        assert mock_assume_role.call_count == 1
+
+        # moto issues one-hour credentials: 48 minutes later they are inside botocore's 15-minute refresh window.
+        later = now + timedelta(minutes=48)
+        with (
+            mock.patch("botocore.credentials._local_now", return_value=later),
+            mock.patch.object(credentials, "_time_fetcher", return_value=later),
+        ):
+            catalog.list_namespaces()
+        assert mock_assume_role.call_count == 2
+
+
+@mock_aws
 def test_commit_table_update_schema(
     _glue: boto3.client,
     _bucket_initialize: None,
@@ -857,6 +989,68 @@ def test_commit_table_properties(
     assert table_info["Table"]["Description"] == "test_description"
     assert table_info["Table"]["Parameters"]["test_a"] == "test_aa"
     assert table_info["Table"]["Parameters"]["test_c"] == "test_c"
+
+
+@mock_aws
+def test_commit_table_prunes_removed_properties(
+    _glue: boto3.client,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    catalog_name = "glue"
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog(
+        catalog_name, client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"}
+    )
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(
+        identifier=identifier, schema=table_schema_nested, properties={"test_a": "test_a", "test_b": "test_b"}
+    )
+
+    transaction = table.transaction()
+    transaction.remove_properties("test_b")
+    transaction.commit_transaction()
+
+    assert table.metadata.properties == {"test_a": "test_a"}
+
+    table_info = _glue.get_table(DatabaseName=database_name, Name=table_name)
+    assert table_info["Table"]["Parameters"]["test_a"] == "test_a"
+    assert "test_b" not in table_info["Table"]["Parameters"]
+
+
+@mock_aws
+def test_commit_table_properties_do_not_overwrite_reserved_parameters(
+    _glue: boto3.client,
+    _bucket_initialize: None,
+    moto_endpoint_url: str,
+    table_schema_nested: Schema,
+    database_name: str,
+    table_name: str,
+) -> None:
+    identifier = (database_name, table_name)
+    test_catalog = GlueCatalog("glue", client=None, **{"s3.endpoint": moto_endpoint_url, "warehouse": f"s3://{BUCKET_NAME}"})
+    test_catalog.create_namespace(namespace=database_name)
+    table = test_catalog.create_table(identifier=identifier, schema=table_schema_nested)
+    previous_metadata_location = table.metadata_location
+
+    table.transaction().set_properties(
+        table_type="bogus",
+        metadata_location="s3://bogus/metadata.json",
+        previous_metadata_location="s3://bogus/previous.metadata.json",
+    ).commit_transaction()
+
+    parameters = _glue.get_table(DatabaseName=database_name, Name=table_name)["Table"]["Parameters"]
+    assert parameters["table_type"] == "ICEBERG"
+    assert parameters["metadata_location"] == table.metadata_location
+    assert parameters["previous_metadata_location"] == previous_metadata_location
+    assert test_catalog.load_table(identifier).metadata_location == table.metadata_location
+
+    # Removing the properties must not prune the reserved parameters either
+    table.transaction().remove_properties("table_type", "metadata_location", "previous_metadata_location").commit_transaction()
+    assert test_catalog.load_table(identifier).metadata_location == table.metadata_location
 
 
 @mock_aws

@@ -14,3 +14,42 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+import json
+
+import pytest
+
+from pyiceberg.cli.output import ConsoleOutput, JsonOutput
+from pyiceberg.table import Table
+from pyiceberg.table.refs import SnapshotRefType
+
+
+def test_json_describe_refs_emits_one_object_per_ref(capsys: pytest.CaptureFixture[str]) -> None:
+    JsonOutput().describe_refs(
+        [
+            (
+                "main",
+                SnapshotRefType.BRANCH,
+                {
+                    "min_snapshots_to_keep": "1",
+                    "max_snapshot_age_ms": "432000000",
+                    "max_ref_age_ms": "forever",
+                },
+            )
+        ]
+    )
+
+    assert json.loads(capsys.readouterr().out) == [
+        {
+            "name": "main",
+            "type": "branch",
+            "min_snapshots_to_keep": "1",
+            "max_snapshot_age_ms": "432000000",
+            "max_ref_age_ms": "forever",
+        }
+    ]
+
+
+def test_files_of_encrypted_table(table_v3_encrypted: Table, capsys: pytest.CaptureFixture[str]) -> None:
+    ConsoleOutput().files(table_v3_encrypted, history=True)
+
+    assert "Snapshot 1" in capsys.readouterr().out

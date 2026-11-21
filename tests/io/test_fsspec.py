@@ -15,20 +15,27 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import os
 import pickle
 import sys
 import tempfile
 import threading
 import uuid
+from typing import Any
 from unittest import mock
 
 import pytest
+from botocore import UNSIGNED
+from botocore.auth import S3SigV4Auth
 from botocore.awsrequest import AWSRequest
+from botocore.config import Config
+from botocore.credentials import Credentials
 from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
 from requests_mock import Mocker
 
+from pyiceberg.catalog.rest import _user_agent
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import S3_SIGNER, fsspec
@@ -698,6 +705,37 @@ def test_adls_account_name_extracted_from_uri_hostname() -> None:
         )
 
 
+def test_adls_account_name_resolved_per_location() -> None:
+    """Two locations in different accounts must each get a filesystem for their own account."""
+    session_properties: Properties = {"adls.tenant-id": "test-tenant-id"}
+
+    with mock.patch("adlfs.AzureBlobFileSystem") as mock_adlfs:
+        adls_fileio = FsspecFileIO(properties=session_properties)
+
+        adls_fileio.new_input(location="abfss://data@accountone.dfs.core.windows.net/wh/t/a.parquet")
+        adls_fileio.new_input(location="abfss://data@accounttwo.dfs.core.windows.net/wh/t/b.parquet")
+
+    account_names = [call.kwargs["account_name"] for call in mock_adlfs.call_args_list]
+    assert account_names == ["accountone", "accounttwo"]
+
+
+def test_adls_does_not_mutate_properties() -> None:
+    """Resolving an account or SAS token from a location must not write it back into the shared properties."""
+    original_properties: Properties = {
+        "adls.tenant-id": "test-tenant-id",
+        "adls.sas-token.accountone.dfs.core.windows.net": "test-sas-token",
+    }
+    session_properties: Properties = dict(original_properties)
+
+    with mock.patch("adlfs.AzureBlobFileSystem"):
+        adls_fileio = FsspecFileIO(properties=session_properties)
+        adls_fileio.new_input(location="abfss://data@accountone.dfs.core.windows.net/wh/t/a.parquet")
+
+    assert "adls.account-name" not in adls_fileio.properties
+    assert "adls.sas-token" not in adls_fileio.properties
+    assert session_properties == original_properties
+
+
 def test_adls_account_name_not_overridden_when_in_properties() -> None:
     """Test that explicit adls.account-name in properties is not overridden by URI hostname."""
     session_properties: Properties = {
@@ -925,26 +963,62 @@ def _test_fsspec_pickle_round_trip(fsspec_fileio: FsspecFileIO, location: str) -
 TEST_URI = "https://iceberg-test-signer"
 
 
-def test_s3_custom_signer_skips_fsspec_instance_cache() -> None:
-    captured: list[dict[str, object]] = []
+def _sign_with_session(session: Any, uri: str) -> AWSRequest:
+    request = AWSRequest(method="PUT", url=uri, headers={}, data=b"", params={})
+    request.context = {"client_region": "us-east-1"}
+    asyncio.run(
+        session.get_component("event_emitter").emit(
+            "before-sign.s3",
+            request=request,
+            signing_name="s3",
+            region_name="us-east-1",
+            signature_version=UNSIGNED,
+            request_signer=None,
+            operation_name="PutObject",
+        )
+    )
+    return request
 
-    class FakeS3:
-        def __init__(self, **kwargs: object) -> None:
-            captured.append(kwargs)
-            self.s3 = mock.Mock()
-            self.s3.meta.events.unregister = mock.Mock()
-            self.s3.meta.events.register_last = mock.Mock()
 
-    fake_s3fs = mock.MagicMock()
-    fake_s3fs.S3FileSystem = FakeS3
-    with mock.patch.dict(sys.modules, {"s3fs": fake_s3fs}):
-        first = _s3({S3_SIGNER: "S3V4RestSigner", "token": "one", "uri": TEST_URI})
-        second = _s3({S3_SIGNER: "S3V4RestSigner", "token": "two", "uri": TEST_URI})
+def test_s3_registers_the_signer_on_the_session(requests_mock: Mocker) -> None:
+    new_uri = "https://other-bucket/object"
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={"uri": new_uri, "headers": {"Authorization": ["AWS4-HMAC-SHA256 Credential=abc"]}, "extensions": {}},
+        status_code=200,
+    )
 
-    assert first is not second
-    assert len(captured) == 2
-    assert captured[0]["skip_instance_cache"] is True
-    assert captured[1]["skip_instance_cache"] is True
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        fsspec._s3({"s3.signer": "S3V4RestSigner", "uri": TEST_URI, "s3.endpoint": "http://localhost:9000"})
+
+    session = mock_s3fs.call_args.kwargs["session"]
+    request = _sign_with_session(session, "https://bucket/object")
+
+    assert request.url == new_uri
+    assert request.headers["Authorization"] == "AWS4-HMAC-SHA256 Credential=abc"
+
+
+def test_s3_registers_the_signer_per_session(requests_mock: Mocker) -> None:
+    signers = [
+        ("https://first-signer", "https://bucket/first"),
+        ("https://second-signer", "https://bucket/second"),
+    ]
+    for signer_uri, signed_uri in signers:
+        requests_mock.post(
+            f"{signer_uri}/v1/aws/s3/sign",
+            json={"uri": signed_uri, "headers": {"Authorization": ["AWS4-HMAC-SHA256 Credential=abc"]}, "extensions": {}},
+            status_code=200,
+        )
+
+    sessions = []
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        for signer_uri, _ in signers:
+            fsspec._s3({"s3.signer": "S3V4RestSigner", "uri": signer_uri, "s3.endpoint": "http://localhost:9000"})
+            sessions.append(mock_s3fs.call_args.kwargs["session"])
+
+    assert sessions[0] is not sessions[1]
+    for session, (_, signed_uri) in zip(sessions, signers, strict=True):
+        assert _sign_with_session(session, "https://bucket/object").url == signed_uri
 
 
 def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
@@ -1016,6 +1090,80 @@ def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
         "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
         "X-Custom-Header": "value",
     }
+    assert requests_mock.last_request.headers["User-Agent"] == _user_agent()
+
+
+def test_s3v4_rest_signer_replaces_existing_headers(requests_mock: Mocker) -> None:
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={
+            "uri": "https://bucket/metadata/file.avro",
+            "headers": {
+                "Authorization": ["AWS4-HMAC-SHA256 Credential=..., SignedHeaders=..., Signature=..."],
+                "x-amz-content-sha256": ["UNSIGNED-PAYLOAD"],
+                "User-Agent": ["Botocore/1.27.59"],
+            },
+            "extensions": {},
+        },
+        status_code=200,
+    )
+
+    request = AWSRequest(
+        method="PUT",
+        url="https://bucket/metadata/file.avro",
+        headers={
+            "User-Agent": "Botocore/1.27.59",
+            "X-Amz-Content-SHA256": "STREAMING-UNSIGNED-PAYLOAD-TRAILER",
+        },
+        data=b"",
+        params={},
+        auth_path="/metadata/file.avro",
+    )
+    request.context = {"client_region": "us-west-2"}
+
+    signer = S3V4RestSigner(properties={"token": "abc", "uri": TEST_URI})
+    signer(request)
+
+    assert request.headers.get_all("x-amz-content-sha256") == ["UNSIGNED-PAYLOAD"]
+    assert request.headers.get_all("User-Agent") == ["Botocore/1.27.59"]
+    assert len(request.headers.get_all("Authorization")) == 1
+
+
+@pytest.mark.s3
+def test_s3v4_rest_signer_write_read_delete(request: pytest.FixtureRequest, requests_mock: Mocker) -> None:
+    """Test writing, reading, and deleting an S3 file through a REST signing service"""
+    credentials = Credentials(request.config.getoption("--s3.access-key-id"), request.config.getoption("--s3.secret-access-key"))
+
+    def sign(signer_request: Any, _: Any) -> dict[str, Any]:
+        signer_body = signer_request.json()
+        aws_request = AWSRequest(
+            method=signer_body["method"],
+            url=signer_body["uri"],
+            headers={key: values[0] for key, values in signer_body["headers"].items()},
+        )
+        # Upload bodies are not forwarded for signing, so leave the payload unsigned
+        aws_request.context["client_config"] = Config(s3={"payload_signing_enabled": False})
+        S3SigV4Auth(credentials, "s3", signer_body["region"]).add_auth(aws_request)
+        signed_headers = ("Authorization", "X-Amz-Content-SHA256", "X-Amz-Date")
+        return {"uri": signer_body["uri"], "headers": {key: [aws_request.headers[key]] for key in signed_headers}}
+
+    requests_mock.post(f"{TEST_URI}/v1/aws/s3/sign", json=sign)
+    fileio = FsspecFileIO(
+        properties={"s3.endpoint": request.config.getoption("--s3.endpoint"), "s3.signer": "S3V4RestSigner", "uri": TEST_URI}
+    )
+    filename = str(uuid.uuid4())
+    location = f"s3://warehouse/{filename}"
+
+    with fileio.new_output(location).create() as f:
+        f.write(b"foo")
+    assert fileio.new_input(location).open().read() == b"foo"
+    fileio.delete(location)
+    assert not fileio.new_input(location).exists()
+
+    signer_bodies = [signer_request.json() for signer_request in requests_mock.request_history]
+    request_bodies = [signer_body["body"] for signer_body in signer_bodies if "body" in signer_body]
+    assert len(request_bodies) == 1
+    assert f"<Key>{filename}</Key>" in request_bodies[0]
 
 
 def test_s3v4_rest_signer_endpoint(requests_mock: Mocker) -> None:

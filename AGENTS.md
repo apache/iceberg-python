@@ -52,6 +52,12 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - Use domain-specific exceptions from pyiceberg/exceptions.py for Iceberg-specific error conditions. For invalid arguments/values, ValueError is acceptable. Don't raise bare Exception.
 - Comments should be succinct and follow the same style of comments found in the rest of the codebase.
 
+### Spec Compliance
+
+- The [Iceberg spec](https://github.com/apache/iceberg/blob/main/format/spec.md) is the source of truth. Check changes to metadata, manifests, schemas, partitioning, transforms, or the commit path against it, and cite the relevant section when behavior is non-obvious.
+- Changes to the REST catalog (`pyiceberg/catalog/rest/`) must follow the [REST catalog OpenAPI spec](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml).
+- Check every change, including catalog work, against the [Java reference implementation](https://github.com/apache/iceberg). Where the spec is ambiguous or silent, follow Java. Deviations from Java need a justification in the PR.
+
 ### Dependencies
 
 - Large/integration libraries must be **optional extras** in `pyproject.toml`, not core `dependencies`.
@@ -65,10 +71,11 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - Bias towards adding tests to existing files, rather than creating new files.
 - Use existing test fixtures when possible.
 - We have a strong bias towards integration testing over mocks. Mocks should be avoided whenever possible and should only be used if similar, existing tests are using mocks.
+- Prefer a `for` loop over `@pytest.mark.parametrize` for many simple cases; each parametrized case adds per-test overhead. Use `parametrize` when cases need different fixtures, and separate tests when cases are complex.
 
 ### Required CI and Merge Queue
 
-- Keep the `required_status_checks.contexts` list in `.asf.yaml` synchronized whenever a required job/check is added, renamed, or removed. Each entry is a job/check context name, not a workflow filename.
+- Keep the `required_status_checks` list in the `Merge Queue` ruleset in `.asf.yaml` synchronized whenever a required job/check is added, renamed, or removed. Each entry is a job/check context name, not a workflow filename.
 - Verify that every required context reports for both `pull_request` and `merge_group`. Its producer workflow must run on both events.
 - When a workflow uses an aggregate required job, such as `python-ci-required`, keep `if: always()` and its `needs` list in sync with every job whose result should block merging.
 - Do not use `pull_request` path filters in workflows that produce required contexts. A skipped workflow does not report its required context, which blocks pull requests and causes Merge Queue entries to time out.

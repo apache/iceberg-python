@@ -31,7 +31,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table, UpsertResult
 from pyiceberg.table.snapshots import Operation
-from pyiceberg.table.upsert_util import create_match_filter
+from pyiceberg.table.upsert_util import create_match_filter, get_rows_to_update
 from pyiceberg.transforms import DayTransform
 from pyiceberg.types import IntegerType, NestedField, StringType, StructType, TimestampType
 from tests.catalog.test_base import InMemoryCatalog
@@ -927,3 +927,31 @@ def test_upsert_snapshot_properties(catalog: Catalog) -> None:
     for snapshot in snapshots[initial_snapshot_count:]:
         assert snapshot.summary is not None
         assert snapshot.summary.additional_properties.get("test_prop") == "test_value"
+
+
+def test_get_rows_to_update_returns_changed_rows() -> None:
+    source = pa.table({"pk": [1, 2, 3], "value": [10, 20, 30]})
+    target = pa.table({"pk": [1, 2, 3], "value": [10, 21, 30]})
+
+    assert get_rows_to_update(source, target, ["pk"]).to_pydict() == {"pk": [2], "value": [20]}
+
+
+def test_get_rows_to_update_returns_a_row_once() -> None:
+    source = pa.table({"pk": [1], "a": [1], "b": [2]})
+    target = pa.table({"pk": [1], "a": [9], "b": [9]})
+
+    assert get_rows_to_update(source, target, ["pk"]).to_pydict() == {"pk": [1], "a": [1], "b": [2]}
+
+
+def test_get_rows_to_update_treats_nulls_as_equal() -> None:
+    source = pa.table({"pk": [1, 2], "value": pa.array([None, 1], type=pa.int64())})
+    target = pa.table({"pk": [1, 2], "value": pa.array([None, 2], type=pa.int64())})
+
+    assert get_rows_to_update(source, target, ["pk"]).to_pydict() == {"pk": [2], "value": [1]}
+
+
+def test_get_rows_to_update_compares_nested_values() -> None:
+    source = pa.table({"pk": [1, 2], "value": pa.array([{"a": 1}, {"a": 2}])})
+    target = pa.table({"pk": [1, 2], "value": pa.array([{"a": 1}, {"a": 3}])})
+
+    assert get_rows_to_update(source, target, ["pk"]).to_pydict() == {"pk": [2], "value": [{"a": 2}]}

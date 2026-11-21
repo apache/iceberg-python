@@ -14,8 +14,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from pydantic import TypeAdapter, ValidationError
 from requests_mock import Mocker
@@ -39,7 +42,9 @@ from pyiceberg.catalog.rest.scan_planning import (
     ValueMap,
 )
 from pyiceberg.expressions import AlwaysTrue, EqualTo, Reference
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.manifest import FileFormat
+from pyiceberg.table import FileScanTask
 
 TEST_URI = "https://iceberg-test-catalog/"
 
@@ -461,6 +466,7 @@ def test_plan_scan_completed_single_batch(rest_scan_catalog: RestCatalog, reques
 
     assert len(tasks) == 1
     assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
+    assert tasks[0].residual == AlwaysTrue()
 
 
 def test_plan_scan_with_pagination(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
@@ -473,7 +479,7 @@ def test_plan_scan_with_pagination(rest_scan_catalog: RestCatalog, requests_mock
             "status": "completed",
             "plan-id": "plan-123",
             "delete-files": [],
-            "file-scan-tasks": [{"data-file": file_one}],
+            "file-scan-tasks": [{"data-file": file_one, "residual-filter": True}],
             "plan-tasks": ["token-batch-2"],
         },
         status_code=200,
@@ -489,13 +495,16 @@ def test_plan_scan_with_pagination(rest_scan_catalog: RestCatalog, requests_mock
         status_code=200,
     )
 
-    request = PlanTableScanRequest()
+    row_filter = EqualTo("x", 1)
+    request = PlanTableScanRequest(filter=row_filter)
 
     tasks = rest_scan_catalog.plan_scan(("db", "tbl"), request)
 
     assert len(tasks) == 2
     assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
     assert tasks[1].file.file_path == "s3://bucket/tbl/data/file2.parquet"
+    assert tasks[0].residual == AlwaysTrue()
+    assert tasks[1].residual == row_filter
 
 
 def test_plan_scan_with_delete_files(rest_scan_catalog: RestCatalog, requests_mock: Mocker) -> None:
@@ -524,6 +533,88 @@ def test_plan_scan_with_delete_files(rest_scan_catalog: RestCatalog, requests_mo
     assert len(tasks) == 1
     assert tasks[0].file.file_path == "s3://bucket/tbl/data/file1.parquet"
     assert len(tasks[0].delete_files) == 1
+
+
+@pytest.mark.parametrize("include_referenced_data_file", [True, False])
+def test_plan_scan_with_shared_dv_file(
+    rest_scan_catalog: RestCatalog, requests_mock: Mocker, include_referenced_data_file: bool
+) -> None:
+    data_files = [_rest_data_file(file_path=f"s3://bucket/data-{index}.parquet") for index in range(2)]
+    delete_files = [
+        {
+            **_rest_position_delete_file(
+                file_path="s3://bucket/deletes.bin", file_format="puffin", file_size_in_bytes=400, content_offset=offset
+            ),
+            **({"referenced-data-file": data_file["file-path"]} if include_referenced_data_file else {}),
+        }
+        for data_file, offset in zip(data_files, [0, 200], strict=True)
+    ]
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "delete-files": delete_files,
+            "file-scan-tasks": [
+                {"data-file": data_file, "delete-file-references": [index, index]} for index, data_file in enumerate(data_files)
+            ],
+        },
+    )
+
+    tasks = rest_scan_catalog.plan_scan(("db", "tbl"), PlanTableScanRequest())
+
+    assert len(tasks) == 2
+    assert all(len(task.delete_files) == 1 for task in tasks)
+    deletes = [dv for task in tasks for dv in task.delete_files]
+    assert len(deletes) == 2
+    assert {(dv.referenced_data_file, dv.content_offset, dv.content_size_in_bytes) for dv in deletes} == {
+        ("s3://bucket/data-0.parquet", 0, 200),
+        ("s3://bucket/data-1.parquet", 200, 200),
+    }
+
+
+@pytest.mark.parametrize("first_row_id", [1000, None])
+def test_rest_task_preserves_first_row_id(first_row_id: int | None) -> None:
+    rest_data_file = {**_rest_data_file(), **({"first-row-id": first_row_id} if first_row_id is not None else {})}
+    task = FileScanTask.from_rest_response(RESTFileScanTask.model_validate({"data-file": rest_data_file}), [])
+
+    assert task.file.first_row_id == first_row_id
+
+
+@pytest.mark.parametrize("missing_field", ["content-offset", "content-size-in-bytes"])
+@pytest.mark.parametrize("include_referenced_data_file", [True, False])
+def test_rest_task_preserves_partial_dv_reference(missing_field: str, include_referenced_data_file: bool) -> None:
+    fields = {
+        **_rest_position_delete_file(file_format="puffin", content_offset=0),
+        **({"referenced-data-file": "s3://bucket/data.parquet"} if include_referenced_data_file else {}),
+    }
+    fields.pop(missing_field)
+    task = FileScanTask.from_rest_response(
+        RESTFileScanTask.model_validate(
+            {"data-file": _rest_data_file(file_path="s3://bucket/data.parquet"), "delete-file-references": [0]}
+        ),
+        [RESTPositionDeleteFile.model_validate(fields)],
+    )
+    dv = next(iter(task.delete_files))
+
+    assert dv.referenced_data_file == "s3://bucket/data.parquet"
+    assert dv.content_offset == fields.get("content-offset")
+    assert dv.content_size_in_bytes == fields.get("content-size-in-bytes")
+
+
+@pytest.mark.parametrize("file_format", ["puffin", "parquet"])
+def test_rest_task_preserves_whole_delete_file_reference(file_format: str) -> None:
+    fields = _rest_position_delete_file(file_format=file_format)
+    fields.pop("content-offset")
+    fields.pop("content-size-in-bytes")
+    task = FileScanTask.from_rest_response(
+        RESTFileScanTask.model_validate({"data-file": _rest_data_file(), "delete-file-references": [0]}),
+        [RESTPositionDeleteFile.model_validate(fields)],
+    )
+    dv = next(iter(task.delete_files))
+
+    assert dv.referenced_data_file is None
+    assert dv.content_offset is None
+    assert dv.content_size_in_bytes is None
 
 
 def test_plan_scan_async_poll_completes(
@@ -755,6 +846,45 @@ def test_scan_uses_server_side_planning_from_load_table_config(
     tasks = list(scan.plan_files())
     assert [task.file.file_path for task in tasks] == ["s3://bucket/tbl/data/file1.parquet"]
     assert plan_mock.call_count == 1
+
+
+@pytest.mark.parametrize("paginated", [False, True])
+def test_count_applies_scan_filter_when_rest_residual_is_missing(
+    rest_scan_catalog: RestCatalog,
+    requests_mock: Mocker,
+    example_table_metadata_v2: dict[str, Any],
+    tmp_path: Path,
+    paginated: bool,
+) -> None:
+    _mock_load_table(requests_mock, example_table_metadata_v2, {})
+    table = rest_scan_catalog.load_table(("db", "tbl"))
+    data_file = tmp_path / "file.parquet"
+    pq.write_table(
+        pa.table({"x": [1, 2, 1], "y": [4, 5, 6], "z": [7, 8, 9]}, schema=schema_to_pyarrow(table.schema())), data_file
+    )
+    file_task = {
+        "data-file": _rest_data_file(file_path=str(data_file), file_size_in_bytes=data_file.stat().st_size, record_count=3)
+    }
+
+    requests_mock.post(
+        f"{TEST_URI}v1/namespaces/db/tables/tbl/plan",
+        json={
+            "status": "completed",
+            "plan-id": "plan-123",
+            "delete-files": [],
+            "file-scan-tasks": [] if paginated else [file_task],
+            "plan-tasks": ["next"] if paginated else [],
+        },
+    )
+    if paginated:
+        requests_mock.post(
+            f"{TEST_URI}v1/namespaces/db/tables/tbl/tasks",
+            json={"delete-files": [], "file-scan-tasks": [file_task], "plan-tasks": []},
+        )
+
+    scan = table.scan(row_filter="x != 1")
+    assert scan.to_arrow().num_rows == 1
+    assert scan.count() == 1
 
 
 def test_scan_keeps_client_side_planning_without_load_table_config(

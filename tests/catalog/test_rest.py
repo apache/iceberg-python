@@ -19,12 +19,17 @@ from __future__ import annotations
 
 import base64
 import os
+import pickle
+import platform
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, cast
 from unittest import mock
+from urllib.parse import parse_qs, quote, urlsplit
 
 import pytest
+from pydantic import ValidationError
 from requests import Request
 from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
@@ -35,6 +40,7 @@ from pyiceberg.catalog import TOKEN, PropertiesUpdateSummary, load_catalog
 from pyiceberg.catalog.rest import (
     DEFAULT_ENDPOINTS,
     EMPTY_BODY_SHA256,
+    IDEMPOTENCY_KEY_HEADER,
     OAUTH2_SERVER_URI,
     PAGE_SIZE,
     REST_CLIENT_CONNECTION_TIMEOUT_MS,
@@ -49,6 +55,8 @@ from pyiceberg.catalog.rest import (
     HttpMethod,
     RestCatalog,
     ScanPlanningMode,
+    TableResponse,
+    ViewResponse,
     _RetryTimeoutHTTPAdapter,
 )
 from pyiceberg.exceptions import (
@@ -65,10 +73,11 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     ViewAlreadyExistsError,
 )
-from pyiceberg.io import load_file_io
+from pyiceberg.io import ARROW_FILE_IO, FSSPEC_FILE_IO, PY_IO_IMPL, load_file_io
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+from pyiceberg.table.labels import FieldLabel, Labels
 from pyiceberg.table.metadata import TableMetadataV1
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
@@ -88,7 +97,7 @@ TEST_RESOURCE = "test_resource"
 
 TEST_HEADERS = {
     "Content-type": "application/json",
-    "User-Agent": f"PyIceberg/{pyiceberg.__version__}",
+    "User-Agent": f"pyiceberg/{pyiceberg.__version__} ({platform.python_implementation().lower()} {platform.python_version()})",
     "Authorization": f"Bearer {TEST_TOKEN}",
     "X-Iceberg-Access-Delegation": "vended-credentials",
 }
@@ -119,6 +128,7 @@ TEST_SUPPORTED_ENDPOINTS = [
     Capability.V1_CREATE_VIEW,
     Capability.V1_REGISTER_VIEW,
     Capability.V1_DELETE_VIEW,
+    Capability.V1_RENAME_VIEW,
     Capability.V1_SUBMIT_TABLE_SCAN_PLAN,
     Capability.V1_TABLE_SCAN_PLAN_TASKS,
 ]
@@ -945,6 +955,53 @@ def test_view_exists_multilevel_namespace_404(rest_mock: Mocker) -> None:
     assert not catalog.view_exists((multilevel_namespace, view))
 
 
+def test_view_exists_fallback_200(requests_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_VIEW)]},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.view_exists(("fokko", "view"))
+
+
+def test_view_exists_fallback_200_legacy_server(requests_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {"view-endpoints-supported": "true"}, "overrides": {}},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert catalog.view_exists(("fokko", "view"))
+
+
+def test_view_exists_fallback_404(requests_mock: Mocker) -> None:
+    requests_mock.get(
+        f"{TEST_URI}v1/config",
+        json={"defaults": {}, "overrides": {}, "endpoints": [str(Capability.V1_LOAD_VIEW)]},
+        status_code=200,
+    )
+    requests_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    assert not catalog.view_exists(("fokko", "view"))
+
+
 def test_list_namespaces_200(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces",
@@ -970,6 +1027,42 @@ def test_list_namespace_with_parent_200(rest_mock: Mocker) -> None:
     assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(("accounting",)) == [
         ("accounting", "tax"),
     ]
+
+
+@pytest.mark.parametrize(
+    "parent",
+    [
+        ("accounting",),
+        ("accounting", "tax"),
+        ("my namespace",),
+        ("dept/finance", "tax"),
+        ("100%",),
+        ("\u65e5\u672c",),
+    ],
+)
+def test_list_namespace_with_parent_is_encoded_once(rest_mock: Mocker, parent: tuple[str, ...]) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [[*parent, "child"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_namespaces(parent) == [(*parent, "child")]
+    query = parse_qs(urlsplit(rest_mock.last_request.url).query)
+    assert query["parent"] == ["\x1f".join(parent)]
+
+
+def test_list_namespace_with_parent_custom_separator(rest_mock: Mocker) -> None:
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces",
+        json={"namespaces": [["my namespace", "tax", "child"]]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"namespace-separator": "."})
+    assert catalog.list_namespaces(("my namespace", "tax")) == [("my namespace", "tax", "child")]
+    query = parse_qs(urlsplit(rest_mock.last_request.url).query)
+    assert query["parent"] == ["my namespace.tax"]
 
 
 def test_list_namespaces_paginated_200(rest_mock: Mocker) -> None:
@@ -1705,6 +1798,33 @@ def test_create_staged_table_200(
     assert actual_response == expected
 
 
+def test_create_staged_table_with_storage_credentials(
+    rest_mock: Mocker,
+    table_schema_simple: Schema,
+    example_table_metadata_no_snapshot_v1: dict[str, Any],
+) -> None:
+    table_location = "gs://bucket/ns/t"
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json={
+            "metadata": {**example_table_metadata_no_snapshot_v1, "location": table_location},
+            "config": {},
+            "storage-credentials": [
+                {
+                    "prefix": f"{table_location}/",
+                    "config": {"gcs.oauth2.token": "vended"},
+                }
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    txn = catalog.create_table_transaction(identifier=("fokko", "fokko2"), schema=table_schema_simple)
+
+    assert txn._table.io.properties["gcs.oauth2.token"] == "vended"
+
+
 def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
@@ -1762,8 +1882,31 @@ def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example
     expected = View(
         identifier=("fokko", "fokko2"),
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
     )
     assert actual == expected
+    assert actual.config == example_view_metadata_rest_json["config"]
+
+
+def test_create_view_name_is_not_encoded_in_body(
+    rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: dict[str, Any]
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    view_version = ViewVersion(
+        schema_id=1,
+        summary={"engine-name": "spark", "engineVersion": "3.3"},
+        representations=[],
+        default_namespace=["default"],
+    )
+    for view_name in ["my view", "dept/view", "100%", "\u65e5\u672c"]:
+        catalog.create_view(identifier=("fokko", view_name), schema=table_schema_simple, view_version=view_version)
+        assert rest_mock.last_request.json()["name"] == view_name
 
 
 def test_create_view_409(
@@ -1808,8 +1951,26 @@ def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[
     )
     catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
     actual = catalog.load_view(("fokko", "view"))
-    expected = View(identifier=("fokko", "view"), metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]))
+    expected = View(
+        identifier=("fokko", "view"),
+        metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
+    )
     assert actual == expected
+    assert actual.config == example_view_metadata_rest_json["config"]
+
+
+def test_load_view_missing_metadata_location(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    response = {k: v for k, v in example_view_metadata_rest_json.items() if k != "metadata-location"}
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/views/view",
+        json=response,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(ValidationError, match="metadata-location"):
+        catalog.load_view(("fokko", "view"))
 
 
 def test_load_view_404(rest_mock: Mocker) -> None:
@@ -2050,7 +2211,24 @@ def test_delete_table_204(rest_mock: Mocker) -> None:
         status_code=204,
         request_headers=TEST_HEADERS,
     )
-    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_table(("example", "fokko"))
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    catalog.drop_table(("example", "fokko"))
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/example/tables/fokko?purgeRequested=false"
+
+    catalog.drop_table(("example", "fokko"), purge_requested=True)
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/example/tables/fokko?purgeRequested=true"
+
+
+def test_purge_table_204(rest_mock: Mocker) -> None:
+    rest_mock.delete(
+        f"{TEST_URI}v1/namespaces/example/tables/fokko",
+        json={},
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).purge_table(("example", "fokko"))
+    assert rest_mock.last_request.url == f"{TEST_URI}v1/namespaces/example/tables/fokko?purgeRequested=true"
 
 
 def test_delete_table_from_self_identifier_204(
@@ -2380,28 +2558,38 @@ def test_session_with_socket_timeout_only(rest_mock: Mocker) -> None:
 
 
 @contextmanager
-def _local_rest_server_503_then_200(num_failures: int) -> Iterator[dict[str, Any]]:
+def _local_rest_server_503_then_200(num_failures: int, idempotency_key_lifetime: str | None = None) -> Iterator[dict[str, Any]]:
     """Stand up a loopback HTTP server that returns `num_failures` 503s for `/v1/namespaces` then a 200.
 
     Used in place of `requests_mock`, which replaces the HTTPAdapter and would bypass the retry logic.
 
-    Yields a dict with `port` and `namespace_calls` keys (the latter is updated in-place as requests arrive).
+    Yields a dict with `port`, `namespace_calls` and `idempotency_keys` keys, updated in-place as requests arrive.
     """
     import json
     import threading
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
-    state: dict[str, Any] = {"namespace_calls": 0}
-    config_body = json.dumps(
-        {"defaults": {}, "overrides": {}, "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS]}
-    ).encode()
+    state: dict[str, Any] = {"namespace_calls": 0, "idempotency_keys": []}
+    config: dict[str, Any] = {
+        "defaults": {},
+        "overrides": {},
+        "endpoints": [str(endpoint) for endpoint in TEST_SUPPORTED_ENDPOINTS],
+    }
+    if idempotency_key_lifetime is not None:
+        config["idempotency-key-lifetime"] = idempotency_key_lifetime
+    config_body = json.dumps(config).encode()
 
     class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self.do_GET()
+
         def do_GET(self) -> None:
             if self.path.endswith("/v1/config"):
                 self._respond(200, config_body)
             elif self.path.endswith("/v1/namespaces"):
                 state["namespace_calls"] += 1
+                state["idempotency_keys"].append(self.headers.get(IDEMPOTENCY_KEY_HEADER))
                 if state["namespace_calls"] <= num_failures:
                     self._respond(503, b"")
                 else:
@@ -2466,6 +2654,48 @@ def test_session_exhausted_retries_surfaces_typed_exception() -> None:
             catalog.list_namespaces()
         # retries=2 means 1 initial attempt + 2 retries = 3 calls
         assert server["namespace_calls"] == 3
+
+
+def test_session_retries_keyed_post_with_the_same_key() -> None:
+    with _local_rest_server_503_then_200(num_failures=1, idempotency_key_lifetime="PT30M") as server:
+        catalog = RestCatalog(
+            "rest",
+            **{
+                "uri": f"http://127.0.0.1:{server['port']}/",
+                "token": TEST_TOKEN,
+                REST_CLIENT_MAX_RETRIES: "1",
+                REST_CLIENT_RETRY_BACKOFF_FACTOR: "0",
+            },
+        )
+        catalog.create_namespace("foo")
+
+        key = server["idempotency_keys"][0]
+        assert key is not None
+        assert server["idempotency_keys"] == [key, key]
+
+
+def test_mutations_send_idempotency_key_when_advertised(requests_mock: Mocker) -> None:
+    requests_mock.get(f"{TEST_URI}v1/config", json={"defaults": {}, "overrides": {}, "idempotency-key-lifetime": "PT30M"})
+    requests_mock.post(f"{TEST_URI}v1/namespaces", json={"namespace": ["foo"], "properties": {}})
+    requests_mock.get(f"{TEST_URI}v1/namespaces", json={"namespaces": []})
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+
+    catalog.create_namespace("foo")
+    catalog.create_namespace("foo")
+    catalog.list_namespaces()
+
+    first, second, listed = (request.headers.get(IDEMPOTENCY_KEY_HEADER) for request in requests_mock.request_history[1:])
+    assert uuid.UUID(first).version == 7
+    assert first != second
+    assert listed is None
+
+
+def test_mutations_omit_idempotency_key_when_not_advertised(rest_mock: Mocker) -> None:
+    rest_mock.post(f"{TEST_URI}v1/namespaces", json={"namespace": ["foo"], "properties": {}})
+
+    RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_namespace("foo")
+
+    assert IDEMPOTENCY_KEY_HEADER not in rest_mock.last_request.headers
 
 
 def test_session_with_invalid_connection_timeout_raises(rest_mock: Mocker) -> None:
@@ -2795,8 +3025,28 @@ def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: d
     expected = View(
         identifier=("default", "registered_view"),
         metadata=ViewMetadata(**example_view_metadata_rest_json["metadata"]),
+        metadata_location=example_view_metadata_rest_json["metadata-location"],
     )
     assert actual == expected
+    assert actual.config == example_view_metadata_rest_json["config"]
+
+
+def test_register_view_name_is_not_encoded_in_body(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/default/register-view",
+        json=example_view_metadata_rest_json,
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    for view_name in ["my view", "dept/view", "100%", "\u65e5\u672c"]:
+        rest_mock.head(
+            f"{TEST_URI}v1/namespaces/default/tables/{quote(view_name, safe='')}",
+            status_code=404,
+            request_headers=TEST_HEADERS,
+        )
+        catalog.register_view(identifier=("default", view_name), metadata_location="s3://warehouse/database/view/metadata.json")
+        assert rest_mock.last_request.json()["name"] == view_name
 
 
 def test_register_view_409_view(rest_mock: Mocker) -> None:
@@ -2879,12 +3129,132 @@ def test_drop_view_204(rest_mock: Mocker) -> None:
     RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).drop_view(("some_namespace", "some_view"))
 
 
+def test_rename_view_204(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "old_view")
+    to_identifier = ("some_namespace", "new_view")
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "source": {"namespace": ["some_namespace"], "name": "old_view"},
+            "destination": {"namespace": ["some_namespace"], "name": "new_view"},
+        },
+        status_code=204,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    catalog.rename_view(from_identifier, to_identifier)
+    assert (
+        rest_mock.last_request.text == """{"source": {"namespace": ["some_namespace"], "name": "old_view"}, """
+        """"destination": {"namespace": ["some_namespace"], "name": "new_view"}}"""
+    )
+
+
+def test_rename_view_404(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "non_existent_view")
+    to_identifier = ("some_namespace", "new_view")
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "error": {
+                "message": "View does not exist: some_namespace.non_existent_view",
+                "type": "NoSuchViewException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchViewError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "View does not exist: some_namespace.non_existent_view" in str(exc_info.value)
+
+
+def test_rename_view_409(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "old_view")
+    to_identifier = ("some_namespace", "existing_view")
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/views/rename",
+        json={
+            "error": {
+                "message": "View already exists: some_namespace.existing_view",
+                "type": "ViewAlreadyExistsException",
+                "code": 409,
+            }
+        },
+        status_code=409,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(ViewAlreadyExistsError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "View already exists: some_namespace.existing_view" in str(exc_info.value)
+
+
+def test_rename_view_source_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    from_identifier = ("non_existent_namespace", "old_view")
+    to_identifier = ("some_namespace", "new_view")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/non_existent_namespace",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchNamespaceError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "Source namespace does not exist: ('non_existent_namespace',)" in str(exc_info.value)
+
+
+def test_rename_view_destination_namespace_does_not_exist(rest_mock: Mocker) -> None:
+    from_identifier = ("some_namespace", "old_view")
+    to_identifier = ("non_existent_namespace", "new_view")
+
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/some_namespace",
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/non_existent_namespace",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchNamespaceError) as exc_info:
+        catalog.rename_view(from_identifier, to_identifier)
+    assert "Destination namespace does not exist: ('non_existent_namespace',)" in str(exc_info.value)
+
+
 @mock.patch("google.auth.transport.requests.Request")
 @mock.patch("google.auth.load_credentials_from_file")
 def test_rest_catalog_with_google_credentials_path(
     mock_load_creds: mock.MagicMock, mock_google_request: mock.MagicMock, rest_mock: Mocker
 ) -> None:
     mock_credentials = mock.MagicMock()
+    mock_credentials.valid = False
     mock_credentials.token = "file_token"
     mock_load_creds.return_value = (mock_credentials, "test_project_file")
 
@@ -2967,6 +3337,18 @@ def test_auth_header(rest_mock: Mocker) -> None:
         mock_request.last_request.text
         == "grant_type=client_credentials&client_id=client&client_secret=secret_with%3Acolon&scope=catalog"
     )
+
+
+def test_user_agent_header(rest_mock: Mocker, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pyiceberg.catalog.rest.__version__", "0.11.0")
+    for implementation, python_version, expected in [
+        ("CPython", "3.11.4", "pyiceberg/0.11.0 (cpython 3.11.4)"),
+        ("PyPy", "3.10.16", "pyiceberg/0.11.0 (pypy 3.10.16)"),
+    ]:
+        monkeypatch.setattr(platform, "python_implementation", lambda implementation=implementation: implementation)
+        monkeypatch.setattr(platform, "python_version", lambda python_version=python_version: python_version)
+        catalog = RestCatalog("rest", uri=TEST_URI, warehouse="s3://some-bucket")
+        assert catalog._session.headers["User-Agent"] == expected
 
 
 def test_client_version_header(rest_mock: Mocker) -> None:
@@ -3240,6 +3622,7 @@ class TestRestCatalogClose:
         # View endpoints should be supported when enabled
         catalog._check_endpoint(Capability.V1_LIST_VIEWS)
         catalog._check_endpoint(Capability.V1_DELETE_VIEW)
+        catalog._check_endpoint(Capability.V1_RENAME_VIEW)
 
 
 def test_table_uuid_check_on_commit(rest_mock: Mocker, example_table_metadata_v2: dict[str, Any]) -> None:
@@ -3443,6 +3826,32 @@ def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_me
     assert table.io.properties["s3.session-token"] == "vended-token"
 
 
+def test_load_table_catalog_config_outranks_table_properties(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]
+) -> None:
+    metadata_location = "s3://warehouse/database/table/metadata/00001.metadata.json"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={
+            "metadata-location": metadata_location,
+            "metadata": {
+                **example_table_metadata_with_snapshot_v1,
+                "properties": {PY_IO_IMPL: FSSPEC_FILE_IO, "s3.proxy-uri": "http://table-only-proxy"},
+            },
+            "config": {"s3.region": "from-config"},
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{PY_IO_IMPL: ARROW_FILE_IO, "s3.region": "from-catalog"})
+    table = catalog.load_table(("fokko", "table"))
+
+    assert table.io.properties[PY_IO_IMPL] == ARROW_FILE_IO
+    # Server config and a key the catalog leaves unset keep working.
+    assert table.io.properties["s3.region"] == "from-config"
+    assert table.io.properties["s3.proxy-uri"] == "http://table-only-proxy"
+
+
 def test_load_credentials_with_longest_prefix(rest_mock: Mocker) -> None:
     rest_mock.get(
         f"{TEST_URI}v1/namespaces/fokko/tables/table/credentials",
@@ -3495,3 +3904,61 @@ def test_load_table_without_storage_credentials(
     )
     assert actual.metadata.model_dump() == expected.metadata.model_dump()
     assert actual == expected
+
+
+def test_load_responses_parse_labels(
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any], example_view_metadata_rest_json: dict[str, Any]
+) -> None:
+    labels_json = {"object-labels": {"owner": "team-a"}, "fields": [{"field-id": 1, "labels": {"classification": "pii"}}]}
+    expected = Labels(object_labels={"owner": "team-a"}, fields=[FieldLabel(field_id=1, labels={"classification": "pii"})])
+    cases: list[tuple[type[TableResponse | ViewResponse], dict[str, Any]]] = [
+        (TableResponse, example_table_metadata_with_snapshot_v1_rest_json),
+        (ViewResponse, example_view_metadata_rest_json),
+    ]
+    # Like Java, a null or non-object value reads as empty labels.
+    invalid_values: list[Any] = [None, "oops", [], 1, True]
+    for response_type, payload in cases:
+        assert response_type.model_validate({**payload, "labels": labels_json}).labels == expected
+        assert response_type.model_validate(payload).labels == Labels()
+        for invalid in invalid_values:
+            assert response_type.model_validate({**payload, "labels": invalid}).labels == Labels()
+
+
+def test_table_labels_from_rest_responses(
+    rest_mock: Mocker, example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any], table_schema_simple: Schema
+) -> None:
+    response = {
+        **example_table_metadata_with_snapshot_v1_rest_json,
+        "labels": {"object-labels": {"owner": "team-a"}, "fields": [{"field-id": 1, "labels": {"classification": "pii"}}]},
+    }
+    rest_mock.get(f"{TEST_URI}v1/namespaces/fokko/tables/table", json=response, status_code=200, request_headers=TEST_HEADERS)
+    rest_mock.post(f"{TEST_URI}v1/namespaces/fokko/tables", json=response, status_code=200, request_headers=TEST_HEADERS)
+    rest_mock.post(f"{TEST_URI}v1/namespaces/fokko/register", json=response, status_code=200, request_headers=TEST_HEADERS)
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    expected = Labels(object_labels={"owner": "team-a"}, fields=[FieldLabel(field_id=1, labels={"classification": "pii"})])
+
+    table = catalog.load_table(("fokko", "table"))
+    created = catalog.create_table(("fokko", "table"), schema=table_schema_simple)
+    registered = catalog.register_table(("fokko", "table"), metadata_location="s3://warehouse/database/table/metadata.json")
+    for actual in (table, created, registered):
+        assert actual.labels == expected
+
+    # A pickled table keeps its labels. Java does not serialize them, because BaseTable.labels is transient.
+    assert pickle.loads(pickle.dumps(table)).labels == expected
+
+    # Labels are not table state, so equality ignores them and refresh() keeps the labels from the first load.
+    assert table == Table(
+        identifier=("fokko", "table"),
+        metadata_location=example_table_metadata_with_snapshot_v1_rest_json["metadata-location"],
+        metadata=TableMetadataV1(**example_table_metadata_with_snapshot_v1_rest_json["metadata"]),
+        io=load_file_io(),
+        catalog=catalog,
+    )
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/fokko/tables/table",
+        json={**example_table_metadata_with_snapshot_v1_rest_json, "labels": {"object-labels": {"owner": "team-b"}}},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    table.refresh()
+    assert table.labels == expected

@@ -61,6 +61,8 @@ AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
 AWS_SESSION_TOKEN = "client.session-token"
 AWS_ROLE_ARN = "client.role-arn"
 AWS_ROLE_SESSION_NAME = "client.role-session-name"
+AWS_ASSUME_ROLE_ARN = "client.assume-role.arn"
+AWS_ASSUME_ROLE_SESSION_NAME = "client.assume-role.session-name"
 S3_PROFILE_NAME = "s3.profile-name"
 S3_ANONYMOUS = "s3.anonymous"
 S3_ENDPOINT = "s3.endpoint"
@@ -69,6 +71,7 @@ S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
 S3_SESSION_TOKEN = "s3.session-token"
 S3_REGION = "s3.region"
 S3_RESOLVE_REGION = "s3.resolve-region"
+S3_SSL_CA_CERT = "s3.ssl.ca-cert"
 S3_PROXY_URI = "s3.proxy-uri"
 S3_CONNECT_TIMEOUT = "s3.connect-timeout"
 S3_REQUEST_TIMEOUT = "s3.request-timeout"
@@ -376,14 +379,14 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = Non
             raise ValueError(f"Could not initialize FileIO: {io_impl}")
 
     # Check the table location
-    if location:
-        if file_io := _infer_file_io_from_scheme(location, properties):
-            return file_io
+    if location and (file_io := _infer_file_io_from_scheme(location, properties)):
+        return file_io
 
     # Look at the schema of the warehouse
-    if warehouse_location := properties.get(WAREHOUSE):
-        if file_io := _infer_file_io_from_scheme(warehouse_location, properties):
-            return file_io
+    if (warehouse_location := properties.get(WAREHOUSE)) and (
+        file_io := _infer_file_io_from_scheme(warehouse_location, properties)
+    ):
+        return file_io
 
     try:
         # Default to PyArrow

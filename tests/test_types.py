@@ -504,14 +504,14 @@ def test_repr_binary() -> None:
 
 
 def test_serialization_decimal() -> None:
-    assert DecimalType(19, 25).model_dump_json() == '"decimal(19, 25)"'
+    assert DecimalType(25, 19).model_dump_json() == '"decimal(25, 19)"'
 
 
 def test_deserialization_decimal() -> None:
-    decimal = DecimalType.model_validate_json('"decimal(19, 25)"')
-    assert decimal == DecimalType(19, 25)
-    assert decimal.precision == 19
-    assert decimal.scale == 25
+    decimal = DecimalType.model_validate_json('"decimal(25, 19)"')
+    assert decimal == DecimalType(25, 19)
+    assert decimal.precision == 25
+    assert decimal.scale == 19
 
 
 def test_deserialization_decimal_failure() -> None:
@@ -522,11 +522,11 @@ def test_deserialization_decimal_failure() -> None:
 
 
 def test_str_decimal() -> None:
-    assert str(DecimalType(19, 25)) == "decimal(19, 25)"
+    assert str(DecimalType(25, 19)) == "decimal(25, 19)"
 
 
 def test_repr_decimal() -> None:
-    assert repr(DecimalType(19, 25)) == "DecimalType(precision=19, scale=25)"
+    assert repr(DecimalType(25, 19)) == "DecimalType(precision=25, scale=19)"
 
 
 def test_repr_nested_field_default_nones_should_not_appear() -> None:
@@ -935,3 +935,15 @@ def test_decimal_precision_validation() -> None:
 
     with pytest.raises(ValidationError, match="Decimal precision must be between 1 and 38"):
         DecimalType(-5, 2)
+
+
+def test_decimal_scale_validation() -> None:
+    """Test that DecimalType rejects a scale that is negative or exceeds the precision."""
+    assert DecimalType(9, 9).scale == 9
+    assert DecimalType(9, 0).scale == 0
+
+    with pytest.raises(ValidationError, match="Decimal scale must be between 0 and the precision"):
+        DecimalType(10, -1)
+
+    with pytest.raises(ValidationError, match="Decimal scale must be between 0 and the precision"):
+        DecimalType(5, 10)

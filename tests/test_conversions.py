@@ -80,10 +80,10 @@ Notes:
 import struct
 import uuid
 from datetime import (
+    UTC,
     date,
     datetime,
     time,
-    timezone,
 )
 from decimal import Decimal
 from typing import Any
@@ -109,6 +109,7 @@ from pyiceberg.types import (
     TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
     UUIDType,
 )
 
@@ -283,9 +284,9 @@ def test_partition_to_py_raise_on_incorrect_precision_or_scale(
         (
             UUIDType(),
             b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7",
-            b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7",
+            uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7"),
         ),
-        (UUIDType(), b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7", b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7"),
+        (UUIDType(), b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7", uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7")),
         (FixedType(3), b"foo", b"foo"),
         (BinaryType(), b"foo", b"foo"),
         (DecimalType(5, 2), b"\x30\x39", Decimal("123.45")),
@@ -296,6 +297,31 @@ def test_partition_to_py_raise_on_incorrect_precision_or_scale(
 def test_from_bytes(primitive_type: PrimitiveType, b: bytes, result: Any) -> None:
     """Test converting from bytes"""
     assert conversions.from_bytes(primitive_type, b) == result
+
+
+def test_from_bytes_date_bound_promoted_to_timestamp() -> None:
+    # A bound written before a date -> timestamp promotion keeps its 4-byte day count
+    cases: list[tuple[PrimitiveType, bytes, int]] = [
+        (TimestampType(), struct.pack("<i", 18793), 1623715200000000),  # 2021-06-15
+        (TimestampType(), struct.pack("<i", -3653), -315619200000000),  # 1960-01-01
+        (TimestampNanoType(), struct.pack("<i", 18793), 1623715200000000000),
+        (TimestampNanoType(), struct.pack("<i", -3653), -315619200000000000),
+        # The 8-byte encoding is unchanged
+        (TimestampType(), struct.pack("<q", 1623715200000000), 1623715200000000),
+        (TimestampNanoType(), struct.pack("<q", 1623715200000000000), 1623715200000000000),
+    ]
+    for primitive_type, b, expected in cases:
+        assert conversions.from_bytes(primitive_type, b) == expected, primitive_type
+
+
+def test_from_bytes_date_bound_promoted_to_timestamp_beyond_int64() -> None:
+    # A bound can be wider than the data, so the scaled value stays exact outside the int64 range
+    cases: list[tuple[PrimitiveType, int, int]] = [
+        (TimestampNanoType(), 106752, 9223372800000000000),
+        (TimestampNanoType(), -106752, -9223372800000000000),
+    ]
+    for primitive_type, days, expected in cases:
+        assert conversions.from_bytes(primitive_type, struct.pack("<i", days)) == expected
 
 
 @pytest.mark.parametrize(
@@ -321,9 +347,9 @@ def test_from_bytes(primitive_type: PrimitiveType, b: bytes, result: Any) -> Non
         (
             UUIDType(),
             b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7",
-            b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7",
+            uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7"),
         ),
-        (UUIDType(), b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7", b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7"),
+        (UUIDType(), b"\xf7\x9c>\tg|K\xbd\xa4y?4\x9c\xb7\x85\xe7", uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7")),
         (FixedType(3), b"foo", b"foo"),
         (BinaryType(), b"foo", b"foo"),
         (DecimalType(5, 2), b"\x30\x39", Decimal("123.45")),
@@ -510,6 +536,13 @@ def test_raise_on_unregistered_type() -> None:
     "primitive_type, value, expected_error_message",
     [
         (DecimalType(7, 3), Decimal("123.4567"), "Cannot serialize value, scale of value does not match type decimal(7, 3): 4"),
+        # A Decimal with a negative scale must not pass as its positive counterpart
+        (DecimalType(10, 2), Decimal("1E+2"), "Cannot serialize value, scale of value does not match type decimal(10, 2): -2"),
+        (
+            DecimalType(10, 2),
+            Decimal("100").normalize(),
+            "Cannot serialize value, scale of value does not match type decimal(10, 2): -2",
+        ),
         (
             DecimalType(18, 8),
             Decimal("123456789.123456789"),
@@ -548,7 +581,7 @@ def test_raise_on_incorrect_precision_or_scale(primitive_type: DecimalType, valu
     "primitive_type, value, expected_bytes",
     [
         (TimestampType(), datetime(2023, 3, 1, 19, 25, 0), b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
-        (TimestamptzType(), datetime(2023, 3, 1, 19, 25, 0, tzinfo=timezone.utc), b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
+        (TimestamptzType(), datetime(2023, 3, 1, 19, 25, 0, tzinfo=UTC), b"\x00\xbb\r\xab\xdb\xf5\x05\x00"),
         (DateType(), date(2023, 3, 1), b"\xd9K\x00\x00"),
         (TimeType(), time(12, 30, 45, 500000), b"`\xc8\xeb|\n\x00\x00\x00"),
     ],
@@ -569,11 +602,14 @@ def test_datetime_obj_to_bytes(primitive_type: PrimitiveType, value: datetime | 
         (DoubleType(), 1.0, 1.0),
         (DecimalType(9, 4), Decimal("123.4500"), "123.4500"),
         (DecimalType(9, 0), Decimal("2"), "2"),
-        (DecimalType(9, -20), Decimal("2E+20"), "2E+20"),
+        (DecimalType(9, 9), Decimal("0.123456789"), "0.123456789"),
+        (DecimalType(20, 8), Decimal("0.00000000"), "0.00000000"),
+        (DecimalType(20, 8), Decimal("-0.00000012"), "-0.00000012"),
+        (DecimalType(38, 18), Decimal("0.000000000000000001"), "0.000000000000000001"),
         (DateType(), date(2017, 11, 16), "2017-11-16"),
         (TimeType(), time(22, 31, 8, 123456), "22:31:08.123456"),
         (TimestampType(), datetime(2017, 11, 16, 22, 31, 8, 123456), "2017-11-16T22:31:08.123456"),
-        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=timezone.utc), "2017-11-16T22:31:08.123456+00:00"),
+        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=UTC), "2017-11-16T22:31:08.123456+00:00"),
         (StringType(), "iceberg", "iceberg"),
         (BinaryType(), b"\x01\x02\x03\xff", "010203ff"),
         (FixedType(4), b"\x01\x02\x03\xff", "010203ff"),
@@ -594,11 +630,11 @@ def test_json_single_serialization(primitive_type: PrimitiveType, value: Any, ex
         (DoubleType(), 1.0),
         (DecimalType(9, 4), Decimal("123.4500")),
         (DecimalType(9, 0), Decimal("2")),
-        (DecimalType(9, -20), Decimal("2E+20")),
+        (DecimalType(9, 9), Decimal("0.123456789")),
         (DateType(), date(2017, 11, 16)),
         (TimeType(), time(22, 31, 8, 123456)),
         (TimestampType(), datetime(2017, 11, 16, 22, 31, 8, 123456)),
-        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=timezone.utc)),
+        (TimestamptzType(), datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=UTC)),
         (StringType(), "iceberg"),
         (BinaryType(), b"\x01\x02\x03\xff"),
         (FixedType(4), b"\x01\x02\x03\xff"),
@@ -606,3 +642,37 @@ def test_json_single_serialization(primitive_type: PrimitiveType, value: Any, ex
 )
 def test_json_serialize_roundtrip(primitive_type: PrimitiveType, value: Any) -> None:
     assert value == conversions.from_json(primitive_type, conversions.to_json(primitive_type, value))
+
+
+@pytest.mark.parametrize(
+    "primitive_type, json_val, expected",
+    [
+        (TimestampType(), "2017-11-16T22:31:08.123456789", datetime(2017, 11, 16, 22, 31, 8, 123456)),
+        (
+            TimestamptzType(),
+            "2017-11-16T22:31:08.123456789+00:00",
+            datetime(2017, 11, 16, 22, 31, 8, 123456, tzinfo=UTC),
+        ),
+    ],
+)
+def test_json_single_deserialization_with_nano_precision(
+    primitive_type: PrimitiveType, json_val: str, expected: datetime
+) -> None:
+    assert conversions.from_json(primitive_type, json_val) == expected
+
+
+def test_unknown_type_conversions() -> None:
+    """Unknown values are always null, so they have no binary or partition representation."""
+    unknown = UnknownType()
+
+    assert conversions.to_bytes(unknown, "iceberg") is None
+    assert conversions.from_bytes(unknown, b"\x01\x02\x03\xff") is None
+    assert conversions.partition_to_py(unknown, "iceberg") is None
+
+    # The spec defines no JSON single-value representation for unknown, since a
+    # non-null initial-default or write-default is invalid for the type.
+    with pytest.raises(TypeError):
+        conversions.to_json(unknown, "iceberg")
+
+    with pytest.raises(TypeError):
+        conversions.from_json(unknown, "iceberg")

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import itertools
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from pyiceberg.conversions import from_bytes
@@ -135,7 +135,7 @@ class InspectTable:
 
             snapshots.append(
                 {
-                    "committed_at": datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0, tz=timezone.utc),
+                    "committed_at": datetime.fromtimestamp(snapshot.timestamp_ms / 1000.0, tz=UTC),
                     "snapshot_id": snapshot.snapshot_id,
                     "parent_id": snapshot.parent_snapshot_id,
                     "operation": str(operation),
@@ -232,7 +232,7 @@ class InspectTable:
 
         entries = []
         snapshot = self._get_snapshot(snapshot_id)
-        for manifest in snapshot.manifests(self.tbl.io):
+        for manifest in snapshot.manifests(self.tbl.io, self.tbl.encryption_manager):
             for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=False):
                 column_sizes = entry.data_file.column_sizes or {}
                 value_counts = entry.data_file.value_counts or {}
@@ -272,7 +272,7 @@ class InspectTable:
                             "partition": partition_record_dict,
                             "record_count": entry.data_file.record_count,
                             "file_size_in_bytes": entry.data_file.file_size_in_bytes,
-                            "column_sizes": dict(entry.data_file.column_sizes),
+                            "column_sizes": dict(entry.data_file.column_sizes or {}),
                             "value_counts": dict(entry.data_file.value_counts or {}),
                             "null_value_counts": dict(entry.data_file.null_value_counts or {}),
                             "nan_value_counts": dict(entry.data_file.nan_value_counts or {}),
@@ -383,7 +383,7 @@ class InspectTable:
         )
 
         snapshot = self._get_snapshot(snapshot_id)
-        spec_ids = {manifest.partition_spec_id for manifest in snapshot.manifests(self.tbl.io)}
+        spec_ids = {manifest.partition_spec_id for manifest in snapshot.manifests(self.tbl.io, self.tbl.encryption_manager)}
         partition_record = self.tbl.metadata.specs_struct(spec_ids=spec_ids)
         has_partitions = len(partition_record.fields) > 0
 
@@ -404,6 +404,7 @@ class InspectTable:
             row_filter=row_filter,
             case_sensitive=case_sensitive,
             snapshot_id=snapshot.snapshot_id,
+            encryption_manager=self.tbl.encryption_manager,
         )
 
         partitions_map: dict[tuple[str, Any], Any] = {}
@@ -590,7 +591,7 @@ class InspectTable:
         specs = self.tbl.metadata.specs()
         manifests = []
         if snapshot:
-            for manifest in snapshot.manifests(self.tbl.io):
+            for manifest in snapshot.manifests(self.tbl.io, self.tbl.encryption_manager):
                 is_data_file = manifest.content == ManifestContent.DATA
                 is_delete_file = manifest.content == ManifestContent.DELETES
                 manifest_row = {
@@ -709,7 +710,7 @@ class InspectTable:
 
             history.append(
                 {
-                    "made_current_at": datetime.fromtimestamp(snapshot_entry.timestamp_ms / 1000.0, tz=timezone.utc),
+                    "made_current_at": datetime.fromtimestamp(snapshot_entry.timestamp_ms / 1000.0, tz=UTC),
                     "snapshot_id": snapshot_entry.snapshot_id,
                     "parent_id": snapshot.parent_snapshot_id if snapshot else None,
                     "is_current_ancestor": snapshot_entry.snapshot_id in ancestors_ids,
@@ -783,6 +784,7 @@ class InspectTable:
                     "split_offsets": data_file.split_offsets,
                     "equality_ids": data_file.equality_ids,
                     "sort_order_id": data_file.sort_order_id,
+                    "first_row_id": data_file.first_row_id,
                     "readable_metrics": readable_metrics,
                 }
             )
@@ -803,7 +805,7 @@ class InspectTable:
                 ``file_size_in_bytes``, ``column_sizes``, ``value_counts``,
                 ``null_value_counts``, ``nan_value_counts``, ``lower_bounds``,
                 ``upper_bounds``, ``key_metadata``, ``split_offsets``,
-                ``equality_ids``, ``sort_order_id``, and ``readable_metrics``.
+                ``equality_ids``, ``sort_order_id``, ``first_row_id``, and ``readable_metrics``.
         """
         import pyarrow as pa
 
@@ -852,6 +854,7 @@ class InspectTable:
                 pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
                 pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
                 pa.field("sort_order_id", pa.int32(), nullable=True),
+                pa.field("first_row_id", pa.int64(), nullable=True),
                 pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
             ]
         )
@@ -882,7 +885,8 @@ class InspectTable:
         executor = ExecutorFactory.get_or_create()
         results = list(
             executor.map(
-                lambda manifest_list: self._get_files_from_manifest(manifest_list, data_file_filter), snapshot.manifests(io)
+                lambda manifest_list: self._get_files_from_manifest(manifest_list, data_file_filter),
+                snapshot.manifests(io, self.tbl.encryption_manager),
             )
         )
         return pa.concat_tables(results)
@@ -970,7 +974,8 @@ class InspectTable:
             return pa.Table.from_pylist([], schema=self._get_files_schema())
 
         executor = ExecutorFactory.get_or_create()
-        manifest_lists = executor.map(lambda snapshot: snapshot.manifests(self.tbl.io), snapshots)
+        encryption_manager = self.tbl.encryption_manager
+        manifest_lists = executor.map(lambda snapshot: snapshot.manifests(self.tbl.io, encryption_manager), snapshots)
 
         unique_manifests = {(manifest.manifest_path, manifest) for manifest_list in manifest_lists for manifest in manifest_list}
 

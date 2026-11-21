@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.exc import ArgumentError
 
 from pyiceberg.catalog import load_catalog
@@ -32,10 +32,12 @@ from pyiceberg.catalog.sql import (
     SqlCatalogBaseTable,
 )
 from pyiceberg.exceptions import (
+    NamespaceAlreadyExistsError,
     NoSuchPropertyException,
     NoSuchTableError,
     TableAlreadyExistsError,
 )
+from pyiceberg.io import ARROW_FILE_IO, FSSPEC_FILE_IO, PY_IO_IMPL
 from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, StringType, strtobool
 
@@ -132,6 +134,29 @@ def test_creation_with_pool_pre_ping_parameter(catalog_name: str, warehouse: Pat
             f"Assertion failed: expected pool_pre_ping value {expected_pool_pre_ping_value}, "
             f"but got {catalog.engine.pool._pre_ping}. For pool_pre_ping_param={pool_pre_ping_param}"
         )
+
+
+def test_creation_with_existing_engine(catalog_name: str, warehouse: Path) -> None:
+    engine = create_engine(f"sqlite:///{warehouse.as_posix()}/sql-catalog-engine")
+
+    catalog = SqlCatalog(catalog_name, engine=engine, warehouse=f"file://{warehouse}")
+
+    assert catalog.engine is engine
+    confirm_all_tables_exist(catalog)
+
+    catalog.create_namespace("default")
+    catalog.create_table("default.t", Schema(NestedField(1, "x", StringType())))
+    assert catalog.table_exists("default.t")
+
+
+def test_creation_with_existing_engine_without_uri(catalog_name: str, warehouse: Path) -> None:
+    engine = create_engine(f"sqlite:///{warehouse.as_posix()}/sql-catalog-engine-no-uri")
+
+    catalog = SqlCatalog(catalog_name, engine=engine, warehouse=f"file://{warehouse}")
+
+    catalog.create_namespace("default")
+    catalog.create_table("default.t2", Schema(NestedField(1, "x", StringType())))
+    assert catalog.table_exists("default.t2")
 
 
 def test_creation_from_impl(catalog_name: str, warehouse: Path) -> None:
@@ -297,6 +322,25 @@ def test_idempotent_when_column_already_exists(warehouse: Path) -> None:
     # Verify initialization is idempotent when column already exists
     catalog._init_catalog()
     assert "iceberg_type" in get_columns(catalog.engine)
+
+
+def test_load_table_ranks_catalog_config_above_table_properties(warehouse: Path) -> None:
+    catalog = SqlCatalog(
+        name="test",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{warehouse}",
+        **{PY_IO_IMPL: ARROW_FILE_IO},
+    )
+    catalog.create_namespace("ns")
+    catalog.create_table(
+        ("ns", "tbl"),
+        Schema(NestedField(1, "id", StringType(), required=True)),
+        properties={PY_IO_IMPL: FSSPEC_FILE_IO, "s3.proxy-uri": "http://table-only-proxy"},
+    )
+
+    io = catalog.load_table(("ns", "tbl")).io
+    assert io.properties[PY_IO_IMPL] == ARROW_FILE_IO
+    assert io.properties["s3.proxy-uri"] == "http://table-only-proxy"
 
 
 def test_list_tables_filters_by_iceberg_type(warehouse: Path) -> None:
@@ -516,3 +560,33 @@ def test_create_and_load_table_on_v0_schema(warehouse: Path) -> None:
 
     # iceberg_type column must still be absent from the DB (no migration occurred)
     assert "iceberg_type" not in get_columns(catalog.engine)
+
+
+def test_create_namespace_concurrent_integrity_error(warehouse: Path) -> None:
+    """Concurrent create_namespace requests should raise NamespaceAlreadyExistsError."""
+    uri = f"sqlite:///{warehouse.as_posix()}/test-concurrent-create-namespace"
+    warehouse_uri = f"file://{warehouse}"
+    catalog_1 = SqlCatalog("test", uri=uri, warehouse=warehouse_uri)
+    catalog_2 = SqlCatalog("test", uri=uri, warehouse=warehouse_uri)
+    try:
+        injected = False
+
+        @event.listens_for(catalog_1.engine, "before_cursor_execute")
+        def inject_concurrent_insert(
+            _conn: object,
+            _cursor: object,
+            statement: str,
+            _parameters: object,
+            _context: object,
+            _executemany: bool,
+        ) -> None:
+            nonlocal injected
+            if not injected and "INSERT INTO iceberg_namespace_properties" in statement:
+                injected = True
+                catalog_2.create_namespace("concurrent_ns")
+
+        with pytest.raises(NamespaceAlreadyExistsError):
+            catalog_1.create_namespace("concurrent_ns")
+    finally:
+        catalog_1.close()
+        catalog_2.close()

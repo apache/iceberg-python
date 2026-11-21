@@ -235,20 +235,24 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     def _manifests(self) -> list[ManifestFile]:
         def _write_added_manifest() -> list[ManifestFile]:
             if self._added_data_files:
-                with self.new_manifest_writer(
-                    spec=self._transaction.table_metadata.spec(),
-                ) as writer:
-                    for data_file in self._added_data_files:
-                        writer.add(
-                            ManifestEntry.from_args(
-                                status=ManifestEntryStatus.ADDED,
-                                snapshot_id=self._snapshot_id,
-                                sequence_number=None,
-                                file_sequence_number=None,
-                                data_file=data_file,
+                added_manifests = []
+                partition_groups: dict[int, list[DataFile]] = defaultdict(list)
+                for data_file in self._added_data_files:
+                    partition_groups[data_file.spec_id].append(data_file)
+                for spec_id, data_files in partition_groups.items():
+                    with self.new_manifest_writer(self.spec(spec_id)) as writer:
+                        for data_file in data_files:
+                            writer.add(
+                                ManifestEntry.from_args(
+                                    status=ManifestEntryStatus.ADDED,
+                                    snapshot_id=self._snapshot_id,
+                                    sequence_number=None,
+                                    file_sequence_number=None,
+                                    data_file=data_file,
+                                )
                             )
-                        )
-                return [writer.to_manifest_file()]
+                    added_manifests.append(writer.to_manifest_file())
+                return added_manifests
             else:
                 return []
 
@@ -286,7 +290,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         # avoid copying metadata for each data file
         table_metadata = self._transaction.table_metadata
         schema = table_metadata.schema()
-        default_spec = table_metadata.spec()
+        specs = table_metadata.specs()
 
         partition_summary_limit = int(
             table_metadata.properties.get(
@@ -298,12 +302,11 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         for data_file in self._added_data_files:
             ssc.add_file(
                 data_file=data_file,
-                partition_spec=default_spec,
+                partition_spec=specs[data_file.spec_id],
                 schema=schema,
             )
 
         if len(self._deleted_data_files) > 0:
-            specs = table_metadata.specs()
             for data_file in self._deleted_data_files:
                 ssc.remove_file(
                     data_file=data_file,
@@ -498,20 +501,20 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
 
         if isolation_level == IsolationLevel.SERIALIZABLE:
-            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot, self._case_sensitive)
 
         if self._predicate != AlwaysFalse():
             # partition_set is None, so any concurrently committed delete file counts as
             # a conflict even in unrelated partitions. Scope this via partition projection
             # (as Java does) when delete-file write support lands.
-            _validate_no_new_delete_files(table, catalog_head, conflict_detection_filter, None, starting_snapshot)
-            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+            _validate_no_new_delete_files(
+                table, catalog_head, conflict_detection_filter, None, starting_snapshot, self._case_sensitive
+            )
+            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot, self._case_sensitive)
 
         if self._deleted_data_files:
             _validate_data_files_exist(table, catalog_head, self._deleted_data_files, starting_snapshot)
-            _validate_no_new_deletes_for_data_files(
-                table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
-            )
+            _validate_no_new_deletes_for_data_files(table, catalog_head, self._deleted_data_files, starting_snapshot)
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.schema(), self.spec(spec_id), self._case_sensitive)
@@ -970,7 +973,7 @@ class _ManifestMergeManager(Generic[U]):
                     elif entry.status == ManifestEntryStatus.ADDED and entry.snapshot_id == self._snapshot_producer.snapshot_id:
                         # added entries from this snapshot are still added, otherwise they should be existing
                         writer.add(entry)
-                    elif entry.status != ManifestEntryStatus.DELETED:
+                    elif entry.is_live():
                         # add all non-deleted files from the old manifest as existing files
                         writer.existing(entry)
 
@@ -1008,7 +1011,7 @@ class _ManifestMergeManager(Generic[U]):
         groups = self._group_by_spec(manifests)
 
         merged_manifests = []
-        for spec_id in reversed(groups.keys()):
+        for spec_id in reversed(groups):
             merged_manifests.extend(self._merge_group(first_manifest, spec_id, groups[spec_id]))
 
         return merged_manifests
@@ -1084,7 +1087,8 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
         Args:
             ref_name: branch / tag name to remove
         Stages the updates and requirements for the remove-snapshot-ref.
-        Returns
+
+        Returns:
             This method for chaining
         """
         updates = (RemoveSnapshotRefUpdate(ref_name=ref_name),)
@@ -1111,7 +1115,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
 
         Returns:
             This for method chaining
+
+        Raises:
+            ValueError: If a branch or tag with this name already exists.
         """
+        if tag_name in self._effective_refs():
+            raise ValueError(f"Ref {tag_name} already exists")
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=tag_name,
@@ -1130,7 +1139,16 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             tag_name (str): name of tag to remove
         Returns:
             This for method chaining
+
+        Raises:
+            NoSuchSnapshotRefError: If the tag does not exist.
+            SnapshotRefTypeError: If the name belongs to a branch.
         """
+        ref = self._effective_refs().get(tag_name)
+        if ref is None:
+            raise NoSuchSnapshotRefError(f"Tag does not exist: {tag_name}")
+        if ref.snapshot_ref_type != SnapshotRefType.TAG:
+            raise SnapshotRefTypeError(f"Ref {tag_name} is a branch, not a tag")
         return self._remove_ref_snapshot(ref_name=tag_name)
 
     def create_branch(
@@ -1152,7 +1170,12 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             min_snapshots_to_keep (Optional[int]): min number of snapshots to keep for the branch
         Returns:
             This for method chaining
+
+        Raises:
+            ValueError: If a branch or tag with this name already exists.
         """
+        if branch_name in self._effective_refs():
+            raise ValueError(f"Ref {branch_name} already exists")
         update, requirement = self._transaction._set_ref_snapshot(
             snapshot_id=snapshot_id,
             ref_name=branch_name,
@@ -1173,7 +1196,19 @@ class ManageSnapshots(UpdateTableMetadata["ManageSnapshots"]):
             branch_name (str): name of branch to remove
         Returns:
             This for method chaining
+
+        Raises:
+            ValueError: If the branch is main.
+            NoSuchSnapshotRefError: If the branch does not exist.
+            SnapshotRefTypeError: If the name belongs to a tag.
         """
+        if branch_name == MAIN_BRANCH:
+            raise ValueError("Cannot remove main branch")
+        ref = self._effective_refs().get(branch_name)
+        if ref is None:
+            raise NoSuchSnapshotRefError(f"Branch does not exist: {branch_name}")
+        if ref.snapshot_ref_type != SnapshotRefType.BRANCH:
+            raise SnapshotRefTypeError(f"Ref {branch_name} is a tag, not a branch")
         return self._remove_ref_snapshot(ref_name=branch_name)
 
     def set_current_snapshot(self, snapshot_id: int | None = None, ref_name: str | None = None) -> ManageSnapshots:
@@ -1381,6 +1416,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         Args:
             snapshot_id (int): The ID of the snapshot to expire.
+
         Returns:
             This for method chaining.
         """
@@ -1402,6 +1438,7 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
 
         Args:
             snapshot_ids (List[int]): List of snapshot IDs to expire.
+
         Returns:
             This for method chaining.
         """
