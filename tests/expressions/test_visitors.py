@@ -1901,6 +1901,27 @@ def test_translate_column_names_missing_column_with_initial_default_mismatch() -
     assert translated_expr == AlwaysFalse()
 
 
+def test_translate_column_names_missing_float_column_with_initial_default() -> None:
+    """Test translate_column_names when a missing float column's initial_default is not exact in float32."""
+    original_schema = Schema(
+        NestedField(field_id=2, name="missing_col", field_type=FloatType(), required=False, initial_default=0.1),
+        schema_id=1,
+    )
+
+    unbound_expr = EqualTo("missing_col", 0.1)
+    bound_expr = visit(unbound_expr, visitor=BindVisitor(schema=original_schema, case_sensitive=True))
+
+    file_schema = Schema(
+        NestedField(field_id=1, name="other_col", field_type=StringType(), required=False),
+        schema_id=1,
+    )
+
+    translated_expr = translate_column_names(bound_expr, file_schema, case_sensitive=True)
+
+    # Both the literal and the initial_default are rounded to float32, so they match
+    assert translated_expr == AlwaysTrue()
+
+
 def test_translate_column_names_missing_column_with_projected_field_matches() -> None:
     """Test translate_column_names with projected field value that matches expression."""
     # Original schema with a field that has no initial_default (defaults to None)

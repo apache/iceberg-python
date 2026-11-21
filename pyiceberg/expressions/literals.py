@@ -373,32 +373,34 @@ class LongLiteral(Literal[int]):
 
 class FloatLiteral(Literal[float]):
     def __init__(self, value: float) -> None:
+        if isinstance(value, float):
+            # Narrow to float32 like Java, so the value matches float32 bounds and partition values
+            value = struct.unpack("<f", struct.pack("<f", value))[0]
         super().__init__(value, float)
-        self._value32 = struct.unpack("<f", struct.pack("<f", value))[0]
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the FloatLiteral class."""
-        return self._value32 == other
+        return self.value == other
 
     def __lt__(self, other: Any) -> bool:
         """Return if one instance of the FloatLiteral class is less than another instance."""
-        return self._value32 < other
+        return self.value < other
 
     def __gt__(self, other: Any) -> bool:
         """Return if one instance of the FloatLiteral class is greater than another instance."""
-        return self._value32 > other
+        return self.value > other
 
     def __le__(self, other: Any) -> bool:
         """Return if one instance of the FloatLiteral class is less than or equal to another instance."""
-        return self._value32 <= other
+        return self.value <= other
 
     def __ge__(self, other: Any) -> bool:
         """Return if one instance of the FloatLiteral class is greater than or equal to another instance."""
-        return self._value32 >= other
+        return self.value >= other
 
     def __hash__(self) -> int:
         """Return a hashed representation of the FloatLiteral class."""
-        return hash(self._value32)
+        return hash(self.value)
 
     @singledispatchmethod
     def to(self, type_var: IcebergType) -> Literal:  # type: ignore
