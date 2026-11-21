@@ -825,7 +825,7 @@ class Transaction:
                 case_sensitive=case_sensitive,
                 _ignore_residuals=True,
             )
-            snapshot = self.table_metadata.snapshot_by_name(branch)
+            snapshot = self.table_metadata.snapshot_by_name(branch) or self.table_metadata.current_snapshot()
             files = planner.plan_files(snapshot.manifests(self._table.io)) if snapshot is not None else []
 
             commit_uuid = uuid.uuid4()
