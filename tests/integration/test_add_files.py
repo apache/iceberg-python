@@ -22,6 +22,7 @@ import re
 import threading
 from collections.abc import Iterator
 from datetime import date
+from pathlib import Path
 from unittest import mock
 
 import pyarrow as pa
@@ -1040,3 +1041,76 @@ def test_add_files_to_branch(spark: SparkSession, session_catalog: Catalog, form
 
     for col in branch_df.columns:
         assert branch_df.filter(branch_df[col].isNotNull()).count() == 6, "Expected all 6 rows to be non-null"
+
+
+def _create_table_with_branch(catalog: Catalog, branch: str) -> Table:
+    catalog.create_namespace("default")
+    tbl = catalog.create_table("default.test_add_files_branch_duplicate", schema=TABLE_SCHEMA)
+    tbl.append(ARROW_TABLE)
+    assert tbl.metadata.current_snapshot_id is not None
+    tbl.manage_snapshots().create_branch(snapshot_id=tbl.metadata.current_snapshot_id, branch_name=branch).commit()
+    return tbl
+
+
+@pytest.mark.integration
+def test_add_files_to_branch_rejects_file_already_referenced_by_branch(catalog: Catalog, tmp_path: Path) -> None:
+    branch = "branch1"
+    tbl = _create_table_with_branch(catalog, branch)
+    file_path = f"file://{tmp_path}/duplicate.parquet"
+    _write_parquet(tbl.io, file_path, ARROW_SCHEMA, ARROW_TABLE)
+
+    tbl.add_files(file_paths=[file_path], branch=branch)
+    with pytest.raises(ValueError, match="already referenced by table"):
+        tbl.add_files(file_paths=[file_path], branch=branch)
+
+    # the branch holds the row from main and the row from the file, each exactly once
+    branch_rows = tbl.scan(snapshot_id=tbl.metadata.refs[branch].snapshot_id).to_arrow().to_pylist()
+    assert branch_rows == ARROW_TABLE.to_pylist() * 2
+
+
+@pytest.mark.integration
+def test_add_files_to_branch_rejects_file_added_earlier_in_transaction(catalog: Catalog, tmp_path: Path) -> None:
+    branch = "branch1"
+    tbl = _create_table_with_branch(catalog, branch)
+    file_path = f"file://{tmp_path}/duplicate.parquet"
+    _write_parquet(tbl.io, file_path, ARROW_SCHEMA, ARROW_TABLE)
+
+    with tbl.transaction() as tx:
+        tx.add_files(file_paths=[file_path], branch=branch)
+        with pytest.raises(ValueError, match="already referenced by table"):
+            tx.add_files(file_paths=[file_path], branch=branch)
+
+    branch_rows = tbl.scan(snapshot_id=tbl.metadata.refs[branch].snapshot_id).to_arrow().to_pylist()
+    assert branch_rows == ARROW_TABLE.to_pylist() * 2
+
+
+@pytest.mark.integration
+def test_add_files_to_branch_accepts_distinct_file_with_same_rows(catalog: Catalog, tmp_path: Path) -> None:
+    branch = "branch1"
+    tbl = _create_table_with_branch(catalog, branch)
+    first_path = f"file://{tmp_path}/first.parquet"
+    second_path = f"file://{tmp_path}/second.parquet"
+    _write_parquet(tbl.io, first_path, ARROW_SCHEMA, ARROW_TABLE)
+    _write_parquet(tbl.io, second_path, ARROW_SCHEMA, ARROW_TABLE)
+
+    tbl.add_files(file_paths=[first_path], branch=branch)
+    tbl.add_files(file_paths=[second_path], branch=branch)
+
+    branch_rows = tbl.scan(snapshot_id=tbl.metadata.refs[branch].snapshot_id).to_arrow().to_pylist()
+    assert branch_rows == ARROW_TABLE.to_pylist() * 3
+
+
+@pytest.mark.integration
+def test_add_files_to_branch_rejects_file_referenced_only_by_main(catalog: Catalog, tmp_path: Path) -> None:
+    branch = "branch1"
+    tbl = _create_table_with_branch(catalog, branch)
+    file_path = f"file://{tmp_path}/main-only.parquet"
+    _write_parquet(tbl.io, file_path, ARROW_SCHEMA, ARROW_TABLE)
+
+    # main references the file after this call, the branch does not
+    tbl.add_files(file_paths=[file_path])
+    with pytest.raises(ValueError, match="already referenced by table"):
+        tbl.add_files(file_paths=[file_path], branch=branch)
+
+    branch_rows = tbl.scan(snapshot_id=tbl.metadata.refs[branch].snapshot_id).to_arrow().to_pylist()
+    assert branch_rows == ARROW_TABLE.to_pylist()
