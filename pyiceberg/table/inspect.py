@@ -26,7 +26,7 @@ from pyiceberg.expressions import AlwaysTrue, BooleanExpression
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
-from pyiceberg.types import PrimitiveType
+from pyiceberg.types import IcebergType, PrimitiveType
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
@@ -553,13 +553,23 @@ class InspectTable:
         """
         import pyarrow as pa
 
+        partition_types_by_spec_id: dict[int, dict[int, IcebergType]] = {}
+
         def _partition_summaries_to_rows(
             spec: PartitionSpec, partition_summaries: list[PartitionFieldSummary]
         ) -> list[dict[str, Any]]:
+            partition_field_types = partition_types_by_spec_id.get(spec.spec_id)
+            if partition_field_types is None:
+                partition_field_types = {
+                    struct_field.field_id: struct_field.field_type
+                    for struct_field in self.tbl.metadata.specs_struct([spec.spec_id]).fields
+                }
+                partition_types_by_spec_id[spec.spec_id] = partition_field_types
+
             rows = []
             for i, field_summary in enumerate(partition_summaries):
                 field = spec.fields[i]
-                partition_field_type = spec.partition_type(self.tbl.schema()).fields[i].field_type
+                partition_field_type = partition_field_types[field.field_id]
                 lower_bound = (
                     (
                         field.transform.to_human_string(
