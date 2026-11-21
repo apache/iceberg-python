@@ -72,17 +72,18 @@ def _values_differ(
     return pc.invert(pc.or_(equal, both_null))
 
 
-def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
+def get_rows_to_update(
+    source_table: pa.Table, target_table: pa.Table, join_cols: list[str], *, comparison_source: pa.Table | None = None
+) -> pa.Table:
     """
     Return a table with rows that need to be updated in the target table based on the join columns.
 
     The table is joined on the identifier columns, and then checked if there are any updated rows.
-    Those are selected and everything is renamed correctly.
+    If supplied, `comparison_source` contains the same rows in the same order, with field names aligned to the target.
+    The selected rows come from the original source table.
     """
-    all_columns = set(source_table.column_names)
-    join_cols_set = set(join_cols)
-
-    non_key_cols = list(all_columns - join_cols_set)
+    values_to_compare = source_table if comparison_source is None else comparison_source
+    non_key_cols = set(values_to_compare.column_names) - set(join_cols)
 
     if has_duplicate_rows(target_table, join_cols):
         raise ValueError("Target table has duplicate rows, aborting upsert")
@@ -105,19 +106,20 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
         ) from None
 
     # Step 1: Prepare source index with join keys and a marker index
-    # Cast to target table schema, so we can do the join
+    # Cast only the join keys because the source can omit optional target columns.
     # See: https://github.com/apache/arrow/issues/37542
+    target_keys = target_table.select(join_cols)
     source_index = (
-        source_table.cast(target_table.schema)
-        .select(join_cols_set)
+        source_table.select(join_cols)
+        .cast(target_keys.schema)
         .append_column(SOURCE_INDEX_COLUMN_NAME, pa.array(range(len(source_table))))
     )
 
     # Step 2: Prepare target index with join keys and a marker
-    target_index = target_table.select(join_cols_set).append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
+    target_index = target_keys.append_column(TARGET_INDEX_COLUMN_NAME, pa.array(range(len(target_table))))
 
     # Step 3: Perform an inner join to find which rows from source exist in target
-    matching_indices = source_index.join(target_index, keys=list(join_cols_set), join_type="inner")
+    matching_indices = source_index.join(target_index, keys=join_cols, join_type="inner")
 
     # Step 4: Compare the matched rows column by column
     source_indices = matching_indices[SOURCE_INDEX_COLUMN_NAME]
@@ -126,12 +128,12 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     changed: pa.Array | pa.ChunkedArray | None = None
     for key in non_key_cols:
         column_changed = _values_differ(
-            source_table.column(key).take(source_indices),
+            values_to_compare.column(key).take(source_indices),
             target_table.column(key).take(target_indices),
         )
         changed = column_changed if changed is None else pc.or_(changed, column_changed)
 
-    # Step 5: Take rows from source table using the indices and cast to target schema
+    # Step 5: Take rows from source table using the indices
     if changed is not None and pc.any(changed).as_py():
         return source_table.take(pc.filter(source_indices, changed))
     else:
