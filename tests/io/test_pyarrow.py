@@ -17,6 +17,7 @@
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import json
 import logging
+import math
 import os
 import struct
 import sys
@@ -70,8 +71,13 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     EqualTo,
     GreaterThan,
+    GreaterThanOrEqual,
+    In,
     IsNull,
+    LessThan,
+    LessThanOrEqual,
     Not,
+    NotEqualTo,
     Or,
 )
 from pyiceberg.expressions.literals import literal
@@ -115,7 +121,7 @@ from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
 from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
-from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
+from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform, YearTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -3705,6 +3711,55 @@ def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
 
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
     assert table.scan(row_filter=EqualTo("event_time", "22:31:08")).to_arrow()["id"].to_pylist() == [2]
+
+
+def test_scan_filters_on_infinity(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="x", field_type=FloatType(), required=False))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_infinity", schema=schema)
+    table.append(pa.table({"x": pa.array([1.5, math.inf, -math.inf], type=pa.float32())}))
+
+    assert table.scan(row_filter=EqualTo("x", math.inf)).to_arrow()["x"].to_pylist() == [math.inf]
+    assert table.scan(row_filter=NotEqualTo("x", math.inf)).to_arrow()["x"].to_pylist() == [1.5, -math.inf]
+    assert sorted(table.scan(row_filter=In("x", {math.inf, 1.5})).to_arrow()["x"].to_pylist()) == [1.5, math.inf]
+
+
+def test_scan_and_delete_filters_on_infinity(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(id=2, name="x", field_type=FloatType(), required=False),
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_and_delete_infinity", schema=schema)
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3, 4, 5], type=pa.int32()),
+                "x": pa.array([1.5, math.inf, -math.inf, math.nan, None], type=pa.float32()),
+            }
+        )
+    )
+
+    assert table.scan(row_filter=LessThan("x", math.inf)).to_arrow()["id"].to_pylist() == [1, 3]
+    assert table.scan(row_filter=LessThanOrEqual("x", math.inf)).to_arrow()["id"].to_pylist() == [1, 2, 3]
+    assert table.scan(row_filter=GreaterThan("x", -math.inf)).to_arrow()["id"].to_pylist() == [1, 2]
+    assert table.scan(row_filter=GreaterThanOrEqual("x", math.inf)).to_arrow()["id"].to_pylist() == [2]
+
+    table.delete(LessThan("x", math.inf))
+
+    assert table.scan().to_arrow()["id"].to_pylist() == [2, 4, 5]
+
+
+def test_scan_filters_at_the_end_of_the_date_range(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="x", field_type=DateType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=YearTransform(), name="x_year"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_date_range", schema=schema, partition_spec=spec)
+    last_day = date(9999, 12, 31)
+    table.append(pa.table({"x": pa.array([date(2024, 5, 1), last_day], type=pa.date32())}))
+
+    assert table.scan(row_filter=LessThanOrEqual("x", last_day)).count() == 2
+    assert table.scan(row_filter=GreaterThan("x", last_day)).count() == 0
 
 
 def test_append_counts_nan_values(catalog: InMemoryCatalog) -> None:

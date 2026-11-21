@@ -17,6 +17,7 @@
 # pylint:disable=eval-used
 
 import datetime
+import math
 import uuid
 from decimal import Decimal
 from typing import (
@@ -202,6 +203,11 @@ def test_long_to_float_outside_bound() -> None:
     small_lit = literal(-(10**39))
     below_min_lit = small_lit.to(FloatType())
     assert below_min_lit == FloatBelowMin()
+
+
+def test_double_to_float_infinity() -> None:
+    assert literal(math.inf).to(FloatType()) == FloatLiteral(math.inf)
+    assert literal(-math.inf).to(FloatType()) == FloatLiteral(-math.inf)
 
 
 def test_long_to_double_conversion() -> None:
