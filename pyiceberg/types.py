@@ -543,15 +543,24 @@ class StructType(IcebergType):
         return None
 
     def field_by_name(self, name: str, case_sensitive: bool = True) -> NestedField | None:
+        """Return the field with the given name, or None when there is no such field.
+
+        Raises:
+            ValueError: When case_sensitive is False and two fields have names that differ only by case.
+        """
         if case_sensitive:
             for field in self.fields:
                 if field.name == name:
                     return field
         else:
-            name_lower = name.lower()
+            # Index every field first, as Java's caseInsensitiveField does, so any lookup fails on a collision
+            fields_by_lower_name: dict[str, NestedField] = {}
             for field in self.fields:
-                if field.name.lower() == name_lower:
-                    return field
+                lower_name = field.name.lower()
+                if (existing := fields_by_lower_name.get(lower_name)) is not None:
+                    raise ValueError(f"Cannot build lower case index: {existing.name} and {field.name} collide")
+                fields_by_lower_name[lower_name] = field
+            return fields_by_lower_name.get(name.lower())
         return None
 
     def __str__(self) -> str:
