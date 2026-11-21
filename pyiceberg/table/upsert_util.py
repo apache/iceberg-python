@@ -72,17 +72,33 @@ def _values_differ(
     return pc.invert(pc.or_(equal, both_null))
 
 
-def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols: list[str]) -> pa.Table:
+def get_rows_to_update(
+    source_table: pa.Table, target_table: pa.Table, join_cols: list[str], difference_cols: list[str] | None = None
+) -> pa.Table:
     """
     Return a table with rows that need to be updated in the target table based on the join columns.
 
     The table is joined on the identifier columns, and then checked if there are any updated rows.
     Those are selected and everything is renamed correctly.
+
+    When ``difference_cols`` is set, only those columns are compared. This avoids comparing every
+    non-key column when the caller already knows which columns signal a change, such as a hash column.
     """
     all_columns = set(source_table.column_names)
     join_cols_set = set(join_cols)
 
     non_key_cols = list(all_columns - join_cols_set)
+    compare_cols = non_key_cols
+    if difference_cols is not None:
+        difference_cols_set = set(difference_cols)
+        unknown_cols = difference_cols_set - all_columns
+        if unknown_cols:
+            raise ValueError(f"Difference columns not found in the source table: {sorted(unknown_cols)}")
+        compare_cols = [
+            column for column in source_table.column_names if column in difference_cols_set and column not in join_cols_set
+        ]
+        if not compare_cols:
+            raise ValueError("Difference columns must include at least one non-key column")
 
     if has_duplicate_rows(target_table, join_cols):
         raise ValueError("Target table has duplicate rows, aborting upsert")
@@ -124,7 +140,7 @@ def get_rows_to_update(source_table: pa.Table, target_table: pa.Table, join_cols
     target_indices = matching_indices[TARGET_INDEX_COLUMN_NAME]
 
     changed: pa.Array | pa.ChunkedArray | None = None
-    for key in non_key_cols:
+    for key in compare_cols:
         column_changed = _values_differ(
             source_table.column(key).take(source_indices),
             target_table.column(key).take(target_indices),
