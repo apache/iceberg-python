@@ -101,6 +101,14 @@ L = TypeVar("L", str, bool, int, float, bytes, UUID, Decimal, datetime, date, ti
 
 
 @runtime_checkable
+class ArrowStreamExportable(Protocol):  # pragma: no cover
+    """An object that exports an Arrow stream through the Arrow PyCapsule interface."""
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        """Export this object as an Arrow C stream capsule."""
+
+
+@runtime_checkable
 class StructProtocol(Protocol):  # pragma: no cover
     """A generic protocol used by accessors to get and set at positions of an object."""
 

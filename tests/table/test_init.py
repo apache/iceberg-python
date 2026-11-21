@@ -2595,6 +2595,58 @@ def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> Non
     assert table.scan().to_arrow().num_rows == 0
 
 
+def test_append_accepts_arrow_capsule_exporter(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    class ArrowCapsuleTable:
+        def __init__(self, table: pa.Table) -> None:
+            self._table = table
+
+        def __arrow_c_stream__(self, requested_schema: Any = None) -> Any:
+            return self._table.__arrow_c_stream__(requested_schema)
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+    table = catalog.create_table("default.arrow_capsule_append", schema=schema)
+
+    table.append(ArrowCapsuleTable(pa.table({"x": [1, 2]}, schema=schema_to_pyarrow(schema))))
+
+    assert table.scan().to_arrow().to_pylist() == [{"x": 1}, {"x": 2}]
+
+
+def test_overwrite_accepts_arrow_capsule_exporter(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    class ArrowCapsuleTable:
+        def __init__(self, table: pa.Table) -> None:
+            self._table = table
+
+        def __arrow_c_stream__(self, requested_schema: Any = None) -> Any:
+            return self._table.__arrow_c_stream__(requested_schema)
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+    table = catalog.create_table("default.arrow_capsule_overwrite", schema=schema)
+    table.append(pa.table({"x": [1, 2]}, schema=schema_to_pyarrow(schema)))
+
+    table.overwrite(ArrowCapsuleTable(pa.table({"x": [3]}, schema=schema_to_pyarrow(schema))))
+
+    assert table.scan().to_arrow().to_pylist() == [{"x": 3}]
+
+
+def test_append_rejects_object_without_arrow_capsule(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+    table = catalog.create_table("default.arrow_capsule_rejected", schema=schema)
+
+    with pytest.raises(ValueError, match="Arrow PyCapsule"):
+        table.append(object())  # type: ignore[arg-type]
+
+
 def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalog) -> None:
     """Rewriting a file applies all of its delete files, not only those whose bounds can match the delete filter."""
     import pyarrow as pa
