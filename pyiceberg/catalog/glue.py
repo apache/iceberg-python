@@ -546,7 +546,9 @@ class GlueCatalog(MetastoreCatalog):
             # Write metadata and update the Glue table with the metadata pointer.
             # Skip the exist check before writing; S3 Tables doesn't support ListObjectsV2.
             self._write_metadata_no_exist_check(staged_table.metadata, staged_table.io, staged_table.metadata_location)
-            table_input = _construct_table_input(table_name, staged_table.metadata_location, properties, staged_table.metadata)
+            table_input = _construct_table_input(
+                table_name, staged_table.metadata_location, staged_table.metadata.properties, staged_table.metadata
+            )
             version_id = glue_table.get("VersionId")
             if not version_id:
                 raise CommitFailedException(
@@ -630,7 +632,9 @@ class GlueCatalog(MetastoreCatalog):
         )
 
         self._write_metadata(staged_table.metadata, staged_table.io, staged_table.metadata_location)
-        table_input = _construct_table_input(table_name, staged_table.metadata_location, properties, staged_table.metadata)
+        table_input = _construct_table_input(
+            table_name, staged_table.metadata_location, staged_table.metadata.properties, staged_table.metadata
+        )
         self._create_glue_table(database_name=database_name, table_name=table_name, table_input=table_input)
 
         return Table(

@@ -668,7 +668,8 @@ def new_table_metadata(
 ) -> TableMetadata:
     from pyiceberg.table import TableProperties
 
-    # Remove format-version so it does not get persisted
+    # Remove format-version so it does not get persisted, without changing the caller's properties
+    properties = dict(properties)
     format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
 
     schema.check_format_version_compatibility(format_version)

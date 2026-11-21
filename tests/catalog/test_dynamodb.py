@@ -216,6 +216,26 @@ def test_create_table_if_not_exists_duplicated_table(
 
 
 @mock_aws
+def test_create_v1_table(
+    _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
+) -> None:
+    test_catalog = DynamoDbCatalog(
+        "test_ddb_catalog", client=None, **{"warehouse": f"s3://{BUCKET_NAME}", "s3.endpoint": moto_endpoint_url}
+    )
+    test_catalog.create_namespace(namespace=database_name)
+    properties = {"format-version": "1", "owner": "etl", "enabled": True}
+    table = test_catalog.create_table((database_name, table_name), table_schema_nested, properties=properties)
+    assert table.format_version == 1
+    assert properties == {"format-version": "1", "owner": "etl", "enabled": True}
+
+    # pylint: disable=W0212
+    item = test_catalog._get_iceberg_table_item(database_name=database_name, table_name=table_name)
+    assert item[_add_property_prefix("owner")] == {"S": "etl"}
+    assert item[_add_property_prefix("enabled")] == {"S": "true"}
+    assert _add_property_prefix("format-version") not in item
+
+
+@mock_aws
 def test_load_table(
     _bucket_initialize: None, moto_endpoint_url: str, table_schema_nested: Schema, database_name: str, table_name: str
 ) -> None:
