@@ -14,10 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from datetime import date
+
 import pytest
 
 from pyiceberg.typedef import FrozenDict, KeyDefaultDict, Record
-from pyiceberg.types import IntegerType, NestedField, StructType
+from pyiceberg.types import DateType, IntegerType, NestedField, StructType
 
 
 def test_setitem_frozendict() -> None:
@@ -55,6 +57,13 @@ def test_record_bind_rejects_unknown_arguments() -> None:
 
     with pytest.raises(TypeError, match="Unexpected Record fields: unknown"):
         Record._bind(struct, known=1, unknown=2)
+
+
+def test_record_bind_fills_temporal_initial_default_in_internal_form() -> None:
+    struct = StructType(NestedField(1, "d", DateType(), initial_default=date(2020, 1, 1)))
+
+    # Records hold the internal form, days since the epoch, as values read from a file do
+    assert Record._bind(struct)[0] == 18262
 
 
 def test_record_bind_rejects_non_schema_property() -> None:

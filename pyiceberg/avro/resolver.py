@@ -430,7 +430,7 @@ class ReadSchemaResolver(PrimitiveWithPartnerVisitor[IcebergType, Reader]):
                 if isinstance(read_field, NestedField) and read_field.initial_default is not None:
                     # The field is not in the file, but there is a default value
                     # and that one can be required
-                    results.append((pos, DefaultReader(read_field.initial_default)))
+                    results.append((pos, DefaultReader(read_field._initial_default_value)))
                 elif read_field.required:
                     raise ResolveError(f"{read_field} is non-optional, and not part of the file schema")
                 else:

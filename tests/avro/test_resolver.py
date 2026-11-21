@@ -16,6 +16,7 @@
 # under the License.
 
 from collections.abc import Callable
+from datetime import date
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -55,6 +56,7 @@ from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
+    DateType,
     DecimalType,
     DoubleType,
     FloatType,
@@ -331,6 +333,20 @@ def test_resolver_initial_value() -> None:
         Record,
         read_schema.as_struct(),
     )
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+def test_resolver_temporal_initial_value_reads_like_stored_value(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
+    """A defaulted date must read as the same internal value as a date stored in the file."""
+    read_schema = Schema(
+        NestedField(2, "d", DateType(), required=True, initial_default=date(2020, 1, 1)),
+        schema_id=2,
+    )
+    stored = resolve_reader(Schema(NestedField(2, "d", DateType(), required=True), schema_id=1), read_schema)
+    defaulted = resolve_reader(Schema(schema_id=1), read_schema)
+
+    # 2020-01-01 is 18262 days after the epoch, zigzag and varint encoded as an Avro int
+    assert stored.read(decoder_class(b"\xac\x9d\x02"))[0] == defaulted.read(decoder_class(b""))[0] == 18262
 
 
 def test_resolve_writer() -> None:
