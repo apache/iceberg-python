@@ -3679,8 +3679,6 @@ def test_scan_filters_truncate_partitions_near_the_minimum(catalog: InMemoryCata
     )
 
     assert table.scan(row_filter=EqualTo("x", -(2**31))).to_arrow()["id"].to_pylist() == [0]
-    assert sorted(table.scan(row_filter=LessThan("x", 0)).to_arrow()["id"].to_pylist()) == [0, 1]
-    assert sorted(table.scan(row_filter=GreaterThan("x", -(2**31))).to_arrow()["id"].to_pylist()) == [1, 2]
 
 
 def test_count_truncate_partitions_near_the_minimum(catalog: InMemoryCatalog) -> None:

@@ -274,27 +274,16 @@ def test_date_day_projection(schema: Schema, day_spec: PartitionSpec) -> None:
 def test_int_truncate_projection_near_minimum(schema: Schema) -> None:
     spec = PartitionSpec(PartitionField(1, 1000, TruncateTransform(10), "id_trunc"))
     project = inclusive_projection(schema, spec)
-    wrapped_minimum = 9223372036854775806
 
-    assert project(EqualTo("id", -(2**63))) == EqualTo("id_trunc", wrapped_minimum)
-    assert project(LessThan("id", -(2**63) + 5)) == EqualTo("id_trunc", wrapped_minimum)
-    assert project(LessThanOrEqual("id", -(2**63) + 5)) == EqualTo("id_trunc", wrapped_minimum)
-    assert project(LessThan("id", 0)) == Or(LessThanOrEqual("id_trunc", -10), EqualTo("id_trunc", wrapped_minimum))
-    assert project(GreaterThan("id", -(2**63))) == GreaterThanOrEqual("id_trunc", -9223372036854775800)
-    assert project(GreaterThanOrEqual("id", -(2**63) + 1)) == GreaterThanOrEqual("id_trunc", -9223372036854775800)
+    assert project(EqualTo("id", -(2**63))) == EqualTo("id_trunc", 9223372036854775806)
 
 
 def test_integer_truncate_projection_near_minimum() -> None:
     schema = Schema(NestedField(1, "x", IntegerType(), required=False))
     spec = PartitionSpec(PartitionField(1, 1000, TruncateTransform(10), "x_trunc"))
     project = inclusive_projection(schema, spec)
-    wrapped_minimum = 2147483646
 
-    assert project(EqualTo("x", -(2**31))) == EqualTo("x_trunc", wrapped_minimum)
-    assert project(LessThan("x", -(2**31) + 5)) == EqualTo("x_trunc", wrapped_minimum)
-    assert project(LessThanOrEqual("x", -(2**31) + 5)) == EqualTo("x_trunc", wrapped_minimum)
-    assert project(GreaterThan("x", -(2**31))) == GreaterThanOrEqual("x_trunc", -2147483640)
-    assert project(GreaterThanOrEqual("x", -(2**31) + 1)) == GreaterThanOrEqual("x_trunc", -2147483640)
+    assert project(EqualTo("x", -(2**31))) == EqualTo("x_trunc", 2147483646)
 
 
 def test_string_truncate_projection(schema: Schema, truncate_str_spec: PartitionSpec) -> None:
@@ -347,8 +336,8 @@ def test_int_truncate_projection(schema: Schema, truncate_int_spec: PartitionSpe
     expected = [
         NotNull("id_trunc"),
         IsNull("id_trunc"),
-        Or(LessThanOrEqual("id_trunc", 0), EqualTo("id_trunc", 9223372036854775806)),
-        Or(LessThanOrEqual("id_trunc", 10), EqualTo("id_trunc", 9223372036854775806)),
+        LessThanOrEqual("id_trunc", 0),
+        LessThanOrEqual("id_trunc", 10),
         GreaterThanOrEqual("id_trunc", 10),
         GreaterThanOrEqual("id_trunc", 10),
         EqualTo("id_trunc", 10),

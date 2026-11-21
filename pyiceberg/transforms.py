@@ -30,7 +30,6 @@ import mmh3
 from pydantic import Field, PositiveInt, PrivateAttr
 
 from pyiceberg.expressions import (
-    BooleanExpression,
     BoundEqualTo,
     BoundGreaterThan,
     BoundGreaterThanOrEqual,
@@ -53,7 +52,6 @@ from pyiceberg.expressions import (
     LessThanOrEqual,
     NotEqualTo,
     NotStartsWith,
-    Or,
     Reference,
     StartsWith,
     UnboundPredicate,
@@ -175,7 +173,7 @@ class Transform(IcebergRootModel[str], ABC, Generic[S, T]):
         ...
 
     @abstractmethod
-    def project(self, name: str, pred: BoundPredicate) -> BooleanExpression | None: ...
+    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None: ...
 
     @abstractmethod
     def strict_project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None: ...
@@ -790,7 +788,7 @@ class TruncateTransform(Transform[S, S]):
     def source_type(self) -> IcebergType:
         return self._source_type
 
-    def project(self, name: str, pred: BoundPredicate) -> BooleanExpression | None:
+    def project(self, name: str, pred: BoundPredicate) -> UnboundPredicate | None:
         field_type = pred.term.ref().field.field_type
 
         if isinstance(pred.term, BoundTransform):
@@ -802,8 +800,6 @@ class TruncateTransform(Transform[S, S]):
             return _set_apply_transform(name, pred, self.transform(field_type))
         elif isinstance(field_type, (IntegerType, LongType, DecimalType)):  # type: ignore
             if isinstance(pred, BoundLiteralPredicate):
-                if isinstance(field_type, (IntegerType, LongType)):
-                    return _truncate_integer_projection(name, pred, self.transform(field_type), field_type, self._width)
                 return _truncate_number(name, pred, self.transform(field_type))
         elif isinstance(field_type, (BinaryType, StringType)):
             if isinstance(pred, BoundLiteralPredicate):
@@ -1047,51 +1043,6 @@ def _wrap_integer(value: int, source: IcebergType) -> int:
     """Wrap an integer into the range of the source type, like Java's two's complement arithmetic."""
     minimum, modulus = _integer_bounds(source)
     return (value - minimum) % modulus + minimum
-
-
-def _truncate_integer_projection(
-    name: str,
-    pred: BoundLiteralPredicate,
-    transform: Callable[[Any | None], Any | None],
-    source: IcebergType,
-    width: int,
-) -> BooleanExpression | None:
-    """Project a predicate on a truncate partition of an integer column.
-
-    The values from the minimum of the source type truncate to a partition value at the top of the
-    type's range, which does not sort with the other partition values. A range that can match those
-    values therefore also matches that partition.
-    """
-    minimum, _ = _integer_bounds(source)
-    floor_mod = minimum % width
-    if floor_mod == 0 or not isinstance(pred.literal, LongLiteral):
-        return _truncate_number(name, pred, transform)
-
-    wrapped_minimum = _wrap_integer(minimum - floor_mod, source)
-    # The first partition value after the block that holds the minimum of the source type
-    next_block_start = minimum - floor_mod + width
-    boundary = pred.literal.value
-
-    if isinstance(pred, BoundGreaterThan):
-        if boundary + 1 < next_block_start:
-            # The wrapped value sorts above the first block after the minimum, so it is included
-            return GreaterThanOrEqual(Reference(name), next_block_start)
-        return _truncate_number(name, pred, transform)
-    elif isinstance(pred, BoundGreaterThanOrEqual):
-        if boundary < next_block_start:
-            return GreaterThanOrEqual(Reference(name), next_block_start)
-        return _truncate_number(name, pred, transform)
-
-    projected = _truncate_number(name, pred, transform)
-    if isinstance(pred, BoundLessThan) and projected is not None:
-        if boundary <= next_block_start:
-            return EqualTo(Reference(name), wrapped_minimum)
-        return Or(projected, EqualTo(Reference(name), wrapped_minimum))
-    elif isinstance(pred, BoundLessThanOrEqual) and projected is not None:
-        if boundary < next_block_start:
-            return EqualTo(Reference(name), wrapped_minimum)
-        return Or(projected, EqualTo(Reference(name), wrapped_minimum))
-    return projected
 
 
 def _truncate_integer_strict(
