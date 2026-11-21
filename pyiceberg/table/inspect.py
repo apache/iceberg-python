@@ -255,8 +255,9 @@ class InspectTable:
                 }
 
                 partition = entry.data_file.partition
+                # specs_struct guarantees all partition field IDs across specs are mapped to their latest names
                 partition_record_dict = {
-                    id_to_name.get(field.field_id, field.name): partition[pos]
+                    id_to_name[field.field_id]: partition[pos]
                     for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
                 }
 
@@ -414,8 +415,9 @@ class InspectTable:
 
         for entry in itertools.chain.from_iterable(scan._plan_manifest_entries()):
             partition = entry.data_file.partition
+            # specs_struct guarantees all partition field IDs across specs are mapped to their latest names
             partition_record_dict = {
-                id_to_name.get(field.field_id, field.name): partition[pos]
+                id_to_name[field.field_id]: partition[pos]
                 for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
             }
             entry_snapshot = snapshots_by_id.get(entry.snapshot_id) if entry.snapshot_id is not None else None
@@ -765,8 +767,9 @@ class InspectTable:
                 for field in self.tbl.metadata.schema().fields
             }
             partition = data_file.partition
+            # specs_struct guarantees all partition field IDs across specs are mapped to their latest names
             partition_record_dict = {
-                id_to_name.get(field.field_id, field.name): partition[pos]
+                id_to_name[field.field_id]: partition[pos]
                 for pos, field in enumerate(self.tbl.metadata.specs()[manifest_list.partition_spec_id].fields)
             }
             files.append(
