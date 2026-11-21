@@ -783,7 +783,7 @@ def bound_is_null_double_field(bound_reference_double: BoundReference) -> BoundI
     return BoundIsNull(bound_reference_double)
 
 
-def test_collect_null_nan_unmentioned_terms(
+def test_collect_nan_unmentioned_terms(
     bound_eq_str_field: BoundEqualTo, bound_is_nan_float_field: BoundIsNaN, bound_is_null_double_field: BoundIsNull
 ) -> None:
     bound_expr = And(
@@ -798,7 +798,7 @@ def test_collect_null_nan_unmentioned_terms(
     assert {t.ref().field.name for t in collector.is_nan_or_not_bound_terms} == {"float_field"}
 
 
-def test_collect_null_nan_unmentioned_terms_with_multiple_predicates_on_the_same_term(
+def test_collect_nan_unmentioned_terms_with_multiple_predicates_on_the_same_term(
     bound_eq_str_field: BoundEqualTo,
     bound_greater_than_float_field: BoundGreaterThan,
     bound_is_nan_float_field: BoundIsNaN,
