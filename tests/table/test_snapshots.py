@@ -677,7 +677,7 @@ def test_append_snapshot_producer_uses_fast_append_when_manifest_merge_disabled(
 
     assert type(append) is _FastAppendFiles
 
-    
+
 @pytest.fixture
 def overwrite_table(catalog: Catalog, arrow_table_simple: pa.Table) -> Table:
     catalog.create_namespace("default")
