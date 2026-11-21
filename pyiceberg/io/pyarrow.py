@@ -1916,18 +1916,23 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
     deletes_per_file: dict[str, list[ChunkedArray]] = {}
     # DataFile equality uses only the path; DVs from different tasks may share a file.
     unique_deletes: dict[_DeleteFileKey, DataFile] = {}
+    # Data files whose task has the delete file attached; a delete file can also list rows of other data files.
+    attached_paths: dict[_DeleteFileKey, set[str]] = {}
     for task in tasks:
         for delete_file in task.delete_files:
             key = _DeleteFileKey(delete_file.file_path, delete_file.content_offset, delete_file.content_size_in_bytes)
             unique_deletes.setdefault(key, delete_file)
+            attached_paths.setdefault(key, set()).add(task.file.file_path)
     if len(unique_deletes) > 0:
         executor = ExecutorFactory.get_or_create()
         deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(
             lambda args: _read_deletes(*args),
             [(io, delete_file) for delete_file in unique_deletes.values()],
         )
-        for delete in deletes_per_files:
+        for key, delete in zip(unique_deletes, deletes_per_files, strict=True):
             for file, arr in delete.items():
+                if file not in attached_paths[key]:
+                    continue
                 if file in deletes_per_file:
                     deletes_per_file[file].append(arr)
                 else:
