@@ -1615,6 +1615,36 @@ def test_lost_response_on_the_final_retry_keeps_the_landed_snapshot(catalog: Cat
     _assert_single_readable_snapshot(catalog, "default.lost_response_final_retry", [{"x": 1}, {"x": 2}, {"x": 3}])
 
 
+def test_lost_response_on_overwrite_of_an_empty_table_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """A producer that stages no snapshot must not make the landed-attempt check fail."""
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.lost_response_empty_overwrite", schema=_test_schema())
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"), pytest.warns(UserWarning, match="Delete operation did not match any records"):
+        table.overwrite(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_empty_overwrite", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_lost_response_on_empty_table_overwrite_before_any_retry_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """The landed attempt is detected before the retry budget is consulted."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.lost_response_empty_overwrite_no_retries",
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_NUM_RETRIES: "0"},
+    )
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"), pytest.warns(UserWarning, match="Delete operation did not match any records"):
+        table.overwrite(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_empty_overwrite_no_retries", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
 def test_unreadable_commit_outcome_raises_commit_state_unknown(catalog: Catalog) -> None:
     """When the table cannot be refreshed, the outcome is unknown and no file is deleted."""
     catalog.create_namespace("default")
