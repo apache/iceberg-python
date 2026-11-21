@@ -24,10 +24,14 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Mapping
+from contextvars import ContextVar
+from datetime import timedelta
 from enum import Enum, StrEnum
+from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
+    Self,
 )
 from urllib.parse import quote, unquote
 
@@ -36,6 +40,8 @@ from requests import HTTPError, PreparedRequest, Response, Session
 from requests.adapters import DEFAULT_RETRIES, HTTPAdapter
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 from typing_extensions import override
+from urllib3.connectionpool import ConnectionPool
+from urllib3.exceptions import MaxRetryError, ResponseError
 from urllib3.util.retry import Retry
 
 from pyiceberg import __version__
@@ -115,6 +121,7 @@ from pyiceberg.view.metadata import ViewMetadata, ViewVersion
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from urllib3.response import BaseHTTPResponse
 
 logger = logging.getLogger(__name__)
 
@@ -502,6 +509,65 @@ class ListViewsResponse(IcebergBaseModel):
 _PLANNING_RESPONSE_ADAPTER = TypeAdapter(PlanningResponse)
 
 
+_TIMEDELTA_ADAPTER = TypeAdapter(timedelta)
+
+# Monotonic deadline after which the Idempotency-Key of the request in flight must not be reused.
+# Set by `_RetryTimeoutHTTPAdapter.send` for keyed requests and read by `_IdempotencyKeyLifetimeRetry`.
+_IDEMPOTENCY_KEY_DEADLINE: ContextVar[float | None] = ContextVar("_IDEMPOTENCY_KEY_DEADLINE", default=None)
+
+
+def _parse_idempotency_key_lifetime(lifetime: str | None) -> timedelta | None:
+    """Parse the ISO-8601 `idempotency-key-lifetime` advertised by the server.
+
+    Returns None (no bound) when the value is missing or malformed, following the Java client.
+    A zero or negative lifetime is returned as zero, which disables retries of keyed requests.
+    """
+    if lifetime is None:
+        return None
+    try:
+        parsed = _TIMEDELTA_ADAPTER.validate_python(lifetime)
+    except ValueError:
+        logger.warning("Ignoring malformed idempotency-key lifetime: %s", lifetime)
+        return None
+    return max(parsed, timedelta(0))
+
+
+class _IdempotencyKeyLifetimeRetry(Retry):
+    """Retry that declines to retry a keyed request once the next attempt would outlive the key.
+
+    The REST spec says clients SHOULD NOT reuse an Idempotency-Key after the advertised lifetime, since
+    the server may have forgotten the key and apply the mutation again. Mirrors the Java client's
+    `ExponentialHttpRequestRetryStrategy`: a retry is declined when the time since the first attempt
+    plus the next sleep reaches the lifetime.
+    """
+
+    def increment(
+        self,
+        method: str | None = None,
+        url: str | None = None,
+        response: BaseHTTPResponse | None = None,
+        error: Exception | None = None,
+        _pool: ConnectionPool | None = None,
+        _stacktrace: TracebackType | None = None,
+    ) -> Self:
+        new_retry = super().increment(method, url, response=response, error=error, _pool=_pool, _stacktrace=_stacktrace)
+        deadline = _IDEMPOTENCY_KEY_DEADLINE.get()
+        if deadline is not None and time.monotonic() + new_retry._max_sleep(response) >= deadline:
+            # Same as running out of retries: urllib3 returns the last response (raise_on_status=False)
+            # so `_handle_non_200_response` raises the typed error, or re-raises the connection error.
+            reason = error or ResponseError(f"next retry would exceed the {IDEMPOTENCY_KEY_HEADER} lifetime")
+            raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+        return new_retry
+
+    def _max_sleep(self, response: BaseHTTPResponse | None) -> float:
+        """Upper bound of what `Retry.sleep` will wait before the next attempt."""
+        if self.respect_retry_after_header and response is not None:
+            if retry_after := self.get_retry_after(response):
+                return retry_after
+        # No jitter is configured, so this is exactly what the next backoff will be.
+        return self.get_backoff_time()
+
+
 class _RetryTimeoutHTTPAdapter(HTTPAdapter):
     """HTTPAdapter that applies a default per-request timeout.
 
@@ -510,8 +576,14 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
     The adapter applies `self._timeout` whenever a per-call timeout is not set.
     """
 
-    def __init__(self, timeout: float | None = None, max_retries: Retry | int = DEFAULT_RETRIES) -> None:
+    def __init__(
+        self,
+        timeout: float | None = None,
+        max_retries: Retry | int = DEFAULT_RETRIES,
+        idempotency_key_lifetime: timedelta | None = None,
+    ) -> None:
         self._timeout = timeout
+        self._idempotency_key_lifetime = idempotency_key_lifetime
         super().__init__(max_retries=max_retries)
 
     def send(
@@ -525,14 +597,23 @@ class _RetryTimeoutHTTPAdapter(HTTPAdapter):
     ) -> Response:
         if timeout is None:
             timeout = self._timeout
-        return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+        if self._idempotency_key_lifetime is None or IDEMPOTENCY_KEY_HEADER not in request.headers:
+            return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+        token = _IDEMPOTENCY_KEY_DEADLINE.set(time.monotonic() + self._idempotency_key_lifetime.total_seconds())
+        try:
+            return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert, proxies=proxies)
+        finally:
+            _IDEMPOTENCY_KEY_DEADLINE.reset(token)
 
 
-def _create_connection_adapter(properties: Properties, retry_post: bool = False) -> _RetryTimeoutHTTPAdapter | None:
+def _create_connection_adapter(
+    properties: Properties, retry_post: bool = False, idempotency_key_lifetime: timedelta | None = None
+) -> _RetryTimeoutHTTPAdapter | None:
     """Build a connection adapter from the optional `rest.client.*` properties.
 
     Returns None when no connection properties are supplied, leaving the default
     Session behavior unchanged. POST requests are retried only when `retry_post` is set.
+    Retries of requests carrying an Idempotency-Key stop before `idempotency_key_lifetime` elapses.
     Raises ValueError on invalid input.
     """
     connection_timeout_ms = property_as_int(properties, REST_CLIENT_CONNECTION_TIMEOUT_MS)
@@ -562,7 +643,8 @@ def _create_connection_adapter(properties: Properties, retry_post: bool = False)
 
     return _RetryTimeoutHTTPAdapter(
         timeout=timeout,
-        max_retries=Retry(
+        idempotency_key_lifetime=idempotency_key_lifetime,
+        max_retries=_IdempotencyKeyLifetimeRetry(
             # `retries` and `backoff_factor` fall back to a no-op Retry when unset, so a user can
             # configure only one without having to specify the rest of the policy.
             total=retries if retries is not None else DEFAULT_RETRIES,
@@ -585,6 +667,7 @@ class RestCatalog(Catalog):
     _supported_endpoints: set[Endpoint]
     _namespace_separator: str
     _idempotency_enabled: bool = False
+    _idempotency_key_lifetime: timedelta | None = None
 
     def __init__(self, name: str, **properties: str):
         """Rest Catalog.
@@ -607,7 +690,11 @@ class RestCatalog(Catalog):
 
         # Mount the retry/timeout adapter when `connection.*` properties are set.
         # SigV4's adapter mounted below at `self.uri` is a longer prefix and still wins for that host.
-        if (connection_adapter := _create_connection_adapter(self.properties, self._idempotency_enabled)) is not None:
+        if (
+            connection_adapter := _create_connection_adapter(
+                self.properties, self._idempotency_enabled, self._idempotency_key_lifetime
+            )
+        ) is not None:
             session.mount("http://", connection_adapter)
             session.mount("https://", connection_adapter)
 
@@ -1083,6 +1170,7 @@ class RestCatalog(Catalog):
         self.uri = config[URI]
 
         self._idempotency_enabled = config_response.idempotency_key_lifetime is not None
+        self._idempotency_key_lifetime = _parse_idempotency_key_lifetime(config_response.idempotency_key_lifetime)
 
         # Determine supported endpoints
         endpoints = config_response.endpoints
