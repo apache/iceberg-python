@@ -1368,7 +1368,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: ViewAlreadyExistsError})
+            _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: ViewAlreadyExistsError})
 
         view_response = ViewResponse.model_validate_json(response.text)
         return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
@@ -1388,6 +1388,7 @@ class RestCatalog(Catalog):
 
         Raises:
             TableAlreadyExistsError: If the table already exists
+            NoSuchNamespaceError: If the namespace does not exist
         """
         self._check_endpoint(Capability.V1_REGISTER_TABLE)
         namespace_and_table = self._split_identifier_for_path(identifier)
@@ -1405,7 +1406,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: TableAlreadyExistsError})
+            _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: TableAlreadyExistsError})
 
         table_response = TableResponse.model_validate_json(response.text)
         return self._response_to_table(self.identifier_to_tuple(identifier), table_response)
@@ -1893,7 +1894,7 @@ class RestCatalog(Catalog):
         try:
             response.raise_for_status()
         except HTTPError as exc:
-            _handle_non_200_response(exc, {409: ViewAlreadyExistsError})
+            _handle_non_200_response(exc, {404: NoSuchNamespaceError, 409: ViewAlreadyExistsError})
 
         view_response = ViewResponse.model_validate_json(response.text)
         return self._response_to_view(self.identifier_to_tuple(identifier), view_response)
