@@ -52,6 +52,13 @@ def _to_literal(value: L | Literal[L]) -> Literal[L]:
 class BooleanExpression(IcebergBaseModel, ABC):
     """An expression that evaluates to a boolean."""
 
+    def __bool__(self) -> bool:
+        """Raise an error to prevent truthiness evaluation of non-constant expressions."""
+        raise TypeError(
+            f"Cannot evaluate truthiness of non-constant BooleanExpression: {self}. "
+            "Use bitwise operators (~, &, |) for expressions or comparison with AlwaysTrue()/AlwaysFalse()."
+        )
+
     @abstractmethod
     def __invert__(self) -> BooleanExpression:
         """Transform the Expression into its negated version."""
@@ -452,6 +459,10 @@ class AlwaysTrue(BooleanExpression, Singleton, IcebergRootModel[bool]):
 
     root: bool = True
 
+    def __bool__(self) -> bool:
+        """Return True for AlwaysTrue."""
+        return True
+
     def __invert__(self) -> AlwaysFalse:
         """Transform the Expression into its negated version."""
         return AlwaysFalse()
@@ -469,6 +480,10 @@ class AlwaysFalse(BooleanExpression, Singleton, IcebergRootModel[bool]):
     """FALSE expression."""
 
     root: bool = False
+
+    def __bool__(self) -> bool:
+        """Return False for AlwaysFalse."""
+        return False
 
     def __invert__(self) -> AlwaysTrue:
         """Transform the Expression into its negated version."""

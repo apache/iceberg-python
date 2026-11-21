@@ -1397,6 +1397,47 @@ def test_deepcopy_then_pickle() -> None:
     assert restored == expr
 
 
+def test_always_true_truthiness() -> None:
+    expr = AlwaysTrue()
+    assert bool(expr) is True
+    assert (not expr) is False
+    executed = False
+    if expr:
+        executed = True
+    assert executed is True
+
+
+def test_always_false_truthiness() -> None:
+    expr = AlwaysFalse()
+    assert bool(expr) is False
+    assert (not expr) is True
+    executed = False
+    if not expr:
+        executed = True
+    assert executed is True
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        EqualTo("a", 1),
+        NotEqualTo("a", 1),
+        And(AlwaysTrue(), EqualTo("a", 1)),
+        Or(AlwaysFalse(), EqualTo("a", 1)),
+        Not(EqualTo("a", 1)),
+        In("a", (1, 2)),
+        NotIn("a", (1, 2)),
+    ],
+)
+def test_non_constant_boolean_expression_truthiness_raises(expr: BooleanExpression) -> None:
+    with pytest.raises(TypeError, match="Cannot evaluate truthiness of non-constant BooleanExpression"):
+        bool(expr)
+
+    with pytest.raises(TypeError, match="Cannot evaluate truthiness of non-constant BooleanExpression"):
+        if expr:
+            pass
+
+
 #   __  __      ___
 #  |  \/  |_  _| _ \_  _
 #  | |\/| | || |  _/ || |
