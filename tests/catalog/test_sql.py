@@ -15,13 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import gc
+import logging
+import sqlite3
+import warnings
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import cast
 
 import pytest
-from sqlalchemy import Engine, create_engine, event, inspect, text
-from sqlalchemy.exc import ArgumentError
+from sqlalchemy import Engine, Pool, create_engine, event, inspect, text
+from sqlalchemy.exc import ArgumentError, OperationalError
+from sqlalchemy.pool import QueuePool, SingletonThreadPool
 
 from pyiceberg.catalog import load_catalog
 from pyiceberg.catalog.sql import (
@@ -287,6 +293,129 @@ class TestSqlCatalogClose:
 
         # Second close should not raise an exception
         catalog_sqlite.close()
+
+    def test_sql_catalog_cross_thread_sqlite_close(self, warehouse: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """Closing a SQLite SqlCatalog on a different thread than the one that created succeeds."""
+        gc.collect()
+
+        def create_in_worker() -> SqlCatalog:
+            return SqlCatalog("test", uri="sqlite:///:memory:", warehouse=f"file://{warehouse}")
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            catalog = executor.submit(create_in_worker).result()
+
+        with warnings.catch_warnings(record=True) as caught_warnings:
+            warnings.simplefilter("always", ResourceWarning)
+            with caplog.at_level(logging.ERROR, logger="sqlalchemy.pool"):
+                catalog.close()
+
+            pool_errors = [
+                (record.exc_info[0], str(record.exc_info[1]))
+                for record in caplog.records
+                if record.exc_info and record.exc_info[0] is not None and record.exc_info[1] is not None
+            ]
+            caplog.clear()
+            del catalog
+            gc.collect()
+
+        assert pool_errors == []
+        assert [str(w.message) for w in caught_warnings] == []
+
+
+@pytest.mark.parametrize("uri", ["sqlite:///:memory:", "sqlite+pysqlite:///:memory:"])
+def test_sql_catalog_sqlite_memory_preserves_thread_isolation(
+    warehouse: Path, caplog: pytest.LogCaptureFixture, uri: str
+) -> None:
+    """check_same_thread=False keeps SingletonThreadPool isolation, and only affects close and garbage collection."""
+    gc.collect()
+    catalog = SqlCatalog("test", uri=uri, warehouse=f"file://{warehouse}")
+    assert isinstance(catalog.engine.pool, SingletonThreadPool)
+
+    catalog.create_namespace("ns")
+    assert catalog.list_namespaces() == [("ns",)]
+
+    # worker thread cannot see the main thread DB
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with pytest.raises(OperationalError, match="no such table"):
+            executor.submit(catalog.list_namespaces).result()
+
+    # closing the main thread connection also closes the worker thread's connection
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always", ResourceWarning)
+        with caplog.at_level(logging.ERROR, logger="sqlalchemy.pool"):
+            catalog.close()
+
+        pool_errors = [
+            (record.exc_info[0], str(record.exc_info[1]))
+            for record in caplog.records
+            if record.exc_info and record.exc_info[0] is not None and record.exc_info[1] is not None
+        ]
+        caplog.clear()
+        del catalog
+        gc.collect()
+
+    assert pool_errors == []
+    assert [str(w.message) for w in caught_warnings] == []
+
+
+def test_sql_catalog_sqlite_explicit_check_same_thread_enforced(warehouse: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Explicit check_same_thread=true enforces sqlite3 same-thread checks at runtime during close()."""
+    with ThreadPoolExecutor(max_workers=1) as executor:
+
+        def create_in_worker() -> tuple[SqlCatalog, sqlite3.Connection]:
+            cat = SqlCatalog("test", uri="sqlite:///:memory:?check_same_thread=true", warehouse=f"file://{warehouse}")
+            with cat.engine.connect() as conn:
+                dbapi_conn = cast(sqlite3.Connection, conn.connection.dbapi_connection)
+            return cat, dbapi_conn
+
+        strict_catalog, worker_conn = executor.submit(create_in_worker).result()
+        try:
+            with caplog.at_level(logging.ERROR, logger="sqlalchemy.pool"):
+                strict_catalog.close()
+            pool_errors = [record.exc_info[0] for record in caplog.records if record.exc_info and record.exc_info[0] is not None]
+            caplog.clear()
+            assert pool_errors == [sqlite3.ProgrammingError]
+        finally:
+            executor.submit(worker_conn.close).result()
+
+
+@pytest.mark.parametrize(
+    ("uri_template", "expected_pool_type", "expected_cparams"),
+    [
+        ("sqlite:///:memory:?check_same_thread=true", SingletonThreadPool, {"check_same_thread": True}),
+        (
+            "sqlite:///{warehouse}/sql-catalog-explicit-thread?check_same_thread=true",
+            QueuePool,
+            {"check_same_thread": True},
+        ),
+        (
+            "sqlite:///:memory:?timeout=15&cached_statements=50",
+            SingletonThreadPool,
+            {"timeout": 15.0, "cached_statements": 50, "check_same_thread": False},
+        ),
+    ],
+)
+def test_sql_catalog_sqlite_preserves_explicit_query_params(
+    warehouse: Path,
+    uri_template: str,
+    expected_pool_type: type[Pool],
+    expected_cparams: dict[str, object],
+) -> None:
+    """Explicit SQLite URI query parameters (including check_same_thread=true) must not be overridden."""
+    uri = uri_template.format(warehouse=warehouse.as_posix())
+    catalog = SqlCatalog(name="test", uri=uri, warehouse=f"file://{warehouse}")
+    with catalog:
+        assert isinstance(catalog.engine.pool, expected_pool_type)
+        catalog.engine.dispose()
+        seen_cparams: list[dict[str, object]] = []
+
+        @event.listens_for(catalog.engine, "do_connect")
+        def capture_cparams(_dialect: object, _conn_rec: object, _cargs: object, cparams: dict[str, object]) -> None:
+            seen_cparams.append(dict(cparams))
+
+        with catalog.engine.connect():
+            pass
+        assert seen_cparams == [expected_cparams]
 
 
 def get_columns(engine: Engine) -> set[str]:

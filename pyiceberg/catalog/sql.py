@@ -35,6 +35,7 @@ from sqlalchemy import (
     union,
     update,
 )
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, ProgrammingError
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -139,8 +140,16 @@ class SqlCatalog(MetastoreCatalog):
             echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
             echo = strtobool(echo_str) if echo_str != "debug" else "debug"
             pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
+            url = make_url(uri_prop)
+            connect_args: dict[str, bool] = {}
+            if (
+                url.get_backend_name() == "sqlite"
+                and url.get_driver_name() == "pysqlite"
+                and "check_same_thread" not in url.query
+            ):
+                connect_args["check_same_thread"] = False
 
-            self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
+            self.engine = create_engine(url, echo=echo, pool_pre_ping=pool_pre_ping, connect_args=connect_args)
 
         self._init_catalog()
 
