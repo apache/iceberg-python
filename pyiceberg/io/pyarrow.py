@@ -2194,6 +2194,17 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                         elif target_type.unit == "us" and values.type.unit in {"s", "ms", "us"}:
                             return values.cast(target_type)
                     raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
+                elif field.field_type == TimestamptzNanoType():
+                    # Writers label UTC differently (e.g. "+00:00"); relabel so files can be concatenated
+                    if (
+                        pa.types.is_timestamp(target_type)
+                        and target_type.tz == "UTC"
+                        and pa.types.is_timestamp(values.type)
+                        and values.type.unit == "ns"
+                        and (values.type.tz in UTC_ALIASES or values.type.tz is None)
+                    ):
+                        return values.cast(target_type)
+                    raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
                 elif isinstance(field.field_type, (IntegerType, LongType)):
                     # Cast smaller integer types to target type for cross-platform compatibility
                     # Only allow widening conversions (smaller bit width to larger)

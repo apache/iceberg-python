@@ -137,6 +137,7 @@ from pyiceberg.types import (
     StructType,
     TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -3934,6 +3935,34 @@ def test__to_requested_schema_timestamptz_to_timestamp_projection() -> None:
 
     # expect actual_result to have no timezone
     assert expected.equals(actual_result)
+
+
+def test__to_requested_schema_timestamptz_ns_utc_alias_concatenates() -> None:
+    table_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "ts_field", TimestamptzNanoType(), required=False),
+    )
+
+    # file written before the column was added
+    old_file_schema = Schema(NestedField(1, "id", LongType(), required=False))
+    old_batch = pa.record_batch([pa.array([1], type=pa.int64())], names=["id"])
+
+    # file written by another writer that labels UTC as "+00:00"
+    new_batch = pa.record_batch(
+        [
+            pa.array([2], type=pa.int64()),
+            pa.array([1755172800123456789], type=pa.timestamp("ns", tz="+00:00")),
+        ],
+        names=["id", "ts_field"],
+    )
+
+    old_result = _to_requested_schema(table_schema, old_file_schema, old_batch)
+    new_result = _to_requested_schema(table_schema, table_schema, new_batch)
+
+    assert new_result.schema.field("ts_field").type == pa.timestamp("ns", tz="UTC")
+    combined = pa.concat_tables([pa.Table.from_batches([old_result]), pa.Table.from_batches([new_result])])
+    assert combined.column("ts_field").to_pylist()[0] is None
+    assert combined.column("ts_field").cast(pa.int64()).to_pylist()[1] == 1755172800123456789
 
 
 def test__to_requested_schema_timestamptz_to_timestamp_write_rejects() -> None:
