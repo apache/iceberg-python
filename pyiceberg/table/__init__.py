@@ -1032,9 +1032,9 @@ class Transaction:
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
-    def _find_referenced_data_files(self, file_paths: list[str]) -> list[str]:
+    def _find_referenced_data_files(self, file_paths: list[str], branch: str | None = MAIN_BRANCH) -> list[str]:
         """Return file_paths already referenced by data files in the current snapshot."""
-        snapshot = self.table_metadata.current_snapshot()
+        snapshot = self.table_metadata.snapshot_by_name(branch)
         if snapshot is None:
             return []
 
@@ -1071,12 +1071,13 @@ class Transaction:
             FileNotFoundError: If the file does not exist.
             ValueError: Raises a ValueError given file_paths contains duplicate files
             ValueError: Raises a ValueError given file_paths already referenced by table
+            ValidationException: Raises a ValidationException if a file becomes referenced during a commit retry
         """
         if len(file_paths) != len(set(file_paths)):
             raise ValueError("File paths must be unique")
 
         if check_duplicate_files:
-            referenced_files = self._find_referenced_data_files(file_paths)
+            referenced_files = self._find_referenced_data_files(file_paths, branch)
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
@@ -1085,6 +1086,16 @@ class Transaction:
                 **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
             )
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
+            if check_duplicate_files:
+
+                def validate_duplicate_files() -> None:
+                    referenced_files = self._find_referenced_data_files(file_paths, branch)
+                    if referenced_files:
+                        raise ValidationException(
+                            f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}"
+                        )
+
+                append_files._set_retry_validator(validate_duplicate_files)
             data_files = _parquet_files_to_data_files(
                 table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
             )
