@@ -4127,6 +4127,35 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
 
 
+def test__to_requested_schema_time_ns_downcast() -> None:
+    """Test that a time64[ns] column is downcast to time64[us] on write when the flag is set."""
+    requested_schema = Schema(NestedField(1, "time_field", TimeType(), required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("time_field", pa.time64("ns"))])
+    data = pa.array([time(12, 0, 0, 1), None], type=pa.time64("ns"))
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    result = _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=True, include_field_ids=False)
+
+    assert result.schema[0].type == pa.time64("us")
+    assert result.column(0).to_pylist() == [time(12, 0, 0, 1), None]
+
+
+def test__to_requested_schema_time_ns_without_downcast_raises_exception() -> None:
+    requested_schema = Schema(NestedField(1, "time_field", TimeType(), required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("time_field", pa.time64("ns"))])
+    data = pa.array([time(12, 0, 0, 1), None], type=pa.time64("ns"))
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    with pytest.raises(ValueError) as exc_info:
+        _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
+
+    assert "Unsupported schema projection from time64[ns] to time64[us]" in str(exc_info.value)
+
+
 def test__to_requested_schema_null_map_of_structs() -> None:
     requested_schema = Schema(
         NestedField(
