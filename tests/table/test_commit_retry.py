@@ -114,7 +114,7 @@ def test_concurrent_add_files_retry_rechecks_duplicate_paths(catalog: Catalog, t
 
     tbl1.add_files([str(data_file)])
 
-    with pytest.raises(ValueError, match="Cannot add files that are already referenced by table"):
+    with pytest.raises(ValidationException, match="Cannot add files that are already referenced by table"):
         tbl2.add_files([str(data_file)])
 
     refreshed = catalog.load_table("default.add_files_retry_test")

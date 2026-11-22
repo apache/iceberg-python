@@ -1070,6 +1070,7 @@ class Transaction:
             FileNotFoundError: If the file does not exist.
             ValueError: Raises a ValueError given file_paths contains duplicate files
             ValueError: Raises a ValueError given file_paths already referenced by table
+            ValidationException: Raises a ValidationException if a file becomes referenced during a commit retry
         """
         if len(file_paths) != len(set(file_paths)):
             raise ValueError("File paths must be unique")
@@ -1089,7 +1090,7 @@ class Transaction:
                 def validate_duplicate_files() -> None:
                     referenced_files = self._find_referenced_data_files(file_paths, branch)
                     if referenced_files:
-                        raise ValueError(
+                        raise ValidationException(
                             f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}"
                         )
 
@@ -1210,7 +1211,7 @@ class Transaction:
                                 self._cleanup_uncommitted_manifests()
                                 break
                             self._rebuild_snapshot_updates()
-                except (CommitFailedException, ValidationException, ValueError):
+                except (CommitFailedException, ValidationException):
                     # These exceptions guarantee the commit did not land, so it is safe to delete the
                     # files written for it. Any other exception (unknown outcome, or a commit that already
                     # succeeded) is re-raised without deleting, since those files may be referenced by the
