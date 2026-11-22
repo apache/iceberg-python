@@ -292,6 +292,17 @@ class _TableMetadataUpdateContext:
             update.sort_order.order_id == sort_order_id for update in self._updates if isinstance(update, AddSortOrderUpdate)
         )
 
+    def intermediate_snapshot_ids(self, current_snapshot_id: int | None) -> set[int]:
+        """Return the added snapshots that were set as the current snapshot, but replaced by a later update."""
+        return {
+            update.snapshot_id
+            for update in self._updates
+            if isinstance(update, SetSnapshotRefUpdate)
+            and update.ref_name == MAIN_BRANCH
+            and update.snapshot_id != current_snapshot_id
+            and self.is_added_snapshot(update.snapshot_id)
+        }
+
     def has_changes(self) -> bool:
         return len(self._updates) > 0
 
@@ -754,6 +765,11 @@ def update_table_metadata(
 
     for update in updates:
         new_metadata = _apply_table_update(update, new_metadata, context)
+
+    # Intermediate snapshots are never committed as the current snapshot, so they are not part of the history
+    if intermediate_snapshot_ids := context.intermediate_snapshot_ids(new_metadata.current_snapshot_id):
+        snapshot_log = [entry for entry in new_metadata.snapshot_log if entry.snapshot_id not in intermediate_snapshot_ids]
+        new_metadata = new_metadata.model_copy(update={"snapshot_log": snapshot_log})
 
     # last_updated_ms must not precede the base's, which becomes the latest metadata-log entry
     if context.has_changes():

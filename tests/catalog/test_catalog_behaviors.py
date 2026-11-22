@@ -1491,6 +1491,23 @@ def test_overwrite_record_batch_reader(catalog: Catalog) -> None:
     assert len(tbl.scan().to_arrow()) == total_rows
 
 
+def test_overwrite_adds_one_entry_to_history(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.overwrite_history", schema=pa.schema([("x", pa.int64())]))
+    table.append(pa.table({"x": [1]}))
+    table.overwrite(pa.table({"x": [2]}))
+
+    append, delete, overwrite = table.snapshots()
+    assert [snapshot.summary.operation for snapshot in (append, delete, overwrite) if snapshot.summary] == [
+        Operation.APPEND,
+        Operation.DELETE,
+        Operation.APPEND,
+    ]
+    # The delete and the append are committed together, so the table was never empty
+    for tbl in (table, catalog.load_table("default.overwrite_history")):
+        assert [entry.snapshot_id for entry in tbl.history()] == [append.snapshot_id, overwrite.snapshot_id]
+
+
 def test_append_record_batch_reader_to_partitioned_table_raises(catalog: Catalog) -> None:
     catalog.create_namespace("default")
     identifier = f"default.append_record_batch_reader_partitioned_{catalog.name}"
