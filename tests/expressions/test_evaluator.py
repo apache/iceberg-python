@@ -1434,6 +1434,33 @@ def test_strict_missing_stats(strict_data_file_schema: Schema, strict_data_file_
         assert not should_read, f"Should never match when stats are missing for expr: {expression}"
 
 
+def test_strict_missing_null_counts() -> None:
+    schema = Schema(NestedField(1, "x", IntegerType(), required=False))
+
+    expressions: list[BooleanExpression] = [
+        LessThan("x", 10),
+        LessThanOrEqual("x", 5),
+        GreaterThan("x", 0),
+        GreaterThanOrEqual("x", 1),
+    ]
+
+    # Without null value counts the column might contain nulls, which do not match
+    for null_value_counts, expected in [({1: 0}, True), (None, False)]:
+        data_file = DataFile.from_args(
+            file_path="file_1.parquet",
+            file_format=FileFormat.PARQUET,
+            partition=Record(),
+            record_count=3,
+            value_counts={1: 3},
+            null_value_counts=null_value_counts,
+            lower_bounds={1: to_bytes(IntegerType(), 1)},
+            upper_bounds={1: to_bytes(IntegerType(), 5)},
+        )
+        for expression in expressions:
+            should_read = _StrictMetricsEvaluator(schema, expression).eval(data_file)
+            assert should_read == expected, f"null_value_counts={null_value_counts}, expr: {expression}"
+
+
 def test_strict_zero_record_file_stats(strict_data_file_schema: Schema) -> None:
     zero_record_data_file = DataFile.from_args(
         file_path="file_1.parquet", file_format=FileFormat.PARQUET, partition=Record(), record_count=0

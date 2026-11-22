@@ -1556,10 +1556,13 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
     """Evaluate strict metrics for one data file."""
 
     struct: StructType
+    null_counts_missing: bool
 
     def __init__(self, struct: StructType, file: DataFile) -> None:
         super().__init__(file)
         self.struct = struct
+        # Without null value counts, any column might contain nulls
+        self.null_counts_missing = file.null_value_counts is None
 
     def visit_is_null(self, term: BoundTerm) -> bool:
         # no need to check whether the field is required because binding evaluates that case
@@ -1817,6 +1820,8 @@ class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
         return field
 
     def _can_contain_nulls(self, field_id: int) -> bool:
+        if self.null_counts_missing:
+            return True
         return (null_count := self.null_counts.get(field_id)) is not None and null_count > 0
 
     def _can_contain_nans(self, field_id: int) -> bool:
