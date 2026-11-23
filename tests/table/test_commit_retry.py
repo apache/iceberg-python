@@ -15,9 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 import uuid
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.catalog import Catalog
@@ -95,6 +97,28 @@ def test_commit_retry_on_commit_failed(catalog: Catalog) -> None:
     refreshed = catalog.load_table("default.retry_test")
     result = refreshed.scan().to_arrow()
     assert len(result) == 6
+
+
+def test_concurrent_add_files_retry_rechecks_duplicate_paths(catalog: Catalog, tmp_path: Path) -> None:
+    """A retried add_files call rejects a file committed concurrently."""
+    catalog.create_namespace("default")
+    catalog.create_table("default.add_files_retry_test", schema=_test_schema())
+
+    import pyarrow as pa
+
+    data_file = tmp_path / "data.parquet"
+    pq.write_table(pa.table({"x": [1, 2]}), data_file)
+
+    tbl1 = catalog.load_table("default.add_files_retry_test")
+    tbl2 = catalog.load_table("default.add_files_retry_test")
+
+    tbl1.add_files([str(data_file)])
+
+    with pytest.raises(ValidationException, match="Cannot add files that are already referenced by table"):
+        tbl2.add_files([str(data_file)])
+
+    refreshed = catalog.load_table("default.add_files_retry_test")
+    assert refreshed.scan().to_arrow()["x"].to_pylist() == [1, 2]
 
 
 def test_no_retry_without_snapshot_producers(catalog: Catalog) -> None:
@@ -1613,6 +1637,36 @@ def test_lost_response_on_the_final_retry_keeps_the_landed_snapshot(catalog: Cat
         table.append(pa.table({"x": [1, 2, 3]}))
 
     _assert_single_readable_snapshot(catalog, "default.lost_response_final_retry", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_lost_response_on_overwrite_of_an_empty_table_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """A producer that stages no snapshot must not make the landed-attempt check fail."""
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.lost_response_empty_overwrite", schema=_test_schema())
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"), pytest.warns(UserWarning, match="Delete operation did not match any records"):
+        table.overwrite(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_empty_overwrite", [{"x": 1}, {"x": 2}, {"x": 3}])
+
+
+def test_lost_response_on_empty_table_overwrite_before_any_retry_keeps_the_landed_snapshot(catalog: Catalog) -> None:
+    """The landed attempt is detected before the retry budget is consulted."""
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.lost_response_empty_overwrite_no_retries",
+        schema=_test_schema(),
+        properties={TableProperties.COMMIT_NUM_RETRIES: "0"},
+    )
+
+    import pyarrow as pa
+
+    with _commit_outcomes(catalog, "lost"), pytest.warns(UserWarning, match="Delete operation did not match any records"):
+        table.overwrite(pa.table({"x": [1, 2, 3]}))
+
+    _assert_single_readable_snapshot(catalog, "default.lost_response_empty_overwrite_no_retries", [{"x": 1}, {"x": 2}, {"x": 3}])
 
 
 def test_unreadable_commit_outcome_raises_commit_state_unknown(catalog: Catalog) -> None:

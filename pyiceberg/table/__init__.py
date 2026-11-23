@@ -79,6 +79,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
     AddSchemaUpdate,
+    AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
     AssertRefSnapshotId,
@@ -97,6 +98,7 @@ from pyiceberg.table.update import (
     UpgradeFormatVersionUpdate,
     update_table_metadata,
 )
+from pyiceberg.table.update.partition_statistics import UpdatePartitionStatistics
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _FastAppendFiles
 from pyiceberg.table.update.sorting import UpdateSortOrder
@@ -225,7 +227,10 @@ class TableProperties:
     MANIFEST_MIN_MERGE_COUNT_DEFAULT = 100
 
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
-    MANIFEST_MERGE_ENABLED_DEFAULT = False
+    MANIFEST_MERGE_ENABLED_DEFAULT = True
+
+    METADATA_COMPRESSION = "write.metadata.compression-codec"
+    METADATA_COMPRESSION_DEFAULT = "none"
 
     METADATA_PREVIOUS_VERSIONS_MAX = "write.metadata.previous-versions-max"
     METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT = 100
@@ -506,6 +511,15 @@ class Transaction:
             A new UpdateStatistics
         """
         return UpdateStatistics(transaction=self)
+
+    def update_partition_statistics(self) -> UpdatePartitionStatistics:
+        """
+        Create a new UpdatePartitionStatistics to update the partition statistics of the table.
+
+        Returns:
+            A new UpdatePartitionStatistics
+        """
+        return UpdatePartitionStatistics(transaction=self)
 
     def append(
         self,
@@ -1018,9 +1032,9 @@ class Transaction:
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
-    def _find_referenced_data_files(self, file_paths: list[str]) -> list[str]:
+    def _find_referenced_data_files(self, file_paths: list[str], branch: str | None = MAIN_BRANCH) -> list[str]:
         """Return file_paths already referenced by data files in the current snapshot."""
-        snapshot = self.table_metadata.current_snapshot()
+        snapshot = self.table_metadata.snapshot_by_name(branch)
         if snapshot is None:
             return []
 
@@ -1057,12 +1071,13 @@ class Transaction:
             FileNotFoundError: If the file does not exist.
             ValueError: Raises a ValueError given file_paths contains duplicate files
             ValueError: Raises a ValueError given file_paths already referenced by table
+            ValidationException: Raises a ValidationException if a file becomes referenced during a commit retry
         """
         if len(file_paths) != len(set(file_paths)):
             raise ValueError("File paths must be unique")
 
         if check_duplicate_files:
-            referenced_files = self._find_referenced_data_files(file_paths)
+            referenced_files = self._find_referenced_data_files(file_paths, branch)
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
@@ -1071,6 +1086,16 @@ class Transaction:
                 **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
             )
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
+            if check_duplicate_files:
+
+                def validate_duplicate_files() -> None:
+                    referenced_files = self._find_referenced_data_files(file_paths, branch)
+                    if referenced_files:
+                        raise ValidationException(
+                            f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}"
+                        )
+
+                append_files._set_retry_validator(validate_duplicate_files)
             data_files = _parquet_files_to_data_files(
                 table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
             )
@@ -1225,7 +1250,7 @@ class Transaction:
         return self._table
 
     def _attempt_landed(self) -> bool:
-        """Refresh the table and return whether a snapshot written by this transaction is present.
+        """Refresh the table and return whether the snapshots added by this transaction are present.
 
         Raises:
             CommitStateUnknownException: If the table cannot be refreshed, the outcome is unknown and
@@ -1238,8 +1263,9 @@ class Transaction:
                 f"Commit failed and the table could not be refreshed to check whether it landed: {e}"
             ) from e
 
-        return all(
-            self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None for producer in self._snapshot_producers
+        added_snapshot_ids = {update.snapshot.snapshot_id for update in self._updates if isinstance(update, AddSnapshotUpdate)}
+        return bool(added_snapshot_ids) and all(
+            self._table.metadata.snapshot_by_id(snapshot_id) is not None for snapshot_id in added_snapshot_ids
         )
 
     def _cleanup_uncommitted_manifests(self) -> None:
@@ -1700,6 +1726,23 @@ class Table:
             update.remove_statistics(snapshot_id=2)
         """
         return UpdateStatistics(transaction=Transaction(self, autocommit=True))
+
+    def update_partition_statistics(self) -> UpdatePartitionStatistics:
+        """
+        Shorthand to run partition statistics management operations like set and remove partition statistics.
+
+        Use table.update_partition_statistics().<operation>().commit() to run a specific operation.
+        Use table.update_partition_statistics().<operation-one>().<operation-two>().commit() to run multiple operations.
+
+        Pending changes are applied on commit.
+
+        We can also use context managers to make more changes. For example:
+
+        with table.update_partition_statistics() as update:
+            update.set_partition_statistics(partition_statistics_file=partition_statistics_file)
+            update.remove_partition_statistics(snapshot_id=2)
+        """
+        return UpdatePartitionStatistics(transaction=Transaction(self, autocommit=True))
 
     def update_schema(self, allow_incompatible_changes: bool = False, case_sensitive: bool = True) -> UpdateSchema:
         """Create a new UpdateSchema to alter the columns of this table.
@@ -2344,27 +2387,33 @@ class FileScanTask(ScanTask):
     file: DataFile
     delete_files: set[DataFile]
     residual: BooleanExpression
+    data_sequence_number: int | None
 
     def __init__(
         self,
         data_file: DataFile,
         delete_files: set[DataFile] | None = None,
         residual: BooleanExpression = ALWAYS_TRUE,
+        data_sequence_number: int | None = None,
     ) -> None:
         self.file = data_file
         self.delete_files = delete_files or set()
         self.residual = residual
+        self.data_sequence_number = data_sequence_number
 
     @staticmethod
     def from_rest_response(
         rest_task: RESTFileScanTask,
         delete_files: list[RESTDeleteFile],
+        *,
+        fallback_residual: BooleanExpression = ALWAYS_TRUE,
     ) -> FileScanTask:
         """Convert a RESTFileScanTask to a FileScanTask.
 
         Args:
             rest_task: The REST file scan task.
             delete_files: The list of delete files from the ScanTasks response.
+            fallback_residual: The scan filter to use when the server omits the residual.
 
         Returns:
             A FileScanTask with the converted data and delete files.
@@ -2387,7 +2436,7 @@ class FileScanTask(ScanTask):
         return FileScanTask(
             data_file=data_file,
             delete_files=resolved_deletes,
-            residual=rest_task.residual_filter if rest_task.residual_filter else ALWAYS_TRUE,
+            residual=rest_task.residual_filter if rest_task.residual_filter is not None else fallback_residual,
         )
 
 
@@ -3014,6 +3063,7 @@ class ManifestGroupPlanner:
                     partition_key=data_entry.data_file.partition,
                 ),
                 residual=ALWAYS_TRUE if self._ignore_residuals else residual_for(data_entry.data_file),
+                data_sequence_number=data_entry.sequence_number,
             )
             for data_entry in data_entries
         ]

@@ -311,8 +311,8 @@ Next, write the data to the table. Both `append` and `overwrite` produce the sam
 
 <!-- prettier-ignore-start -->
 
-!!! note inline end "Fast append"
-    PyIceberg defaults to the [fast append](https://iceberg.apache.org/spec/#snapshots) to minimize the amount of data written. This enables fast commit operations, reducing the possibility of conflicts. The downside of the fast append is that it creates more metadata than a merge commit. [Compaction is planned](https://github.com/apache/iceberg-python/issues/270) and will automatically rewrite all the metadata when a threshold is hit, to maintain performant reads.
+!!! note inline end "Merge and fast append"
+    PyIceberg defaults to [merge append](https://iceberg.apache.org/spec/#snapshots), which automatically merges manifests when the configured threshold is reached to keep metadata compact and reads performant. Fast append remains available by setting the table property `commit.manifest-merge.enabled` to `False`. Fast append minimizes the metadata written during a commit, enabling faster commits and reducing the possibility of conflicts, but accumulates more manifest metadata over time.
 
 <!-- prettier-ignore-end -->
 
@@ -985,6 +985,7 @@ split_offsets: list<item: int64>
 equality_ids: list<item: int32>
   child 0, item: int32
 sort_order_id: int32
+first_row_id: int64
 readable_metrics: struct<city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string> not null, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null>
   child 0, city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null
       child 0, column_size: int64
@@ -1024,6 +1025,7 @@ key_metadata: [[0100,0100]]
 split_offsets:[[[],[]]]
 equality_ids:[[[],[]]]
 sort_order_id:[[[],[]]]
+first_row_id:[[null,null]]
 readable_metrics: [
   -- is_valid: all not null
   -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string>
@@ -1787,6 +1789,30 @@ with table.update_statistics() as update:
     update.set_statistics(statistics_file)
     update.remove_statistics(snapshot_id2)
 ```
+
+## Table Partition Statistics Management
+
+Manage partition statistics files with operations through the `Table` API:
+
+```python
+# Setting a file for a snapshot replaces the file already set for that snapshot
+table.update_partition_statistics().set_partition_statistics(
+    snapshot_id=snapshot_id, statistics_path="s3://bucket/partition-stats.parquet", file_size_in_bytes=1024
+).commit()
+table.update_partition_statistics().remove_partition_statistics(snapshot_id).commit()
+```
+
+You can also use context managers to make more changes:
+
+```python
+with table.update_partition_statistics() as update:
+    update.set_partition_statistics(
+        snapshot_id=snapshot_id, statistics_path="s3://bucket/partition-stats.parquet", file_size_in_bytes=1024
+    )
+    update.remove_partition_statistics(snapshot_id)
+```
+
+Within one update, sets are applied before removals, as in Java, so a removal wins over a set for the same snapshot regardless of the order of the calls. Removing partition statistics for a snapshot that has no file is a no-op.
 
 ## Query the data
 

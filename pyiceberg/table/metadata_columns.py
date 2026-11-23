@@ -51,11 +51,7 @@ def _find_metadata_column(name: str, case_sensitive: bool) -> NestedField | None
 
 
 def _has_field(schema: Schema, name: str, case_sensitive: bool) -> bool:
-    try:
-        schema.find_field(name, case_sensitive=case_sensitive)
-        return True
-    except ValueError:
-        return False
+    return schema._find_field_or_none(name, case_sensitive) is not None
 
 
 def split_selected_fields(

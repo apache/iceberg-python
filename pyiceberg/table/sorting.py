@@ -92,7 +92,7 @@ class SortField(IcebergBaseModel):
 
     @model_validator(mode="before")
     def set_null_order(cls, values: dict[str, Any]) -> dict[str, Any]:
-        values["direction"] = values["direction"] if values.get("direction") else SortDirection.ASC
+        values["direction"] = SortDirection(values["direction"]) if values.get("direction") else SortDirection.ASC
         if not values.get("null-order"):
             values["null-order"] = NullOrder.NULLS_FIRST if values["direction"] == SortDirection.ASC else NullOrder.NULLS_LAST
         return values

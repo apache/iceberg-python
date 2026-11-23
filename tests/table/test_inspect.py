@@ -22,7 +22,7 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.conversions import to_bytes
-from pyiceberg.manifest import DataFile, DataFileContent
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable, _readable_bound
@@ -94,6 +94,34 @@ def test_partitions_row_filter_after_column_rename(catalog: InMemoryCatalog) -> 
     expected = [{"partition": {"category": "a"}, "record_count": 2}]
     assert current.select(["partition", "record_count"]).to_pylist() == expected
     assert historical.select(["partition", "record_count"]).to_pylist() == expected
+
+
+def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMemoryCatalog) -> None:
+    # column_sizes and the other metric maps are optional in a data file
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    tbl = catalog.create_table("default.no_metrics", schema)
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=f"{tbl.location()}/data/a.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=1,
+        file_size_in_bytes=1,
+        spec_id=tbl.metadata.default_spec_id,
+    )
+    with tbl.transaction() as tx:
+        with tx.update_snapshot().fast_append() as fast_append:
+            fast_append.append_data_file(data_file)
+
+    entries = tbl.inspect.entries().to_pylist()
+    assert len(entries) == 1
+    for metric in ("column_sizes", "value_counts", "null_value_counts", "nan_value_counts"):
+        assert entries[0]["data_file"][metric] == []
+    assert entries[0]["readable_metrics"]["x"]["column_size"] is None
+
+    files = tbl.inspect.files().to_pylist()
+    assert len(files) == 1
+    assert files[0]["column_sizes"] is None
 
 
 @pytest.mark.parametrize("newest_first", [False, True])

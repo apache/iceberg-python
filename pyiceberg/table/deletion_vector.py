@@ -87,7 +87,10 @@ class DeletionVector:
     def _bitmaps_to_chunked_array(bitmaps: list[BitMap]) -> "pa.ChunkedArray":
         import pyarrow as pa
 
-        return pa.chunked_array([(key_pos << 32) + pos for pos in bitmap] for key_pos, bitmap in enumerate(bitmaps))
+        # Use int64 even when the first bitmap is empty or there are no bitmaps.
+        return pa.chunked_array(
+            ([(key_pos << 32) + pos for pos in bitmap] for key_pos, bitmap in enumerate(bitmaps)), type=pa.int64()
+        )
 
     def to_vector(self) -> "pa.ChunkedArray":
         return self._bitmaps_to_chunked_array(self._bitmaps)

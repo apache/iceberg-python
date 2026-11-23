@@ -93,6 +93,7 @@ Iceberg tables support table properties to configure table behavior.
 | `write.summary.partition-limit`          | Integer                            | 0                          | Maximum number of changed partitions for which per-partition summaries are included in the snapshot summary. The default of 0 disables them          |
 | `write.metadata.previous-versions-max`   | Integer                            | 100                        | The max number of previous version metadata files to keep before deleting after commit.                                                              |
 | `write.metadata.delete-after-commit.enabled` | Boolean                        | False                      | Whether to automatically delete old *tracked* metadata files after each table commit. It will retain a number of the most recent metadata files, which can be set using property `write.metadata.previous-versions-max`. |
+| `write.metadata.compression-codec`       | `{none,gzip}`                      | none                       | Compression for the table metadata files that PyIceberg writes. `gzip` names new metadata files `*.gz.metadata.json` and gzips them. |
 | `write.object-storage.enabled`           | Boolean                            | False                      | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. |
 | `write.object-storage.partitioned-paths` | Boolean                            | True                       | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                  |
 | `write.py-location-provider.impl`        | String of form `module.ClassName`  | null                       | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                            |
@@ -105,12 +106,12 @@ Iceberg tables support table properties to configure table behavior.
 | ------------------------------------ | ------------------- | ------------- | ----------------------------------------------------------- |
 | `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
 | `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Minimum number of manifests to accumulate before merging    |
-| `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
+| `commit.manifest-merge.enabled`      | Boolean             | True          | Controls whether to automatically merge manifests on writes |
 
 <!-- prettier-ignore-start -->
 
-!!! note "Fast append"
-    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-to-a-table) and thus `commit.manifest-merge.enabled` is set to `False` by default.
+!!! note "Append modes"
+    PyIceberg defaults to [merge append](api.md#write-to-a-table) to keep manifest metadata compact. Set `commit.manifest-merge.enabled` to `False` on a table to use fast append, which writes less metadata during each commit but accumulates more manifests over time.
 
 <!-- prettier-ignore-end -->
 

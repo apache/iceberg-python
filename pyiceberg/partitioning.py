@@ -68,6 +68,11 @@ INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
 
 
+def _url_encode(value: str) -> str:
+    # Unlike quote_plus, java.net.URLEncoder leaves "*" as is and escapes "~"
+    return quote_plus(value, safe="*").replace("~", "%7E")
+
+
 class PartitionField(IcebergBaseModel):
     """PartitionField represents how one partition value is derived from the source column via transformation.
 
@@ -248,8 +253,8 @@ class PartitionSpec(IcebergBaseModel):
             partition_field = self.fields[pos]
             value_str = partition_field.transform.to_human_string(field_types[pos].field_type, value=data[pos])
 
-            value_strs.append(quote_plus(value_str, safe=""))
-            field_strs.append(quote_plus(partition_field.name, safe=""))
+            value_strs.append(_url_encode(value_str))
+            field_strs.append(_url_encode(partition_field.name))
 
         path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs, strict=True)])
         return path
@@ -487,7 +492,7 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
     Return the Partition Record representation of the value.
 
     The value is first converted to internal partition representation.
-    For example, UUID is converted to bytes[16], DateType to days since epoch, etc.
+    For example, UUID values become uuid.UUID, and DateType values become days since epoch.
 
     Then the corresponding PartitionField's transform is applied to return
     the final partition record value.
@@ -498,7 +503,7 @@ def partition_record_value(partition_field: PartitionField, value: Any, schema: 
 
 @singledispatch
 def _to_partition_representation(type: IcebergType, value: Any) -> Any:
-    """Strip the logical type into the physical type.
+    """Return the internal partition representation of a value.
 
     It can be that the value is already transformed into its physical type,
     in this case it will return the original value. Keep in mind that the
@@ -560,13 +565,13 @@ def _(type: IcebergType, value: int | time | None) -> int | None:
 
 
 @_to_partition_representation.register(UUIDType)
-def _(type: IcebergType, value: uuid.UUID | int | bytes | None) -> bytes | int | None:
+def _(type: IcebergType, value: uuid.UUID | int | bytes | None) -> uuid.UUID | int | None:
     if value is None:
         return None
     elif isinstance(value, bytes):
-        return value  # IdentityTransform
+        return uuid.UUID(bytes=value)  # IdentityTransform
     elif isinstance(value, uuid.UUID):
-        return value.bytes  # IdentityTransform
+        return value  # IdentityTransform
     elif isinstance(value, int):
         return value  # BucketTransform
     else:
