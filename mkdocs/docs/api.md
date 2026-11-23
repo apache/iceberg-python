@@ -374,7 +374,6 @@ reader = pa.RecordBatchReader.from_batches(schema, batch_iter)
 tbl.append(reader)
 ```
 
-<!-- markdown-link-check-disable-next-line -->
 Streaming writes are currently only supported on **unpartitioned** tables. For a partitioned table, materialise the reader as a `pa.Table` first, or follow [#2152](https://github.com/apache/iceberg-python/issues/2152) for the partitioned support tracked as a follow-up.
 
 To avoid any type inconsistencies during writing, you can convert the Iceberg table schema to Arrow:
@@ -2399,7 +2398,6 @@ import pyarrow as pa
 
 [2] The PyArrow-to-PyIceberg mappings for `pa.timestamp("ns")`, `pa.timestamp("ns", tz="UTC")`, and `pa.null()` require Iceberg format version 3. By default, `pyarrow_to_schema()` uses format version 2. `TimestampNanoType`, `TimestamptzNanoType`, and `UnknownType` are likewise format-version-3-only Iceberg types.
 
-<!-- markdown-link-check-disable-next-line -->
 [3] For nanosecond Iceberg timestamp types (`TimestampNanoType` and `TimestamptzNanoType`), writing in format version 3 is not yet implemented (see [GitHub issue #1551](https://github.com/apache/iceberg-python/issues/1551)).
 
 [4] The mappings are not fully symmetric. On read, PyArrow normalizes some families of types into a single Iceberg type, and on write PyIceberg emits a canonical PyArrow type: for example, `pa.int8()` and `pa.int16()` read as `IntegerType` and write back as `pa.int32()`, `pa.string()` reads as `StringType` and writes back as `pa.large_string()`, `pa.binary()` reads as `BinaryType` and writes back as `pa.large_binary()`, `pa.list_(...)` writes back as `pa.large_list(...)`, and `pa.timestamp("s")` / `pa.timestamp("ms")` read as `TimestampType` and write back as `pa.timestamp("us")`.

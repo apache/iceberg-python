@@ -35,7 +35,6 @@ This guide outlines the process for releasing PyIceberg in accordance with the [
     * Permission to upload artifacts to the [Apache development distribution](https://dist.apache.org/repos/dist/dev/iceberg/) (requires Apache Committer access).
     * Permission to upload artifacts to the [Apache release distribution](https://dist.apache.org/repos/dist/release/iceberg/) (requires Apache PMC access).
 * GitHub Access
-    <!-- markdown-link-check-disable-next-line -->
     * Write access to the [apache/iceberg-python](https://github.com/apache/iceberg-python) repository for triggering Dependabot (requires Apache Committer access).
 * PyPI Access
     * The `twine` package must be installed for uploading releases to PyPi.
@@ -45,7 +44,6 @@ This guide outlines the process for releasing PyIceberg in accordance with the [
 
 ### Remove Deprecated APIs
 
-<!-- markdown-link-check-disable-next-line -->
 Before running the release candidate, we want to remove any APIs that were marked for removal under the `@deprecated` tag for this release. See [#1269](https://github.com/apache/iceberg-python/pull/1269).
 
 For example, the API with the following deprecation tag should be removed when preparing for the 0.2.0 release.
@@ -141,10 +139,8 @@ git push git@github.com:apache/iceberg-python.git ${GIT_TAG}
 
 ### Create Artifacts
 
-<!-- markdown-link-check-disable-next-line -->
 The [`Python Build Release Candidate` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release.yml) will run automatically upon tag push.
 
-<!-- markdown-link-check-disable-next-line -->
 This action will generate artifacts that will include both source distribution (`sdist`) and binary distributions (`wheels` using [`cibuildwheel`](https://github.com/pypa/cibuildwheel)) for each architectures.
 
 This action will generate two final artifacts:
@@ -409,7 +405,6 @@ Thanks to everyone for contributing!
 
 ### Create a Github Release Note
 
-<!-- markdown-link-check-disable-next-line -->
 Create a [new Release Note](https://github.com/apache/iceberg-python/releases/new) on the iceberg-python Github repository.
 
 Input the tag in **Choose a tag** with the newly approved released version (e.g. `0.7.0`) and set it to **Create new tag** on publish. Pick the target commit version as the commit ID the release was approved on.
@@ -426,12 +421,10 @@ Make sure to check the `changelog` label on GitHub to see if anything needs to b
 
 ### Release the docs
 
-<!-- markdown-link-check-disable-next-line -->
 Run the [`Release Docs` Github Action](https://github.com/apache/iceberg-python/actions/workflows/python-release-docs.yml).
 
 ### Update the Github template
 
-<!-- markdown-link-check-disable-next-line -->
 Make sure to create a PR to update the [GitHub issues template](https://github.com/apache/iceberg-python/blob/main/.github/ISSUE_TEMPLATE/iceberg_bug_report.yml) with the latest version.
 
 ## Misc
@@ -440,7 +433,6 @@ Make sure to create a PR to update the [GitHub issues template](https://github.c
 
 To set up GPG key locally, see the [instructions](http://www.apache.org/dev/openpgp.html#key-gen-generate-key).
 
-<!-- markdown-link-check-disable-next-line -->
 To install gpg on a M1 based Mac, a couple of additional steps are required: <https://gist.github.com/phortuin/cf24b1cca3258720c71ad42977e1ba57>.
 
 Then, published GPG key to the [Apache Iceberg KEYS file](https://downloads.apache.org/iceberg/KEYS):

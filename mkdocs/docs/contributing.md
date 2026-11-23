@@ -26,15 +26,12 @@ hide:
 
 We welcome contributions to Apache Iceberg! To learn more about contributing to Apache Iceberg, please refer to the [official Iceberg contribution guidelines](https://iceberg.apache.org/contribute/). These guidelines are intended as helpful suggestions to make the contribution process as seamless as possible, and are not strict rules.
 
-<!-- markdown-link-check-disable-next-line -->
 If you would like to discuss your proposed change before contributing, we encourage you to visit our [Community](https://iceberg.apache.org/community/) page. There, you will find various ways to connect with the community, including Slack and our mailing lists. Alternatively, you can open a [new issue](https://github.com/apache/iceberg-python/issues) directly in the GitHub repository.
 
-<!-- markdown-link-check-disable-next-line -->
 For first-time contributors, feel free to check out our [good first issues](https://github.com/apache/iceberg-python/issues/?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22) for an easy way to get started.
 
 ## Contributing to PyIceberg
 
-<!-- markdown-link-check-disable-next-line -->
 The PyIceberg Project is hosted on GitHub at <https://github.com/apache/iceberg-python>.
 
 For development, [uv](https://docs.astral.sh/uv/) is used for dependency management and packaging. uv is a Python package installer and resolver, written in Rust, that serves as a drop-in replacement for pip, and virtualenv.
@@ -98,7 +95,6 @@ For full control over your environment, you can use uv commands directly. See th
 `uv.lock` is a cross-platform lockfile that contains the exact versions of all project dependencies. See the [uv.lock documentation](https://docs.astral.sh/uv/guides/projects/#uvlock) for more details.
 
 **Automatic lock file management:**
-<!-- markdown-link-check-disable-next-line -->
 When you commit changes to `pyproject.toml` or dependencies, the [`uv-pre-commit`](https://github.com/astral-sh/uv-pre-commit) pre-commit hook will automatically update `uv.lock` if needed. If the lockfile changes, your commit will be stopped and you will be prompted to add the updated `uv.lock` to your commit.
 
 **Manual update:**

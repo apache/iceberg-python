@@ -6,3 +6,4 @@ uv.lock
 .mypy_cache/**
 mkdocs/**
 notebooks/**
+.markdown-link-check.json
