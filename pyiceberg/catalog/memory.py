@@ -15,6 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.pool import StaticPool
+
 from pyiceberg.catalog import URI
 from pyiceberg.catalog.sql import SqlCatalog
 
@@ -26,8 +29,10 @@ class InMemoryCatalog(SqlCatalog):
     This is useful for test, demo, and playground but not in production as it does not support concurrent access.
     """
 
-    def __init__(self, name: str, warehouse: str = "file:///tmp/iceberg/warehouse", **kwargs: str) -> None:
+    def __init__(
+        self, name: str, warehouse: str = "file:///tmp/iceberg/warehouse", engine: Engine | None = None, **kwargs: str
+    ) -> None:
         self._warehouse_location = warehouse
-        if URI not in kwargs:
-            kwargs[URI] = "sqlite:///:memory:"
-        super().__init__(name=name, warehouse=warehouse, **kwargs)
+        if engine is None and URI not in kwargs:
+            engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+        super().__init__(name=name, engine=engine, warehouse=warehouse, **kwargs)
