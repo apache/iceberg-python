@@ -17,6 +17,7 @@
 # pylint: disable=W0123,W0613
 import json
 import pickle
+from datetime import date, datetime
 
 import pydantic_core
 import pytest
@@ -567,6 +568,19 @@ def test_repr_nested_field_default_nones_should_not_appear() -> None:
         "NestedField(field_id=1, name='required_field', field_type=StringType(), required=False, "
         "initial_default='hello', write_default='bye')"
     )
+
+
+def test_nested_field_initial_default_internal_value() -> None:
+    # initial_default keeps the Python value, readers and bound literals use days or microseconds for temporal types
+    for field_type, default, value, internal in [
+        (DateType(), "2020-01-01", date(2020, 1, 1), 18262),
+        (TimestampType(), "2020-01-01T00:00:01", datetime(2020, 1, 1, 0, 0, 1), 1577836801000000),
+        (IntegerType(), 5, 5, 5),
+    ]:
+        field = NestedField(1, "f", field_type, initial_default=default)
+        assert field.initial_default == value
+        assert field._initial_default_value == internal
+        assert NestedField.model_validate_json(field.model_dump_json())._initial_default_value == internal
 
 
 def test_serialization_nestedfield() -> None:
