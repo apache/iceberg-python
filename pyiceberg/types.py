@@ -66,11 +66,12 @@ DEFAULT_GEOMETRY_CRS = "OGC:CRS84"
 DEFAULT_GEOGRAPHY_CRS = "OGC:CRS84"
 DEFAULT_GEOGRAPHY_ALGORITHM = "spherical"
 
-# Regex patterns for parsing geometry and geography type strings
-# Matches: geometry, geometry('CRS'), geometry('crs'), geometry("CRS")
-GEOMETRY_REGEX = re.compile(r"geometry(?:\(\s*['\"]([^'\"]+)['\"]\s*\))?$")
-# Matches: geography, geography('CRS'), geography('crs', 'algo')
-GEOGRAPHY_REGEX = re.compile(r"geography(?:\(\s*['\"]([^'\"]+)['\"](?:\s*,\s*['\"]([^'\"]+)['\"])?\s*\))?$")
+# Accept Java's unquoted parameters and the existing quoted forms.
+_GEOSPATIAL_PARAMETER = r"""('[^']+'|"[^"]+"|[^'",()\s][^'",()]*?)"""
+GEOMETRY_REGEX = re.compile(rf"geometry\s*(?:\(\s*{_GEOSPATIAL_PARAMETER}\s*\))?", re.IGNORECASE)
+GEOGRAPHY_REGEX = re.compile(
+    rf"geography\s*(?:\(\s*{_GEOSPATIAL_PARAMETER}\s*(?:,\s*{_GEOSPATIAL_PARAMETER}\s*)?\))?", re.IGNORECASE
+)
 
 
 def transform_dict_value_to_str(d: dict[str, Any]) -> dict[str, str]:
@@ -105,6 +106,12 @@ def _parse_fixed_type(fixed: Any) -> int:
         return fixed
 
 
+def _parse_geospatial_parameter(value: str | None, default: str) -> str:
+    if value is None:
+        return default
+    return value[1:-1] if value.startswith(("'", '"')) else value.strip()
+
+
 def _parse_geometry_type(geometry: Any) -> str:
     """Parse geometry type string and return CRS.
 
@@ -115,10 +122,9 @@ def _parse_geometry_type(geometry: Any) -> str:
         The CRS string (defaults to DEFAULT_GEOMETRY_CRS if not specified).
     """
     if isinstance(geometry, str):
-        match = GEOMETRY_REGEX.match(geometry)
+        match = GEOMETRY_REGEX.fullmatch(geometry.strip())
         if match:
-            crs = match.group(1)
-            return crs if crs else DEFAULT_GEOMETRY_CRS
+            return _parse_geospatial_parameter(match.group(1), DEFAULT_GEOMETRY_CRS)
         else:
             raise ValidationError(f"Could not parse {geometry} into a GeometryType")
     elif isinstance(geometry, dict):
@@ -137,10 +143,10 @@ def _parse_geography_type(geography: Any) -> tuple[str, str]:
         Tuple of (CRS, algorithm) with defaults applied where not specified.
     """
     if isinstance(geography, str):
-        match = GEOGRAPHY_REGEX.match(geography)
+        match = GEOGRAPHY_REGEX.fullmatch(geography.strip())
         if match:
-            crs = match.group(1) if match.group(1) else DEFAULT_GEOGRAPHY_CRS
-            algorithm = match.group(2) if match.group(2) else DEFAULT_GEOGRAPHY_ALGORITHM
+            crs = _parse_geospatial_parameter(match.group(1), DEFAULT_GEOGRAPHY_CRS)
+            algorithm = _parse_geospatial_parameter(match.group(2), DEFAULT_GEOGRAPHY_ALGORITHM).lower()
             return crs, algorithm
         else:
             raise ValidationError(f"Could not parse {geography} into a GeographyType")
@@ -188,9 +194,9 @@ class IcebergType(IcebergBaseModel):
             # a CRS string (or CRS, algorithm tuple). If we try to parse those as type
             # strings here, we'd re-enter this validator (or raise) instead of letting
             # pydantic validate the raw root values.
-            if cls.__name__ == "GeometryType" and not v.startswith("geometry"):
+            if cls.__name__ == "GeometryType" and not v.lstrip().lower().startswith("geometry"):
                 return handler(v)
-            if cls.__name__ == "GeographyType" and not v.startswith("geography"):
+            if cls.__name__ == "GeographyType" and not v.lstrip().lower().startswith("geography"):
                 return handler(v)
 
             if v == "boolean":
@@ -228,10 +234,10 @@ class IcebergType(IcebergBaseModel):
             if v.startswith("decimal"):
                 precision, scale = _parse_decimal_type(v)
                 return DecimalType(precision, scale)
-            if v.startswith("geometry"):
+            if v.lstrip().lower().startswith("geometry"):
                 crs = _parse_geometry_type(v)
                 return GeometryType(crs)
-            if v.startswith("geography"):
+            if v.lstrip().lower().startswith("geography"):
                 crs, algorithm = _parse_geography_type(v)
                 return GeographyType(crs, algorithm)
             else:
