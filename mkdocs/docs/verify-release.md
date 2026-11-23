@@ -108,6 +108,7 @@ This section explains how to run the tests of the source distribution.
 <!-- prettier-ignore-start -->
 
 !!! note "Python Version"
+    <!-- markdown-link-check-disable-next-line -->
     Make sure you're using [a supported Python version](https://github.com/apache/iceberg-python/blob/main/pyproject.toml#L29-L32)
 
 <!-- prettier-ignore-end -->

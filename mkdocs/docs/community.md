@@ -26,6 +26,7 @@ hide:
 
 Apache Iceberg tracks issues in GitHub and prefers to receive contributions as pull requests.
 
+<!-- markdown-link-check-disable-next-line -->
 Community discussions happen primarily on the [dev mailing list](https://lists.apache.org/list.html?dev@iceberg.apache.org), on [Apache Iceberg Slack workspace](https://iceberg.apache.org/community/#slack) in the #python channel, and on specific [GitHub issues](https://github.com/apache/iceberg-python/issues).
 
 ## Iceberg Community Events
