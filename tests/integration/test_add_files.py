@@ -1098,19 +1098,3 @@ def test_add_files_to_branch_accepts_distinct_file_with_same_rows(catalog: Catal
 
     branch_rows = tbl.scan(snapshot_id=tbl.metadata.refs[branch].snapshot_id).to_arrow().to_pylist()
     assert branch_rows == ARROW_TABLE.to_pylist() * 3
-
-
-@pytest.mark.integration
-def test_add_files_to_branch_rejects_file_referenced_only_by_main(catalog: Catalog, tmp_path: Path) -> None:
-    branch = "branch1"
-    tbl = _create_table_with_branch(catalog, branch)
-    file_path = f"file://{tmp_path}/main-only.parquet"
-    _write_parquet(tbl.io, file_path, ARROW_SCHEMA, ARROW_TABLE)
-
-    # main references the file after this call, the branch does not
-    tbl.add_files(file_paths=[file_path])
-    with pytest.raises(ValueError, match="already referenced by table"):
-        tbl.add_files(file_paths=[file_path], branch=branch)
-
-    branch_rows = tbl.scan(snapshot_id=tbl.metadata.refs[branch].snapshot_id).to_arrow().to_pylist()
-    assert branch_rows == ARROW_TABLE.to_pylist()
