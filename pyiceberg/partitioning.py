@@ -68,6 +68,11 @@ INITIAL_PARTITION_SPEC_ID = 0
 PARTITION_FIELD_ID_START: int = 1000
 
 
+def _url_encode(value: str) -> str:
+    # Unlike quote_plus, java.net.URLEncoder leaves "*" as is and escapes "~"
+    return quote_plus(value, safe="*").replace("~", "%7E")
+
+
 class PartitionField(IcebergBaseModel):
     """PartitionField represents how one partition value is derived from the source column via transformation.
 
@@ -248,8 +253,8 @@ class PartitionSpec(IcebergBaseModel):
             partition_field = self.fields[pos]
             value_str = partition_field.transform.to_human_string(field_types[pos].field_type, value=data[pos])
 
-            value_strs.append(quote_plus(value_str, safe=""))
-            field_strs.append(quote_plus(partition_field.name, safe=""))
+            value_strs.append(_url_encode(value_str))
+            field_strs.append(_url_encode(partition_field.name))
 
         path = "/".join([field_str + "=" + value_str for field_str, value_str in zip(field_strs, value_strs, strict=True)])
         return path

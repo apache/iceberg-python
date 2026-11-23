@@ -151,6 +151,12 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         new_schema: Schema | pa.Schema,
         format_version: TableVersion = 2,
     ) -> UpdateSchema:
+        """Merge new_schema into the existing schema by field name.
+
+        Raises:
+            ValueError: When case_sensitive is False and a field lookup searches an existing struct
+                containing two fields with the same lower-case name.
+        """
         from pyiceberg.catalog import Catalog
 
         visit_with_partner(
