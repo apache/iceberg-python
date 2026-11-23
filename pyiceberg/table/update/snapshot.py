@@ -1488,6 +1488,9 @@ class ExpireSnapshots(UpdateTableMetadata["ExpireSnapshots"]):
         A snapshot that older_than would expire is kept if it is one of the num_snapshots most recent
         ancestors of a branch. Snapshots expired by ID are still expired.
 
+        Unlike Java, retain_last does not expire anything without older_than, since
+        history.expire.max-snapshot-age-ms is not applied as a default.
+
         Args:
             num_snapshots (int): The number of ancestors to retain per branch, must be at least 1.
 

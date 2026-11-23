@@ -408,6 +408,15 @@ def test_expire_snapshots_retain_last_before_older_than(example_table_metadata_v
     assert {snapshot.snapshot_id for snapshot in txn.table_metadata.snapshots} == {2, 3, 4, 5}
 
 
+def test_expire_snapshots_retain_last_without_older_than(example_table_metadata_v2: dict[str, Any]) -> None:
+    table = _table_with_branches(example_table_metadata_v2)
+
+    txn = table.transaction()
+    ExpireSnapshots(txn).retain_last(1).commit()
+
+    assert {snapshot.snapshot_id for snapshot in txn.table_metadata.snapshots} == {1, 2, 3, 4, 5}
+
+
 def test_expire_snapshots_retain_last_does_not_retain_by_id(example_table_metadata_v2: dict[str, Any]) -> None:
     table = _table_with_branches(example_table_metadata_v2)
 
