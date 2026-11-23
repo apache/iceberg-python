@@ -1940,6 +1940,7 @@ class ArrowScan:
     _table_metadata: TableMetadata
     _io: FileIO
     _projected_schema: Schema
+    _row_filter_schema: Schema
     _bound_row_filter: BooleanExpression
     _case_sensitive: bool
     _limit: int | None
@@ -1951,6 +1952,7 @@ class ArrowScan:
         _table_metadata: Current table metadata of the Iceberg table
         _io: PyIceberg FileIO implementation from which to fetch the io properties
         _projected_schema: Iceberg Schema to project onto the data files
+        _row_filter_schema: Iceberg Schema the row filter is bound to
         _bound_row_filter: Schema bound row expression to filter the data with
         _case_sensitive: Case sensitivity when looking up column names
         _limit: Limit the number of records.
@@ -1973,8 +1975,8 @@ class ArrowScan:
         self._table_metadata = table_metadata
         self._io = io
         self._projected_schema = projected_schema
-        filter_schema = row_filter_schema if row_filter_schema is not None else table_metadata.schema()
-        self._bound_row_filter = bind(filter_schema, row_filter, case_sensitive=case_sensitive)
+        self._row_filter_schema = row_filter_schema if row_filter_schema is not None else table_metadata.schema()
+        self._bound_row_filter = bind(self._row_filter_schema, row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._limit = limit
         self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
@@ -1983,7 +1985,8 @@ class ArrowScan:
     @property
     def _projected_field_ids(self) -> set[int]:
         """Set of field IDs that should be projected from the data files."""
-        schema = self._table_metadata.schema()
+        # The filter's field IDs come from the schema it is bound to, which a time-travel scan takes from the snapshot
+        schema = self._row_filter_schema
         filter_field_ids = extract_field_ids(self._bound_row_filter)
         # A list or map cannot be projected by its own ID, so a filter on one reads its nested fields instead
         nested_field_ids = prune_columns(
