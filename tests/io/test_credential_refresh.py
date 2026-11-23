@@ -23,6 +23,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 import pyarrow as pa
@@ -352,15 +353,73 @@ def test_disabled_refresh_preserves_initial_credentials(
     assert not refresh.called
 
 
-def test_gcsfs_vended_tokens_do_not_use_tokeninfo_or_oauth_refresh(requests_mock: Mocker) -> None:
-    io = FsspecFileIO(
-        {"gcs.project-id": "test", "gcs.oauth2.token": "short-vended-token", "gcs.oauth2.token-expires-at": "1700000060000"}
+def test_gcsfs_vended_tokens_do_not_use_tokeninfo_or_oauth_refresh(
+    clock: _Clock, requests_mock: Mocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from gcsfs import GCSFileSystem
+
+    filesystems: list[GCSFileSystem] = []
+
+    def create_filesystem(**kwargs: Any) -> GCSFileSystem:
+        filesystem = GCSFileSystem(**kwargs)
+        filesystems.append(filesystem)
+        return filesystem
+
+    monkeypatch.setattr("gcsfs.GCSFileSystem", create_filesystem)
+    initial = StorageCredential(
+        prefix="gs://warehouse/",
+        config={"gcs.oauth2.token": "short-vended-token", "gcs.oauth2.token-expires-at": "1700000060000"},
     )
-    fs = io.get_fs("gs")
-    headers: dict[str, str] = {}
-    fs.credentials.apply(headers)
-    assert headers["authorization"] == "Bearer short-vended-token"
+    rotated = StorageCredential(
+        prefix=initial.prefix,
+        config={"gcs.oauth2.token": "rotated-vended-token", "gcs.oauth2.token-expires-at": "1700000090000"},
+    )
+    io = FsspecFileIO({"gcs.project-id": "test"})
+    io.set_credentials_provider(CredentialsProvider([initial], lambda: LoadCredentialsResponse(storage_credentials=[rotated])))
+
+    for elapsed, token in ((0, "short-vended-token"), (30, "rotated-vended-token")):
+        clock.now += elapsed
+        io.new_input("gs://warehouse/file")
+        headers: dict[str, str] = {}
+        filesystems[-1].credentials.apply(headers)
+        assert headers["authorization"] == f"Bearer {token}"
     assert requests_mock.call_count == 0
+
+
+def test_gcsfs_keeps_sdk_expiry_outside_provider_prefix(clock: _Clock) -> None:
+    from google.oauth2.credentials import Credentials
+
+    provider = CredentialsProvider(
+        [
+            StorageCredential(
+                prefix="gs://warehouse/",
+                config={"gcs.oauth2.token": "vended-token", "gcs.oauth2.token-expires-at": "1700000060000"},
+            )
+        ],
+        lambda: pytest.fail("An unmatched location must not refresh credentials"),
+    )
+    io = FsspecFileIO({"gcs.oauth2.token": "static-token", "gcs.oauth2.token-expires-at": "1700000000000"})
+    io.set_credentials_provider(provider)
+    with mock.patch("gcsfs.GCSFileSystem") as filesystem:
+        io.new_input("gs://other/file")
+
+    token = filesystem.call_args.kwargs["token"]
+    assert isinstance(token, Credentials)
+    assert token.token == "static-token"
+    assert token.expiry == datetime(2023, 11, 14, 22, 13, 20)
+
+
+def test_gcsfs_token_from_provider_does_not_inherit_expiry_from_static_token(clock: _Clock) -> None:
+    provider = CredentialsProvider(
+        [StorageCredential(prefix="gs://warehouse/", config={"gcs.oauth2.token": "vended-token"})],
+        lambda: pytest.fail("A credential without expiration must not be refreshed"),
+    )
+    io = FsspecFileIO({"gcs.oauth2.token": "static-token", "gcs.oauth2.token-expires-at": "1700000000000"})
+    io.set_credentials_provider(provider)
+    with mock.patch("gcsfs.GCSFileSystem") as filesystem:
+        io.new_input("gs://warehouse/file")
+
+    assert filesystem.call_args.kwargs["token"] == "vended-token"
 
 
 def test_gcsfs_preserves_caller_owned_credentials_and_anonymous_mode(requests_mock: Mocker) -> None:

@@ -257,26 +257,22 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     return S3FileSystem(**s3_fs_kwargs)
 
 
-def _gs(properties: Properties) -> AbstractFileSystem:
+def _gs(properties: Properties, *, refresh_managed: bool = False) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
     from google.oauth2.credentials import Credentials
 
-    token: str | Credentials | None = properties.get(GCS_TOKEN)
-    if token and (expires_at := properties.get(GCS_TOKEN_EXPIRES_AT_MS)):
-        token = Credentials(token, expiry=millis_to_datetime(int(expires_at)))
-
     token = properties.get(GCS_TOKEN)
     if (
         isinstance(token, str)
-        and GCS_TOKEN_EXPIRES_AT_MS in properties
+        and token
+        and (expires_at := properties.get(GCS_TOKEN_EXPIRES_AT_MS))
         and token not in {"anon", "cloud", "cache", "google_default", "browser"}
         and not os.path.isfile(token)
     ):
-        from google.oauth2.credentials import Credentials
-
-        # FileIO owns token renewal. An SDK expiry would trigger a separate OAuth refresh flow.
-        token = Credentials(token=token)
+        # FileIO renews provider-managed tokens; an SDK expiry would trigger OAuth refresh instead.
+        expiry = None if refresh_managed else millis_to_datetime(int(expires_at))
+        token = Credentials(token=token, expiry=expiry)
 
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
@@ -583,9 +579,19 @@ class FsspecFileIO(_TransientStateMixin, FileIO):
             raise ValueError(f"No registered filesystem for scheme: {scheme}")
 
         baseline = self._credentials_properties if self._credentials_provider is not None else self.properties
-        properties = {**baseline, **dict(creds_key)}
+        credential_properties = dict(creds_key)
+        properties = {**baseline, **credential_properties}
 
         if scheme in _ADLS_SCHEMES:
             return _adls(properties, hostname)
 
-        return self._scheme_to_fs[scheme](properties)
+        factory = self._scheme_to_fs[scheme]
+        if factory is _gs:
+            has_vended_token = GCS_TOKEN in credential_properties
+            has_vended_expiry = GCS_TOKEN_EXPIRES_AT_MS in credential_properties
+            if has_vended_token and not has_vended_expiry and credential_properties[GCS_TOKEN] != baseline.get(GCS_TOKEN):
+                properties.pop(GCS_TOKEN_EXPIRES_AT_MS, None)
+            refresh_managed = self._credentials_provider is not None and has_vended_token and has_vended_expiry
+            return _gs(properties, refresh_managed=refresh_managed)
+
+        return factory(properties)
