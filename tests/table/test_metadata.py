@@ -283,6 +283,15 @@ def test_new_table_metadata_with_explicit_v1_format() -> None:
     assert actual.sort_orders == [expected_sort_order]
 
 
+def test_new_table_metadata_does_not_change_properties() -> None:
+    properties = {"format-version": "1", "owner": "etl"}
+    metadata = new_table_metadata(
+        schema=Schema(), partition_spec=PartitionSpec(), sort_order=SortOrder(), location="s3://bucket", properties=properties
+    )
+    assert (metadata.format_version, metadata.properties) == (1, {"owner": "etl"})
+    assert properties == {"format-version": "1", "owner": "etl"}
+
+
 def test_invalid_format_version(example_table_metadata_v1: dict[str, Any]) -> None:
     """Test the exception when trying to load an unknown version"""
 
@@ -875,6 +884,27 @@ def test_new_table_metadata_format_v2_with_v3_schema_fails(field_type: Primitive
             schema=schema,
             partition_spec=partition_spec,
             sort_order=sort_order,
+            location="s3://some_v1_location/",
+            properties={"format-version": "2"},
+        )
+
+
+def test_new_table_metadata_with_duplicate_partition_name_fails() -> None:
+    schema = Schema(
+        NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=22, name="bar", field_type=IntegerType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=10, field_id=1000, transform=IdentityTransform(), name="part"),
+        PartitionField(source_id=22, field_id=1001, transform=IdentityTransform(), name="part"),
+    )
+
+    with pytest.raises(ValueError, match="Partition name has to be unique: part"):
+        new_table_metadata(
+            schema=schema,
+            partition_spec=partition_spec,
+            sort_order=SortOrder(),
             location="s3://some_v1_location/",
             properties={"format-version": "2"},
         )

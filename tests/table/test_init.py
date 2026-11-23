@@ -33,6 +33,8 @@ from pyiceberg.expressions import (
     And,
     EqualTo,
     In,
+    IsNaN,
+    IsNull,
 )
 from pyiceberg.expressions.visitors import bind
 from pyiceberg.io import PY_IO_IMPL, FileIO, load_file_io
@@ -46,7 +48,9 @@ from pyiceberg.table import (
     Table,
     TableIdentifier,
 )
+from pyiceberg.table.labels import Labels
 from pyiceberg.table.metadata import EncryptedKey, TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID, project_schema, split_selected_fields
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -97,6 +101,7 @@ from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.transforms import (
     BucketTransform,
     IdentityTransform,
+    VoidTransform,
 )
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
@@ -120,6 +125,7 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+from tests.table.test_commit_retry import commit_partition_position_delete
 
 
 def test_schema(table_v2: Table) -> None:
@@ -191,6 +197,10 @@ def test_sort_orders(table_v2: Table) -> None:
 
 def test_location(table_v2: Table) -> None:
     assert table_v2.location() == "s3://bucket/test/location"
+
+
+def test_labels_default_to_empty(table_v2: Table) -> None:
+    assert table_v2.labels == Labels()
 
 
 def test_current_snapshot(table_v2: Table) -> None:
@@ -372,6 +382,59 @@ def test_table_scan_projection_single_column_case_sensitive(table_v2: Table) -> 
     assert projection_schema.schema_id == 1
 
 
+def test_case_insensitive_operations_raise_on_case_variant_columns(catalog: Catalog) -> None:
+    """A case-insensitive lookup of ID on a table with ID and id raises, instead of acting on the id column."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "ID", LongType(), required=False), NestedField(2, "id", LongType(), required=False))
+    table = catalog.create_table("default.case_variants", schema=schema)
+    table.append(pa.table({"ID": pa.array([5, 6], pa.int64()), "id": pa.array([7, 5], pa.int64())}))
+    collision = "Cannot build lower case index: ID and id collide"
+
+    with pytest.raises(ValueError, match=collision):
+        table.delete("ID = 5", case_sensitive=False)
+    with pytest.raises(ValueError, match=collision):
+        table.scan(row_filter=EqualTo("ID", 5), case_sensitive=False).to_arrow()
+    with pytest.raises(ValueError, match=collision):
+        table.update_sort_order(case_sensitive=False).asc("ID", IdentityTransform()).commit()
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.delete_column("ID")
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.rename_column("ID", "key")
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.add_column("Id", LongType())
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.move_first("ID")
+
+    reloaded = catalog.load_table("default.case_variants")
+    assert reloaded.schema() == schema
+    assert sorted((row["ID"], row["id"]) for row in reloaded.scan().to_arrow().to_pylist()) == [(5, 7), (6, 5)]
+
+
+def test_case_sensitive_and_unambiguous_operations_are_unchanged(catalog: Catalog) -> None:
+    """Exact-case lookups still resolve each column on a table with ID and id, and unambiguous names work case-insensitively."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "ID", LongType(), required=False), NestedField(2, "id", LongType(), required=False))
+    table = catalog.create_table("default.case_variants_exact", schema=schema)
+    table.append(pa.table({"ID": pa.array([5, 6], pa.int64()), "id": pa.array([7, 5], pa.int64())}))
+
+    assert table.scan(row_filter=EqualTo("ID", 5)).to_arrow()["id"].to_pylist() == [7]
+    table.delete("ID = 5")
+    assert sorted((row["ID"], row["id"]) for row in table.scan().to_arrow().to_pylist()) == [(6, 5)]
+
+    unambiguous = catalog.create_table("default.unambiguous", schema=Schema(NestedField(1, "ID", LongType(), required=False)))
+    unambiguous.append(pa.table({"ID": pa.array([5, 6], pa.int64())}))
+    unambiguous.delete("id = 5", case_sensitive=False)
+    assert unambiguous.scan().to_arrow()["ID"].to_pylist() == [6]
+
+
 def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
     scan = table_v2.scan()
 
@@ -379,6 +442,51 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
         _ = scan.select("a").projection()
 
     assert "Could not find column: 'a'" in str(exc_info.value)
+
+
+def test_table_scan_projection_row_lineage_columns(table_v3: Table) -> None:
+    projection_schema = table_v3.scan().select("x", "_row_id", "_last_updated_sequence_number").projection()
+    assert projection_schema == Schema(
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        ROW_ID,
+        LAST_UPDATED_SEQUENCE_NUMBER,
+        identifier_field_ids=[1],
+    )
+    assert projection_schema.schema_id == 1
+
+
+def test_table_scan_projection_row_lineage_columns_with_star(table_v3: Table) -> None:
+    projection_schema = table_v3.scan(selected_fields=("*", "_row_id")).projection()
+    assert projection_schema.fields == (*table_v3.schema().fields, ROW_ID)
+
+
+def test_table_scan_projection_row_lineage_columns_case_insensitive(table_v3: Table) -> None:
+    projection_schema = table_v3.scan().with_case_sensitive(False).select("X", "_ROW_ID").projection()
+    assert [field.name for field in projection_schema.fields] == ["x", "_row_id"]
+
+
+def test_table_scan_projection_row_lineage_columns_case_sensitive(table_v3: Table) -> None:
+    with pytest.raises(ValueError, match="Could not find column: '_ROW_ID'"):
+        table_v3.scan().select("x", "_ROW_ID").projection()
+
+
+def test_table_scan_projection_row_lineage_columns_before_v3(table_v2: Table) -> None:
+    with pytest.raises(ValueError, match="Cannot select _row_id: row lineage requires format version 3"):
+        table_v2.scan().select("x", "_row_id").projection()
+
+
+def test_incremental_append_scan_projection_row_lineage_columns(table_v3: Table) -> None:
+    projection_schema = table_v3.incremental_append_scan(selected_fields=("x", "_row_id")).projection()
+    assert [field.name for field in projection_schema.fields] == ["x", "_row_id"]
+
+
+def test_project_schema_prefers_schema_column_over_metadata_column() -> None:
+    schema = Schema(NestedField(field_id=1, name="_row_id", field_type=LongType(), required=True))
+    assert project_schema(schema, ("_row_id",), case_sensitive=True, format_version=3) == schema
+    assert split_selected_fields(schema, ("_row_id", "_last_updated_sequence_number"), case_sensitive=True) == (
+        ("_row_id",),
+        (LAST_UPDATED_SEQUENCE_NUMBER,),
+    )
 
 
 def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> None:
@@ -1036,6 +1144,38 @@ def test_apply_set_properties_update(table_v2: Table) -> None:
     assert new_metadata_add_only.last_updated_ms > base_metadata.last_updated_ms
 
 
+@pytest.mark.parametrize("table_fixture", ["table_v1", "table_v2"])
+@pytest.mark.parametrize("property_name", ["encryption.key-id", "encryption.data-key-length"])
+def test_apply_set_properties_update_rejects_encryption_before_v3(
+    table_fixture: str, property_name: str, request: pytest.FixtureRequest
+) -> None:
+    table: Table = request.getfixturevalue(table_fixture)
+
+    with pytest.raises(ValueError, match=rf"Invalid properties for v{table.format_version}: \['{property_name}'\]"):
+        update_table_metadata(table.metadata, (SetPropertiesUpdate(updates={property_name: "value"}),))
+
+
+def test_apply_set_properties_update_allows_encryption_on_v3(table_v3: Table) -> None:
+    new_metadata = update_table_metadata(
+        table_v3.metadata,
+        (SetPropertiesUpdate(updates={"encryption.key-id": "key", "encryption.data-key-length": "32"}),),
+    )
+
+    assert new_metadata.properties["encryption.key-id"] == "key"
+    assert new_metadata.properties["encryption.data-key-length"] == "32"
+
+
+def test_apply_remove_encryption_property_before_v3(table_v2: Table) -> None:
+    # A pre-v3 table that already has encryption.key-id must be repairable
+    base_metadata = table_v2.metadata.model_copy(
+        update={"properties": {**table_v2.metadata.properties, "encryption.key-id": "key"}}
+    )
+
+    new_metadata = update_table_metadata(base_metadata, (RemovePropertiesUpdate(removals=["encryption.key-id"]),))
+
+    assert "encryption.key-id" not in new_metadata.properties
+
+
 def test_apply_remove_properties_update(table_v2: Table) -> None:
     base_metadata = update_table_metadata(
         table_v2.metadata,
@@ -1101,6 +1241,20 @@ def test_update_metadata_table_schema(table_v2: Table) -> None:
     assert apply_schema.highest_field_id == 4
 
     assert new_metadata.current_schema_id == 2
+
+
+def test_transaction_table_metadata_without_staged_updates(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    assert transaction.table_metadata is table_v2.metadata
+
+
+def test_transaction_table_metadata_with_staged_updates(table_v2: Table) -> None:
+    transaction = table_v2.transaction()
+    transaction.set_properties(test_a="test_a")
+
+    assert transaction.table_metadata.properties["test_a"] == "test_a"
+    assert transaction.table_metadata is not table_v2.metadata
+    assert "test_a" not in table_v2.metadata.properties
 
 
 def test_update_metadata_add_snapshot(table_v2: Table) -> None:
@@ -1252,7 +1406,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
         snapshot_id=25,
         parent_snapshot_id=19,
         sequence_number=200,
-        timestamp_ms=1602638573590,
+        timestamp_ms=1602638593590,
         manifest_list="s3:/a/b/c.avro",
         summary=Summary(Operation.APPEND),
         schema_id=3,
@@ -1295,7 +1449,7 @@ def test_update_metadata_with_multiple_updates(table_v1: Table) -> None:
     assert len(new_metadata.snapshot_log) == 1
     assert new_metadata.snapshot_log[0].snapshot_id == 25
     assert new_metadata.current_snapshot_id == 25
-    assert new_metadata.last_updated_ms == 1602638573590
+    assert new_metadata.last_updated_ms == 1602638593590
     assert new_metadata.refs["main"] == SnapshotRef(
         snapshot_id=25,
         snapshot_ref_type="branch",
@@ -1377,6 +1531,20 @@ def test_metadata_isolation_from_illegal_updates(table_v1: Table) -> None:
 
     # The original metadata should not be affected by the illegal update on the new metadata
     assert len(base_metadata.partition_specs) == 1
+
+
+def test_update_metadata_shares_unchanged_models(table_v2: Table) -> None:
+    base_metadata = table_v2.metadata
+    new_metadata = update_table_metadata(base_metadata, (SetPropertiesUpdate(updates={"test_a": "test_a"}),))
+
+    # The containers are copied, so a list append or dict assignment cannot reach the base metadata
+    assert new_metadata.snapshots is not base_metadata.snapshots
+    assert new_metadata.refs is not base_metadata.refs
+    assert new_metadata.properties is not base_metadata.properties
+    # The frozen models they hold are shared, so the cost does not grow with the table history
+    assert all(new is base for new, base in zip(new_metadata.snapshots, base_metadata.snapshots, strict=True))
+    assert all(new is base for new, base in zip(new_metadata.schemas, base_metadata.schemas, strict=True))
+    assert "test_a" not in base_metadata.properties
 
 
 def test_generate_snapshot_id(table_v2: Table) -> None:
@@ -1490,6 +1658,22 @@ def test_last_assigned_partition_id(table_v2: Table) -> None:
         AssertLastAssignedPartitionId(last_assigned_partition_id=1).validate(base_metadata)
 
 
+def test_update_spec_rejects_duplicate_partition_name(table_v2: Table) -> None:
+    txn = table_v2.transaction()
+    txn.update_spec().add_field("y", BucketTransform(16), "y_bucket").commit()
+
+    with pytest.raises(ValueError, match="Partition name has to be unique: y_bucket"):
+        txn.update_spec().rename_field("x", "y_bucket").commit()
+
+    with pytest.raises(ValueError, match="Partition name has to be unique: z_bucket"):
+        txn.update_spec().rename_field("y_bucket", "z_bucket").add_field("z", BucketTransform(16), "z_bucket").commit()
+
+
+def test_update_spec_rejects_empty_partition_name(table_v2: Table) -> None:
+    with pytest.raises(ValueError, match="Undefined name"):
+        table_v2.transaction().update_spec().add_field("z", BucketTransform(16), "").commit()
+
+
 @pytest.mark.parametrize("table", [lf("table_v2"), lf("table_v3")])
 def test_update_spec_reuses_removed_partition_field_id(table: Table) -> None:
     txn = table.transaction()
@@ -1512,6 +1696,96 @@ def test_update_spec_remove_and_add_same_field_reuses_id(table: Table) -> None:
         PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
     )
     assert txn.table_metadata.last_partition_id == 1000
+
+
+def test_update_spec_remove_and_add_field_with_same_name(table_v1: Table, table_v2: Table) -> None:
+    for table in [table_v1, table_v2]:
+        txn = table.transaction()
+        txn.update_spec().add_field("y", BucketTransform(16), "y_shard").commit()
+        txn.update_spec().remove_field("y_shard").add_field("y", BucketTransform(32), "y_shard").commit()
+
+        if table.format_version == 1:
+            assert txn.table_metadata.spec().fields == (
+                PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+                PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+                PartitionField(source_id=2, field_id=1002, transform=BucketTransform(32), name="y_shard"),
+            )
+        else:
+            assert txn.table_metadata.spec().fields == (
+                PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+                PartitionField(source_id=2, field_id=1002, transform=BucketTransform(32), name="y_shard"),
+            )
+
+
+def test_update_spec_rename_onto_removed_partition_field_name(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "x", IntegerType(), required=False),
+        NestedField(2, "y", IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"))
+    table = catalog.create_table(
+        "default.rename_onto_removed", schema=schema, partition_spec=spec, properties={"format-version": "1"}
+    )
+    table.update_spec().add_field("y", BucketTransform(16), "y_shard").commit()
+    table.update_spec().remove_field("y_shard").commit()
+    table.update_spec().rename_field("x", "y_shard").commit()
+
+    assert catalog.load_table("default.rename_onto_removed").spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="y_shard"),
+        PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+    )
+
+
+def test_update_spec_rename_onto_explicit_void_partition_field_name(table_v2: Table) -> None:
+    txn = table_v2.transaction()
+    txn.update_spec().add_field("y", VoidTransform(), "y_shard").commit()
+    txn.update_spec().rename_field("x", "y_shard").commit()
+
+    assert txn.table_metadata.spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="y_shard"),
+        PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+    )
+
+
+def test_update_spec_rename_to_unused_partition_field_name(table_v2: Table) -> None:
+    txn = table_v2.transaction()
+    txn.update_spec().rename_field("x", "x_shard").commit()
+
+    assert txn.table_metadata.spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x_shard"),
+    )
+
+
+def test_update_spec_rename_onto_void_rejects_removal_in_same_update(table_v1: Table, table_v2: Table) -> None:
+    for table in (table_v1, table_v2):
+        txn = table.transaction()
+        txn.update_spec().add_field("y", VoidTransform(), "y_shard").commit()
+
+        with pytest.raises(ValueError, match="^Cannot delete and rename partition field y_shard$"):
+            txn.update_spec().remove_field("y_shard").rename_field("x", "y_shard").commit()
+
+        with pytest.raises(ValueError, match="^Cannot rename and delete field y_shard$"):
+            txn.update_spec().rename_field("x", "y_shard").remove_field("y_shard").commit()
+
+
+def test_update_spec_cascades_void_name_collisions(table_v2: Table) -> None:
+    for add_field in (False, True):
+        txn = table_v2.transaction()
+        txn.update_spec().add_field("y", VoidTransform(), "y_shard").add_field("z", VoidTransform(), "y_shard_1001").commit()
+
+        expected: tuple[PartitionField, ...] = (
+            PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x" if add_field else "y_shard"),
+            PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+            PartitionField(source_id=3, field_id=1002, transform=VoidTransform(), name="y_shard_1001_1002"),
+        )
+        if add_field:
+            txn.update_spec().add_field("y", BucketTransform(16), "y_shard").commit()
+            expected += (PartitionField(source_id=2, field_id=1003, transform=BucketTransform(16), name="y_shard"),)
+        else:
+            txn.update_spec().rename_field("x", "y_shard").commit()
+
+        assert txn.table_metadata.spec().fields == expected
 
 
 def test_assert_default_spec_id(table_v2: Table) -> None:
@@ -1681,6 +1955,23 @@ def test_update_metadata_log(table_v2: Table) -> None:
         table_v2.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),), False, table_v2.metadata_location
     )
     assert len(new_metadata.metadata_log) == 2
+
+
+def test_update_metadata_last_updated_ms_not_before_metadata_log(table_v2: Table) -> None:
+    stale_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=table_v2.metadata.last_updated_ms - 61_000,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    new_metadata = update_table_metadata(
+        table_v2.metadata, (AddSnapshotUpdate(snapshot=stale_snapshot),), False, table_v2.metadata_location
+    )
+    assert new_metadata.last_updated_ms > new_metadata.metadata_log[-1].timestamp_ms
 
 
 def test_update_metadata_log_overflow(table_v2: Table) -> None:
@@ -1977,16 +2268,17 @@ def test_remove_partition_statistics_update(table_v2_with_statistics: Table) -> 
     assert len(remove_metadata.partition_statistics) == 0
 
 
-def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_with_statistics: Table) -> None:
-    # Remove the same partition statistics file.
-    with pytest.raises(
-        ValueError,
-        match="Partition Statistics with snapshot id 123456789 does not exist",
-    ):
-        update_table_metadata(
-            table_v2_with_statistics.metadata,
-            (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
-        )
+def test_remove_partition_statistics_update_without_file_is_noop(table_v2_with_statistics: Table) -> None:
+    # Removing a partition statistics file that does not exist leaves the metadata unchanged, also when repeated
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (
+            RemovePartitionStatisticsUpdate(snapshot_id=123456789),
+            RemovePartitionStatisticsUpdate(snapshot_id=123456789),
+        ),
+    )
+
+    assert new_metadata == table_v2_with_statistics.metadata
 
 
 def test_add_encryption_key_update(table_v3: Table) -> None:
@@ -2194,6 +2486,40 @@ def test_add_snapshot_update_updates_next_row_id(table_v3: Table) -> None:
     assert new_metadata.next_row_id == 11
 
 
+def test_add_snapshot_update_fails_without_added_rows(table_v3: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        first_row_id=2,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot add snapshot without added rows",
+    ):
+        update_table_metadata(table_v3.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+
+
+def test_add_snapshot_update_keeps_next_row_id_unset_below_v3(table_v2: Table) -> None:
+    new_snapshot = Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=3055729675574597004,
+        sequence_number=200,
+        timestamp_ms=1602638593590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+    )
+
+    new_metadata = update_table_metadata(table_v2.metadata, (AddSnapshotUpdate(snapshot=new_snapshot),))
+    assert "next-row-id" not in json.loads(new_metadata.model_dump_json())
+
+
 def model_roundtrips(model: BaseModel) -> bool:
     """Helper assertion that tests if a pydantic model roundtrips
     successfully.
@@ -2235,6 +2561,16 @@ def test_build_large_partition_predicate(table_v2: Table) -> None:
     bind(table_v2.metadata.schema(), expr, case_sensitive=True)
 
 
+def test_build_partition_predicate_with_nan_and_null(table_v2: Table) -> None:
+    with table_v2.transaction() as tx:
+        expr = tx._build_partition_predicate(
+            partition_records={Record(float("nan"), None, 1.0)},
+            partition_fields=["a", "b", "c"],
+        )
+
+    assert expr == And(IsNaN("a"), IsNull("b"), EqualTo("c", 1.0))
+
+
 def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> None:
     """Delete a data file without projecting its already-transformed partition value again."""
     import pyarrow as pa
@@ -2257,6 +2593,25 @@ def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> Non
             overwrite.delete_data_file(data_file)
 
     assert table.scan().to_arrow().num_rows == 0
+
+
+def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalog) -> None:
+    """Rewriting a file applies all of its delete files, not only those whose bounds can match the delete filter."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "k", LongType(), required=False), NestedField(2, "v", StringType(), required=False))
+    table = catalog.create_table("default.partial_delete", schema=schema, properties={"format-version": "2"})
+    table.append(pa.table({"k": [1, 2, 3], "v": ["a", "b", "c"]}))
+    data_file = next(iter(table.scan().plan_files())).file
+
+    # The delete file stores the deleted row (2, 'b'), so a scan for k = 1 skips it.
+    commit_partition_position_delete(table, Record(), data_file.file_path, pos=1, row={"k": 2, "v": "b"})
+    assert [task.delete_files for task in table.scan(row_filter="k = 1").plan_files()] == [set()]
+
+    table.delete("k = 1")
+
+    assert table.scan().to_arrow()["k"].to_pylist() == [3]
 
 
 def test_static_table_forwards_location_to_table_file_io(metadata_location: str, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -21,12 +21,14 @@ from typing import TYPE_CHECKING
 
 from pyroaring import BitMap, FrozenBitMap
 
+from pyiceberg.encryption.io import EncryptedInputFile
+from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.table.puffin import PuffinFile
 
 if TYPE_CHECKING:
     import pyarrow as pa
 
-    from pyiceberg.io import FileIO
+    from pyiceberg.io import FileIO, InputFile
     from pyiceberg.manifest import DataFile
 
 EMPTY_BITMAP = FrozenBitMap()
@@ -37,6 +39,7 @@ _DV_BLOB_MAGIC = struct.Struct("<I")
 _DV_BLOB_CRC = struct.Struct(">I")
 _DV_BLOB_MAGIC_NUMBER = 1681511377
 _ROARING_BITMAP_COUNT_SIZE_BYTES = 8
+_ROARING_BITMAP_KEY_SIZE_BYTES = 4
 _DV_BLOB_MIN_SIZE_BYTES = _DV_BLOB_LENGTH.size + _DV_BLOB_MAGIC.size + _ROARING_BITMAP_COUNT_SIZE_BYTES + _DV_BLOB_CRC.size
 
 
@@ -49,30 +52,32 @@ class DeletionVector:
         self._bitmaps = bitmaps
 
     @staticmethod
-    def _deserialize_bitmap(pl: bytes) -> list[BitMap]:
-        number_of_bitmaps = int.from_bytes(pl[0:8], byteorder="little")
-        pl = pl[8:]
+    def _deserialize_bitmap(payload: bytes) -> list[BitMap]:
+        payload_view = memoryview(payload)
+        offset = _ROARING_BITMAP_COUNT_SIZE_BYTES
+        number_of_bitmaps = int.from_bytes(payload_view[:offset], byteorder="little")
 
         bitmaps = []
         last_key = -1
+
         for _ in range(number_of_bitmaps):
-            key = int.from_bytes(pl[0:4], byteorder="little")
+            key = int.from_bytes(payload_view[offset : offset + _ROARING_BITMAP_KEY_SIZE_BYTES], byteorder="little")
             if key < 0:
                 raise ValueError(f"Invalid unsigned key: {key}")
             if key <= last_key:
                 raise ValueError("Keys must be sorted in ascending order")
             if key > MAX_JAVA_SIGNED:
                 raise ValueError(f"Key {key} is too large, max {MAX_JAVA_SIGNED} to maintain compatibility with Java impl")
-            pl = pl[4:]
+            offset += _ROARING_BITMAP_KEY_SIZE_BYTES
 
             while last_key < key - 1:
                 bitmaps.append(EMPTY_BITMAP)
                 last_key += 1
 
-            bm = BitMap().deserialize(pl)
-            # TODO: Optimize this
-            pl = pl[len(bm.serialize()) :]
-            bitmaps.append(bm)
+            bitmap = BitMap.deserialize(payload_view[offset:])
+            # PyRoaring's __sizeof__ returns the portable serialized size.
+            offset += bitmap.__sizeof__()
+            bitmaps.append(bitmap)
 
             last_key = key
 
@@ -82,7 +87,10 @@ class DeletionVector:
     def _bitmaps_to_chunked_array(bitmaps: list[BitMap]) -> "pa.ChunkedArray":
         import pyarrow as pa
 
-        return pa.chunked_array([(key_pos << 32) + pos for pos in bitmap] for key_pos, bitmap in enumerate(bitmaps))
+        # Use int64 even when the first bitmap is empty or there are no bitmaps.
+        return pa.chunked_array(
+            ([(key_pos << 32) + pos for pos in bitmap] for key_pos, bitmap in enumerate(bitmaps)), type=pa.int64()
+        )
 
     def to_vector(self) -> "pa.ChunkedArray":
         return self._bitmaps_to_chunked_array(self._bitmaps)
@@ -152,10 +160,18 @@ def _has_deletion_vector_content_reference(dv: "DataFile") -> bool:
     return dv.content_offset is not None or dv.content_size_in_bytes is not None or dv.referenced_data_file is not None
 
 
+def _new_input(io: "FileIO", dv: "DataFile") -> "InputFile":
+    """Return the Puffin file to read, decrypting it when it has key metadata so content offsets refer to the plaintext."""
+    input_file = io.new_input(dv.file_path)
+    if dv.key_metadata is not None:
+        return EncryptedInputFile(input_file, StandardKeyMetadata.from_bytes(dv.key_metadata))
+    return input_file
+
+
 def _read_deletion_vector(io: "FileIO", dv: "DataFile") -> DeletionVector:
     content_offset, content_size_in_bytes, referenced_data_file = _validate_deletion_vector_content(dv)
 
-    with io.new_input(dv.file_path).open() as fi:
+    with _new_input(io, dv).open() as fi:
         fi.seek(content_offset)
         payload = fi.read(content_size_in_bytes)
 
@@ -173,7 +189,7 @@ def read_deletion_vectors(io: "FileIO", dv: "DataFile") -> list[DeletionVector]:
     if _has_deletion_vector_content_reference(dv):
         return [_read_deletion_vector(io, dv)]
 
-    with io.new_input(dv.file_path).open() as fi:
+    with _new_input(io, dv).open() as fi:
         return deletion_vectors_from_puffin_file(PuffinFile(fi.read()))
 
 

@@ -15,9 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pickle
+
+import boto3
 import pytest
 from memory_kms import MemoryKeyManagementClient
+from moto import mock_aws
 
+from pyiceberg.encryption.aws_kms import AwsKeyManagementClient
 from pyiceberg.encryption.ciphers import AesGcmCipher, AesKeySize, SecureKey
 from pyiceberg.encryption.kms import GeneratedKey, KeyManagementClient
 
@@ -145,3 +150,14 @@ def test_repr_redacts_master_keys(kms: MemoryKeyManagementClient) -> None:
 
     assert repr(kms) == "MemoryKeyManagementClient(master_key_size=<AesKeySize.BITS_128: 128>, key_count=2)"
     assert repr(MASTER_KEY.key) not in repr(kms)
+
+
+@mock_aws
+def test_aws_kms_wrap_unwrap_round_trip(_aws_credentials: None) -> None:
+    master_key_id = boto3.client("kms").create_key()["KeyMetadata"]["KeyId"]
+    kms = AwsKeyManagementClient()
+
+    wrapped = kms.wrap_key(DEK, master_key_id)
+
+    assert kms.unwrap_key(wrapped, master_key_id) == DEK
+    assert pickle.loads(pickle.dumps(kms)).unwrap_key(wrapped, master_key_id) == DEK

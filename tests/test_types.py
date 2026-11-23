@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=W0123,W0613
+import json
 import pickle
 
 import pydantic_core
@@ -180,6 +181,30 @@ def test_struct_field_by_name() -> None:
     assert type_var.field_by_name("lower_case_field", case_sensitive=True) == lower_field
     assert type_var.field_by_name("upper_case_field", case_sensitive=True) is None
     assert type_var.field_by_name("nonexistent_field", case_sensitive=True) is None
+
+
+def test_struct_field_by_name_case_insensitive_duplicates() -> None:
+    upper_field = NestedField(1, "ID", LongType(), required=False)
+    lower_field = NestedField(2, "id", LongType(), required=False)
+    safe_field = NestedField(3, "safe", LongType(), required=False)
+    type_var = StructType(upper_field, lower_field, safe_field)
+
+    assert type_var.field_by_name("ID", case_sensitive=True) == upper_field
+    assert type_var.field_by_name("id", case_sensitive=True) == lower_field
+    assert type_var.field_by_name("safe", case_sensitive=True) == safe_field
+
+    # As in Java's caseInsensitiveField, every case-insensitive lookup fails while the index cannot be built
+    for name in ("ID", "Id", "id", "safe", "nonexistent_field"):
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            type_var.field_by_name(name, case_sensitive=False)
+
+    # The same holds for a struct nested in another struct
+    profile_field = NestedField(4, "profile", type_var, required=False)
+    assert StructType(profile_field).field_by_name("PROFILE", case_sensitive=False) == profile_field
+    profile_type = profile_field.field_type
+    assert isinstance(profile_type, StructType)
+    with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+        profile_type.field_by_name("Id", case_sensitive=False)
 
 
 def test_list_type() -> None:
@@ -781,13 +806,19 @@ def test_geometry_type_deserialization() -> None:
     """Test GeometryType JSON deserialization."""
     assert GeometryType.model_validate_json('"geometry"') == GeometryType()
     assert GeometryType.model_validate_json("\"geometry('EPSG:4326')\"") == GeometryType("EPSG:4326")
+    for value in ("geometry(OGC:CRS84)", " GEOMETRY ( OGC:CRS84 ) ", "Geometry", 'geometry("OGC:CRS84")'):
+        assert GeometryType.model_validate_json(json.dumps(value)) == GeometryType()
+        assert IcebergType.model_validate(value) == GeometryType()
+        assert NestedField.model_validate({"id": 1, "name": "geom", "type": value}).field_type == GeometryType()
+    for crs in ("EPSG:3857", "projjson:custom_crs", "srid:0", "custom"):
+        assert GeometryType.model_validate_json(json.dumps(f"geometry({crs})")) == GeometryType(crs)
 
 
 def test_geometry_type_deserialization_failure() -> None:
     """Test GeometryType deserialization with invalid input."""
-    with pytest.raises(ValidationError) as exc_info:
-        GeometryType.model_validate_json('"geometry(invalid)"')
-    assert "Could not parse geometry(invalid) into a GeometryType" in str(exc_info.value)
+    for value in ("geometry()", "geometry( )", "geometry(a,b)", "geometry('EPSG:4326\")", "geometry(a) trailing"):
+        with pytest.raises(ValidationError, match="Could not parse"):
+            GeometryType.model_validate_json(json.dumps(value))
 
 
 def test_geometry_type_singleton() -> None:
@@ -857,13 +888,36 @@ def test_geography_type_deserialization() -> None:
     assert GeographyType.model_validate_json('"geography"') == GeographyType()
     assert GeographyType.model_validate_json("\"geography('EPSG:4326')\"") == GeographyType("EPSG:4326")
     assert GeographyType.model_validate_json("\"geography('EPSG:4326', 'planar')\"") == GeographyType("EPSG:4326", "planar")
+    for value in (
+        "geography(OGC:CRS84, spherical)",
+        " GEOGRAPHY ( OGC:CRS84 , SPHERICAL ) ",
+        "Geography",
+        "geography(OGC:CRS84)",
+        'geography("OGC:CRS84", "spherical")',
+    ):
+        assert GeographyType.model_validate_json(json.dumps(value)) == GeographyType()
+        assert IcebergType.model_validate(value) == GeographyType()
+        assert NestedField.model_validate({"id": 1, "name": "geog", "type": value}).field_type == GeographyType()
+    for algorithm in ("spherical", "vincenty", "thomas", "andoyer", "karney"):
+        assert GeographyType.model_validate_json(json.dumps(f"geography(EPSG:4326, {algorithm})")) == GeographyType(
+            "EPSG:4326", algorithm
+        )
 
 
 def test_geography_type_deserialization_failure() -> None:
     """Test GeographyType deserialization with invalid input."""
-    with pytest.raises(ValidationError) as exc_info:
-        GeographyType.model_validate_json('"geography(invalid)"')
-    assert "Could not parse geography(invalid) into a GeographyType" in str(exc_info.value)
+    for value in (
+        "geography()",
+        "geography( )",
+        "geography(,spherical)",
+        "geography(OGC:CRS84,)",
+        "geography(a,b,c)",
+        "geography('OGC:CRS84\", spherical)",
+        "geography(OGC:CRS84, 'spherical\")",
+        "geography(a) trailing",
+    ):
+        with pytest.raises(ValidationError, match="Could not parse"):
+            GeographyType.model_validate_json(json.dumps(value))
 
 
 def test_geography_type_singleton() -> None:
