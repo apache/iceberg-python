@@ -2597,8 +2597,17 @@ class DataScan(TableScan):
         if self.table_identifier is None:
             raise ValueError("REST scan planning requires a table identifier")
 
+        schema = self.table_metadata.schema()
         # Metadata columns are not in the table schema, so the server cannot resolve them
-        schema_fields, _ = split_selected_fields(self.table_metadata.schema(), self.selected_fields, self.case_sensitive)
+        schema_fields, _ = split_selected_fields(schema, self.selected_fields, self.case_sensitive)
+        if "*" not in schema_fields and self.row_filter != ALWAYS_TRUE:
+            filter_ids = extract_field_ids(bind(schema, self.row_filter, case_sensitive=self.case_sensitive))
+            selected_ids = {schema.find_field(name, case_sensitive=self.case_sensitive).field_id for name in schema_fields}
+            # Servers may return projected files without residuals, so include columns needed to apply the original filter.
+            schema_fields += tuple(
+                name for field_id in sorted(filter_ids - selected_ids) if (name := schema.find_column_name(field_id)) is not None
+            )
+
         request = PlanTableScanRequest(
             snapshot_id=self.snapshot_id,
             select=list(schema_fields) if schema_fields != ("*",) else None,
