@@ -1259,6 +1259,7 @@ def project(
         ),
         io=PyArrowFileIO(),
         projected_schema=schema,
+        # BooleanExpression disallows truthiness checks; avoid `expr or AlwaysTrue()`
         row_filter=expr if expr is not None else AlwaysTrue(),
         case_sensitive=True,
     ).to_table(

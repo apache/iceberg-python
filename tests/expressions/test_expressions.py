@@ -1430,10 +1430,14 @@ def test_always_false_truthiness() -> None:
     ],
 )
 def test_non_constant_boolean_expression_truthiness_raises(expr: BooleanExpression) -> None:
-    with pytest.raises(TypeError, match="Cannot evaluate truthiness of non-constant BooleanExpression"):
+    expected_pattern = (
+        r"Cannot evaluate truthiness of non-constant BooleanExpression: .* "
+        r"Use bitwise operators \(~, &, \|\) instead of `and`, `or`, `not` for combining expressions\."
+    )
+    with pytest.raises(TypeError, match=expected_pattern):
         bool(expr)
 
-    with pytest.raises(TypeError, match="Cannot evaluate truthiness of non-constant BooleanExpression"):
+    with pytest.raises(TypeError, match=expected_pattern):
         if expr:
             pass
 

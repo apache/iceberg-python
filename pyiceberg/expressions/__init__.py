@@ -56,7 +56,7 @@ class BooleanExpression(IcebergBaseModel, ABC):
         """Raise an error to prevent truthiness evaluation of non-constant expressions."""
         raise TypeError(
             f"Cannot evaluate truthiness of non-constant BooleanExpression: {self}. "
-            "Use bitwise operators (~, &, |) for expressions or comparison with AlwaysTrue()/AlwaysFalse()."
+            "Use bitwise operators (~, &, |) instead of `and`, `or`, `not` for combining expressions."
         )
 
     @abstractmethod
