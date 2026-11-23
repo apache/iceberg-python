@@ -191,6 +191,82 @@ def test_failed_refresh_reuses_valid_credentials_until_a_later_retry(clock: _Clo
         assert source.calls == 2
 
 
+def test_failed_refresh_retry_window_doubles_until_maximum(clock: _Clock, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pyiceberg.catalog.rest.credential_provider.randint", lambda lower, upper: lower)
+    initial = _credential(clock, lifetime=3600)
+    rotated = _credential(clock, token="rotated", lifetime=7200)
+    source = _Source(*(ServiceUnavailableError("catalog unavailable") for _ in range(4)), _response(rotated))
+    provider = CredentialsProvider([initial], source)
+    location = "s3://warehouse/file"
+
+    clock.now += 3300
+    for attempt, delay in enumerate((15, 30, 60, 60), 1):
+        assert provider.properties_for(location) == initial.config
+        assert source.calls == attempt
+        clock.now += delay - 1
+        assert provider.properties_for(location) == initial.config
+        assert source.calls == attempt
+        clock.now += 1
+
+    assert provider.properties_for(location) == rotated.config
+    assert source.calls == 5
+
+
+def test_pickled_copies_retry_failed_refresh_at_different_times(clock: _Clock, monkeypatch: pytest.MonkeyPatch) -> None:
+    use_maximum = iter((False, True))
+    monkeypatch.setattr(
+        "pyiceberg.catalog.rest.credential_provider.randint", lambda lower, upper: upper if next(use_maximum) else lower
+    )
+    initial = _credential(clock, lifetime=600)
+    rotated = _credential(clock, token="rotated", lifetime=3600)
+    source = _Source(ServiceUnavailableError("catalog unavailable"), _response(rotated))
+    serialized = pickle.dumps(CredentialsProvider([initial], source))
+    first = pickle.loads(serialized)
+    second = pickle.loads(serialized)
+    location = "s3://warehouse/file"
+
+    clock.now += 300
+    assert first.properties_for(location) == initial.config
+    assert second.properties_for(location) == initial.config
+    first = pickle.loads(pickle.dumps(first))
+
+    clock.now += 14
+    assert first.properties_for(location) == initial.config
+    clock.now += 1
+    assert first.properties_for(location) == rotated.config
+    assert second.properties_for(location) == initial.config
+    clock.now += 15
+    assert second.properties_for(location) == rotated.config
+
+
+def test_successful_refresh_resets_retry_window(clock: _Clock, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pyiceberg.catalog.rest.credential_provider.randint", lambda lower, upper: lower)
+    initial = _credential(clock, lifetime=600)
+    rotated = _credential(clock, token="rotated", lifetime=3600)
+    renewed = _credential(clock, token="renewed", lifetime=7200)
+    source = _Source(
+        ServiceUnavailableError("catalog unavailable"),
+        _response(rotated),
+        ServiceUnavailableError("catalog unavailable again"),
+        _response(renewed),
+    )
+    provider = CredentialsProvider([initial], source)
+    location = "s3://warehouse/file"
+    start = clock.now
+
+    clock.now = start + 300
+    assert provider.properties_for(location) == initial.config
+    clock.now = start + 315
+    assert provider.properties_for(location) == rotated.config
+    clock.now = start + 3300
+    assert provider.properties_for(location) == rotated.config
+    clock.now = start + 3314
+    assert provider.properties_for(location) == rotated.config
+    clock.now = start + 3315
+    assert provider.properties_for(location) == renewed.config
+    assert source.calls == 4
+
+
 def test_failed_refresh_retries_and_raises_at_credential_expiration(clock: _Clock) -> None:
     for scheme in ("s3", "gs"):
         initial = _credential(clock, scheme, lifetime=2)
@@ -200,7 +276,10 @@ def test_failed_refresh_retries_and_raises_at_credential_expiration(clock: _Cloc
 
         clock.now += 1
         assert provider.properties_for(location) == initial.config
-        clock.now += 1
+        clock.now += 0.75
+        assert provider.properties_for(location) == initial.config
+        assert source.calls == 1
+        clock.now += 0.25
         with pytest.raises(ServiceUnavailableError, match="still unavailable"):
             provider.properties_for(location)
         assert source.calls == 2
@@ -220,17 +299,25 @@ def test_credentials_expiring_during_failed_refresh_are_not_reused(clock: _Clock
             provider.properties_for(f"{scheme}://warehouse/file")
 
 
-def test_failed_refresh_does_not_delay_another_prefix(clock: _Clock) -> None:
+def test_failed_refresh_backoff_is_independent_per_prefix(clock: _Clock, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pyiceberg.catalog.rest.credential_provider.randint", lambda lower, upper: lower)
     initial = [_credential(clock, scheme, lifetime=600) for scheme in ("s3", "gs")]
     rotated = [_credential(clock, scheme, token="rotated", lifetime=3600) for scheme in ("s3", "gs")]
-    source = _Source(ServiceUnavailableError("catalog unavailable"), _response(*rotated))
+    source = _Source(*(ServiceUnavailableError("catalog unavailable") for _ in range(3)), _response(*rotated))
     provider = CredentialsProvider(initial, source)
 
     clock.now += 300
     assert provider.properties_for("s3://warehouse/file") == initial[0].config
+    clock.now += 15
+    assert provider.properties_for("s3://warehouse/file") == initial[0].config
+    assert provider.properties_for("gs://warehouse/file") == initial[1].config
+    assert source.calls == 3
+    clock.now += 15
+    assert provider.properties_for("s3://warehouse/file") == initial[0].config
+    assert source.calls == 3
     assert provider.properties_for("gs://warehouse/file") == rotated[1].config
     assert provider.properties_for("s3://warehouse/file") == rotated[0].config
-    assert source.calls == 2
+    assert source.calls == 4
 
 
 def test_invalid_early_refresh_is_not_published(clock: _Clock, caplog: pytest.LogCaptureFixture) -> None:

@@ -20,6 +20,7 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from random import randint
 from time import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -42,7 +43,8 @@ logger = logging.getLogger(__name__)
 
 REFRESH_CREDENTIALS_ENABLED = "client.refresh-credentials-enabled"
 _REFRESH_MARGIN_MS = 300_000
-_REFRESH_RETRY_DELAY_MS = 30_000
+_INITIAL_REFRESH_RETRY_WINDOW_MS = 30_000
+_MAX_REFRESH_RETRY_WINDOW_MS = 120_000
 
 
 @dataclass(frozen=True)
@@ -116,6 +118,7 @@ class _CredentialState:
     config: Properties = field(repr=False)
     expiration_ms: int | None
     refresh_at_ms: int | None
+    retry_window_ms: int = _INITIAL_REFRESH_RETRY_WINDOW_MS
 
 
 def _credential_states(credentials: list[StorageCredential], received_at_ms: int) -> tuple[_CredentialState, ...]:
@@ -182,10 +185,13 @@ class CredentialsProvider:
                         now_ms = int(time() * 1000)
                         if match.expiration_ms is None or now_ms >= match.expiration_ms:
                             raise
-                        retry_at_ms = min(now_ms + _REFRESH_RETRY_DELAY_MS, match.expiration_ms)
-                        self._states = tuple(
-                            replace(state, refresh_at_ms=retry_at_ms) if state is match else state for state in self._states
+                        retry_delay_ms = randint(match.retry_window_ms // 2, match.retry_window_ms)
+                        retry_state = replace(
+                            match,
+                            refresh_at_ms=min(now_ms + retry_delay_ms, match.expiration_ms),
+                            retry_window_ms=min(match.retry_window_ms * 2, _MAX_REFRESH_RETRY_WINDOW_MS),
                         )
+                        self._states = tuple(retry_state if state is match else state for state in self._states)
                         logger.warning(
                             "Credential refresh failed (%s); reusing unexpired storage credentials", type(exc).__name__
                         )
