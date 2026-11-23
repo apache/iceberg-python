@@ -65,8 +65,11 @@ from pyiceberg.types import (
     StructType,
     TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
+    UUIDType,
 )
 
 
@@ -331,6 +334,89 @@ def test_pyarrow_map_to_iceberg() -> None:
 def test_pyarrow_dictionary_encoded_type_to_iceberg(value_type: pa.DataType, expected_result: IcebergType) -> None:
     pyarrow_dict = pa.dictionary(pa.int32(), value_type)
     assert visit_pyarrow(pyarrow_dict, _ConvertToIceberg()) == expected_result
+
+
+def test_every_supported_pyarrow_primitive_type_maps_to_iceberg() -> None:
+    """Every primitive Arrow type supported by the converter maps to the expected Iceberg type."""
+    cases: list[tuple[pa.DataType, IcebergType]] = [
+        (pa.bool_(), BooleanType()),
+        (pa.int8(), IntegerType()),
+        (pa.int16(), IntegerType()),
+        (pa.int32(), IntegerType()),
+        (pa.int64(), LongType()),
+        (pa.uint8(), IntegerType()),
+        (pa.uint16(), IntegerType()),
+        (pa.uint32(), IntegerType()),
+        (pa.uint64(), LongType()),
+        (pa.float16(), FloatType()),
+        (pa.float32(), FloatType()),
+        (pa.float64(), DoubleType()),
+        (pa.decimal128(38, 9), DecimalType(38, 9)),
+        (pa.string(), StringType()),
+        (pa.large_string(), StringType()),
+        (pa.string_view(), StringType()),
+        (pa.binary(), BinaryType()),
+        (pa.large_binary(), BinaryType()),
+        (pa.binary_view(), BinaryType()),
+        (pa.binary(16), FixedType(16)),
+        (pa.date32(), DateType()),
+        (pa.time64("us"), TimeType()),
+        (pa.timestamp("s"), TimestampType()),
+        (pa.timestamp("ms"), TimestampType()),
+        (pa.timestamp("us"), TimestampType()),
+        (pa.timestamp("ns"), TimestampNanoType()),
+        (pa.timestamp("us", tz="UTC"), TimestamptzType()),
+        (pa.timestamp("ns", tz="UTC"), TimestamptzNanoType()),
+        (pa.null(), UnknownType()),
+        (pa.uuid(), UUIDType()),
+    ]
+
+    for pyarrow_type, expected in cases:
+        assert visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3)) == expected, pyarrow_type
+
+
+def test_every_unsupported_pyarrow_primitive_type_is_rejected() -> None:
+    """Primitive Arrow types without an Iceberg equivalent raise instead of being coerced."""
+    unsupported: list[pa.DataType] = [
+        pa.decimal256(76, 9),
+        pa.date64(),
+        pa.time32("s"),
+        pa.time32("ms"),
+        pa.time64("ns"),
+        pa.duration("us"),
+    ]
+
+    for pyarrow_type in unsupported:
+        with pytest.raises(TypeError):
+            visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3))
+
+
+def test_every_iceberg_primitive_type_round_trips_through_pyarrow() -> None:
+    """Every primitive Iceberg type maps to the expected Arrow type and back."""
+    cases: list[tuple[IcebergType, pa.DataType]] = [
+        (BooleanType(), pa.bool_()),
+        (IntegerType(), pa.int32()),
+        (LongType(), pa.int64()),
+        (FloatType(), pa.float32()),
+        (DoubleType(), pa.float64()),
+        (DecimalType(38, 9), pa.decimal128(38, 9)),
+        (DateType(), pa.date32()),
+        (TimeType(), pa.time64("us")),
+        (TimestampType(), pa.timestamp("us")),
+        (TimestampNanoType(), pa.timestamp("ns")),
+        (TimestamptzType(), pa.timestamp("us", tz="UTC")),
+        (TimestamptzNanoType(), pa.timestamp("ns", tz="UTC")),
+        (StringType(), pa.large_string()),
+        (UUIDType(), pa.uuid()),
+        (UnknownType(), pa.null()),
+        (BinaryType(), pa.large_binary()),
+        (FixedType(16), pa.binary(16)),
+    ]
+
+    for iceberg_type, expected in cases:
+        pyarrow_type = visit(iceberg_type, _ConvertToArrowSchema())
+        assert pyarrow_type == expected, iceberg_type
+        assert visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3)) == iceberg_type, iceberg_type
 
 
 def test_round_schema_conversion_simple(table_schema_simple: Schema) -> None:

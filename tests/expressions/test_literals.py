@@ -277,6 +277,35 @@ def test_double_to_decimal_conversion(decimal_type: DecimalType, decimal_value: 
     assert lit.to(decimal_type).value.as_tuple() == Decimal(decimal_value).as_tuple()  # type: ignore
 
 
+@pytest.mark.parametrize("literal_class", [FloatLiteral, DoubleLiteral])
+@pytest.mark.parametrize(
+    "value, decimal_value",
+    [(2.675, "2.68"), (1.005, "1.01"), (-2.675, "-2.68"), (0.125, "0.13"), (2.674, "2.67")],
+)
+def test_float_and_double_to_decimal_round_half_up_on_shortest_repr(
+    literal_class: type[FloatLiteral] | type[DoubleLiteral], value: float, decimal_value: str
+) -> None:
+    lit = literal_class(value)
+
+    assert lit.to(DecimalType(10, 2)).value.as_tuple() == Decimal(decimal_value).as_tuple()
+
+
+def test_float_to_decimal_conversion_with_infinity() -> None:
+    lit = FloatLiteral(float("inf"))
+
+    with pytest.raises(ValueError) as e:
+        _ = lit.to(DecimalType(9, 2))
+    assert "Could not convert inf into a decimal(9, 2), value is not finite" in str(e.value)
+
+
+def test_double_to_decimal_conversion_with_infinity() -> None:
+    lit = DoubleLiteral(float("inf"))
+
+    with pytest.raises(ValueError) as e:
+        _ = lit.to(DecimalType(9, 2))
+    assert "Could not convert inf into a decimal(9, 2), value is not finite" in str(e.value)
+
+
 def test_decimal_to_decimal_conversion() -> None:
     lit = literal(Decimal("34.11").quantize(Decimal(".01")))
 
@@ -309,9 +338,8 @@ def test_string_literal() -> None:
     pi_string_lit = StringLiteral("3.141")
     pi_double_lit = literal(3.141).to(DoubleType())
 
-    assert literal("3.141").to(IntegerType()) == literal(3)
-    assert literal("3.141").to(LongType()) == literal(3)
-
+    assert literal("3").to(IntegerType()) == literal(3)
+    assert literal("3").to(LongType()) == literal(3)
     assert sqrt2 != pi
     assert pi != pi_double_lit
     assert pi == pi_string_lit
@@ -395,7 +423,7 @@ def test_string_to_uuid_literal() -> None:
     uuid_str = literal(str(expected))
     uuid_lit = uuid_str.to(UUIDType())
 
-    assert expected.bytes == uuid_lit.value
+    assert expected == uuid_lit.value
 
 
 def test_string_to_decimal_literal() -> None:
@@ -552,8 +580,8 @@ def test_binary_to_uuid() -> None:
     lit = literal(test_uuid.bytes)
     uuid_lit = lit.to(UUIDType())
     assert uuid_lit is not None
-    assert lit.value == uuid_lit.value
-    assert uuid_lit.value == test_uuid.bytes
+    assert lit.value == test_uuid.bytes
+    assert uuid_lit.value == test_uuid
 
 
 def test_incompatible_binary_to_uuid() -> None:
@@ -582,8 +610,8 @@ def test_fixed_to_uuid() -> None:
     lit = literal(test_uuid.bytes).to(FixedType(16))
     uuid_lit = lit.to(UUIDType())
     assert uuid_lit is not None
-    assert lit.value == uuid_lit.value
-    assert uuid_lit.value == test_uuid.bytes
+    assert lit.value == test_uuid.bytes
+    assert uuid_lit.value == test_uuid
 
 
 def test_incompatible_fixed_to_uuid() -> None:
@@ -930,6 +958,26 @@ def test_fractional_decimal_to_integral_type_raises() -> None:
                 _ = DecimalLiteral(Decimal(value)).to(target_type)
 
 
+def test_fractional_string_to_integral_type_raises() -> None:
+    # Rounding would change the predicate, e.g. x < "2.6" would become x < 2 and drop x = 2
+    for target_type in [IntegerType(), LongType()]:
+        for value in ["2.5", "2.6", "-2.5", "0.1"]:
+            with pytest.raises(ValueError, match=f"Could not convert {value} into a {target_type}"):
+                _ = literal(value).to(target_type)
+
+
+def test_fractional_string_near_integral_type_bounds_raises() -> None:
+    # Rejected even when rounding would cross the bound, mirroring DecimalLiteral
+    for target_type, bound in [
+        (IntegerType(), IntegerType.max),
+        (IntegerType(), IntegerType.min),
+        (LongType(), LongType.max),
+        (LongType(), LongType.min),
+    ]:
+        with pytest.raises(ValueError, match=f"Could not convert {bound}.9 into a {target_type}"):
+            _ = literal(f"{bound}.9").to(target_type)
+
+
 def test_integral_decimal_to_integral_type() -> None:
     # A decimal literal without a fractional part, such as 2.0, still converts exactly
     for target_type in [IntegerType(), LongType()]:
@@ -1000,11 +1048,29 @@ def test_decimal_literal_decrement() -> None:
     assert dec.decrement().value.as_tuple() == Decimal("10.122").as_tuple()
 
 
+def test_decimal_literal_increment_negative_scale() -> None:
+    dec = DecimalLiteral(Decimal("1E+2"))
+    # Twice to check that we don't mutate the value
+    assert dec.increment() == DecimalLiteral(Decimal("2E+2"))
+    assert dec.increment() == DecimalLiteral(Decimal("2E+2"))
+    # To check that the scale is still the same (a non-negative exponent means a negative scale)
+    assert dec.increment().value.as_tuple() == Decimal("2E+2").as_tuple()
+
+
+def test_decimal_literal_decrement_negative_scale() -> None:
+    dec = DecimalLiteral(Decimal("1E+2"))
+    # Twice to check that we don't mutate the value
+    assert dec.decrement() == DecimalLiteral(Decimal("0E+2"))
+    assert dec.decrement() == DecimalLiteral(Decimal("0E+2"))
+    # To check that the scale is still the same, also when stepping below zero
+    assert dec.decrement().decrement() == DecimalLiteral(Decimal("-1E+2"))
+
+
 def test_uuid_literal_initialization() -> None:
     test_uuid = uuid.UUID("f79c3e09-677c-4bbd-a479-3f349cb785e7")
     uuid_literal = literal(test_uuid)
     assert isinstance(uuid_literal, Literal)
-    assert test_uuid.bytes == uuid_literal.value
+    assert test_uuid == uuid_literal.value
 
 
 def test_uuid_to_fixed() -> None:
