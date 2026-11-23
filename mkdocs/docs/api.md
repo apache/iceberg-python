@@ -1543,6 +1543,10 @@ table.append(df, branch=None, snapshot_properties={"wap.id": "nightly-2024-01-01
 When the snapshot is replayed onto `main`, the new snapshot records the id as `published-wap-id`.
 Publishing the same `wap.id` twice raises `DuplicateWAPCommitException`.
 
+A staged snapshot is not referenced by any branch or tag, so it is not protected from expiration.
+`expire_snapshots().older_than(...)` or `by_id(...)` can remove it before it is published. To keep it, publish
+it with `cherrypick` first or tag it with `create_tag`.
+
 #### Example Use-Case: write-audit-publish (WAP)
 
 The use of branching & fast-forwarding enable the usage of the write-audit-publish (WAP) process:
