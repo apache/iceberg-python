@@ -435,9 +435,8 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         """
         # When the schema doesn't have an ID
         schema = data.get("schema")
-        if isinstance(schema, dict):
-            if "schema_id" not in schema and "schema-id" not in schema:
-                schema["schema_id"] = DEFAULT_SCHEMA_ID
+        if isinstance(schema, dict) and "schema_id" not in schema and "schema-id" not in schema:
+            schema["schema_id"] = DEFAULT_SCHEMA_ID
 
         return data
 
@@ -669,7 +668,8 @@ def new_table_metadata(
 ) -> TableMetadata:
     from pyiceberg.table import TableProperties
 
-    # Remove format-version so it does not get persisted
+    # Remove format-version so it does not get persisted, without changing the caller's properties
+    properties = dict(properties)
     format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
 
     schema.check_format_version_compatibility(format_version)

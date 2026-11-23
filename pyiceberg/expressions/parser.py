@@ -14,6 +14,20 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+"""Parser that converts a SQL-like filter string into an Iceberg BooleanExpression.
+
+This module enables:
+    - Parsing comparisons (<, <=, >, >=, =, !=, <>), BETWEEN, IN and NOT IN.
+    - Parsing IS [NOT] NULL, IS [NOT] NAN and LIKE (prefix matching only).
+    - Combining predicates with NOT, AND and OR.
+
+Note:
+    The grammar should follow ANSI SQL where possible, so that a filter behaves the same
+    as it would in a SQL engine. For example, identifiers are quoted with double quotes,
+    string literals with single quotes, and a single quote within a string is escaped by
+    doubling it. Deviations from ANSI SQL should be avoided when extending the grammar.
+"""
+
 import re
 from decimal import Decimal
 

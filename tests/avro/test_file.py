@@ -99,6 +99,28 @@ def test_missing_schema() -> None:
     assert "No schema found in Avro file headers" in str(exc_info.value)
 
 
+def test_get_schema_reuses_conversion_for_identical_schema_strings() -> None:
+    schema_string = (
+        '{"type": "record", "name": "manifest_entry", "fields": ['
+        '{"name": "status", "type": "int", "field-id": 0}, '
+        '{"name": "snapshot_id", "type": ["null", "long"], "default": null, "field-id": 1}]}'
+    )
+    other_schema_string = (
+        '{"type": "record", "name": "manifest_entry", "fields": [{"name": "status", "type": "int", "field-id": 0}]}'
+    )
+
+    header = AvroFileHeader(bytes(0), {"avro.schema": schema_string}, bytes(16))
+    same_schema_header = AvroFileHeader(bytes(0), {"avro.schema": schema_string}, bytes(16))
+    other_schema_header = AvroFileHeader(bytes(0), {"avro.schema": other_schema_string}, bytes(16))
+
+    assert header.get_schema() == Schema(
+        NestedField(field_id=0, name="status", field_type=IntegerType(), required=True),
+        NestedField(field_id=1, name="snapshot_id", field_type=LongType(), required=False),
+    )
+    assert header.get_schema() is same_schema_header.get_schema()
+    assert other_schema_header.get_schema() is not header.get_schema()
+
+
 # helper function to serialize our objects to dicts to enable
 # direct comparison with the dicts returned by fastavro
 def todict(obj: Any) -> Any:

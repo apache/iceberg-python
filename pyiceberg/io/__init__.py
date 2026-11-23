@@ -379,14 +379,14 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = Non
             raise ValueError(f"Could not initialize FileIO: {io_impl}")
 
     # Check the table location
-    if location:
-        if file_io := _infer_file_io_from_scheme(location, properties):
-            return file_io
+    if location and (file_io := _infer_file_io_from_scheme(location, properties)):
+        return file_io
 
     # Look at the schema of the warehouse
-    if warehouse_location := properties.get(WAREHOUSE):
-        if file_io := _infer_file_io_from_scheme(warehouse_location, properties):
-            return file_io
+    if (warehouse_location := properties.get(WAREHOUSE)) and (
+        file_io := _infer_file_io_from_scheme(warehouse_location, properties)
+    ):
+        return file_io
 
     try:
         # Default to PyArrow

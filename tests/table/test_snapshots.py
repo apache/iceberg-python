@@ -676,6 +676,8 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
         )
 
     txn = table_v2.transaction()
+    # Stage an update, so every read calls update_table_metadata
+    txn.set_properties(test_a="test_a")
 
     with mock.patch("pyiceberg.table.update_table_metadata", wraps=update_table_metadata) as spy:
         # _summary() cost must not scale with the number of data files
@@ -702,6 +704,25 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
             f"_MergeAppendFiles.__init__ made {merge_init - fast_init} extra update_table_metadata "
             "calls over its superclass; expected 1 (hoisted)"
         )
+
+
+def test_append_snapshot_producer_defaults_to_merge_append(table_v2: Table) -> None:
+    from pyiceberg.table.update.snapshot import _MergeAppendFiles
+
+    append = table_v2.transaction()._append_snapshot_producer({})
+
+    assert type(append) is _MergeAppendFiles
+
+
+def test_append_snapshot_producer_uses_fast_append_when_manifest_merge_disabled(table_v2: Table) -> None:
+    from pyiceberg.table.update.snapshot import _FastAppendFiles
+
+    transaction = table_v2.transaction()
+    transaction.set_properties({"commit.manifest-merge.enabled": "false"})
+
+    append = transaction._append_snapshot_producer({})
+
+    assert type(append) is _FastAppendFiles
 
 
 @pytest.fixture
