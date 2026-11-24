@@ -84,12 +84,6 @@ _POLICIES_BY_SCHEME = {
 }
 
 
-def is_s3_credential_expired(config: Properties, threshold_seconds: int = 300) -> bool:
-    """Return whether an S3 credential expires within the given threshold."""
-    expiration = _S3_POLICY.expiration_ms(config)
-    return expiration is not None and expiration - time() * 1000 <= threshold_seconds * 1000
-
-
 def resolve_storage_credentials(storage_credentials: list[StorageCredential], location: str | None) -> Properties:
     """Return credential properties for the longest matching storage prefix."""
     if location is None:
