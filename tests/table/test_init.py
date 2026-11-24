@@ -2401,6 +2401,31 @@ def test_scan_encrypted_table(table_v3_encrypted: Table) -> None:
     assert table_v3_encrypted.scan().to_arrow().num_rows == 0
 
 
+def test_writes_to_encrypted_table_are_rejected(table_v3_encrypted: Table, tmp_path: Path) -> None:
+    import pyarrow as pa
+
+    from pyiceberg.expressions import AlwaysTrue
+
+    table_v3_encrypted.metadata = table_v3_encrypted.metadata.model_copy(update={"location": f"file://{tmp_path}"})
+    df = pa.table({"x": [1, 2, 3]}, schema=pa.schema([pa.field("x", pa.int64(), nullable=False)]))
+
+    for write in [
+        lambda: table_v3_encrypted.append(df),
+        lambda: table_v3_encrypted.overwrite(df),
+        lambda: table_v3_encrypted.delete(AlwaysTrue()),
+    ]:
+        with pytest.raises(NotImplementedError, match="Writing to encrypted tables is not yet supported"):
+            write()
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_metadata_only_updates_to_encrypted_table_are_allowed(table_v3_encrypted: Table) -> None:
+    transaction = table_v3_encrypted.transaction().set_properties(owner="me")
+
+    assert transaction.table_metadata.properties["owner"] == "me"
+
+
 def test_inspect_encrypted_table(table_v3_encrypted: Table) -> None:
     assert table_v3_encrypted.inspect.manifests().num_rows == 0
     assert table_v3_encrypted.inspect.all_manifests().num_rows == 0

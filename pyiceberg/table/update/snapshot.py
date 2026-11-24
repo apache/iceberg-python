@@ -164,6 +164,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         branch: str | None = MAIN_BRANCH,
     ) -> None:
         super().__init__(transaction)
+        from pyiceberg.encryption.manager import _reject_encrypted_writes
+
+        _reject_encrypted_writes(transaction.table_metadata)
         self.commit_uuid = commit_uuid or uuid.uuid4()
         self._io = io
         self._operation = operation
