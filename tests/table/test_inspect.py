@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from pathlib import PosixPath
+from pathlib import Path, PosixPath
 from typing import Any
 
 import pyarrow as pa
@@ -118,7 +118,7 @@ def test_inspect_snapshots_operation_is_null_without_summary(catalog: InMemoryCa
 
     v1 = catalog.create_table("default.v1_snapshot_without_summary", schema, properties={"format-version": "1"})
     v1.append(arrow_table)
-    metadata_path = PosixPath(v1.metadata_location.removeprefix("file://"))
+    metadata_path = Path(v1.metadata_location.removeprefix("file://"))
     metadata = json.loads(metadata_path.read_text())
     for snapshot in metadata["snapshots"]:
         del snapshot["summary"]
