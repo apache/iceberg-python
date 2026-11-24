@@ -44,26 +44,36 @@ def _readable_bound(field_type: PrimitiveType, bound: bytes | None) -> Any | Non
 
 
 def _storage_type(data_type: pa.DataType) -> pa.DataType:
-    """Return the storage type of a data type, replacing extension types inside structs."""
+    """Return the storage type of a data type, replacing extension types inside structs, lists and maps."""
     import pyarrow as pa
 
     if isinstance(data_type, pa.BaseExtensionType):
         return data_type.storage_type
     if pa.types.is_struct(data_type):
-        return pa.struct([pa.field(field.name, _storage_type(field.type), field.nullable) for field in data_type])
+        return pa.struct([_storage_field(field) for field in data_type])
+    if pa.types.is_large_list(data_type):
+        return pa.large_list(_storage_field(data_type.value_field))
+    if pa.types.is_map(data_type):
+        return pa.map_(_storage_field(data_type.key_field), _storage_field(data_type.item_field))
     return data_type
+
+
+def _storage_field(field: pa.Field) -> pa.Field:
+    import pyarrow as pa
+
+    return pa.field(field.name, _storage_type(field.type), field.nullable)
 
 
 def _from_pylist(rows: Iterable[dict[str, Any]], schema: pa.Schema) -> pa.Table:
     """Build a table from Python rows, typed by the given schema.
 
-    pyarrow cannot convert Python values into an extension type nested in a struct,
+    pyarrow cannot convert Python values into an extension type nested in a struct, list or map,
     such as the ``arrow.uuid`` bounds in ``readable_metrics``. The rows are built with
     the storage types and cast to ``schema``, so the output types are unchanged.
     """
     import pyarrow as pa
 
-    storage_schema = pa.schema([pa.field(field.name, _storage_type(field.type), field.nullable) for field in schema])
+    storage_schema = pa.schema([_storage_field(field) for field in schema])
     return pa.Table.from_pylist(rows, schema=storage_schema).cast(schema)
 
 

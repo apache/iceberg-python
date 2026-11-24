@@ -31,7 +31,18 @@ from pyiceberg.table.inspect import InspectTable, _readable_bound
 from pyiceberg.table.snapshots import Snapshot
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import DoubleType, FloatType, IntegerType, LongType, NestedField, PrimitiveType, StringType, UUIDType
+from pyiceberg.types import (
+    DoubleType,
+    FloatType,
+    IntegerType,
+    ListType,
+    LongType,
+    MapType,
+    NestedField,
+    PrimitiveType,
+    StringType,
+    UUIDType,
+)
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -136,6 +147,27 @@ def test_inspect_files_of_empty_table_with_uuid_column(catalog: InMemoryCatalog)
 
     assert tbl.inspect.files().num_rows == 0
     assert tbl.inspect.all_files().num_rows == 0
+
+
+def test_inspect_files_and_entries_with_uuid_in_list_and_map(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(1, "l", ListType(2, UUIDType(), element_required=False), required=False),
+        NestedField(3, "m", MapType(4, StringType(), 5, UUIDType(), value_required=False), required=False),
+    )
+    tbl = catalog.create_table("default.uuid_list_map", schema)
+    uuids = pa.array([uuid.UUID(int=3).bytes], pa.uuid())
+    lists = pa.LargeListArray.from_arrays([0, 1], uuids)
+    maps = pa.MapArray.from_arrays([0, 1], pa.array(["k"]), uuids)
+    tbl.append(pa.table({"l": lists, "m": maps}))
+
+    for metadata_table in [tbl.inspect.entries(), tbl.inspect.files(), tbl.inspect.all_files()]:
+        readable_metrics_type = metadata_table.schema.field("readable_metrics").type
+        assert readable_metrics_type.field("l").type.field("lower_bound").type == pa.large_list(pa.field("element", pa.uuid()))
+        assert readable_metrics_type.field("m").type.field("lower_bound").type == pa.map_(pa.large_string(), pa.uuid())
+        # Bounds are kept for the leaf fields, so the list and map columns have none
+        readable_metrics = metadata_table.to_pydict()["readable_metrics"][0]
+        assert readable_metrics["l"]["lower_bound"] is None
+        assert readable_metrics["m"]["upper_bound"] is None
 
 
 def test_inspect_partitions_and_files_render_uuid_partition(catalog: InMemoryCatalog, tmp_path: PosixPath) -> None:
