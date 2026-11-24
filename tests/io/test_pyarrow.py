@@ -3347,6 +3347,41 @@ def test_schema_compatible_nested(table_schema_nested: Schema) -> None:
         pytest.fail("Unexpected Exception raised when calling `_check_pyarrow_schema_compatible`")
 
 
+def test_schema_mismatch_unknown_field_ids() -> None:
+    table_schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "payload", StructType(NestedField(3, "qty", LongType()))),
+        NestedField(4, "tags", ListType(5, LongType(), element_required=False)),
+        NestedField(6, "props", MapType(7, StringType(), 8, LongType(), value_required=False)),
+    )
+    for provided_schema, unknown_columns in [
+        (Schema(NestedField(1, "id", LongType()), NestedField(99, "z", LongType())), "z (field ID 99)"),
+        # A struct field, list element and map value whose parent is in the table
+        (
+            Schema(
+                NestedField(2, "payload", StructType(NestedField(3, "qty", LongType()), NestedField(99, "extra", LongType())))
+            ),
+            "payload.extra (field ID 99)",
+        ),
+        (Schema(NestedField(4, "tags", ListType(99, LongType(), element_required=False))), "tags.element (field ID 99)"),
+        (
+            Schema(NestedField(6, "props", MapType(7, StringType(), 99, LongType(), value_required=False))),
+            "props.value (field ID 99)",
+        ),
+        # A struct that is not in the table, and its field
+        (
+            Schema(NestedField(98, "extra", StructType(NestedField(99, "qty", LongType())))),
+            "extra (field ID 98), extra.qty (field ID 99)",
+        ),
+    ]:
+        with pytest.raises(ValueError) as exc_info:
+            _check_pyarrow_schema_compatible(table_schema, schema_to_pyarrow(provided_schema), reject_unknown_field_ids=True)
+        assert (
+            str(exc_info.value)
+            == f"PyArrow table contains columns whose field IDs are not in the table schema: {unknown_columns}."
+        )
+
+
 def test_schema_mismatch_additional_field(table_schema_simple: Schema) -> None:
     other_schema = pa.schema(
         (
