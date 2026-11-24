@@ -75,6 +75,7 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
+from pyiceberg.expressions.parser import parse
 from pyiceberg.io import ADLS_ACCOUNT_NAME, S3_RETRY_STRATEGY_IMPL, S3_SSL_CA_CERT, InputStream, OutputStream, load_file_io
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
@@ -1143,6 +1144,7 @@ def _write_table_to_data_file(filepath: str, schema: pa.Schema, table: pa.Table)
         partition={},
         record_count=len(table),
         file_size_in_bytes=22,  # This is not relevant for now
+        spec_id=0,
     )
 
 
@@ -1609,6 +1611,191 @@ def test_identity_transform_column_projection_with_falsy_value(
     assert table.scan(row_filter=row_filter, selected_fields=("other_field",)).to_arrow() == pa.table(
         {"other_field": ["foo", "bar"]}
     )
+
+
+def _v3_table_metadata(tmpdir: str, table_schema: Schema) -> TableMetadataV3:
+    return TableMetadataV3(
+        location=str(tmpdir),
+        last_column_id=table_schema.highest_field_id,
+        schemas=[table_schema],
+        partition_specs=[PartitionSpec()],
+        next_row_id=0,
+    )
+
+
+def _write_deletion_vector(tmpdir: str, data_file: DataFile, positions: list[int]) -> DataFile:
+    dv_blob = _deletion_vector_blob(_deletion_vector_bitmap_payload(positions))
+    dv_path = f"{tmpdir}/deletes.bin"
+    with open(dv_path, "wb") as f:
+        f.write(dv_blob)
+    return DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=dv_path,
+        file_format=FileFormat.PUFFIN,
+        record_count=len(positions),
+        referenced_data_file=data_file.file_path,
+        content_offset=0,
+        content_size_in_bytes=len(dv_blob),
+    )
+
+
+def _scan_ids(table_metadata: TableMetadataV3, data_file: DataFile, row_filter: str, delete_files: set[DataFile]) -> list[int]:
+    # Only id is projected, so a filter on another field reads that field for the filter alone
+    projected_schema = Schema(NestedField(1, "id", LongType(), required=False))
+    task = FileScanTask(data_file=data_file, delete_files=delete_files)
+    return ArrowScan(table_metadata, PyArrowFileIO(), projected_schema, parse(row_filter)).to_table([task])["id"].to_pylist()
+
+
+def test_missing_nested_field_under_null_struct_reads_as_null(tmpdir: str) -> None:
+    """A field added under optional structs is NULL in the rows where a struct is NULL, with or without deletes."""
+    table_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(
+            2,
+            "pt",
+            StructType(
+                NestedField(3, "a", IntegerType(), required=False),
+                NestedField(4, "c", IntegerType(), required=False, initial_default=5),
+                NestedField(
+                    5,
+                    "inner",
+                    StructType(
+                        NestedField(6, "z", IntegerType(), required=False),
+                        NestedField(7, "c2", IntegerType(), required=False, initial_default=5),
+                    ),
+                    required=False,
+                ),
+                NestedField(
+                    8,
+                    "req",
+                    StructType(
+                        NestedField(9, "w", IntegerType(), required=False),
+                        NestedField(10, "c3", IntegerType(), required=False, initial_default=5),
+                    ),
+                    required=True,
+                ),
+                NestedField(11, "n", IntegerType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+    # The file has pt.a, pt.inner.z and pt.req.w only. Row 2 has no pt, so its defaulted fields and pt.n are NULL.
+    # Row 3 has no inner, so its pt.inner.c2 is NULL.
+    arrow_schema = schema_to_pyarrow(table_schema.select("id", "pt.a", "pt.inner.z", "pt.req.w"))
+    arrow_table = pa.table(
+        {
+            "id": [1, 2, 3],
+            "pt": [{"a": 1, "inner": {"z": 1}, "req": {"w": 1}}, None, {"a": 2, "inner": None, "req": {"w": 2}}],
+        },
+        schema=arrow_schema,
+    )
+    data_file = _write_table_to_data_file(f"{tmpdir}/nested_default.parquet", arrow_schema, arrow_table)
+    table_metadata = _v3_table_metadata(tmpdir, table_schema)
+    dv = _write_deletion_vector(tmpdir, data_file, [0])
+
+    for row_filter, rows in [
+        ("pt.c = 5", [1, 3]),
+        ("pt.c IN (4, 5)", [1, 3]),
+        ("pt.c = 5 OR pt.c = 6", [1, 3]),
+        ("pt.c > 4", [1, 3]),
+        ("pt.c < 6", [1, 3]),
+        ("pt.c <= 5", [1, 3]),
+        ("pt.c >= 5", [1, 3]),
+        ("pt.c IS NULL", [2]),
+        ("NOT (pt.c IS NULL)", [1, 3]),
+        ("NOT (pt.c > 4)", []),
+        ("NOT (pt.c < 4)", [1, 3]),
+        ("NOT (pt.c > 4 AND id = 2)", [1, 3]),
+        ("NOT (pt.c < 4 OR id = 1)", [3]),
+        ("NOT (pt.c != 5)", [1, 3]),
+        ("NOT (pt.c NOT IN (4, 5))", [1, 3]),
+        ("pt.inner.c2 = 5", [1]),
+        ("pt.inner.c2 IS NULL", [2, 3]),
+        ("pt.req.c3 = 5", [1, 3]),
+        ("NOT (pt.req.c3 < 4)", [1, 3]),
+        ("pt.n IS NULL", [1, 2, 3]),
+        ("NOT (pt.n < 4)", []),
+    ]:
+        assert _scan_ids(table_metadata, data_file, row_filter, set()) == rows, row_filter
+        # The deletion vector removes row 1, so the filter runs after the deletes and reads the struct ancestors
+        assert _scan_ids(table_metadata, data_file, row_filter, {dv}) == [row for row in rows if row != 1], row_filter
+
+
+def test_missing_nested_field_under_renamed_null_struct(tmpdir: str) -> None:
+    """A struct renamed from old.pt to new.pt is matched by field ID, so its NULL row reads the added field as NULL."""
+    table_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(
+            2,
+            "new.pt",
+            StructType(
+                NestedField(3, "a", IntegerType(), required=False),
+                NestedField(4, "c", IntegerType(), required=False, initial_default=5),
+            ),
+            required=False,
+        ),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+            pa.field(
+                "old.pt",
+                pa.struct([pa.field("a", pa.int32(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "3"})]),
+                metadata={PYARROW_PARQUET_FIELD_ID_KEY: "2"},
+            ),
+        ]
+    )
+    arrow_table = pa.table({"id": [1, 2, 3], "old.pt": [{"a": 1}, None, {"a": 2}]}, schema=arrow_schema)
+    data_file = _write_table_to_data_file(f"{tmpdir}/renamed_nested_default.parquet", arrow_schema, arrow_table)
+    table_metadata = _v3_table_metadata(tmpdir, table_schema)
+    dv = _write_deletion_vector(tmpdir, data_file, [0])
+
+    for row_filter, rows in [
+        ("new.pt.c = 5", [1, 3]),
+        ("new.pt.c IS NULL", [2]),
+    ]:
+        assert _scan_ids(table_metadata, data_file, row_filter, set()) == rows, row_filter
+        assert _scan_ids(table_metadata, data_file, row_filter, {dv}) == [row for row in rows if row != 1], row_filter
+
+
+def test_missing_fields_absent_from_file_read_as_null(tmpdir: str) -> None:
+    """A struct the file lacks is NULL in every row. NOT keeps its result on a top-level or a required-struct field."""
+    table_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "d", IntegerType(), required=False),
+        NestedField(3, "pt", StructType(NestedField(4, "c", IntegerType(), required=False, initial_default=5)), required=False),
+        NestedField(
+            5,
+            "rq",
+            StructType(NestedField(6, "x", IntegerType(), required=False), NestedField(7, "c2", IntegerType(), required=False)),
+            required=True,
+        ),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
+            pa.field(
+                "rq",
+                pa.struct([pa.field("x", pa.int32(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "6"})]),
+                metadata={PYARROW_PARQUET_FIELD_ID_KEY: "5"},
+            ),
+        ]
+    )
+    arrow_table = pa.table({"id": [1, 2, 3], "rq": [{"x": 1}, {"x": 1}, {"x": 1}]}, schema=arrow_schema)
+    data_file = _write_table_to_data_file(f"{tmpdir}/no_pt.parquet", arrow_schema, arrow_table)
+    table_metadata = _v3_table_metadata(tmpdir, table_schema)
+
+    for row_filter, rows in [
+        ("pt.c = 5", []),
+        ("pt.c IS NULL", [1, 2, 3]),
+        ("NOT (pt.c > 4)", []),
+        ("NOT (d > 4)", [1, 2, 3]),
+        ("NOT (d IS NULL)", []),
+        # A required struct is never NULL, so NOT keeps its result on a field under it
+        ("NOT (rq.c2 > 4)", [1, 2, 3]),
+    ]:
+        assert _scan_ids(table_metadata, data_file, row_filter, set()) == rows, row_filter
 
 
 def test_identity_transform_column_projection_uuid(tmp_path: str, catalog: InMemoryCatalog) -> None:

@@ -946,17 +946,19 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         For nested struct fields, returns a tuple of field names (e.g., ("mazeMetadata", "run_id")).
         For top-level fields, returns just the field name as a string.
 
+        The path is built from the field IDs, because a struct name can contain a dot (e.g., "old.pt").
         PyArrow requires nested field references as tuples, not dotted strings.
         """
         if self._schema is not None:
-            # Use the schema to get the full dotted path for nested fields
-            full_name = self._schema.find_column_name(term.ref().field.field_id)
-            if full_name is not None:
-                # If the field name contains dots, it's a nested field
-                # Convert "parent.child" to ("parent", "child") for PyArrow
-                if "." in full_name:
-                    return tuple(full_name.split("."))
-                return full_name
+            field_id = term.ref().field.field_id
+            if self._schema.find_column_name(field_id) is not None:
+                # Walk up the struct ancestors by field ID, instead of splitting the dotted full name
+                names = [self._schema.find_field(field_id).name]
+                parent_id = self._schema._lazy_id_to_parent.get(field_id)
+                while parent_id is not None:
+                    names.insert(0, self._schema.find_field(parent_id).name)
+                    parent_id = self._schema._lazy_id_to_parent.get(parent_id)
+                return tuple(names) if len(names) > 1 else names[0]
         # Fallback to just the field name if schema is not available
         return term.ref().field.name
 
@@ -1871,10 +1873,12 @@ def _task_to_record_batches(
         pyarrow_filter = None
         if bound_row_filter is not AlwaysTrue():
             translated_row_filter = translate_column_names(
-                bound_row_filter, file_schema, case_sensitive=case_sensitive, projected_field_values=projected_missing_fields
+                bound_row_filter,
+                file_schema,
+                case_sensitive=case_sensitive,
+                projected_field_values=projected_missing_fields,
+                table_schema=table_schema,
             )
-            # Rewrite NOT into the complementary predicates, as the manifest and metrics evaluators do, so a row
-            # matches the same predicate that decided whether its file was read
             bound_file_filter = rewrite_not(bind(file_schema, translated_row_filter, case_sensitive=case_sensitive))
             pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
 
@@ -2056,6 +2060,14 @@ class ArrowScan:
         # Register extension types before inspecting any data file schemas.
         self._arrow_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
+        # A filter on a nested field also reads its struct ancestors, which are NULL where the field reads as NULL
+        schema = table_metadata.schema()
+        self._filter_ancestor_field_ids: set[int] = set()
+        for field_id in extract_field_ids(self._bound_row_filter):
+            parent_id = schema._lazy_id_to_parent.get(field_id)
+            while parent_id is not None and isinstance(schema.find_type(parent_id), StructType):
+                self._filter_ancestor_field_ids.add(parent_id)
+                parent_id = schema._lazy_id_to_parent.get(parent_id)
         self._case_sensitive = case_sensitive
         self._limit = limit
         self._downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE)
@@ -2065,7 +2077,7 @@ class ArrowScan:
     def _projected_field_ids(self) -> set[int]:
         """Set of field IDs that should be projected from the data files."""
         schema = self._table_metadata.schema()
-        filter_field_ids = extract_field_ids(self._bound_row_filter)
+        filter_field_ids = extract_field_ids(self._bound_row_filter) | self._filter_ancestor_field_ids
         # A list or map cannot be projected by its own ID, so a filter on one reads its nested fields instead
         nested_field_ids = prune_columns(
             schema, {id for id in filter_field_ids if isinstance(schema.find_type(id), (MapType, ListType))}
