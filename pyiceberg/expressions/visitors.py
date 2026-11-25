@@ -862,20 +862,24 @@ def inclusive_projection(
     return InclusiveProjection(schema, spec, case_sensitive).project
 
 
-# These predicates use Arrow's NULL behavior. != and NOT IN retain the existing default-value result (see #4276).
-_NULL_STRICT_PREDICATES = (
+# For these predicates the expression evaluator and Arrow give the same result for a NULL value. For !=, NOT STARTS WITH
+# and NOT NAN the evaluator matches NULL and Arrow does not, so those keep the default-value result.
+_NULL_CONSISTENT_PREDICATES = (
     BoundEqualTo,
     BoundIn,
+    BoundNotIn,
     BoundLessThan,
     BoundLessThanOrEqual,
     BoundGreaterThan,
     BoundGreaterThanOrEqual,
     BoundIsNull,
     BoundNotNull,
+    BoundStartsWith,
+    BoundIsNaN,
 )
 
 # A NOT over these predicates is pushed into their complements, so NOT (c != 5) is handled as c = 5
-_NESTED_NOT_PREDICATES = (*_NULL_STRICT_PREDICATES, BoundNotEqualTo, BoundNotIn)
+_NESTED_NOT_PREDICATES = (*_NULL_CONSISTENT_PREDICATES, BoundNotEqualTo, BoundNotStartsWith, BoundNotNaN)
 
 
 class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
@@ -953,7 +957,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             )
             evaluate = expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)
             matches_value = evaluate(Record(field_value))
-            if self.table_schema is None or not isinstance(predicate, _NULL_STRICT_PREDICATES):
+            if self.table_schema is None or not isinstance(predicate, _NULL_CONSISTENT_PREDICATES):
                 return AlwaysTrue() if matches_value else AlwaysFalse()
             # A row whose optional ancestor struct is NULL reads the field as NULL, so it matches like a NULL value
             matches_null = evaluate(Record(None))
@@ -980,7 +984,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
                 parent_name = self.file_schema.find_column_name(parent_id)
                 if parent_name is None:
                     # The struct is missing from the file too, so its value is the same in every row
-                    if self.projected_field_values.get(parent_id, parent.initial_default) is None:
+                    if parent.initial_default is None:
                         return AlwaysFalse()
                 else:
                     present = And(present, NotNull(parent_name))
@@ -1011,7 +1015,7 @@ def _rewrite_nested_not(
     """Push NOT down to the predicates, and complement those on a missing nested field.
 
     A row whose optional struct is NULL reads such a field as NULL. NOT (c < 4) must not match that row, as c >= 4
-    does not. Other negations are kept, so their results stay the same as on main.
+    does not. Other negations are left in place.
     """
     if isinstance(expr, Not):
         return _rewrite_nested_not(expr.child, file_schema, table_schema, not negated)

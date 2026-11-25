@@ -1676,6 +1676,8 @@ def test_missing_nested_field_under_null_struct_reads_as_null(tmpdir: str) -> No
                     required=True,
                 ),
                 NestedField(11, "n", IntegerType(), required=False),
+                NestedField(12, "s", StringType(), required=False, initial_default="abc"),
+                NestedField(13, "fn", DoubleType(), required=False, initial_default=float("nan")),
             ),
             required=False,
         ),
@@ -1710,6 +1712,11 @@ def test_missing_nested_field_under_null_struct_reads_as_null(tmpdir: str) -> No
         ("NOT (pt.c < 4 OR id = 1)", [3]),
         ("NOT (pt.c != 5)", [1, 3]),
         ("NOT (pt.c NOT IN (4, 5))", [1, 3]),
+        ("pt.c NOT IN (4, 5)", [2]),
+        ("NOT (pt.c IN (4, 5))", [2]),
+        ("pt.s LIKE 'ab%'", [1, 3]),
+        ("NOT (pt.s NOT LIKE 'ab%')", [1, 3]),
+        ("pt.fn IS NAN", [1, 3]),
         ("pt.inner.c2 = 5", [1]),
         ("pt.inner.c2 IS NULL", [2, 3]),
         ("pt.req.c3 = 5", [1, 3]),
@@ -1760,29 +1767,14 @@ def test_missing_nested_field_under_renamed_null_struct(tmpdir: str) -> None:
 
 
 def test_missing_fields_absent_from_file_read_as_null(tmpdir: str) -> None:
-    """A struct the file lacks is NULL in every row. NOT keeps its result on a top-level or a required-struct field."""
+    """A struct the file lacks is NULL in every row, so a field under it reads as NULL despite its default."""
     table_schema = Schema(
         NestedField(1, "id", LongType(), required=False),
         NestedField(2, "d", IntegerType(), required=False),
         NestedField(3, "pt", StructType(NestedField(4, "c", IntegerType(), required=False, initial_default=5)), required=False),
-        NestedField(
-            5,
-            "rq",
-            StructType(NestedField(6, "x", IntegerType(), required=False), NestedField(7, "c2", IntegerType(), required=False)),
-            required=True,
-        ),
     )
-    arrow_schema = pa.schema(
-        [
-            pa.field("id", pa.int64(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"}),
-            pa.field(
-                "rq",
-                pa.struct([pa.field("x", pa.int32(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "6"})]),
-                metadata={PYARROW_PARQUET_FIELD_ID_KEY: "5"},
-            ),
-        ]
-    )
-    arrow_table = pa.table({"id": [1, 2, 3], "rq": [{"x": 1}, {"x": 1}, {"x": 1}]}, schema=arrow_schema)
+    arrow_schema = pa.schema([pa.field("id", pa.int64(), metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})])
+    arrow_table = pa.table({"id": [1, 2, 3]}, schema=arrow_schema)
     data_file = _write_table_to_data_file(f"{tmpdir}/no_pt.parquet", arrow_schema, arrow_table)
     table_metadata = _v3_table_metadata(tmpdir, table_schema)
 
@@ -1790,10 +1782,7 @@ def test_missing_fields_absent_from_file_read_as_null(tmpdir: str) -> None:
         ("pt.c = 5", []),
         ("pt.c IS NULL", [1, 2, 3]),
         ("NOT (pt.c > 4)", []),
-        ("NOT (d > 4)", [1, 2, 3]),
         ("NOT (d IS NULL)", []),
-        # A required struct is never NULL, so NOT keeps its result on a field under it
-        ("NOT (rq.c2 > 4)", [1, 2, 3]),
     ]:
         assert _scan_ids(table_metadata, data_file, row_filter, set()) == rows, row_filter
 

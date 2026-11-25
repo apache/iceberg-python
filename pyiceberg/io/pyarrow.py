@@ -952,7 +952,6 @@ class _ConvertToArrowExpression(BoundBooleanExpressionVisitor[pc.Expression]):
         if self._schema is not None:
             field_id = term.ref().field.field_id
             if self._schema.find_column_name(field_id) is not None:
-                # Walk up the struct ancestors by field ID, instead of splitting the dotted full name
                 names = [self._schema.find_field(field_id).name]
                 parent_id = self._schema._lazy_id_to_parent.get(field_id)
                 while parent_id is not None:
@@ -1879,6 +1878,8 @@ def _task_to_record_batches(
                 projected_field_values=projected_missing_fields,
                 table_schema=table_schema,
             )
+            # Rewrite NOT into the complementary predicates, as the manifest and metrics evaluators do, so a row
+            # matches the same predicate that decided whether its file was read
             bound_file_filter = rewrite_not(bind(file_schema, translated_row_filter, case_sensitive=case_sensitive))
             pyarrow_filter = expression_to_pyarrow(bound_file_filter, file_schema)
 

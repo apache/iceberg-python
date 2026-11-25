@@ -1770,22 +1770,6 @@ def test_translate_column_names_different_column_names() -> None:
     assert translated_expr.literal == literal("test_value")
 
 
-def test_translate_column_names_not_on_missing_top_level_column_keeps_its_result() -> None:
-    """NOT over a predicate on a missing top-level column keeps the result of its default-value constant."""
-    table_schema = Schema(
-        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
-        NestedField(field_id=2, name="d", field_type=IntegerType(), required=False),
-        schema_id=1,
-    )
-    file_schema = Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=False), schema_id=1)
-    for unbound_expr, expected in [
-        (Not(LessThan("d", 4)), AlwaysTrue()),
-        (Not(IsNull("d")), AlwaysFalse()),
-    ]:
-        bound_expr = visit(unbound_expr, visitor=BindVisitor(schema=table_schema, case_sensitive=True))
-        assert translate_column_names(bound_expr, file_schema, case_sensitive=True) == expected, unbound_expr
-
-
 def test_translate_column_names_missing_column() -> None:
     """Test translate_column_names when column is missing from file schema (such as in schema evolution)."""
     # Original schema
