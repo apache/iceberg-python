@@ -83,8 +83,8 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
     ) -> UpdateSpec:
         """Add a partition field on a source column.
 
-        A field removed in this update is kept, with its id and position, when it is added back with the same name,
-        source and transform.
+        A field removed in this update is restored, with its id, position and name, when it is added back with the same
+        source and transform and either no name or its own name.
 
         Raises:
             ValueError: If the source column does not exist, the transform cannot be applied to its type, the field
@@ -115,8 +115,7 @@ class UpdateSpec(UpdateTableMetadata["UpdateSpec"]):
             and partition_field_name in (None, existing_partition_field.name)
             and existing_partition_field.name not in self._name_to_added_field
         ):
-            # Added back with the same name, source and transform: keep the removed field with its id and position,
-            # as Java's rewriteDeleteAndAddField does
+            # Undo the removal instead of adding a new field, as Java's rewriteDeleteAndAddField does
             self._deletes.remove(existing_partition_field.field_id)
             return self
 
