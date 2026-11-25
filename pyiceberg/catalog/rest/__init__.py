@@ -39,7 +39,7 @@ from typing_extensions import override
 from urllib3.util.retry import Retry
 
 from pyiceberg import __version__
-from pyiceberg.catalog import BOTOCORE_SESSION, TOKEN, URI, WAREHOUSE_LOCATION, Catalog, PropertiesUpdateSummary
+from pyiceberg.catalog import TOKEN, URI, WAREHOUSE_LOCATION, Catalog, PropertiesUpdateSummary
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER, AuthManager, AuthManagerAdapter, AuthManagerFactory, LegacyOAuth2AuthManager
 from pyiceberg.catalog.rest.response import _handle_non_200_response
 from pyiceberg.catalog.rest.scan_planning import (
@@ -53,6 +53,27 @@ from pyiceberg.catalog.rest.scan_planning import (
     PlanTableScanRequest,
     ScanTasks,
     StorageCredential,
+)
+from pyiceberg.catalog.rest.sigv4 import (
+    EMPTY_BODY_SHA256 as EMPTY_BODY_SHA256,
+)
+from pyiceberg.catalog.rest.sigv4 import (
+    SIGV4_MAX_RETRIES as SIGV4_MAX_RETRIES,
+)
+from pyiceberg.catalog.rest.sigv4 import (
+    SIGV4_MAX_RETRIES_DEFAULT as SIGV4_MAX_RETRIES_DEFAULT,
+)
+from pyiceberg.catalog.rest.sigv4 import (
+    SIGV4_REGION as SIGV4_REGION,
+)
+from pyiceberg.catalog.rest.sigv4 import (
+    SIGV4_SERVICE as SIGV4_SERVICE,
+)
+from pyiceberg.catalog.rest.sigv4 import (
+    SigV4Adapter as SigV4Adapter,
+)
+from pyiceberg.catalog.rest.sigv4 import (
+    init_sigv4,
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
@@ -72,15 +93,7 @@ from pyiceberg.exceptions import (
     ViewAlreadyExistsError,
 )
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression
-from pyiceberg.io import (
-    AWS_ACCESS_KEY_ID,
-    AWS_PROFILE_NAME,
-    AWS_REGION,
-    AWS_SECRET_ACCESS_KEY,
-    AWS_SESSION_TOKEN,
-    FileIO,
-    load_file_io,
-)
+from pyiceberg.io import FileIO, load_file_io
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionSpec, assign_fresh_partition_spec_ids
 from pyiceberg.schema import Schema, assign_fresh_schema_ids
 from pyiceberg.table import (
@@ -104,7 +117,6 @@ from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Pr
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import (
-    get_first_property_value,
     get_header_properties,
     property_as_bool,
     property_as_float,
@@ -292,10 +304,6 @@ CLIENT = "client"
 CA_BUNDLE = "cabundle"
 SSL = "ssl"
 SIGV4 = "rest.sigv4-enabled"
-SIGV4_REGION = "rest.signing-region"
-SIGV4_SERVICE = "rest.signing-name"
-SIGV4_MAX_RETRIES = "rest.sigv4.max-retries"
-SIGV4_MAX_RETRIES_DEFAULT = 10
 REST_CLIENT_CONNECTION_TIMEOUT_MS = "rest.client.connection-timeout-ms"
 REST_CLIENT_SOCKET_TIMEOUT_MS = "rest.client.socket-timeout-ms"
 REST_CLIENT_MAX_RETRIES = "rest.client.max-retries"
@@ -305,7 +313,7 @@ REST_CLIENT_RETRY_BACKOFF_FACTOR = "rest.client.retry-backoff-factor"
 _CONNECTION_RETRY_STATUS_FORCELIST = (429, 500, 502, 503, 504)
 _CONNECTION_RETRY_ALLOWED_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
-EMPTY_BODY_SHA256: str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
 OAUTH2_SERVER_URI = "oauth2-server-uri"
 SNAPSHOT_LOADING_MODE = "snapshot-loading-mode"
 AUTH = "auth"
@@ -645,7 +653,7 @@ class RestCatalog(Catalog):
 
         # Configure SigV4 Request Signing
         if property_as_bool(self.properties, SIGV4, False):
-            self._init_sigv4(session)
+            init_sigv4(session, self.uri, self.properties)
 
         return session
 
@@ -1128,62 +1136,6 @@ class RestCatalog(Catalog):
     def _split_identifier_for_json(self, identifier: str | Identifier) -> dict[str, Identifier | str]:
         identifier_tuple = self._identifier_to_validated_tuple(identifier)
         return {"namespace": identifier_tuple[:-1], "name": identifier_tuple[-1]}
-
-    def _init_sigv4(self, session: Session) -> None:
-        from urllib import parse
-
-        import boto3
-        from botocore.auth import SigV4Auth
-        from botocore.awsrequest import AWSRequest
-
-        class SigV4Adapter(HTTPAdapter):
-            def __init__(self, **properties: str):
-                self._properties = properties
-                max_retries = property_as_int(self._properties, SIGV4_MAX_RETRIES, SIGV4_MAX_RETRIES_DEFAULT)
-                super().__init__(max_retries=max_retries)
-                self._boto_session = boto3.Session(
-                    profile_name=get_first_property_value(self._properties, AWS_PROFILE_NAME),
-                    region_name=get_first_property_value(self._properties, AWS_REGION),
-                    botocore_session=self._properties.get(BOTOCORE_SESSION),
-                    aws_access_key_id=get_first_property_value(self._properties, AWS_ACCESS_KEY_ID),
-                    aws_secret_access_key=get_first_property_value(self._properties, AWS_SECRET_ACCESS_KEY),
-                    aws_session_token=get_first_property_value(self._properties, AWS_SESSION_TOKEN),
-                )
-
-            def add_headers(self, request: PreparedRequest, **kwargs: Any) -> None:  # pylint: disable=W0613
-                credentials = self._boto_session.get_credentials().get_frozen_credentials()
-                region = self._properties.get(SIGV4_REGION, self._boto_session.region_name)
-                service = self._properties.get(SIGV4_SERVICE, "execute-api")
-
-                url = str(request.url).split("?")[0]
-                query = str(parse.urlsplit(request.url).query)
-                params = dict(parse.parse_qsl(query))
-
-                # remove the connection header as it will be updated after signing
-                if "connection" in request.headers:
-                    del request.headers["connection"]
-                # For empty bodies, explicitly set the content hash header to the SHA256 of an empty string
-                if not request.body:
-                    request.headers["x-amz-content-sha256"] = EMPTY_BODY_SHA256
-
-                aws_request = AWSRequest(
-                    method=request.method, url=url, params=params, data=request.body, headers=dict(request.headers)
-                )
-
-                SigV4Auth(credentials, service, region).add_auth(aws_request)
-                original_header = request.headers
-                signed_headers = aws_request.headers
-                relocated_headers = {}
-
-                # relocate headers if there is a conflict with signed headers
-                for header, value in original_header.items():
-                    if header in signed_headers and signed_headers[header] != value:
-                        relocated_headers[f"Original-{header}"] = value
-
-                request.headers.update(relocated_headers)
-                request.headers.update(signed_headers)
-
-        session.mount(self.uri, SigV4Adapter(**self.properties))
 
     def _response_to_table(self, identifier_tuple: tuple[str, ...], table_response: TableResponse) -> Table:
         # Per Iceberg spec: storage-credentials take precedence over config
