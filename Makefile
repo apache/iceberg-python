@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 .PHONY: help install install-uv check-license lint \
-        test test-integration test-integration-setup test-integration-exec test-integration-cleanup test-integration-rebuild \
-        test-s3 test-adls test-gcs test-coverage coverage-report test test-notebook\
         docs-serve docs-build notebook notebook-infra \
         clean
 
@@ -26,28 +24,12 @@
 # ========================
 
 PYTHON ?=  # Override with e.g. PYTHON=3.11 to use specific Python version
-PYTEST_ARGS ?= -v -x  # Override with e.g. PYTEST_ARGS="-vv --tb=short"
-COVERAGE ?= 0      # Set COVERAGE=1 to enable coverage: make test COVERAGE=1
-COVERAGE_FAIL_UNDER ?= 85  # Minimum coverage % to pass: make coverage-report COVERAGE_FAIL_UNDER=70
-KEEP_COMPOSE ?= 0  # Set KEEP_COMPOSE=1 to keep containers after integration tests
 
 # Set Python argument for uv commands if PYTHON is specified
 ifneq ($(PYTHON),)
   PYTHON_ARG = --python $(PYTHON)
 else
   PYTHON_ARG =
-endif
-
-ifeq ($(COVERAGE),1)
-  TEST_RUNNER = uv run $(PYTHON_ARG) python -m coverage run --parallel-mode --source=pyiceberg -m
-else
-  TEST_RUNNER = uv run $(PYTHON_ARG) python -m
-endif
-
-ifeq ($(KEEP_COMPOSE),1)
-  CLEANUP_COMMAND = echo "Keeping containers running for debugging (KEEP_COMPOSE=1)"
-else
-  CLEANUP_COMMAND = docker compose -f dev/docker-compose-integration.yml down -v --remove-orphans --timeout 0 2>/dev/null || true
 endif
 
 # ============
@@ -97,67 +79,6 @@ check-license: ## Check license headers
 lint: ## Run code linters via prek (pre-commit hooks)
 	uv run $(PYTHON_ARG) prek run -a
 
-# ===============
-# Testing Section
-# ===============
-
-##@ Testing
-
-test: ## Run all unit tests (excluding integration)
-	$(TEST_RUNNER) pytest tests/ -m unit --ignore=tests/integration $(PYTEST_ARGS)
-
-test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
-
-test-integration-setup: install ## Start Docker services for integration tests
-	docker compose -f dev/docker-compose-integration.yml kill
-	docker compose -f dev/docker-compose-integration.yml rm -f
-	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
-	uv run $(PYTHON_ARG) python dev/provision.py
-
-test-integration-exec: ## Run integration tests (excluding provision)
-	$(TEST_RUNNER) pytest tests/ -m integration $(PYTEST_ARGS)
-
-test-integration-cleanup: ## Clean up integration test environment
-	@if [ "${KEEP_COMPOSE}" != "1" ]; then \
-		echo "Cleaning up Docker containers..."; \
-	fi
-	$(CLEANUP_COMMAND)
-
-test-integration-rebuild: ## Rebuild integration Docker services from scratch
-	docker compose -f dev/docker-compose-integration.yml kill
-	docker compose -f dev/docker-compose-integration.yml rm -f
-	docker compose -f dev/docker-compose-integration.yml build --no-cache
-
-test-s3: ## Run tests marked with @pytest.mark.s3
-	sh ./dev/run-s3.sh
-	$(TEST_RUNNER) pytest tests/ -m s3 $(PYTEST_ARGS)
-
-test-adls: ## Run tests marked with @pytest.mark.adls
-	sh ./dev/run-azurite.sh
-	$(TEST_RUNNER) pytest tests/ -m adls $(PYTEST_ARGS)
-
-test-gcs: ## Run tests marked with @pytest.mark.gcs
-	sh ./dev/run-gcs-server.sh
-	# gcsfs 2026.6.0 sends HNS/Zonal bucket detection to endpoint_url.
-	# fake-gcs-server does not support that API, so repeated detection retries
-	# make GCS sanity tests take close to an hour. Disable it here.
-	# Workaround documented by gcsfs:
-	# https://github.com/fsspec/gcsfs/blob/2026.6.0/docs/source/hns_buckets.rst#L99-L101
-	GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT=false $(TEST_RUNNER) pytest tests/ -m gcs $(PYTEST_ARGS)
-
-test-coverage: ## Run all tests with coverage and report
-	$(MAKE) COVERAGE=1 test test-integration test-s3 test-adls test-gcs
-	$(MAKE) coverage-report
-
-coverage-report: ## Combine and report coverage
-	uv run $(PYTHON_ARG) coverage combine
-	uv run $(PYTHON_ARG) coverage report -m --fail-under=$(COVERAGE_FAIL_UNDER)
-	uv run $(PYTHON_ARG) coverage html
-	uv run $(PYTHON_ARG) coverage xml
-
-test-notebook: ## Run notebook tests (pyiceberg_example and spark_integration_example) via papermill
-	$(TEST_RUNNER) pytest tests/notebooks/test_pyiceberg_example.py tests/notebooks/test_spark_integration_example.py -m notebook $(PYTEST_ARGS)
-
 # ================
 # Documentation
 # ================
@@ -179,7 +100,11 @@ docs-build: ## Build the static documentation site
 notebook: ## Launch notebook for experimentation
 	uv run $(PYTHON_ARG) --all-extras --group notebook jupyter lab --notebook-dir=notebooks
 
-notebook-infra: test-integration-setup ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
+notebook-infra: install ## Launch notebook with integration test infra (Spark, Iceberg Rest Catalog, object storage, etc.)
+	docker compose -f dev/docker-compose-integration.yml kill
+	docker compose -f dev/docker-compose-integration.yml rm -f
+	docker compose -f dev/docker-compose-integration.yml up -d --build --wait
+	uv run $(PYTHON_ARG) python dev/provision.py
 	uv run $(PYTHON_ARG) --all-extras --group notebook jupyter lab --notebook-dir=notebooks
 
 # ===================
@@ -190,7 +115,7 @@ notebook-infra: test-integration-setup ## Launch notebook with integration test 
 
 clean: ## Remove build artifacts and caches
 	@echo "Cleaning up Cython and Python cached files..."
-	@rm -rf build dist *.egg-info .venv
+	@rm -rf build dist *.egg-info .venv .tox
 	@find . -name "*.so" -exec echo Deleting {} \; -delete
 	@find . -name "*.pyc" -exec echo Deleting {} \; -delete
 	@find . -name "__pycache__" -exec echo Deleting {} \; -exec rm -rf {} +

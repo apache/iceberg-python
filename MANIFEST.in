@@ -26,6 +26,7 @@ recursive-include tests *
 
 # Include development files
 include Makefile
+include tox.toml
 include uv.lock
 recursive-include dev *
 

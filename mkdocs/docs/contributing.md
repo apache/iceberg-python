@@ -58,7 +58,7 @@ You can specify which Python version to use when creating your virtual environme
 
 ```bash
 PYTHON=3.12 make install # Create environment with Python 3.12
-make test # Run tests against Python 3.12
+uv run tox -e test-3.12 # Run tests against Python 3.12
 ```
 
 > **Tip:** `uv python list` shows available interpreters. `uv python install 3.12` can install one if needed.
@@ -135,7 +135,15 @@ make lint
 
 In addition to manually running `make lint`, you can install the pre-commit hooks in your local repo with `prek install`. By doing this, linting is run automatically every time you make a commit.
 
-You can bump the integrations to the latest version using `prek auto-update`. This will check if there is a newer version of `{ruff,mypy,...}` and update the yaml.
+You can bump the integrations to the latest version using `prek auto-update`. This will check if there is a newer version of `{ruff,codespell,...}` and update the yaml.
+
+### Type Checking
+
+`mypy` runs in an isolated `tox` environment configured in `tox.toml`:
+
+```bash
+uv run tox -e typecheck
+```
 
 ## Cleaning
 
@@ -149,56 +157,51 @@ Helps prevent build failures and unexpected behavior by removing outdated files,
 
 ## Testing
 
-For Python, `pytest` is used a testing framework in combination with `coverage` to enforce 90%+ code coverage.
+For Python, `pytest` is used as the testing framework via `tox`, in combination with `coverage`.
 
 ```bash
-make test
+uv run tox -e unit      # Unit tests on the current Python
+uv run tox -p           # Typecheck + unit tests across installed Pythons (3.11–3.14)
 ```
 
-By default, S3 and ADLS tests are ignored because that require RustFS and azurite to be running.
-To run the S3 suite:
+By default, S3, ADLS, and GCS tests are ignored because they require local emulator containers.
+To run the cloud storage suites:
 
 ```bash
-make test-s3
+uv run tox -e s3
+uv run tox -e adls
+uv run tox -e gcs
 ```
 
-To run the ADLS suite:
-
-```bash
-make test-adls
-```
-
-To pass additional arguments to pytest, you can use `PYTEST_ARGS`.
+To pass additional arguments to pytest, append them after `--`.
 
 ### Run pytest in verbose mode
 
 ```sh
-make test PYTEST_ARGS="-v"
+uv run tox -e unit -- -v
 ```
 
 ### Run pytest with pdb enabled
 
 ```sh
-make test PYTEST_ARGS="--pdb"
+uv run tox -e unit -- --pdb
 ```
 
-To see all available pytest arguments, run `make test PYTEST_ARGS="--help"`.
+To see all available pytest arguments, run `uv run tox -e unit -- --help`.
 
 ### Integration tests
 
 PyIceberg has integration tests with Apache Spark. Spark will create a new database and provision some tables that PyIceberg can query against.
 
 ```sh
-make test-integration
+uv run tox -e integration
 ```
 
-This will restart the containers, to get to a clean state, and then run the PyTest suite. In case something changed in the Dockerfile or the provision script, you can run:
+This will restart the containers to get to a clean state, run the pytest suite, and tear them down afterward (set `KEEP_COMPOSE=1` to keep containers running). To rebuild the containers from scratch, run:
 
 ```sh
-make test-integration-rebuild
+docker compose -f dev/docker-compose-integration.yml build --no-cache
 ```
-
-To rebuild the containers from scratch.
 
 #### Running Integration Tests against REST Catalogs
 

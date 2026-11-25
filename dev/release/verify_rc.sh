@@ -82,8 +82,8 @@ verify_license_documentation() {
 
 test_source_distribution() {
   echo "--- Installing and running the tests, this spins up Docker containers"
-  make install
-  make test-coverage
+  make install-uv
+  COVERAGE=1 uv run --locked --only-group tox tox run -e unit,integration,s3,adls,gcs,coverage
 }
 
 echo "Verifying pyiceberg-${PYICEBERG_VERSION} in ${PYICEBERG_VERIFICATION_DIR}"
