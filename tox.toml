@@ -18,8 +18,13 @@
 requires = ["tox>=4.61", "tox-uv-bare>=1.28"]
 
 env_list = [
-    "typecheck",
-    { product = [["test"], { py = { prefix = "3.", start = 11, stop = 14 } }] },
+  "typecheck",
+  { product = [
+    [
+      "test",
+    ],
+    { py = { prefix = "3.", start = 11, stop = 14 } },
+  ] },
 ]
 
 skip_missing_interpreters = true
@@ -29,21 +34,36 @@ description = "Run unit tests on Python {factor:py}"
 runner = "uv-venv-lock-runner"
 package = "editable"
 uv_sync_flags = [
-    "--all-extras",
-    { replace = "if", condition = "factor.win32", then = ["--no-extra", "hive-kerberos"], "else" = [], extend = true },
+  "--all-extras",
+  { replace = "if", condition = "factor.win32", then = [
+    "--no-extra",
+    "hive-kerberos",
+  ], "else" = [
+  ], extend = true },
 ]
 pass_env = ["COVERAGE", "COVERAGE_FAIL_UNDER"]
 commands = [
-    [
-        "python",
-        "-m",
-        { replace = "if", condition = "env.COVERAGE == '1'", then = ["coverage", "run", "--parallel-mode", "--source=pyiceberg", "-m"], "else" = [], extend = true },
-        "pytest",
-        "-m",
-        "unit",
-        "--ignore=tests/integration",
-        { replace = "posargs", default = ["tests/", "-v", "-x"], extend = true },
-    ],
+  [
+    "python",
+    "-m",
+    { replace = "if", condition = "env.COVERAGE == '1'", then = [
+      "coverage",
+      "run",
+      "--parallel-mode",
+      "--source=pyiceberg",
+      "-m",
+    ], "else" = [
+    ], extend = true },
+    "pytest",
+    "-m",
+    "unit",
+    "--ignore=tests/integration",
+    { replace = "posargs", default = [
+      "tests/",
+      "-v",
+      "-x",
+    ], extend = true },
+  ],
 ]
 
 [env.unit]
@@ -55,7 +75,15 @@ package = "skip"
 only_groups = ["types"]
 uv_sync_flags = []
 commands = [
-    ["mypy", "--config-file=pyproject.toml", "pyiceberg", "tests", "dev", "setup.py", "mkdocs"],
+  [
+    "mypy",
+    "--config-file=pyproject.toml",
+    "pyiceberg",
+    "tests",
+    "dev",
+    "setup.py",
+    "mkdocs",
+  ],
 ]
 
 [env.integration]
@@ -63,24 +91,73 @@ description = "Run Spark integration tests"
 allowlist_externals = ["docker"]
 pass_env = ["COVERAGE", "COVERAGE_FAIL_UNDER", "KEEP_COMPOSE"]
 commands_pre = [
-    ["docker", "compose", "-f", "dev/docker-compose-integration.yml", "kill"],
-    ["docker", "compose", "-f", "dev/docker-compose-integration.yml", "rm", "-f"],
-    ["docker", "compose", "-f", "dev/docker-compose-integration.yml", "up", "-d", "--build", "--wait"],
-    ["python", "dev/provision.py"],
+  [
+    "docker",
+    "compose",
+    "-f",
+    "dev/docker-compose-integration.yml",
+    "kill",
+  ],
+  [
+    "docker",
+    "compose",
+    "-f",
+    "dev/docker-compose-integration.yml",
+    "rm",
+    "-f",
+  ],
+  [
+    "docker",
+    "compose",
+    "-f",
+    "dev/docker-compose-integration.yml",
+    "up",
+    "-d",
+    "--build",
+    "--wait",
+  ],
+  [
+    "python",
+    "dev/provision.py",
+  ],
 ]
 commands = [
-    [
-        "python",
-        "-m",
-        { replace = "if", condition = "env.COVERAGE == '1'", then = ["coverage", "run", "--parallel-mode", "--source=pyiceberg", "-m"], "else" = [], extend = true },
-        "pytest",
-        "-m",
-        "integration",
-        { replace = "posargs", default = ["tests/", "-v", "-x"], extend = true },
-    ],
+  [
+    "python",
+    "-m",
+    { replace = "if", condition = "env.COVERAGE == '1'", then = [
+      "coverage",
+      "run",
+      "--parallel-mode",
+      "--source=pyiceberg",
+      "-m",
+    ], "else" = [
+    ], extend = true },
+    "pytest",
+    "-m",
+    "integration",
+    { replace = "posargs", default = [
+      "tests/",
+      "-v",
+      "-x",
+    ], extend = true },
+  ],
 ]
 commands_post = [
-    { replace = "if", condition = "env.KEEP_COMPOSE != '1'", then = [["docker", "compose", "-f", "dev/docker-compose-integration.yml", "down", "-v", "--remove-orphans", "--timeout", "0"]], "else" = [], extend = true },
+  { replace = "if", condition = "env.KEEP_COMPOSE != '1'", then = [
+    [
+      "docker",
+      "compose",
+      "-f",
+      "dev/docker-compose-integration.yml",
+      "down",
+      "-v",
+      "--remove-orphans",
+      "--timeout",
+      "0",
+    ],
+  ], "else" = [
+  ], extend = true },
 ]
 interrupt_post_commands = true
 
@@ -89,15 +166,26 @@ description = "Run S3 integration tests"
 allowlist_externals = ["sh"]
 commands_pre = [["sh", "./dev/run-s3.sh"]]
 commands = [
-    [
-        "python",
-        "-m",
-        { replace = "if", condition = "env.COVERAGE == '1'", then = ["coverage", "run", "--parallel-mode", "--source=pyiceberg", "-m"], "else" = [], extend = true },
-        "pytest",
-        "-m",
-        "s3",
-        { replace = "posargs", default = ["tests/", "-v", "-x"], extend = true },
-    ],
+  [
+    "python",
+    "-m",
+    { replace = "if", condition = "env.COVERAGE == '1'", then = [
+      "coverage",
+      "run",
+      "--parallel-mode",
+      "--source=pyiceberg",
+      "-m",
+    ], "else" = [
+    ], extend = true },
+    "pytest",
+    "-m",
+    "s3",
+    { replace = "posargs", default = [
+      "tests/",
+      "-v",
+      "-x",
+    ], extend = true },
+  ],
 ]
 
 [env.adls]
@@ -105,15 +193,26 @@ description = "Run ADLS integration tests"
 allowlist_externals = ["sh"]
 commands_pre = [["sh", "./dev/run-azurite.sh"]]
 commands = [
-    [
-        "python",
-        "-m",
-        { replace = "if", condition = "env.COVERAGE == '1'", then = ["coverage", "run", "--parallel-mode", "--source=pyiceberg", "-m"], "else" = [], extend = true },
-        "pytest",
-        "-m",
-        "adls",
-        { replace = "posargs", default = ["tests/", "-v", "-x"], extend = true },
-    ],
+  [
+    "python",
+    "-m",
+    { replace = "if", condition = "env.COVERAGE == '1'", then = [
+      "coverage",
+      "run",
+      "--parallel-mode",
+      "--source=pyiceberg",
+      "-m",
+    ], "else" = [
+    ], extend = true },
+    "pytest",
+    "-m",
+    "adls",
+    { replace = "posargs", default = [
+      "tests/",
+      "-v",
+      "-x",
+    ], extend = true },
+  ],
 ]
 
 [env.gcs]
@@ -124,29 +223,52 @@ allowlist_externals = ["sh"]
 set_env = { GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT = "false" }
 commands_pre = [["sh", "./dev/run-gcs-server.sh"]]
 commands = [
-    [
-        "python",
-        "-m",
-        { replace = "if", condition = "env.COVERAGE == '1'", then = ["coverage", "run", "--parallel-mode", "--source=pyiceberg", "-m"], "else" = [], extend = true },
-        "pytest",
-        "-m",
-        "gcs",
-        { replace = "posargs", default = ["tests/", "-v", "-x"], extend = true },
-    ],
+  [
+    "python",
+    "-m",
+    { replace = "if", condition = "env.COVERAGE == '1'", then = [
+      "coverage",
+      "run",
+      "--parallel-mode",
+      "--source=pyiceberg",
+      "-m",
+    ], "else" = [
+    ], extend = true },
+    "pytest",
+    "-m",
+    "gcs",
+    { replace = "posargs", default = [
+      "tests/",
+      "-v",
+      "-x",
+    ], extend = true },
+  ],
 ]
 
 [env.notebook]
 description = "Run notebook tests via papermill"
 commands = [
-    [
-        "python",
-        "-m",
-        { replace = "if", condition = "env.COVERAGE == '1'", then = ["coverage", "run", "--parallel-mode", "--source=pyiceberg", "-m"], "else" = [], extend = true },
-        "pytest",
-        "-m",
-        "notebook",
-        { replace = "posargs", default = ["tests/notebooks/test_pyiceberg_example.py", "tests/notebooks/test_spark_integration_example.py", "-v", "-x"], extend = true },
-    ],
+  [
+    "python",
+    "-m",
+    { replace = "if", condition = "env.COVERAGE == '1'", then = [
+      "coverage",
+      "run",
+      "--parallel-mode",
+      "--source=pyiceberg",
+      "-m",
+    ], "else" = [
+    ], extend = true },
+    "pytest",
+    "-m",
+    "notebook",
+    { replace = "posargs", default = [
+      "tests/notebooks/test_pyiceberg_example.py",
+      "tests/notebooks/test_spark_integration_example.py",
+      "-v",
+      "-x",
+    ], extend = true },
+  ],
 ]
 
 [env.coverage]
@@ -156,8 +278,22 @@ package = "skip"
 only_groups = ["coverage"]
 uv_sync_flags = []
 commands = [
-    ["coverage", "combine"],
-    ["coverage", "report", "-m", "--fail-under={env:COVERAGE_FAIL_UNDER:85}"],
-    ["coverage", "html"],
-    ["coverage", "xml"],
+  [
+    "coverage",
+    "combine",
+  ],
+  [
+    "coverage",
+    "report",
+    "-m",
+    "--fail-under={env:COVERAGE_FAIL_UNDER:85}",
+  ],
+  [
+    "coverage",
+    "html",
+  ],
+  [
+    "coverage",
+    "xml",
+  ],
 ]
