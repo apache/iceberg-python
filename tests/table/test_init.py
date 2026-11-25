@@ -2504,6 +2504,24 @@ def test_position_delete_respects_sequence_number_of_readded_file(catalog: Catal
         assert sorted(table.scan(row_filter="id < 10").to_arrow()["id"].to_pylist()) == [i for i in expected if i < 10]
 
 
+def test_position_delete_applies_only_to_the_entry_of_a_path_it_is_attached_to(catalog: Catalog) -> None:
+    """The same path can be live twice in a snapshot; a position delete only removes rows of the older entry."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "id", LongType(), required=False))
+    table = catalog.create_table("default.duplicate_path_position_delete", schema=schema, properties={"format-version": "2"})
+    table.append(pa.table({"id": pa.array(range(10), pa.int64())}))
+    path = next(iter(table.scan().plan_files())).file.file_path
+
+    commit_partition_position_delete(table, Record(), [(path, 0)])
+    table.add_files([path], check_duplicate_files=False)  # registers P again, newer than the delete
+
+    expected = sorted([*range(1, 10), *range(10)])
+    assert sorted(table.scan().to_arrow()["id"].to_pylist()) == expected
+    assert table.scan().count() == len(expected)
+
+
 def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalog) -> None:
     """Rewriting a file applies all of its delete files, not only those whose bounds can match the delete filter."""
     import pyarrow as pa
