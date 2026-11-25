@@ -56,8 +56,15 @@ from pyiceberg.manifest import (
     ManifestEntryStatus,
     ManifestFile,
 )
-from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.partitioning import (
+    PARTITION_FIELD_ID_START,
+    UNPARTITIONED_PARTITION_SPEC,
+    PartitionField,
+    PartitionKey,
+    PartitionSpec,
+    assign_fresh_partition_spec_ids,
+)
+from pyiceberg.schema import Schema, assign_fresh_schema_ids_for_replace
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.labels import Labels
@@ -75,17 +82,23 @@ from pyiceberg.table.snapshots import (
     is_ancestor_of,
     is_parent_ancestor_of,
 )
-from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder, assign_fresh_sort_order_ids
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
     AddSchemaUpdate,
     AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
+    AssertCurrentSchemaId,
+    AssertDefaultSortOrderId,
+    AssertDefaultSpecId,
+    AssertLastAssignedFieldId,
+    AssertLastAssignedPartitionId,
     AssertRefSnapshotId,
     AssertTableUUID,
     AssignUUIDUpdate,
     RemovePropertiesUpdate,
+    RemoveSnapshotRefUpdate,
     SetCurrentSchemaUpdate,
     SetDefaultSortOrderUpdate,
     SetDefaultSpecUpdate,
@@ -1354,6 +1367,128 @@ class CreateTableTransaction(Transaction):
                 updates=self._updates,
                 requirements=(AssertCreate(),),
             )
+
+        self._updates = ()
+        self._requirements = ()
+
+        return self._table
+
+
+class ReplaceTableTransaction(Transaction):
+    """A transaction that atomically replaces the definition and data of an existing table.
+
+    Mirrors Java's TableMetadata.buildReplacement: the UUID, snapshots and history are kept, the main
+    branch is removed, field IDs are reused by name, and properties are merged into the existing ones.
+    """
+
+    def __init__(
+        self,
+        table: Table,
+        schema: Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ):
+        super().__init__(table, autocommit=False)
+        base = table.metadata
+        properties = dict(properties)
+        format_version = int(properties.pop(TableProperties.FORMAT_VERSION, base.format_version))
+        if format_version < base.format_version:
+            raise ValueError(f"Cannot downgrade v{base.format_version} table to v{format_version}")
+        if format_version == 1 and not (base.spec().is_unpartitioned() and partition_spec.is_unpartitioned()):
+            # TODO: support Java's carry-forward of the current v1 partition fields as void transforms
+            raise ValueError("Replacing a partitioned v1 table is not supported, set format-version to 2 or higher")
+        schema.check_format_version_compatibility(format_version)
+
+        fresh_schema = assign_fresh_schema_ids_for_replace(schema, base.schema(), base.last_column_id)
+        fresh_spec = assign_fresh_partition_spec_ids(partition_spec, schema, fresh_schema)
+        fresh_sort_order = assign_fresh_sort_order_ids(sort_order, schema, fresh_schema)
+
+        if format_version > base.format_version:
+            self._updates += (UpgradeFormatVersionUpdate(format_version=format_version),)
+        if MAIN_BRANCH in base.refs:
+            self._updates += (RemoveSnapshotRefUpdate(ref_name=MAIN_BRANCH),)
+
+        # Reuse partition field IDs by (source, transform) across all specs, new fields get IDs above last_partition_id
+        existing_fields = sorted((f for s in base.partition_specs for f in s.fields), key=lambda f: f.field_id)
+        field_ids = {(f.source_id, str(f.transform)): f.field_id for f in existing_fields}  # highest ID wins, like Java
+        next_field_id = itertools.count((base.last_partition_id or PARTITION_FIELD_ID_START - 1) + 1)
+        fresh_spec = PartitionSpec(
+            *[
+                PartitionField(
+                    source_id=f.source_id,
+                    field_id=field_ids.get((f.source_id, str(f.transform))) or next(next_field_id),
+                    transform=f.transform,
+                    name=f.name,
+                )
+                for f in fresh_spec.fields
+            ]
+        )
+
+        # Reuse an existing schema, spec or sort order when identical, otherwise add it and make it the default
+        if (schema_id := next((s.schema_id for s in base.schemas if s == fresh_schema), None)) is not None:
+            self._updates += (SetCurrentSchemaUpdate(schema_id=schema_id),)
+        else:
+            new_schema_id = max(s.schema_id for s in base.schemas) + 1
+            self._updates += (
+                AddSchemaUpdate(schema_=fresh_schema.model_copy(update={"schema_id": new_schema_id})),
+                SetCurrentSchemaUpdate(schema_id=-1),
+            )
+
+        if (spec_id := next((s.spec_id for s in base.partition_specs if s.fields == fresh_spec.fields), None)) is not None:
+            self._updates += (SetDefaultSpecUpdate(spec_id=spec_id),)
+        else:
+            new_spec_id = max(s.spec_id for s in base.partition_specs) + 1
+            self._updates += (
+                AddPartitionSpecUpdate(spec=PartitionSpec(*fresh_spec.fields, spec_id=new_spec_id)),
+                SetDefaultSpecUpdate(spec_id=-1),
+            )
+
+        if (order_id := next((o.order_id for o in base.sort_orders if o.fields == fresh_sort_order.fields), None)) is not None:
+            self._updates += (SetDefaultSortOrderUpdate(sort_order_id=order_id),)
+        elif fresh_sort_order.is_unsorted:
+            # The unsorted order always has ID 0
+            self._updates += (AddSortOrderUpdate(sort_order=UNSORTED_SORT_ORDER), SetDefaultSortOrderUpdate(sort_order_id=0))
+        else:
+            new_order_id = max(o.order_id for o in base.sort_orders) + 1
+            self._updates += (
+                AddSortOrderUpdate(sort_order=SortOrder(*fresh_sort_order.fields, order_id=new_order_id)),
+                SetDefaultSortOrderUpdate(sort_order_id=-1),
+            )
+
+        if location and location.rstrip("/") != base.location:
+            self._updates += (SetLocationUpdate(location=location.rstrip("/")),)
+        if properties:
+            self._updates += (SetPropertiesUpdate(updates=properties),)
+
+    def commit_transaction(self) -> Table:
+        """Commit the replacement to the catalog.
+
+        Like Java's UpdateRequirements.forReplaceTable, the main branch and current IDs are overwritten
+        regardless of concurrent changes; only the table identity and ID assignment are asserted.
+
+        Unlike Java, the current schema, spec or sort order is also asserted when a new one is added: the
+        catalogs in PyIceberg keep the IDs assigned by the client, so a concurrent addition would reuse the ID.
+
+        Returns:
+            The table with the updates applied.
+        """
+        if len(self._updates) > 0:
+            base = self._table.metadata
+            requirements: tuple[TableRequirement, ...] = (
+                AssertTableUUID(uuid=base.table_uuid),
+                AssertLastAssignedFieldId(last_assigned_field_id=base.last_column_id),
+                AssertLastAssignedPartitionId(last_assigned_partition_id=base.last_partition_id),
+            )
+            update_types = {type(update) for update in self._updates}
+            if AddSchemaUpdate in update_types:
+                requirements += (AssertCurrentSchemaId(current_schema_id=base.current_schema_id),)
+            if AddPartitionSpecUpdate in update_types:
+                requirements += (AssertDefaultSpecId(default_spec_id=base.default_spec_id),)
+            if AddSortOrderUpdate in update_types:
+                requirements += (AssertDefaultSortOrderId(default_sort_order_id=base.default_sort_order_id),)
+            self._table._do_commit(updates=self._updates, requirements=requirements)  # pylint: disable=W0212
 
         self._updates = ()
         self._requirements = ()

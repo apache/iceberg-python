@@ -26,6 +26,7 @@ from pyiceberg.schema import (
     Accessor,
     Schema,
     _check_schema_compatible,
+    assign_fresh_schema_ids_for_replace,
     build_position_accessors,
     index_by_id,
     index_by_name,
@@ -1972,3 +1973,26 @@ def test_check_schema_compatible_optional_map_field_present() -> None:
     )
     # Should not raise - schemas match
     _check_schema_compatible(requested_schema, provided_schema)
+
+
+def test_assign_fresh_schema_ids_for_replace_reuses_ids_by_name() -> None:
+    base = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "tags", ListType(3, StringType())),
+        NestedField(4, "dropped", StringType()),
+        identifier_field_ids=[1],
+    )
+    # IDs of the new schema are ignored, like the -1 IDs of schemas converted from PyArrow
+    new = Schema(
+        NestedField(-1, "added", StringType()),
+        NestedField(-1, "tags", ListType(-1, StringType())),
+        NestedField(-1, "id", LongType(), required=True),
+    )
+
+    fresh = assign_fresh_schema_ids_for_replace(new, base, last_column_id=4)
+
+    assert fresh == Schema(
+        NestedField(5, "added", StringType()),
+        NestedField(2, "tags", ListType(3, StringType())),
+        NestedField(1, "id", LongType(), required=True),
+    )

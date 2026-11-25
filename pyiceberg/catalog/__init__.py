@@ -49,6 +49,7 @@ from pyiceberg.table import (
     DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE,
     CommitTableResponse,
     CreateTableTransaction,
+    ReplaceTableTransaction,
     StagedTable,
     Table,
     TableProperties,
@@ -492,6 +493,93 @@ class Catalog(ABC):
             return self.create_table(identifier, schema, location, partition_spec, sort_order, properties)
         except TableAlreadyExistsError:
             return self.load_table(identifier)
+
+    def replace_table_transaction(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> ReplaceTableTransaction:
+        """Create a ReplaceTableTransaction that atomically replaces an existing table.
+
+        The table keeps its UUID and history, but the main branch is removed until new data is
+        written in the transaction. Field IDs are reused by name, and the given properties are
+        merged into the existing ones.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): Table's new schema.
+            location (str | None): New location for the table. Defaults to the current location.
+            partition_spec (PartitionSpec): New PartitionSpec for the table.
+            sort_order (SortOrder): New SortOrder for the table.
+            properties (Properties): Table properties to set on the table.
+
+        Returns:
+            ReplaceTableTransaction: the transaction to stage changes in and commit.
+
+        Raises:
+            NoSuchTableError: If a table with the name does not exist.
+        """
+        table = self.load_table(identifier)
+        format_version = int(properties.get(TableProperties.FORMAT_VERSION, table.metadata.format_version))
+        iceberg_schema = self._convert_schema_if_needed(schema, format_version)  # type: ignore
+        return ReplaceTableTransaction(table, iceberg_schema, location, partition_spec, sort_order, properties)
+
+    def create_or_replace_table_transaction(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> CreateTableTransaction | ReplaceTableTransaction:
+        """Create a transaction that creates the table, or atomically replaces it if it already exists.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): Table's schema.
+            location (str | None): Location for the table. Optional Argument.
+            partition_spec (PartitionSpec): PartitionSpec for the table.
+            sort_order (SortOrder): SortOrder for the table.
+            properties (Properties): Table properties that can be a string based dictionary.
+
+        Returns:
+            CreateTableTransaction | ReplaceTableTransaction: the transaction to stage changes in and commit.
+        """
+        try:
+            return self.replace_table_transaction(identifier, schema, location, partition_spec, sort_order, properties)
+        except NoSuchTableError:
+            return self.create_table_transaction(identifier, schema, location, partition_spec, sort_order, properties)
+
+    def create_or_replace_table(
+        self,
+        identifier: str | Identifier,
+        schema: Schema | pa.Schema,
+        location: str | None = None,
+        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
+        sort_order: SortOrder = UNSORTED_SORT_ORDER,
+        properties: Properties = EMPTY_DICT,
+    ) -> Table:
+        """Create a table, or atomically replace it if it already exists.
+
+        Args:
+            identifier (str | Identifier): Table identifier.
+            schema (Schema): Table's schema.
+            location (str | None): Location for the table. Optional Argument.
+            partition_spec (PartitionSpec): PartitionSpec for the table.
+            sort_order (SortOrder): SortOrder for the table.
+            properties (Properties): Table properties that can be a string based dictionary.
+
+        Returns:
+            Table: the created or replaced table instance.
+        """
+        return self.create_or_replace_table_transaction(
+            identifier, schema, location, partition_spec, sort_order, properties
+        ).commit_transaction()
 
     @abstractmethod
     def load_table(self, identifier: str | Identifier) -> Table:

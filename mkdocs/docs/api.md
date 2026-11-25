@@ -185,6 +185,17 @@ with catalog.create_table_transaction(identifier="docs_example.bids", schema=sch
     txn.set_properties(test_a="test_aa", test_b="test_b", test_c="test_c")
 ```
 
+## Create or replace a table
+
+`create_or_replace_table_transaction` creates the table, or atomically replaces it when it already exists (`CREATE OR REPLACE TABLE ... AS SELECT`). The new schema, partition spec, sort order and data become visible in a single commit, so readers never see an empty or half-written table:
+
+```python
+with catalog.create_or_replace_table_transaction(identifier="docs_example.bids", schema=df.schema) as txn:
+    txn.append(df)
+```
+
+A replaced table keeps its UUID and snapshot history, field IDs are reused for columns with the same name, and the given properties are merged into the existing ones. Use `create_or_replace_table` to replace only the definition, or `replace_table_transaction` to fail with `NoSuchTableError` when the table does not exist.
+
 ## Register a table
 
 To register a table using existing metadata:
