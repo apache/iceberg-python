@@ -4629,6 +4629,8 @@ def test_task_to_record_batches_keeps_nan_rows_for_nan_sensitive_filters(tmpdir:
             (And(IsNaN("x"), EqualTo("id", 0)), [0]),
             (Or(IsNaN("x"), EqualTo("id", 2)), [0, 2]),
             (NotNaN("x"), [1, 2]),
+            (Not(NotNaN("x")), [0]),
+            (Not(EqualTo("x", 5.0)), [0]),
         ]
         for row_filter, expected_ids in cases:
             # The filter column is not selected, so the filter must still see it after the read.

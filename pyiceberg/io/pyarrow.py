@@ -1765,6 +1765,8 @@ def _has_nan_sensitive_predicate(expr: BooleanExpression) -> bool:
     Parquet statistics exclude NaN, so a row group whose non-NaN values are all equal reports min == max.
     pyarrow then prunes it for predicates that the NaN values satisfy: IsNaN, NotEqualTo and NotIn on a
     float or double column.
+
+    The expression must be bound and already rewritten by `rewrite_not`, because `Not` nodes are not inspected.
     """
     if isinstance(expr, (And, Or)):
         return _has_nan_sensitive_predicate(expr.left) or _has_nan_sensitive_predicate(expr.right)
@@ -1774,7 +1776,10 @@ def _has_nan_sensitive_predicate(expr: BooleanExpression) -> bool:
 
 
 def _nan_safe_conjuncts(expr: BooleanExpression) -> BooleanExpression:
-    """Return the top-level conjuncts that pyarrow can prune on without dropping NaN rows, joined with AND."""
+    """Return the top-level conjuncts that pyarrow can prune on without dropping NaN rows, joined with AND.
+
+    The expression must be bound and already rewritten by `rewrite_not`, because `Not` nodes are not inspected.
+    """
     if isinstance(expr, And):
         return And(_nan_safe_conjuncts(expr.left), _nan_safe_conjuncts(expr.right))
     return AlwaysTrue() if _has_nan_sensitive_predicate(expr) else expr
@@ -1861,7 +1866,7 @@ def _task_to_record_batches(
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
             schema=physical_schema,
-            # This will push down the query to Arrow.
+            # Push down the part of the filter that is safe to apply in Arrow; the rest is applied after the read
             filter=scanner_filter,
             columns=[col.name for col in file_project_schema.columns],
         )
