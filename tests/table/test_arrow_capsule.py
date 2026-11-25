@@ -213,8 +213,6 @@ def test_capsule_roundtrip_scan_into_append(catalog: InMemoryCatalog) -> None:
 
 
 def test_incremental_append_scan_supports_arrow_c_stream(catalog: InMemoryCatalog) -> None:
-    """IncrementalAppendScan is an Arrow producer too, so it must expose the
-    PyCapsule interface just like DataScan (inherited from BaseScan)."""
     tbl = catalog.create_table("default.incremental_stream", schema=SCHEMA)
     tbl.append(_data([1, 2, 3], ["us", "eu", "us"]))
 

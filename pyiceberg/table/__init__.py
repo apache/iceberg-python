@@ -2220,13 +2220,6 @@ class BaseScan(ABC):
     @abstractmethod
     def to_arrow(self) -> pa.Table: ...
 
-    @abstractmethod
-    def to_arrow_batch_reader(self) -> pa.RecordBatchReader: ...
-
-    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
-        """Export this scan's result as an Arrow C stream (PyCapsule interface)."""
-        return self.to_arrow_batch_reader().__arrow_c_stream__(requested_schema)
-
     def update(self: A, **overrides: Any) -> A:
         """Create a copy of this table scan with updated fields."""
         from inspect import signature
@@ -2687,6 +2680,10 @@ class DataScan(TableScan):
             self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns
         )
 
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        """Export this scan's result as an Arrow C stream (PyCapsule interface)."""
+        return self.to_arrow_batch_reader().__arrow_c_stream__(requested_schema)
+
     def count(self) -> int:
         from pyiceberg.io.pyarrow import ArrowScan
 
@@ -2865,6 +2862,10 @@ class IncrementalAppendScan(BaseScan):
                 which can be used to read a stream of record batches one by one.
         """
         return _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files())
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        """Export this scan's result as an Arrow C stream (PyCapsule interface)."""
+        return self.to_arrow_batch_reader().__arrow_c_stream__(requested_schema)
 
     def _validate_and_resolve_snapshots(self) -> tuple[int | None, int]:
         """Resolve the configured range to ``(from_snapshot_id_exclusive, to_snapshot_id_inclusive)``.
