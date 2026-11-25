@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import itertools
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -149,23 +149,12 @@ class InspectTable:
             schema=snapshots_schema,
         )
 
-    def entries(self, snapshot_id: int | None = None) -> pa.Table:
-        """Return all manifest entries for a snapshot as a PyArrow Table.
-
-        Each row is one manifest entry (data or delete file), including
-        raw and human-readable column-level statistics.
-
-        Args:
-            snapshot_id: The snapshot to inspect. Defaults to the current snapshot.
+    def _get_entries_schema(self) -> pa.Schema:
+        """Build the PyArrow schema shared by the entries metadata tables.
 
         Returns:
-            pa.Table: A table with columns: ``status``, ``snapshot_id``,
-                ``sequence_number``, ``file_sequence_number``, ``data_file``
-                (struct), and ``readable_metrics`` (struct).
-
-        Raises:
-            ValueError: If the specified snapshot does not exist, or if the
-                table has no snapshots and snapshot_id is None.
+            pa.Schema: The entries schema, including the data file struct
+                and readable metrics.
         """
         import pyarrow as pa
 
@@ -188,7 +177,7 @@ class InspectTable:
                 ]
             )
 
-        for field in self.tbl.metadata.schema().fields:
+        for field in schema.fields:
             readable_metrics_struct.append(
                 pa.field(schema.find_column_name(field.field_id), _readable_metrics_struct(field.field_type), nullable=False)
             )
@@ -196,7 +185,7 @@ class InspectTable:
         partition_record = self.tbl.metadata.specs_struct()
         pa_record_struct = schema_to_pyarrow(partition_record)
 
-        entries_schema = pa.schema(
+        return pa.schema(
             [
                 pa.field("status", pa.int8(), nullable=False),
                 pa.field("snapshot_id", pa.int64(), nullable=False),
@@ -230,10 +219,24 @@ class InspectTable:
             ]
         )
 
-        entries = []
-        snapshot = self._get_snapshot(snapshot_id)
-        for manifest in snapshot.manifests(self.tbl.io, self.tbl.encryption_manager):
-            for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=False):
+    def _entries_from_manifests(self, manifests: Iterable[ManifestFile]) -> pa.Table:
+        """Read entries from manifests into a PyArrow Table.
+
+        Args:
+            manifests: The manifests to read.
+
+        Returns:
+            pa.Table: Entry metadata rows conforming to the entries schema.
+        """
+        import pyarrow as pa
+
+        schema = self.tbl.metadata.schema()
+        entries_schema = self._get_entries_schema()
+        io = self.tbl.io
+
+        def _entries_from_manifest(manifest: ManifestFile) -> pa.Table:
+            entries = []
+            for entry in manifest.fetch_manifest_entry(io=io, discard_deleted=False):
                 column_sizes = entry.data_file.column_sizes or {}
                 value_counts = entry.data_file.value_counts or {}
                 null_value_counts = entry.data_file.null_value_counts or {}
@@ -246,11 +249,10 @@ class InspectTable:
                         "value_count": value_counts.get(field.field_id),
                         "null_value_count": null_value_counts.get(field.field_id),
                         "nan_value_count": nan_value_counts.get(field.field_id),
-                        # Makes them readable
                         "lower_bound": _readable_bound(field.field_type, lower_bounds.get(field.field_id)),
                         "upper_bound": _readable_bound(field.field_type, upper_bounds.get(field.field_id)),
                     }
-                    for field in self.tbl.metadata.schema().fields
+                    for field in schema.fields
                 }
 
                 partition = entry.data_file.partition
@@ -288,10 +290,53 @@ class InspectTable:
                     }
                 )
 
-        return pa.Table.from_pylist(
-            entries,
-            schema=entries_schema,
-        )
+            return pa.Table.from_pylist(entries, schema=entries_schema)
+
+        results = list(ExecutorFactory.get_or_create().map(_entries_from_manifest, manifests))
+        if not results:
+            return entries_schema.empty_table()
+        return pa.concat_tables(results)
+
+    def entries(self, snapshot_id: int | None = None) -> pa.Table:
+        """Return all manifest entries for a snapshot as a PyArrow Table.
+
+        Each row is one manifest entry (data or delete file), including
+        raw and human-readable column-level statistics.
+
+        Args:
+            snapshot_id: The snapshot to inspect. Defaults to the current snapshot.
+
+        Returns:
+            pa.Table: A table with columns: ``status``, ``snapshot_id``,
+                ``sequence_number``, ``file_sequence_number``, ``data_file``
+                (struct), and ``readable_metrics`` (struct).
+
+        Raises:
+            ValueError: If the specified snapshot does not exist, or if the
+                table has no snapshots and snapshot_id is None.
+        """
+        snapshot = self._get_snapshot(snapshot_id)
+        return self._entries_from_manifests(snapshot.manifests(self.tbl.io, self.tbl.encryption_manager))
+
+    def all_entries(self) -> pa.Table:
+        """Return all manifest entries across all snapshots as a PyArrow Table.
+
+        Each unique manifest is read once, even when multiple snapshots
+        reference it. Columns match ``entries``.
+
+        Returns:
+            pa.Table: Entry metadata across all snapshots, or an empty table
+                if the table has no snapshots.
+        """
+        snapshots = self.tbl.snapshots()
+        if not snapshots:
+            return self._get_entries_schema().empty_table()
+
+        executor = ExecutorFactory.get_or_create()
+        encryption_manager = self.tbl.encryption_manager
+        manifest_lists = list(executor.map(lambda snapshot: snapshot.manifests(self.tbl.io, encryption_manager), snapshots))
+        unique_manifests = {manifest.manifest_path: manifest for manifest_list in manifest_lists for manifest in manifest_list}
+        return self._entries_from_manifests(unique_manifests.values())
 
     def refs(self) -> pa.Table:
         """Return all snapshot references (branches and tags) as a PyArrow Table.
