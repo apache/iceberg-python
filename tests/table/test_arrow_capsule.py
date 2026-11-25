@@ -203,6 +203,35 @@ def test_capsule_roundtrip_scan_into_append(catalog: InMemoryCatalog) -> None:
     assert _rows(dst.scan().to_arrow()) == _rows(src.scan().to_arrow())
 
 
+def test_scan_arrow_c_stream_has_no_field_ids(catalog: InMemoryCatalog) -> None:
+    tbl = catalog.create_table("default.stream_field_ids", schema=SCHEMA)
+    tbl.append(_data([1, 2, 3], ["us", "eu", "us"]))
+
+    for scan in (tbl.scan(), tbl.incremental_append_scan()):
+        assert all(field.metadata is None for field in pa.table(scan).schema)
+
+
+def test_append_scan_matches_columns_by_name(catalog: InMemoryCatalog) -> None:
+    """The source and destination give the same names to different field ids."""
+    src = catalog.create_table(
+        "default.by_name_src",
+        schema=Schema(
+            NestedField(1, "last", StringType(), required=False), NestedField(2, "first", StringType(), required=False)
+        ),
+    )
+    src.append(pa.table({"last": ["Doe"], "first": ["Jane"]}))
+    dst = catalog.create_table(
+        "default.by_name_dst",
+        schema=Schema(
+            NestedField(1, "first", StringType(), required=False), NestedField(2, "last", StringType(), required=False)
+        ),
+    )
+
+    dst.append(src.scan())
+
+    assert dst.scan().to_arrow().to_pylist() == [{"first": "Jane", "last": "Doe"}]
+
+
 def test_incremental_append_scan_supports_arrow_c_stream(catalog: InMemoryCatalog) -> None:
     tbl = catalog.create_table("default.incremental_stream", schema=SCHEMA)
     tbl.append(_data([1, 2, 3], ["us", "eu", "us"]))

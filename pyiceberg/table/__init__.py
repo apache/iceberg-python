@@ -2517,14 +2517,18 @@ def _to_arrow_via_file_scan_tasks(
 
 
 def _to_arrow_batch_reader_via_file_scan_tasks(
-    scan: BaseScan, projected_schema: Schema, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
+    scan: BaseScan,
+    projected_schema: Schema,
+    tasks: Iterable[FileScanTask],
+    dictionary_columns: tuple[str, ...] = (),
+    include_field_ids: bool = True,
 ) -> pa.RecordBatchReader:
     """Stream a scan into an Arrow ``RecordBatchReader`` given its planned ``FileScanTask``s."""
     import pyarrow as pa
 
     from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
-    target_schema = schema_to_pyarrow(projected_schema)
+    target_schema = schema_to_pyarrow(projected_schema, include_field_ids=include_field_ids)
     batches = ArrowScan(
         scan.table_metadata,
         scan.io,
@@ -2677,8 +2681,14 @@ class DataScan(TableScan):
         )
 
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
-        """Export this scan's result as an Arrow C stream (PyCapsule interface)."""
-        return self.to_arrow_batch_reader().__arrow_c_stream__(requested_schema)
+        """Export this scan's result as an Arrow C stream (PyCapsule interface).
+
+        We must drop field IDs, as to_arrow() does. They only have meaning
+        inside this table, and a write to another table would match columns
+        by them.
+        """
+        reader = _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files(), include_field_ids=False)
+        return reader.__arrow_c_stream__(requested_schema)
 
     def count(self) -> int:
         from pyiceberg.io.pyarrow import ArrowScan
@@ -2860,8 +2870,14 @@ class IncrementalAppendScan(BaseScan):
         return _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files())
 
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
-        """Export this scan's result as an Arrow C stream (PyCapsule interface)."""
-        return self.to_arrow_batch_reader().__arrow_c_stream__(requested_schema)
+        """Export this scan's result as an Arrow C stream (PyCapsule interface).
+
+        We must drop field IDs, as to_arrow() does. They only have meaning
+        inside this table, and a write to another table would match columns
+        by them.
+        """
+        reader = _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files(), include_field_ids=False)
+        return reader.__arrow_c_stream__(requested_schema)
 
     def _validate_and_resolve_snapshots(self) -> tuple[int | None, int]:
         """Resolve the configured range to ``(from_snapshot_id_exclusive, to_snapshot_id_inclusive)``.
