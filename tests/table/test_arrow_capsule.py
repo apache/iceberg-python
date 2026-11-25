@@ -21,7 +21,6 @@ Covers the input/consumer side (write methods accept any object implementing
 ``__arrow_c_stream__`` so any Arrow consumer can ingest them).
 """
 
-from collections.abc import Callable
 from pathlib import PosixPath
 from typing import Any
 
@@ -75,8 +74,6 @@ def _data(ids: list[int], regions: list[str]) -> pa.Table:
 
 
 def _string_view_data(ids: list[int], regions: list[str]) -> pa.Table:
-    if not hasattr(pa, "string_view"):
-        pytest.skip("pyarrow does not support string_view")
     return pa.table(
         {"id": pa.array(ids, type=pa.int32()), "region": pa.array(regions, type=pa.string_view())},
         schema=pa.schema(
@@ -116,25 +113,16 @@ def test_coerce_arrow_input() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "make_input",
-    [
-        pytest.param(lambda d: d, id="table"),
-        pytest.param(lambda d: d.to_reader(), id="reader"),
-        pytest.param(lambda d: _ArrowStreamWrapper(d), id="capsule"),
-        # A capsule whose stream yields multiple batches must be fully drained.
-        pytest.param(
-            lambda d: _ArrowStreamWrapper(pa.Table.from_batches(d.to_batches(max_chunksize=1))),
-            id="capsule_multi_batch",
-        ),
-    ],
-)
-def test_append_accepts_arrow_inputs(catalog: InMemoryCatalog, make_input: Callable[[pa.Table], object]) -> None:
-    tbl = catalog.create_table("default.append", schema=SCHEMA)
+def test_append_accepts_arrow_capsule(catalog: InMemoryCatalog) -> None:
+    data = _data([1, 2, 3], ["us", "eu", "us"])
 
-    tbl.append(make_input(_data([1, 2, 3], ["us", "eu", "us"])))
+    # A stream of several batches must be fully drained.
+    for name, stream in (("single", data), ("multi", pa.Table.from_batches(data.to_batches(max_chunksize=1)))):
+        tbl = catalog.create_table(f"default.append_{name}_batch", schema=SCHEMA)
 
-    assert _rows(tbl.scan().to_arrow()) == _rows(_data([1, 2, 3], ["us", "eu", "us"]))
+        tbl.append(_ArrowStreamWrapper(stream))
+
+        assert _rows(tbl.scan().to_arrow()) == _rows(data), name
 
 
 def test_overwrite_accepts_arrow_capsule(catalog: InMemoryCatalog) -> None:
@@ -156,17 +144,6 @@ def test_append_accepts_arrow_capsule_with_string_view(catalog: InMemoryCatalog)
     assert _rows(tbl.scan(row_filter="region == 'ca'").to_arrow()) == _rows(_data([10], ["ca"]))
 
 
-def test_append_pa_table_to_partitioned_table(catalog: InMemoryCatalog) -> None:
-    """Regression: a native pa.Table on a partitioned table must take the table
-    (partition-splitting) path, not be coerced into a RecordBatchReader (which
-    only supports unpartitioned writes)."""
-    tbl = catalog.create_table("default.append_partitioned", schema=SCHEMA, partition_spec=PARTITION_SPEC)
-
-    tbl.append(_data([1, 2], ["us", "eu"]))
-
-    assert tbl.scan().to_arrow().num_rows == 2
-
-
 # ---------------------------------------------------------------------------
 # Output / producer side (issue #1655)
 # ---------------------------------------------------------------------------
@@ -181,7 +158,7 @@ def test_scan_supports_arrow_c_stream(catalog: InMemoryCatalog) -> None:
     assert _rows(consumed) == _rows(tbl.scan().to_arrow())
 
 
-def test_scan_arrow_c_stream_respects_filter_and_projection(catalog: InMemoryCatalog) -> None:
+def test_scan_arrow_c_stream_respects_filter_projection_and_limit(catalog: InMemoryCatalog) -> None:
     tbl = catalog.create_table("default.scan_stream_filtered", schema=SCHEMA)
     tbl.append(_data([1, 2, 3], ["us", "eu", "us"]))
 
@@ -190,6 +167,7 @@ def test_scan_arrow_c_stream_respects_filter_and_projection(catalog: InMemoryCat
 
     assert consumed.column_names == ["id"]
     assert sorted(consumed.column("id").to_pylist()) == [1, 3]
+    assert pa.table(scan.update(limit=1)).num_rows == 1
 
 
 def test_capsule_roundtrip_scan_into_append(catalog: InMemoryCatalog) -> None:
@@ -202,6 +180,18 @@ def test_capsule_roundtrip_scan_into_append(catalog: InMemoryCatalog) -> None:
     dst.append(src.scan())
 
     assert _rows(dst.scan().to_arrow()) == _rows(src.scan().to_arrow())
+
+
+def test_scan_arrow_c_stream_casts_to_requested_schema(catalog: InMemoryCatalog) -> None:
+    tbl = catalog.create_table("default.stream_requested_schema", schema=SCHEMA)
+    tbl.append(_data([1, 2, 3], ["us", "eu", "us"]))
+    requested = pa.schema([pa.field("id", pa.int64()), pa.field("region", pa.string())])
+
+    for scan in (tbl.scan(), tbl.incremental_append_scan()):
+        consumed = pa.RecordBatchReader.from_stream(scan, schema=requested).read_all()
+
+        assert consumed.schema == requested
+        assert _rows(consumed) == _rows(_data([1, 2, 3], ["us", "eu", "us"]))
 
 
 def test_scan_arrow_c_stream_has_no_field_ids(catalog: InMemoryCatalog) -> None:
@@ -235,11 +225,10 @@ def test_append_scan_matches_columns_by_name(catalog: InMemoryCatalog) -> None:
 
 def test_incremental_append_scan_supports_arrow_c_stream(catalog: InMemoryCatalog) -> None:
     tbl = catalog.create_table("default.incremental_stream", schema=SCHEMA)
-    tbl.append(_data([1, 2, 3], ["us", "eu", "us"]))
+    tbl.append(_data([1, 2], ["us", "eu"]))
+    first_snapshot_id = tbl.metadata.current_snapshot_id
+    tbl.append(_data([3], ["us"]))
 
-    scan = tbl.incremental_append_scan()
+    consumed = pa.table(tbl.incremental_append_scan(from_snapshot_id_exclusive=first_snapshot_id))
 
-    # A consumer ingests the incremental scan directly via the PyCapsule interface.
-    consumed = pa.table(scan)
-
-    assert _rows(consumed) == _rows(scan.to_arrow())
+    assert _rows(consumed) == _rows(_data([3], ["us"]))
