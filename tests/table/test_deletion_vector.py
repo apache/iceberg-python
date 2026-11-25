@@ -19,6 +19,7 @@ import zlib
 from os import path
 from pathlib import Path
 
+import pyarrow as pa
 import pytest
 from pyroaring import BitMap
 
@@ -133,6 +134,23 @@ def test_map_empty() -> None:
     actual = DeletionVector._deserialize_bitmap(puffin)
 
     assert expected == actual
+    vector = DeletionVector("data.parquet", actual).to_vector()
+    assert vector.type == pa.int64()
+    assert vector.to_pylist() == []
+
+
+def test_to_vector_with_empty_bitmaps_for_low_keys() -> None:
+    # Keys without positions have empty bitmaps, such as key 0 when every position is at or above 2**32
+    for bitmaps, expected in [
+        ([BitMap(), BitMap([5])], [2**32 + 5]),
+        ([BitMap(), BitMap(), BitMap([0, 7])], [2 * 2**32, 2 * 2**32 + 7]),
+        ([BitMap([2]), BitMap(), BitMap([1])], [2, 2 * 2**32 + 1]),
+        ([BitMap()], []),
+        ([BitMap(), BitMap()], []),
+    ]:
+        vector = DeletionVector("data.parquet", bitmaps).to_vector()
+        assert vector.type == pa.int64()
+        assert vector.to_pylist() == expected
 
 
 def test_map_bitvals() -> None:
@@ -162,6 +180,43 @@ def test_map_spread_vals() -> None:
     actual = DeletionVector._deserialize_bitmap(puffin)
 
     assert expected == actual
+
+
+def test_map_mixed_containers_with_key_gaps() -> None:
+    array_bitmap = BitMap([1, 3, 5])
+    bitset_bitmap = BitMap(range(0, 20_000, 2))
+    run_bitmap = BitMap(range(100_000))
+    multi_container_bitmap = BitMap([1, 65_537])
+    bitmaps_by_key = {
+        0: BitMap(),
+        2: array_bitmap,
+        3: bitset_bitmap,
+        5: run_bitmap,
+        6: multi_container_bitmap,
+    }
+    payload = len(bitmaps_by_key).to_bytes(8, byteorder="little") + b"".join(
+        key.to_bytes(4, byteorder="little") + bitmap.serialize() for key, bitmap in bitmaps_by_key.items()
+    )
+
+    assert DeletionVector._deserialize_bitmap(payload) == [
+        BitMap(),
+        BitMap(),
+        array_bitmap,
+        bitset_bitmap,
+        BitMap(),
+        run_bitmap,
+        multi_container_bitmap,
+    ]
+
+
+def test_map_deserialization_does_not_reserialize(monkeypatch: pytest.MonkeyPatch) -> None:
+    class NonSerializingBitMap(BitMap):
+        def serialize(self) -> bytes:
+            raise AssertionError("Deletion vector deserialization must not serialize bitmaps")
+
+    monkeypatch.setattr("pyiceberg.table.deletion_vector.BitMap", NonSerializingBitMap)
+
+    assert DeletionVector._deserialize_bitmap(_bitmap_payload()) == [BitMap([1, 3, 5])]
 
 
 def test_map_high_vals() -> None:

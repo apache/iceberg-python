@@ -213,6 +213,56 @@ def test_migrate_v1_partition_specs(example_table_metadata_v1: dict[str, Any]) -
     ]
 
 
+def test_v1_partition_fields_without_field_id(example_table_metadata_v1: dict[str, Any]) -> None:
+    metadata = copy(example_table_metadata_v1)
+    metadata["partition-spec"] = [
+        {"name": "x", "transform": "identity", "source-id": 1},
+        {"name": "y", "transform": "identity", "source-id": 2},
+    ]
+    metadata.pop("partition-specs", None)
+
+    table_metadata = TableMetadataV1(**metadata)
+
+    assert table_metadata.partition_specs == [
+        PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+            PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="y"),
+        )
+    ]
+    assert table_metadata.last_partition_id == 1001
+
+    metadata["partition-specs"] = [
+        {"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1}]},
+        {
+            "spec-id": 1,
+            "fields": [
+                {"name": "x", "transform": "identity", "source-id": 1},
+                {"name": "y", "transform": "identity", "source-id": 2},
+            ],
+        },
+    ]
+
+    table_metadata = TableMetadataV1(**metadata)
+
+    assert [[field.field_id for field in spec.fields] for spec in table_metadata.partition_specs] == [[1000], [1000, 1001]]
+    assert table_metadata.last_partition_id == 1001
+
+    # A spec that mixes fields with and without ids is rejected, as in Java
+    for fields in (
+        [
+            {"name": "x", "transform": "identity", "source-id": 1},
+            {"name": "y", "transform": "identity", "source-id": 2, "field-id": 1000},
+        ],
+        [
+            {"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000},
+            {"name": "y", "transform": "identity", "source-id": 2},
+        ],
+    ):
+        metadata["partition-specs"] = [{"spec-id": 0, "fields": fields}]
+        with pytest.raises(PydanticValidationError, match="Cannot parse spec with missing field IDs: 1 missing of 2 fields"):
+            TableMetadataV1(**metadata)
+
+
 def test_new_table_metadata_with_explicit_v1_format() -> None:
     schema = Schema(
         NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
@@ -281,6 +331,15 @@ def test_new_table_metadata_with_explicit_v1_format() -> None:
     assert actual.schemas == [expected_schema]
     assert actual.partition_specs == [expected_spec]
     assert actual.sort_orders == [expected_sort_order]
+
+
+def test_new_table_metadata_does_not_change_properties() -> None:
+    properties = {"format-version": "1", "owner": "etl"}
+    metadata = new_table_metadata(
+        schema=Schema(), partition_spec=PartitionSpec(), sort_order=SortOrder(), location="s3://bucket", properties=properties
+    )
+    assert (metadata.format_version, metadata.properties) == (1, {"owner": "etl"})
+    assert properties == {"format-version": "1", "owner": "etl"}
 
 
 def test_invalid_format_version(example_table_metadata_v1: dict[str, Any]) -> None:
@@ -875,6 +934,27 @@ def test_new_table_metadata_format_v2_with_v3_schema_fails(field_type: Primitive
             schema=schema,
             partition_spec=partition_spec,
             sort_order=sort_order,
+            location="s3://some_v1_location/",
+            properties={"format-version": "2"},
+        )
+
+
+def test_new_table_metadata_with_duplicate_partition_name_fails() -> None:
+    schema = Schema(
+        NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=22, name="bar", field_type=IntegerType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=10, field_id=1000, transform=IdentityTransform(), name="part"),
+        PartitionField(source_id=22, field_id=1001, transform=IdentityTransform(), name="part"),
+    )
+
+    with pytest.raises(ValueError, match="Partition name has to be unique: part"):
+        new_table_metadata(
+            schema=schema,
+            partition_spec=partition_spec,
+            sort_order=SortOrder(),
             location="s3://some_v1_location/",
             properties={"format-version": "2"},
         )

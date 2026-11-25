@@ -40,7 +40,7 @@ dependencies = [
     "fsspec>=2023.1.0",
     "pyparsing>=3.1.0",
     "tenacity>=8.2.3",
-    "pyroaring>=1.0.0",
+    "pyroaring>=1.1.0",
     "cachetools>=5.5",
     "zstandard>=0.13.0"
 ]
@@ -99,7 +99,7 @@ pyiceberg-core = ["pyiceberg-core>=0.10.1,<0.11.0"]
 datafusion = ["datafusion>=53,<54"]
 gcp-auth = ["google-auth>=2.4.0"]
 entra-auth = ["azure-identity>=1.25.1"]
-geoarrow = ["geoarrow-pyarrow>=0.2.0"]
+geoarrow = ["geoarrow-types>=0.3.0"]
 encryption = ["cryptography>=42.0.0"]
 
 [dependency-groups]

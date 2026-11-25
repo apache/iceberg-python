@@ -51,6 +51,7 @@ from pyiceberg.catalog.rest import (
     SIGV4_MAX_RETRIES_DEFAULT,
     SNAPSHOT_LOADING_MODE,
     Capability,
+    ConfigResponse,
     Endpoint,
     HttpMethod,
     RestCatalog,
@@ -61,6 +62,8 @@ from pyiceberg.catalog.rest import (
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
+    CommitFailedException,
+    CommitStateUnknownException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIdentifierError,
@@ -1798,6 +1801,33 @@ def test_create_staged_table_200(
     assert actual_response == expected
 
 
+def test_create_staged_table_with_storage_credentials(
+    rest_mock: Mocker,
+    table_schema_simple: Schema,
+    example_table_metadata_no_snapshot_v1: dict[str, Any],
+) -> None:
+    table_location = "gs://bucket/ns/t"
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/tables",
+        json={
+            "metadata": {**example_table_metadata_no_snapshot_v1, "location": table_location},
+            "config": {},
+            "storage-credentials": [
+                {
+                    "prefix": f"{table_location}/",
+                    "config": {"gcs.oauth2.token": "vended"},
+                }
+            ],
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    txn = catalog.create_table_transaction(identifier=("fokko", "fokko2"), schema=table_schema_simple)
+
+    assert txn._table.io.properties["gcs.oauth2.token"] == "vended"
+
+
 def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/tables",
@@ -2950,6 +2980,33 @@ def test_table_identifier_in_commit_table_request(
     )
 
 
+def test_commit_table_error_mapping(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("catalog_name", uri=TEST_URI, token=TEST_TOKEN)
+    table = Table(
+        identifier=("namespace", "table_name"),
+        metadata=None,  # type: ignore
+        metadata_location="s3://some_bucket/metadata.json",
+        io=None,  # type: ignore
+        catalog=catalog,
+    )
+    for status_code, error_type, expected_exception in [
+        (404, "NoSuchTableException", NoSuchTableError),
+        (409, "CommitFailedException", CommitFailedException),
+        (500, "ServiceFailureException", CommitStateUnknownException),
+        (502, "BadGatewayException", CommitStateUnknownException),
+        (503, "ServiceUnavailableException", CommitStateUnknownException),
+        (504, "GatewayTimeoutException", CommitStateUnknownException),
+    ]:
+        rest_mock.post(
+            url=f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+            json={"error": {"message": "Commit error", "type": error_type, "code": status_code}},
+            status_code=status_code,
+            request_headers=TEST_HEADERS,
+        )
+        with pytest.raises(expected_exception, match="Commit error"):
+            catalog.commit_table(table, (), ())
+
+
 def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
     rest_mock.head(
         f"{TEST_URI}v1/namespaces/default/tables/registered_view",
@@ -3199,6 +3256,7 @@ def test_rest_catalog_with_google_credentials_path(
     mock_load_creds: mock.MagicMock, mock_google_request: mock.MagicMock, rest_mock: Mocker
 ) -> None:
     mock_credentials = mock.MagicMock()
+    mock_credentials.valid = False
     mock_credentials.token = "file_token"
     mock_load_creds.return_value = (mock_credentials, "test_project_file")
 
@@ -3866,6 +3924,31 @@ def test_load_responses_parse_labels(
         assert response_type.model_validate(payload).labels == Labels()
         for invalid in invalid_values:
             assert response_type.model_validate({**payload, "labels": invalid}).labels == Labels()
+
+
+def test_load_responses_with_null_config_and_storage_credentials(
+    example_table_metadata_with_snapshot_v1_rest_json: dict[str, Any], example_view_metadata_rest_json: dict[str, Any]
+) -> None:
+    # Like Java, an explicit null config reads as an empty config
+    table_response = TableResponse.model_validate(
+        {**example_table_metadata_with_snapshot_v1_rest_json, "config": None, "storage-credentials": None}
+    )
+    assert table_response.config == {}
+    assert table_response.storage_credentials == []
+
+    view_response = ViewResponse.model_validate({**example_view_metadata_rest_json, "config": None})
+    assert view_response.config == {}
+
+
+def test_config_response_with_null_defaults_and_overrides() -> None:
+    config_response = ConfigResponse.model_validate({"defaults": None, "overrides": None})
+    assert config_response.defaults == {}
+    assert config_response.overrides == {}
+
+
+def test_catalog_with_null_config_defaults_and_overrides(rest_mock: Mocker) -> None:
+    rest_mock.get(f"{TEST_URI}v1/config", json={"defaults": None, "overrides": None}, status_code=200)
+    assert RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).uri == TEST_URI
 
 
 def test_table_labels_from_rest_responses(

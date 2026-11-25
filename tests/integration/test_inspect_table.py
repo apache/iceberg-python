@@ -101,6 +101,7 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
         "split_offsets",
         "equality_ids",
         "sort_order_id",
+        "first_row_id",
         "readable_metrics",
     ]
 
@@ -132,6 +133,7 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
             "split_offsets",
             "equality_ids",
             "sort_order_id",
+            "first_row_id",
         ]
     ]
     rhs_subset = rhs[
@@ -145,6 +147,7 @@ def _inspect_files_asserts(df: pa.Table, spark_df: DataFrame) -> None:
             "split_offsets",
             "equality_ids",
             "sort_order_id",
+            "first_row_id",
         ]
     ]
 
@@ -943,6 +946,7 @@ def test_inspect_files_no_snapshot(spark: SparkSession, session_catalog: Catalog
             "split_offsets",
             "equality_ids",
             "sort_order_id",
+            "first_row_id",
             "readable_metrics",
         ]
 

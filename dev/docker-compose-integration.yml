@@ -101,6 +101,15 @@ services:
     command:
       - -c
       - "aws s3 rb s3://warehouse --force 2>/dev/null; aws s3 mb s3://warehouse"
+  kms:
+    image: motoserver/moto:5.0.3
+    container_name: pyiceberg-kms
+    networks:
+      iceberg_net:
+    # Use port 5001 instead of default 5000 to avoid conflict with macOS AirPlay Receiver.
+    command: ["-p", "5001"]
+    ports:
+      - 5001:5001
   hive:
     image: pyiceberg-hive:latest
     build:

@@ -28,7 +28,8 @@ from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema
 from pyiceberg.table import CommitTableResponse, Table, TableProperties
-from pyiceberg.table.update import RemoveSnapshotsUpdate, update_table_metadata
+from pyiceberg.table.statistics import PartitionStatisticsFile
+from pyiceberg.table.update import RemoveSnapshotsUpdate, SetPartitionStatisticsUpdate, update_table_metadata
 from pyiceberg.table.update.snapshot import ExpireSnapshots
 from pyiceberg.types import LongType, NestedField
 
@@ -459,3 +460,29 @@ def test_remove_expired_refs_never_removes_main(catalog_with_warehouse: Catalog)
     table = catalog_with_warehouse.load_table("ns_main.tbl")
     assert "main" in table.metadata.refs
     assert table.metadata.current_snapshot_id is not None
+
+
+def test_update_remove_snapshots_with_partition_statistics(table_v2: Table) -> None:
+    """Removing a snapshot also removes its partition statistics, as Iceberg Java does."""
+    REMOVE_SNAPSHOT = 3051729675574597004
+    KEEP_SNAPSHOT = 3055729675574597004
+
+    metadata = update_table_metadata(
+        table_v2.metadata,
+        tuple(
+            SetPartitionStatisticsUpdate(
+                partition_statistics=PartitionStatisticsFile(
+                    snapshot_id=snapshot_id,
+                    statistics_path=f"s3://bucket/warehouse/partition-stats-{snapshot_id}.parquet",
+                    file_size_in_bytes=124,
+                )
+            )
+            for snapshot_id in (REMOVE_SNAPSHOT, KEEP_SNAPSHOT)
+        ),
+    )
+    assert len(metadata.partition_statistics) == 2
+
+    new_metadata = update_table_metadata(metadata, (RemoveSnapshotsUpdate(snapshot_ids=[REMOVE_SNAPSHOT]),))
+
+    assert [snapshot.snapshot_id for snapshot in new_metadata.snapshots] == [KEEP_SNAPSHOT]
+    assert [stat.snapshot_id for stat in new_metadata.partition_statistics] == [KEEP_SNAPSHOT]

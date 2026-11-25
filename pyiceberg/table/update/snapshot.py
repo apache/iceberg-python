@@ -152,6 +152,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
     _uncommitted_manifests: list[str]
     _written_manifest_lists: list[str]
     _isolation_operation: Operation
+    _retry_validator: Callable[[], None] | None
 
     def __init__(
         self,
@@ -186,6 +187,16 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._case_sensitive = True
         self._commit_window = None
         self._isolation_operation: Operation = Operation.DELETE
+        self._retry_validator = None
+
+    def _set_retry_validator(self, validator: Callable[[], None]) -> None:
+        self._retry_validator = validator
+
+    def _validate_concurrency(self) -> None:
+        """Validate retry-specific invariants and conflicts with concurrent changes."""
+        if self._retry_validator is not None:
+            self._retry_validator()
+        self._validate_concurrent_changes()
 
     def _validate_target_branch(self, branch: str | None) -> str | None:
         # if branch is none, write will be written into a staging snapshot
@@ -468,7 +479,7 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         self._manifest_num_counter = itertools.count(0)
         self.commit_uuid = uuid.uuid4()
 
-    def _validate_concurrency(self) -> None:
+    def _validate_concurrent_changes(self) -> None:
         """Validate that concurrent changes do not conflict with this operation.
 
         Uses the CommitWindow to determine which catalog commits to validate against.
@@ -501,20 +512,20 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
 
         if isolation_level == IsolationLevel.SERIALIZABLE:
-            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot, self._case_sensitive)
 
         if self._predicate != AlwaysFalse():
             # partition_set is None, so any concurrently committed delete file counts as
             # a conflict even in unrelated partitions. Scope this via partition projection
             # (as Java does) when delete-file write support lands.
-            _validate_no_new_delete_files(table, catalog_head, conflict_detection_filter, None, starting_snapshot)
-            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+            _validate_no_new_delete_files(
+                table, catalog_head, conflict_detection_filter, None, starting_snapshot, self._case_sensitive
+            )
+            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot, self._case_sensitive)
 
         if self._deleted_data_files:
             _validate_data_files_exist(table, catalog_head, self._deleted_data_files, starting_snapshot)
-            _validate_no_new_deletes_for_data_files(
-                table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
-            )
+            _validate_no_new_deletes_for_data_files(table, catalog_head, self._deleted_data_files, starting_snapshot)
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
         project = inclusive_projection(self.schema(), self.spec(spec_id), self._case_sensitive)
@@ -690,7 +701,7 @@ class _DeleteFiles(_SnapshotProducer["_DeleteFiles"]):
 
 
 class _FastAppendFiles(_SnapshotProducer["_FastAppendFiles"]):
-    def _validate_concurrency(self) -> None:
+    def _validate_concurrent_changes(self) -> None:
         """Skip validation; appends do not conflict with other operations."""
 
     def _existing_manifests(self) -> list[ManifestFile]:
@@ -973,7 +984,7 @@ class _ManifestMergeManager(Generic[U]):
                     elif entry.status == ManifestEntryStatus.ADDED and entry.snapshot_id == self._snapshot_producer.snapshot_id:
                         # added entries from this snapshot are still added, otherwise they should be existing
                         writer.add(entry)
-                    elif entry.status != ManifestEntryStatus.DELETED:
+                    elif entry.is_live():
                         # add all non-deleted files from the old manifest as existing files
                         writer.existing(entry)
 
