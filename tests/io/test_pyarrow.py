@@ -97,6 +97,7 @@ from pyiceberg.io.pyarrow import (
     compute_statistics_plan,
     data_file_statistics_from_parquet_metadata,
     expression_to_pyarrow,
+    parquet_file_to_data_file,
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
     write_file,
@@ -3375,6 +3376,44 @@ def test_projection_partial_field_ids(tmpdir: str) -> None:
     result = project(schema, [file])
     assert result.column_names == ["foo"]
     assert result["foo"].to_pylist() == ["a", "b", "c"]
+
+
+@pytest.mark.parametrize(
+    "bar_metadata, rejected",
+    [
+        ({"PARQUET:field_id": "2"}, False),  # all columns have field IDs
+        (None, True),  # only some columns have field IDs
+    ],
+)
+def test_parquet_file_to_data_file_partial_field_ids(tmp_path: Path, bar_metadata: dict[str, str] | None, rejected: bool) -> None:
+    # The reader ignores columns without a field ID, so add_files must not accept a file
+    # where only some columns have one, as those columns would be read as null
+    table_schema = Schema(
+        NestedField(1, "foo", StringType(), required=False),
+        NestedField(2, "bar", StringType(), required=False),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), metadata={"PARQUET:field_id": "1"}),
+            pa.field("bar", pa.string(), metadata=bar_metadata),
+        ]
+    )
+    table = pa.Table.from_arrays([pa.array(["a"]), pa.array(["from file"])], schema=arrow_schema)
+    file_path = _write_table_to_file(f"{tmp_path}/partial-ids.parquet", arrow_schema, table)
+    table_metadata = TableMetadataV2(
+        location=f"file://{tmp_path}",
+        last_column_id=2,
+        format_version=2,
+        schemas=[table_schema],
+        partition_specs=[PartitionSpec()],
+    )
+
+    if rejected:
+        with pytest.raises(ValueError, match="has field IDs on only some of its columns"):
+            parquet_file_to_data_file(io=PyArrowFileIO(), table_metadata=table_metadata, file_path=file_path)
+    else:
+        data_file = parquet_file_to_data_file(io=PyArrowFileIO(), table_metadata=table_metadata, file_path=file_path)
+        assert data_file.record_count == 1
 
 
 def test_schema_compatible(table_schema_simple: Schema) -> None:

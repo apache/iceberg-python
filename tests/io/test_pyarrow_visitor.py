@@ -504,6 +504,25 @@ def test_pyarrow_to_schema_prunes_before_type_conversion() -> None:
     assert pyarrow_to_schema(file_schema, prune_fields_without_ids=True) == expected
 
 
+def test_pyarrow_to_schema_reads_by_id_when_all_fields_pruned() -> None:
+    # The only ID is on a list whose element has none, so every field is pruned. The file
+    # still has field IDs, so it is read by ID (like with one more column with an ID) instead
+    # of falling back to the name mapping.
+    file_schema = pa.schema(
+        [
+            pa.field("foo", pa.list_(pa.field("element", pa.int32())), metadata=_id(1)),
+            pa.field("bar", pa.string()),
+        ]
+    )
+    name_mapping = NameMapping(
+        [
+            MappedField(field_id=1, names=["foo"], fields=[MappedField(field_id=3, names=["element"])]),
+            MappedField(field_id=2, names=["bar"]),
+        ]
+    )
+    assert pyarrow_to_schema(file_schema, name_mapping, prune_fields_without_ids=True) == Schema()
+
+
 def test_pyarrow_to_schema_prunes_nested_fields_without_ids() -> None:
     schema = pa.schema(
         [

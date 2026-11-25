@@ -1281,10 +1281,10 @@ def pyarrow_to_schema(
             instead of silently dropped.
     """
     if prune_fields_without_ids:
-        # Prune before conversion, so an unsupported type in a column without an ID does not fail the read
-        pruned_schema = _prune_fields_without_ids(schema)
-        if len(pruned_schema) > 0:
-            schema = pruned_schema
+        # Prune before conversion, so an unsupported type in a column without an ID does not fail the read.
+        # Any field ID means the file is read by ID, even if every field ends up pruned.
+        if _has_any_field_ids(schema):
+            schema = _prune_fields_without_ids(schema)
     has_ids = visit_pyarrow(schema, _HasIds())
     if has_ids:
         return visit_pyarrow(
@@ -1299,6 +1299,24 @@ def pyarrow_to_schema(
         raise ValueError(
             "Parquet file does not have field-ids and the Iceberg table does not have 'schema.name-mapping.default' defined"
         )
+
+
+def _has_any_field_ids(schema: pa.Schema) -> bool:
+    """Return whether any field in the schema, including nested ones, has a field ID."""
+    return any(_field_has_any_ids(field) for field in schema)
+
+
+def _field_has_any_ids(field: pa.Field) -> bool:
+    if _get_field_id(field) is not None:
+        return True
+    arrow_type = field.type
+    if pa.types.is_struct(arrow_type):
+        return any(_field_has_any_ids(arrow_type.field(i)) for i in range(arrow_type.num_fields))
+    elif isinstance(arrow_type, (pa.ListType, pa.LargeListType, pa.FixedSizeListType)):
+        return _field_has_any_ids(arrow_type.value_field)
+    elif isinstance(arrow_type, pa.MapType):
+        return _field_has_any_ids(arrow_type.key_field) or _field_has_any_ids(arrow_type.item_field)
+    return False
 
 
 def _prune_fields_without_ids(schema: pa.Schema) -> pa.Schema:
@@ -3184,6 +3202,13 @@ def parquet_file_to_data_file(io: FileIO, table_metadata: TableMetadata, file_pa
         parquet_metadata = pq.read_metadata(input_stream)
 
     arrow_schema = parquet_metadata.schema.to_arrow_schema()
+
+    if _has_any_field_ids(arrow_schema) and not visit_pyarrow(arrow_schema, _HasIds()):
+        # The reader only reads the columns with field IDs, so the others would silently be read as null
+        raise ValueError(
+            f"Cannot add file {file_path}: it has field IDs on only some of its columns. "
+            "Columns without a field ID would be read as null."
+        )
 
     schema = table_metadata.schema()
     _check_pyarrow_schema_compatible(schema, arrow_schema, format_version=table_metadata.format_version)
