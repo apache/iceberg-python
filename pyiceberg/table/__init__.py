@@ -561,7 +561,7 @@ class Transaction:
         """
         Shorthand API for appending PyArrow data to a table transaction.
 
-        Accepts either a fully materialised ``pa.Table`` or a streaming
+        Accepts a fully materialised ``pa.Table`` or a streaming
         ``pa.RecordBatchReader``. Streaming is microbatched by
         ``write.target-file-size-bytes`` so memory stays bounded; the reader is
         consumed once and cannot be reused.
@@ -570,6 +570,11 @@ class Transaction:
         passing a ``pa.RecordBatchReader`` for a partitioned table raises
         ``NotImplementedError``. See
         https://github.com/apache/iceberg-python/issues/2152.
+
+        Any other object implementing the Arrow PyCapsule stream interface
+        (``__arrow_c_stream__``), such as a Polars DataFrame, is accepted as
+        well. It is streamed into an unpartitioned table and read into memory
+        for a partitioned one.
 
         Note:
             When ``df`` is a ``pa.RecordBatchReader`` the reader is consumed
@@ -598,7 +603,7 @@ class Transaction:
             rolling-``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
 
         Args:
-            df: An Arrow Table or a RecordBatchReader of records to append.
+            df: An Arrow Table, RecordBatchReader or PyCapsule stream of records to append.
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the append operation
         """
@@ -708,7 +713,7 @@ class Transaction:
         """
         Shorthand for adding a table overwrite with a PyArrow table or RecordBatchReader to the transaction.
 
-        Accepts either a fully materialised ``pa.Table`` or a streaming
+        Accepts a fully materialised ``pa.Table`` or a streaming
         ``pa.RecordBatchReader``. Streaming is microbatched by
         ``write.target-file-size-bytes`` so memory stays bounded; the reader is
         consumed once and cannot be reused.
@@ -717,6 +722,11 @@ class Transaction:
         passing a ``pa.RecordBatchReader`` for a partitioned table raises
         ``NotImplementedError``. See
         https://github.com/apache/iceberg-python/issues/2152.
+
+        Any other object implementing the Arrow PyCapsule stream interface
+        (``__arrow_c_stream__``), such as a Polars DataFrame, is accepted as
+        well. It is streamed into an unpartitioned table and read into memory
+        for a partitioned one.
 
         Note:
             When ``df`` is a ``pa.RecordBatchReader`` the reader is consumed
@@ -751,7 +761,7 @@ class Transaction:
             - APPEND: In case new data is being inserted into the table.
 
         Args:
-            df: An Arrow Table or a RecordBatchReader of records to write.
+            df: An Arrow Table, RecordBatchReader or PyCapsule stream of records to write.
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary
@@ -1852,12 +1862,13 @@ class Table:
         """
         Shorthand API for appending PyArrow data to the table.
 
-        Accepts either a ``pa.Table`` or a streaming ``pa.RecordBatchReader``.
-        See :meth:`Transaction.append` for streaming semantics and partition
+        Accepts a ``pa.Table``, a streaming ``pa.RecordBatchReader`` or any other
+        object implementing the Arrow PyCapsule stream interface. See
+        :meth:`Transaction.append` for streaming semantics and partition
         limitations.
 
         Args:
-            df: An Arrow Table or a RecordBatchReader of records to append.
+            df: An Arrow Table, RecordBatchReader or PyCapsule stream of records to append.
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the append operation
         """
@@ -1889,8 +1900,9 @@ class Table:
         """
         Shorthand for overwriting the table with a PyArrow Table or RecordBatchReader.
 
-        Accepts either a ``pa.Table`` or a streaming ``pa.RecordBatchReader``.
-        See :meth:`Transaction.overwrite` for streaming semantics and partition
+        Accepts a ``pa.Table``, a streaming ``pa.RecordBatchReader`` or any other
+        object implementing the Arrow PyCapsule stream interface. See
+        :meth:`Transaction.overwrite` for streaming semantics and partition
         limitations.
 
         An overwrite may produce zero or more snapshots based on the operation:
@@ -1900,7 +1912,7 @@ class Table:
             - APPEND: In case new data is being inserted into the table.
 
         Args:
-            df: An Arrow Table or a RecordBatchReader of records to write.
+            df: An Arrow Table, RecordBatchReader or PyCapsule stream of records to write.
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary

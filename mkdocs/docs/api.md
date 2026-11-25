@@ -407,6 +407,25 @@ long: [[4.896029,-122.431297,6.0989],[6.56667]]
 
 In the case of `tbl.delete(delete_filter="city == 'Groningen'")`, the whole Parquet file will be dropped without checking it contents, since from the Iceberg metadata PyIceberg can derive that all the content in the file matches the predicate.
 
+### Arrow PyCapsule interface
+
+<!-- markdown-link-check-disable-next-line -->
+`tbl.append()` and `tbl.overwrite()` accept any object that implements the [Arrow PyCapsule stream interface](https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html) (`__arrow_c_stream__`), so a dataframe from a library such as Polars can be written without converting it to PyArrow first:
+
+```python
+import polars as pl
+
+tbl.append(pl.DataFrame({"city": ["Groningen"], "lat": [53.21917], "long": [6.56667]}))
+```
+
+Such an object is streamed into an unpartitioned table, and read into memory as a `pa.Table` for a partitioned one.
+
+Scans implement the same interface, so any Arrow consumer can read one directly:
+
+```python
+df = pl.DataFrame(tbl.scan(row_filter="lat > 50"))
+```
+
 ### Partial overwrites
 
 When using the `overwrite` API, you can use an `overwrite_filter` to delete data that matches the filter before appending new data into the table. For example, consider the following Iceberg table:

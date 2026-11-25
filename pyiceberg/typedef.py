@@ -113,7 +113,6 @@ class StructProtocol(Protocol):  # pragma: no cover
         """Assign a value to a StructProtocol."""
 
 
-@runtime_checkable
 class ArrowStreamExportable(Protocol):  # pragma: no cover
     """Any object implementing the Arrow PyCapsule stream interface.
 
