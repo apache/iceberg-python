@@ -522,6 +522,36 @@ class Transaction:
         """
         return UpdatePartitionStatistics(transaction=self)
 
+    def _prepare_arrow_input(
+        self, df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable
+    ) -> pa.Table | pa.RecordBatchReader:
+        """Return the write input as Arrow data that matches the table schema."""
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
+
+        if isinstance(df, (pa.Table, pa.RecordBatchReader)):
+            arrow_data, read_into_memory = df, False
+        elif hasattr(df, "__arrow_c_stream__"):
+            # Streaming writes need an unpartitioned table, so the stream is
+            # read into memory for a partitioned one
+            arrow_data = pa.RecordBatchReader.from_stream(df)
+            read_into_memory = not self.table_metadata.spec().is_unpartitioned()
+        else:
+            raise ValueError(
+                f"Expected pa.Table, pa.RecordBatchReader, or an object implementing the "
+                f"Arrow PyCapsule interface (__arrow_c_stream__), got: {df!r}"
+            )
+
+        _check_pyarrow_schema_compatible(
+            self.table_metadata.schema(),
+            provided_schema=arrow_data.schema,
+            downcast_ns_timestamp_to_us=Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False,
+            format_version=self.table_metadata.format_version,
+        )
+
+        return arrow_data.read_all() if read_into_memory else arrow_data
+
     def append(
         self,
         df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable,
@@ -577,17 +607,9 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _coerce_arrow_input, _dataframe_to_data_files
+        from pyiceberg.io.pyarrow import _dataframe_to_data_files
 
-        df = _coerce_arrow_input(df)
-
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(),
-            provided_schema=df.schema,
-            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-            format_version=self.table_metadata.format_version,
-        )
+        df = self._prepare_arrow_input(df)
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             # For pa.Table we can short-circuit empty inputs cheaply. For a
@@ -741,17 +763,9 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _coerce_arrow_input, _dataframe_to_data_files
+        from pyiceberg.io.pyarrow import _dataframe_to_data_files
 
-        df = _coerce_arrow_input(df)
-
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(),
-            provided_schema=df.schema,
-            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-            format_version=self.table_metadata.format_version,
-        )
+        df = self._prepare_arrow_input(df)
 
         if overwrite_filter != AlwaysFalse():
             # Only delete when the filter is != AlwaysFalse

@@ -21,6 +21,7 @@ Covers the input/consumer side (write methods accept any object implementing
 ``__arrow_c_stream__`` so any Arrow consumer can ingest them).
 """
 
+from collections.abc import Iterator
 from pathlib import PosixPath
 from typing import Any
 
@@ -28,8 +29,7 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.catalog.memory import InMemoryCatalog
-from pyiceberg.io.pyarrow import _coerce_arrow_input
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType, NestedField, StringType
@@ -55,7 +55,7 @@ class _ArrowStreamWrapper:
     polars or arro3 without taking a dependency on them.
     """
 
-    def __init__(self, data: pa.Table):
+    def __init__(self, data: pa.Table | pa.RecordBatchReader):
         self._data = data
 
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
@@ -87,25 +87,6 @@ def _string_view_data(ids: list[int], regions: list[str]) -> pa.Table:
 
 def _rows(table: pa.Table) -> list[dict[str, Any]]:
     return sorted(table.to_pylist(), key=lambda r: r["id"])
-
-
-def test_coerce_arrow_input() -> None:
-    """Unit coverage of every branch of the coercion helper."""
-    table = _data([1, 2, 3], ["us", "eu", "us"])
-
-    # native types pass through unchanged (identity)
-    assert _coerce_arrow_input(table) is table
-    reader = table.to_reader()
-    assert _coerce_arrow_input(reader) is reader
-
-    # a foreign capsule producer is imported as a RecordBatchReader (streaming preserved)
-    coerced = _coerce_arrow_input(_ArrowStreamWrapper(table))
-    assert isinstance(coerced, pa.RecordBatchReader)
-    assert coerced.read_all().num_rows == 3
-
-    # anything else is rejected
-    with pytest.raises(ValueError, match="Expected pa.Table, pa.RecordBatchReader"):
-        _coerce_arrow_input(object())
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +123,45 @@ def test_append_accepts_arrow_capsule_with_string_view(catalog: InMemoryCatalog)
 
     assert _rows(tbl.scan().to_arrow()) == _rows(_data([10, 11], ["ca", "mx"]))
     assert _rows(tbl.scan(row_filter="region == 'ca'").to_arrow()) == _rows(_data([10], ["ca"]))
+
+
+def test_append_arrow_capsule_to_partitioned_table(catalog: InMemoryCatalog) -> None:
+    tbl = catalog.create_table("default.append_capsule_partitioned", schema=SCHEMA, partition_spec=PARTITION_SPEC)
+
+    tbl.append(_ArrowStreamWrapper(_string_view_data([1, 2, 3], ["us", "eu", "us"])))
+
+    assert len(tbl.inspect.partitions()) == 2
+    assert _rows(tbl.scan().to_arrow()) == _rows(_data([1, 2, 3], ["us", "eu", "us"]))
+
+
+def test_arrow_capsule_is_streamed_into_an_unpartitioned_table_only(catalog: InMemoryCatalog) -> None:
+    data = _data([1, 2, 3], ["us", "eu", "us"])
+
+    for name, spec, expected in (
+        ("unpartitioned", UNPARTITIONED_PARTITION_SPEC, pa.RecordBatchReader),
+        ("partitioned", PARTITION_SPEC, pa.Table),
+    ):
+        tbl = catalog.create_table(f"default.streamed_{name}", schema=SCHEMA, partition_spec=spec)
+
+        assert isinstance(tbl.transaction()._prepare_arrow_input(_ArrowStreamWrapper(data)), expected), name
+
+
+def test_append_checks_schema_before_reading_arrow_capsule(catalog: InMemoryCatalog) -> None:
+    pulled: list[pa.RecordBatch] = []
+    mismatched = pa.table({"id": ["a", "b"], "region": ["us", "eu"]})
+
+    def batches() -> Iterator[pa.RecordBatch]:
+        for batch in mismatched.to_batches(max_chunksize=1):
+            pulled.append(batch)
+            yield batch
+
+    for name, spec in (("unpartitioned", UNPARTITIONED_PARTITION_SPEC), ("partitioned", PARTITION_SPEC)):
+        tbl = catalog.create_table(f"default.schema_check_{name}", schema=SCHEMA, partition_spec=spec)
+
+        with pytest.raises(ValueError, match="Mismatch in fields"):
+            tbl.append(_ArrowStreamWrapper(pa.RecordBatchReader.from_batches(mismatched.schema, batches())))
+
+        assert not pulled, name
 
 
 # ---------------------------------------------------------------------------

@@ -161,7 +161,7 @@ from pyiceberg.table.metadata import TableMetadata
 from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
-from pyiceberg.typedef import EMPTY_DICT, ArrowStreamExportable, Properties, Record, TableVersion
+from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
     DEFAULT_GEOMETRY_CRS,
     BinaryType,
@@ -3543,23 +3543,3 @@ def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Ar
     field_array = arrow_table[path_parts[0]]
     # Navigate into the struct using the remaining path parts
     return pc.struct_field(field_array, path_parts[1:])
-
-
-def _coerce_arrow_input(df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable) -> pa.Table | pa.RecordBatchReader:
-    """Normalize Arrow write input to a pa.Table or pa.RecordBatchReader.
-
-    Native pyarrow inputs pass through unchanged; any object implementing the
-    Arrow PyCapsule stream interface (``__arrow_c_stream__``) is imported as a
-    streaming RecordBatchReader.
-    """
-    if isinstance(df, (pa.Table, pa.RecordBatchReader)):
-        return df
-
-    # Any object implementing the Arrow PyCapsule stream interface.
-    if hasattr(df, "__arrow_c_stream__"):
-        return pa.RecordBatchReader.from_stream(df)
-
-    raise ValueError(
-        f"Expected pa.Table, pa.RecordBatchReader, or an object implementing the "
-        f"Arrow PyCapsule interface (__arrow_c_stream__), got: {df!r}"
-    )
