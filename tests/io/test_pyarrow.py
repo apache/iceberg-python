@@ -115,7 +115,7 @@ from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
 from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
-from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
+from pyiceberg.transforms import BucketTransform, DayTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -137,6 +137,7 @@ from pyiceberg.types import (
     StructType,
     TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UUIDType,
@@ -4152,6 +4153,42 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
         _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
 
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
+
+
+def test_append_partitioned_ns_timestamp_downcast(monkeypatch: pytest.MonkeyPatch, catalog: InMemoryCatalog) -> None:
+    monkeypatch.setenv("PYICEBERG_DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE", "True")
+    catalog.create_namespace("default")
+    # Stored as [1, 1, 0, 3600000000, null] us: 1000 and 1500 ns share 1 us, and -1 ns becomes 0 us
+    values = [1000, 1500, -1, 3600000000000, None]
+    cases: list[tuple[Transform[Any, Any], PrimitiveType, str | None, dict[Any, int]]] = [
+        (IdentityTransform(), TimestampType(), None, {1: 2, 0: 1, 3600000000: 1, None: 1}),
+        (HourTransform(), TimestampType(), None, {0: 3, 1: 1, None: 1}),
+        (DayTransform(), TimestamptzType(), "UTC", {0: 4, None: 1}),
+    ]
+    for transform, ts_type, tz, expected in cases:
+        table = catalog.create_table(
+            f"default.ns_downcast_{transform}",
+            schema=Schema(NestedField(1, "id", LongType(), required=False), NestedField(2, "ts", ts_type, required=False)),
+            partition_spec=PartitionSpec(PartitionField(2, 1000, transform, name="ts_part")),
+        )
+        table.append(pa.table({"id": pa.array(range(5), pa.int64()), "ts": pa.array(values, pa.timestamp("ns", tz=tz))}))
+
+        rows = table.scan().to_arrow().sort_by("id")
+        assert rows.column("id").to_pylist() == [0, 1, 2, 3, 4], transform
+        assert rows.column("ts").cast(pa.int64()).to_pylist() == [1, 1, 0, 3600000000, None], transform
+        assert {task.file.partition[0]: task.file.record_count for task in table.scan().plan_files()} == expected, transform
+
+
+def test_determine_partitions_native_ns_timestamp_is_not_downcast() -> None:
+    # v3 nanosecond sources keep their precision, so day(-1 ns) stays -1 even with the downcast flag on
+    for source_type, tz in [(TimestampNanoType(), None), (TimestamptzNanoType(), "UTC")]:
+        schema = Schema(NestedField(1, "id", LongType(), required=False), NestedField(2, "ts", source_type, required=False))
+        spec = PartitionSpec(PartitionField(2, 1000, DayTransform(), name="ts_day"))
+        arrow_table = pa.table({"id": pa.array([0, 1], pa.int64()), "ts": pa.array([-1, None], pa.timestamp("ns", tz=tz))})
+        result = _determine_partitions(spec, schema, arrow_table, downcast_ns_timestamp_to_us=True)
+        assert {
+            p.partition_key.partition[0]: p.arrow_table_partition.column("ts").cast(pa.int64()).to_pylist() for p in result
+        } == {-1: [-1], None: [None]}, source_type
 
 
 def test__to_requested_schema_null_map_of_structs() -> None:

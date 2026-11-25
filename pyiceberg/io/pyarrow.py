@@ -3405,7 +3405,12 @@ def _dataframe_to_data_files(
             ),
         )
     else:
-        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        partitions = _determine_partitions(
+            spec=table_metadata.spec(),
+            schema=table_metadata.schema(),
+            arrow_table=df,
+            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+        )
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
@@ -3429,7 +3434,9 @@ class _TablePartition:
     arrow_table_partition: pa.Table
 
 
-def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> Iterable[_TablePartition]:
+def _determine_partitions(
+    spec: PartitionSpec, schema: Schema, arrow_table: pa.Table, downcast_ns_timestamp_to_us: bool = False
+) -> Iterable[_TablePartition]:
     """Based on the iceberg table partition spec, filter the arrow table into partitions with their keys.
 
     Example:
@@ -3463,6 +3470,14 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         if full_field_name is None:
             raise ValueError(f"Could not find column name for field ID: {partition.source_id}")
         field_array = _get_field_from_arrow_table(arrow_table, full_field_name)
+        # The writer downcasts ns timestamps after the partition values are computed, so partition on the microseconds
+        if (
+            downcast_ns_timestamp_to_us
+            and isinstance(source_field.field_type, (TimestampType, TimestamptzType))
+            and isinstance(field_array.type, pa.TimestampType)
+            and field_array.type.unit == "ns"
+        ):
+            field_array = field_array.cast(pa.timestamp("us", tz=field_array.type.tz), safe=False)
         partition_array = partition.transform.pyarrow_transform(source_field.field_type)(field_array)
         # PyArrow has no group by or equality kernels for extension types such as arrow.uuid, so use their storage type
         if isinstance(partition_array.type, pa.BaseExtensionType):
