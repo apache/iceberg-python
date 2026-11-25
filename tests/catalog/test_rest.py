@@ -540,6 +540,37 @@ def test_list_tables_paginated_200(rest_mock: Mocker) -> None:
     ]
 
 
+def test_list_tables_paginated_is_lazy(rest_mock: Mocker) -> None:
+    namespace = "examples"
+    rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables",
+        json={
+            "identifiers": [{"namespace": ["examples"], "name": "table1"}],
+            "next-page-token": "page2token",
+        },
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+    second_page = rest_mock.get(
+        f"{TEST_URI}v1/namespaces/{namespace}/tables?pageToken=page2token",
+        json={"identifiers": [{"namespace": ["examples"], "name": "table2"}]},
+        status_code=200,
+        request_headers=TEST_HEADERS,
+    )
+
+    tables = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).list_tables(namespace)
+
+    assert tables[0] == ("examples", "table1")
+    assert second_page.call_count == 0
+
+    seen = []
+    for table in tables:
+        seen.append(table)
+
+    assert seen == [("examples", "table1"), ("examples", "table2")]
+    assert second_page.call_count == 1
+
+
 def test_list_tables_paginated_200_none_next_page_token(rest_mock: Mocker) -> None:
     namespace = "examples"
     # First page with next-page-token
