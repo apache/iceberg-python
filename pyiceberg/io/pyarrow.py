@@ -30,6 +30,7 @@ import fnmatch
 import functools
 import importlib
 import itertools
+import json
 import logging
 import math
 import operator
@@ -162,6 +163,7 @@ from pyiceberg.table.name_mapping import NameMapping, apply_name_mapping
 from pyiceberg.transforms import IdentityTransform, TruncateTransform
 from pyiceberg.typedef import EMPTY_DICT, Properties, Record, TableVersion
 from pyiceberg.types import (
+    DEFAULT_GEOMETRY_CRS,
     BinaryType,
     BooleanType,
     DateType,
@@ -856,33 +858,50 @@ class _ConvertToArrowSchema(SchemaVisitorPerPrimitiveType[pa.DataType]):
     def visit_geometry(self, geometry_type: GeometryType) -> pa.DataType:
         """Convert geometry type to PyArrow type.
 
-        When geoarrow-pyarrow is available, returns a GeoArrow WKB extension type
+        When geoarrow-types is available, returns a GeoArrow WKB extension type
         with CRS metadata. Otherwise, falls back to large_binary which stores WKB bytes.
         """
         try:
-            import geoarrow.pyarrow as ga
+            import geoarrow.types as ga
+            from geoarrow.types.type_pyarrow import register_extension_types
 
-            return ga.wkb().with_crs(geometry_type.crs)
+            register_extension_types()
+
+            # Iceberg cannot represent a GeoArrow/GeoPandas/GeoParquet None CRS as None,
+            # as its default is OGC:CRS84. Instead, we use the SRID:0 string in the
+            # Iceberg and Parquet specification examples as the sentinel. This follows
+            # the meaning of srid:0 in the GeoParquet 2.0 specification, PostGIS, and
+            # GeoPackage, as well as its mapping to the Parquet logical type in arrow-rs
+            # and Arrow C++.
+            crs = None if geometry_type.crs.lower() == "srid:0" else geometry_type.crs
+            return ga.wkb(crs=crs).to_pyarrow()
         except ImportError:
             return pa.large_binary()
 
     def visit_geography(self, geography_type: GeographyType) -> pa.DataType:
         """Convert geography type to PyArrow type.
 
-        When geoarrow-pyarrow is available, returns a GeoArrow WKB extension type
+        When geoarrow-types is available, returns a GeoArrow WKB extension type
         with CRS and edge type metadata. Otherwise, falls back to large_binary which stores WKB bytes.
         """
         try:
-            import geoarrow.pyarrow as ga
+            import geoarrow.types as ga
+            from geoarrow.types.type_pyarrow import register_extension_types
 
-            wkb_type = ga.wkb().with_crs(geography_type.crs)
-            # Map Iceberg algorithm to GeoArrow edge type
-            if geography_type.algorithm == "spherical":
-                wkb_type = wkb_type.with_edge_type(ga.EdgeType.SPHERICAL)
-            # "planar" is the default edge type in GeoArrow, no need to set explicitly
-            return wkb_type
+            register_extension_types()
+
+            # Other unsupported values are validated by ga.wkb(); however, this is a valid value
+            # that if passed to ga.wkb() will result in the value being interpreted as geometry
+            # instead of geography.
+            if geography_type.algorithm == "planar":
+                raise ValueError("The planar algorithm is not supported for geography types")
+
+            crs = None if geography_type.crs.lower() == "srid:0" else geography_type.crs
+            return ga.wkb(crs=crs, edge_type=geography_type.algorithm).to_pyarrow()
         except ImportError:
             return pa.large_binary()
+        except KeyError as e:
+            raise ValueError(f"Unsupported geography edge interpolation algorithm: {geography_type.algorithm!r}") from e
 
 
 def _literal_arrow_type(iceberg_type: IcebergType, values: Iterable[Any]) -> pa.DataType:
@@ -1473,6 +1492,50 @@ class _HasIds(PyArrowSchemaVisitor[bool]):
         return True
 
 
+def _geoarrow_crs_to_iceberg(crs: object) -> str:
+    """Convert GeoArrow CRS metadata to a compact Iceberg CRS identifier."""
+    # Missing CRS has a specific meaning in GeoArrow that aligns with a
+    # GeoParquet "null" CRS and a GeoPandas "None" CRS. From the Iceberg
+    # and Parquet examples and GeoParquet 2.0 guidance, the corresponding
+    # Iceberg string is "srid:0".
+    if crs is None:
+        return "srid:0"
+
+    # PROJJSON CRSes need their authority:code extracted, because the Iceberg
+    # spec forbids storing a PROJJSON string inline in the schema
+    # (PROJJSON strings are typically several kilobytes and types are repeated
+    # in metadata frequently).
+    if isinstance(crs, dict):
+        crs_id = crs.get("id")
+        if (
+            not isinstance(crs_id, dict)
+            or not isinstance(crs_id.get("authority"), str)
+            or not crs_id["authority"]
+            or not isinstance(crs_id.get("code"), (str, int, float))
+            or isinstance(crs_id["code"], bool)
+        ):
+            raise ValueError(
+                "GeoArrow PROJJSON CRS must have an authority/code ID; inline PROJJSON is not supported in Iceberg schemas"
+            )
+        crs = f"{crs_id['authority']}:{crs_id['code']}"
+
+    if not isinstance(crs, str):
+        raise ValueError("GeoArrow CRS must be a string, a PROJJSON object, or null")
+
+    # Parquet omits these exact identifiers, defaulting to OGC:CRS84. This ensures
+    # that the Parquet type and the Iceberg type match for the most common two CRS
+    # values. The two values are implicitly equivalent according to the Coordinate
+    # Axis Order of the Parquet specification.
+    if crs in (DEFAULT_GEOMETRY_CRS, "EPSG:4326"):
+        return DEFAULT_GEOMETRY_CRS
+
+    # Otherwise, preserve the string exactly as PyArrow writes it.
+    if not crs.strip():
+        raise ValueError("Geospatial CRS must be non-empty")
+
+    return crs
+
+
 class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
     """Converts PyArrowSchema to Iceberg Schema."""
 
@@ -1588,6 +1651,14 @@ class _ConvertToIceberg(PyArrowSchemaVisitor[IcebergType | Schema]):
             return UnknownType()
         elif isinstance(primitive, pa.UuidType):
             return UUIDType()
+        elif isinstance(primitive, pa.ExtensionType) and primitive.extension_name == "geoarrow.wkb":
+            metadata = json.loads(primitive.__arrow_ext_serialize__())
+            crs = _geoarrow_crs_to_iceberg(metadata.get("crs"))
+            edges = metadata.get("edges", "planar")
+            if edges == "planar":
+                return GeometryType(crs)
+            else:
+                return GeographyType(crs, edges)
 
         raise TypeError(f"Unsupported type: {primitive}")
 
@@ -1767,6 +1838,16 @@ def _task_to_record_batches(
     format_kwargs: dict[str, Any] = {"pre_buffer": True, "buffer_size": ONE_MEGABYTE * 8}
     if dictionary_columns and task.file.file_format == FileFormat.PARQUET:
         format_kwargs["dictionary_columns"] = dictionary_columns
+    if (
+        task.file.file_format == FileFormat.PARQUET
+        and hasattr(ds.ParquetFragmentScanOptions, "arrow_extensions_enabled")
+        and any(
+            isinstance(table_schema.find_type(field_id), (GeometryType, GeographyType))
+            for field_id in projected_field_ids & table_schema.field_ids
+        )
+    ):
+        # Dataset scans disable logical-type extension decoding by default.
+        format_kwargs["arrow_extensions_enabled"] = True
     arrow_format = _create_arrow_read_format(task.file.file_format, task.file.key_metadata, **format_kwargs)
     with io.new_input(task.file.file_path).open() as fin:
         fragment = arrow_format.make_fragment(fin)
@@ -1804,6 +1885,14 @@ def _task_to_record_batches(
             (index for index, field in enumerate(projected_schema.fields) if field.field_id == ROW_ID.field_id), None
         )
         filter_after_read = bool(positional_deletes) or row_id_index is not None
+        last_updated_index = next(
+            (
+                index
+                for index, field in enumerate(projected_schema.fields)
+                if field.field_id == LAST_UPDATED_SEQUENCE_NUMBER.field_id
+            ),
+            None,
+        )
 
         fragment_scanner = ds.Scanner.from_fragment(
             fragment=fragment,
@@ -1859,6 +1948,10 @@ def _task_to_record_batches(
             )
             if row_id_index is not None and positions is not None:
                 result_batch = _assign_row_ids(result_batch, row_id_index, positions, task.file.first_row_id)
+            if last_updated_index is not None:
+                result_batch = _assign_last_updated_sequence_numbers(
+                    result_batch, last_updated_index, task.file.first_row_id, task.data_sequence_number
+                )
             yield result_batch
 
 
@@ -1872,6 +1965,23 @@ def _assign_row_ids(batch: pa.RecordBatch, row_id_index: int, positions: pa.Arra
     else:
         row_ids = pc.coalesce(batch.column(row_id_index), pc.add(positions, pa.scalar(first_row_id, type=pa.int64())))
     return batch.set_column(row_id_index, batch.schema.field(row_id_index), row_ids)
+
+
+def _assign_last_updated_sequence_numbers(
+    batch: pa.RecordBatch, last_updated_index: int, first_row_id: int | None, data_sequence_number: int | None
+) -> pa.RecordBatch:
+    """Replace null last updated sequence numbers with the data sequence number of the file.
+
+    When the data file has no first row ID, every last updated sequence number is null.
+    """
+    if first_row_id is None:
+        sequence_numbers = pa.nulls(len(batch), type=pa.int64())
+    elif data_sequence_number is None:
+        # REST scan planning does not return the data sequence number
+        raise NotImplementedError(f"Reading {LAST_UPDATED_SEQUENCE_NUMBER.name} requires the data sequence number of the file")
+    else:
+        sequence_numbers = pc.coalesce(batch.column(last_updated_index), pa.scalar(data_sequence_number, type=pa.int64()))
+    return batch.set_column(last_updated_index, batch.schema.field(last_updated_index), sequence_numbers)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1940,12 +2050,11 @@ class ArrowScan:
         *,
         dictionary_columns: tuple[str, ...] = (),
     ) -> None:
-        if any(field.field_id == LAST_UPDATED_SEQUENCE_NUMBER.field_id for field in projected_schema.fields):
-            # The data sequence number is not carried on the scan task yet
-            raise NotImplementedError(f"Reading {LAST_UPDATED_SEQUENCE_NUMBER.name} is not yet supported")
         self._table_metadata = table_metadata
         self._io = io
         self._projected_schema = projected_schema
+        # Register extension types before inspecting any data file schemas.
+        self._arrow_schema = schema_to_pyarrow(projected_schema, include_field_ids=False)
         self._bound_row_filter = bind(table_metadata.schema(), row_filter, case_sensitive=case_sensitive)
         self._case_sensitive = case_sensitive
         self._limit = limit
@@ -1984,14 +2093,12 @@ class ArrowScan:
             ResolveError: When a required field cannot be found in the file
             ValueError: When a field type in the file cannot be projected to the schema type
         """
-        arrow_schema = schema_to_pyarrow(self._projected_schema, include_field_ids=False)
-
         batches = self.to_record_batches(tasks)
         try:
             first_batch = next(batches)
         except StopIteration:
             # Empty
-            return arrow_schema.empty_table()
+            return self._arrow_schema.empty_table()
 
         # Note: cannot use pa.Table.from_batches(itertools.chain([first_batch], batches)))
         #       as different batches can use different schema's (due to large_ types)
@@ -3209,6 +3316,11 @@ def _get_parquet_writer_kwargs(table_properties: Properties) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "compression": compression_codec,
         "compression_level": compression_level,
+        "write_page_index": property_as_bool(
+            properties=table_properties,
+            property_name=TableProperties.PARQUET_PAGE_INDEX_ENABLED,
+            default=TableProperties.PARQUET_PAGE_INDEX_ENABLED_DEFAULT,
+        ),
         "data_page_size": property_as_int(
             properties=table_properties,
             property_name=TableProperties.PARQUET_PAGE_SIZE_BYTES,

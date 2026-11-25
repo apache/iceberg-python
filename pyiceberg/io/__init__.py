@@ -38,7 +38,9 @@ from typing import (
 )
 from urllib.parse import urlparse
 
+from pyiceberg.io.content_cache import ContentCache
 from pyiceberg.typedef import EMPTY_DICT, Properties
+from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +119,15 @@ GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
 HF_ENDPOINT = "hf.endpoint"
 HF_TOKEN = "hf.token"
+
+IO_MANIFEST_CACHE_ENABLED = "io.manifest.cache-enabled"
+IO_MANIFEST_CACHE_MAX_TOTAL_BYTES = "io.manifest.cache.max-total-bytes"
+IO_MANIFEST_CACHE_MAX_CONTENT_LENGTH = "io.manifest.cache.max-content-length"
+IO_MANIFEST_CACHE_EXPIRATION_INTERVAL_MS = "io.manifest.cache.expiration-interval-ms"
+
+IO_MANIFEST_CACHE_MAX_TOTAL_BYTES_DEFAULT = 100 * 1024 * 1024
+IO_MANIFEST_CACHE_MAX_CONTENT_LENGTH_DEFAULT = 8 * 1024 * 1024
+IO_MANIFEST_CACHE_EXPIRATION_INTERVAL_MS_DEFAULT = 60_000
 
 
 @runtime_checkable
@@ -272,6 +283,26 @@ class OutputFile(ABC):
         """
 
 
+def _content_cache_from_properties(properties: Properties) -> ContentCache | None:
+    if not property_as_bool(properties, IO_MANIFEST_CACHE_ENABLED, False):
+        return None
+
+    max_total_bytes: int = property_as_int(  # type: ignore[assignment]
+        properties, IO_MANIFEST_CACHE_MAX_TOTAL_BYTES, IO_MANIFEST_CACHE_MAX_TOTAL_BYTES_DEFAULT
+    )
+    max_content_length: int = property_as_int(  # type: ignore[assignment]
+        properties, IO_MANIFEST_CACHE_MAX_CONTENT_LENGTH, IO_MANIFEST_CACHE_MAX_CONTENT_LENGTH_DEFAULT
+    )
+    expiration_interval_ms: int = property_as_int(  # type: ignore[assignment]
+        properties, IO_MANIFEST_CACHE_EXPIRATION_INTERVAL_MS, IO_MANIFEST_CACHE_EXPIRATION_INTERVAL_MS_DEFAULT
+    )
+    return ContentCache(
+        max_total_bytes=max_total_bytes,
+        max_content_length=max_content_length,
+        expiration_interval_ms=expiration_interval_ms,
+    )
+
+
 class FileIO(ABC):
     """A base class for FileIO implementations."""
 
@@ -279,6 +310,12 @@ class FileIO(ABC):
 
     def __init__(self, properties: Properties = EMPTY_DICT):
         self.properties = properties
+        self._content_cache = _content_cache_from_properties(properties)
+
+    @property
+    def content_cache(self) -> ContentCache | None:
+        """Return the cache for immutable metadata file contents, when enabled."""
+        return self._content_cache
 
     @abstractmethod
     def new_input(self, location: str) -> InputFile:

@@ -1572,7 +1572,7 @@ def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Tab
     tbl_a = _create_table(
         session_catalog,
         "default.merge_manifest_a",
-        {"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        {"commit.manifest.min-count-to-merge": "1", "format-version": format_version},
         [],
     )
     tbl_b = _create_table(
@@ -1589,7 +1589,11 @@ def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Tab
     tbl_c = _create_table(
         session_catalog,
         "default.merge_manifest_c",
-        {"commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        {
+            "commit.manifest-merge.enabled": "false",
+            "commit.manifest.min-count-to-merge": "1",
+            "format-version": format_version,
+        },
         [],
     )
 
@@ -1653,18 +1657,18 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
     for i in range(3):
         tbl_a_data_file = tbl_a_entries["data_file"][i]
         assert tbl_a_data_file["column_sizes"] == [
-            (1, 51),
-            (2, 80),
-            (3, 130),
-            (4, 96),
-            (5, 120),
-            (6, 96),
-            (7, 120),
-            (8, 120),
-            (9, 120),
-            (10, 96),
-            (11, 80),
-            (12, 111),
+            (1, 33),
+            (2, 68),
+            (3, 76),
+            (4, 66),
+            (5, 74),
+            (6, 66),
+            (7, 74),
+            (8, 74),
+            (9, 74),
+            (10, 66),
+            (11, 68),
+            (12, 69),
         ]
         assert tbl_a_data_file["content"] == 0
         assert tbl_a_data_file["equality_ids"] is None

@@ -151,6 +151,12 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         new_schema: Schema | pa.Schema,
         format_version: TableVersion = 2,
     ) -> UpdateSchema:
+        """Merge new_schema into the existing schema by field name.
+
+        Raises:
+            ValueError: When case_sensitive is False and a field lookup searches an existing struct
+                containing two fields with the same lower-case name.
+        """
         from pyiceberg.catalog import Catalog
 
         visit_with_partner(
@@ -213,11 +219,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
             parent_id = parent_field.field_id
 
-        existing_field = None
-        try:
-            existing_field = self._schema.find_field(full_name, self._case_sensitive)
-        except ValueError:
-            pass
+        existing_field = self._schema._find_field_or_none(full_name, self._case_sensitive)
 
         if existing_field is not None and existing_field.field_id not in self._deletes:
             raise ValueError(f"Cannot add column, name already exists: {full_name}")
@@ -504,10 +506,9 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def _find_for_move(self, name: str) -> int | None:
-        try:
-            return self._schema.find_field(name, self._case_sensitive).field_id
-        except ValueError:
-            pass
+        field = self._schema._find_field_or_none(name, self._case_sensitive)
+        if field is not None:
+            return field.field_id
 
         return self._added_name_to_id.get(name)
 
@@ -678,12 +679,9 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 raise ValueError(f"Cannot find identifier field {name}. In case of deletion, update the identifier fields first.")
 
         for name in self._identifier_field_names:
-            try:
-                field = new_schema.find_field(name, case_sensitive=self._case_sensitive)
-            except ValueError as e:
-                raise ValueError(
-                    f"Cannot find identifier field {name}. In case of deletion, update the identifier fields first."
-                ) from e
+            field = new_schema._find_field_or_none(name, case_sensitive=self._case_sensitive)
+            if field is None:
+                raise ValueError(f"Cannot find identifier field {name}. In case of deletion, update the identifier fields first.")
 
             field_ids.add(field.field_id)
 

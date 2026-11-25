@@ -240,6 +240,34 @@ def test_snapshot_by_timestamp(table_v2: Table) -> None:
     assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
 
 
+def test_snapshot_by_timestamp_with_unordered_snapshot_log(table_v2: Table) -> None:
+    # Writers with slightly skewed clocks can append snapshot log entries out of timestamp order
+    first, second = table_v2.metadata.snapshot_log
+    now = second.timestamp_ms
+    log = [
+        SnapshotLogEntry(snapshot_id=second.snapshot_id, timestamp_ms=now),
+        SnapshotLogEntry(snapshot_id=first.snapshot_id, timestamp_ms=now - 10_000),
+    ]
+    table_v2.metadata = table_v2.metadata.model_copy(update={"snapshot_log": log})
+
+    latest = table_v2.snapshot_as_of_timestamp(now)
+    assert latest is not None
+    assert latest.snapshot_id == second.snapshot_id
+
+    earlier = table_v2.snapshot_as_of_timestamp(now - 5_000)
+    assert earlier is not None
+    assert earlier.snapshot_id == first.snapshot_id
+
+    assert table_v2.snapshot_as_of_timestamp(now - 10_000, inclusive=False) is None
+
+    # On equal timestamps the later entry wins
+    tied = [SnapshotLogEntry(snapshot_id=first.snapshot_id, timestamp_ms=now), log[0]]
+    table_v2.metadata = table_v2.metadata.model_copy(update={"snapshot_log": tied})
+    result = table_v2.snapshot_as_of_timestamp(now)
+    assert result is not None
+    assert result.snapshot_id == second.snapshot_id
+
+
 def test_snapshot_by_id_does_not_exist(table_v2: Table) -> None:
     assert table_v2.snapshot_by_id(-1) is None
 
@@ -380,6 +408,59 @@ def test_table_scan_projection_single_column_case_sensitive(table_v2: Table) -> 
         identifier_field_ids=[2],
     )
     assert projection_schema.schema_id == 1
+
+
+def test_case_insensitive_operations_raise_on_case_variant_columns(catalog: Catalog) -> None:
+    """A case-insensitive lookup of ID on a table with ID and id raises, instead of acting on the id column."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "ID", LongType(), required=False), NestedField(2, "id", LongType(), required=False))
+    table = catalog.create_table("default.case_variants", schema=schema)
+    table.append(pa.table({"ID": pa.array([5, 6], pa.int64()), "id": pa.array([7, 5], pa.int64())}))
+    collision = "Cannot build lower case index: ID and id collide"
+
+    with pytest.raises(ValueError, match=collision):
+        table.delete("ID = 5", case_sensitive=False)
+    with pytest.raises(ValueError, match=collision):
+        table.scan(row_filter=EqualTo("ID", 5), case_sensitive=False).to_arrow()
+    with pytest.raises(ValueError, match=collision):
+        table.update_sort_order(case_sensitive=False).asc("ID", IdentityTransform()).commit()
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.delete_column("ID")
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.rename_column("ID", "key")
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.add_column("Id", LongType())
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.move_first("ID")
+
+    reloaded = catalog.load_table("default.case_variants")
+    assert reloaded.schema() == schema
+    assert sorted((row["ID"], row["id"]) for row in reloaded.scan().to_arrow().to_pylist()) == [(5, 7), (6, 5)]
+
+
+def test_case_sensitive_and_unambiguous_operations_are_unchanged(catalog: Catalog) -> None:
+    """Exact-case lookups still resolve each column on a table with ID and id, and unambiguous names work case-insensitively."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "ID", LongType(), required=False), NestedField(2, "id", LongType(), required=False))
+    table = catalog.create_table("default.case_variants_exact", schema=schema)
+    table.append(pa.table({"ID": pa.array([5, 6], pa.int64()), "id": pa.array([7, 5], pa.int64())}))
+
+    assert table.scan(row_filter=EqualTo("ID", 5)).to_arrow()["id"].to_pylist() == [7]
+    table.delete("ID = 5")
+    assert sorted((row["ID"], row["id"]) for row in table.scan().to_arrow().to_pylist()) == [(6, 5)]
+
+    unambiguous = catalog.create_table("default.unambiguous", schema=Schema(NestedField(1, "ID", LongType(), required=False)))
+    unambiguous.append(pa.table({"ID": pa.array([5, 6], pa.int64())}))
+    unambiguous.delete("id = 5", case_sensitive=False)
+    assert unambiguous.scan().to_arrow()["ID"].to_pylist() == [6]
 
 
 def test_table_scan_projection_unknown_column(table_v2: Table) -> None:

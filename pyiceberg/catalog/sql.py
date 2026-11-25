@@ -617,20 +617,24 @@ class SqlCatalog(MetastoreCatalog):
         if self.namespace_exists(namespace):
             raise NamespaceAlreadyExistsError(f"Namespace {namespace} already exists")
 
-        if not properties:
-            properties = IcebergNamespaceProperties.NAMESPACE_MINIMAL_PROPERTIES
         create_properties = properties if properties else IcebergNamespaceProperties.NAMESPACE_MINIMAL_PROPERTIES
+        namespace_string = Catalog.namespace_to_string(namespace, NoSuchNamespaceError)
         with Session(self.engine) as session:
-            for key, value in create_properties.items():
-                session.add(
-                    IcebergNamespaceProperties(
-                        catalog_name=self.name,
-                        namespace=Catalog.namespace_to_string(namespace, NoSuchNamespaceError),
-                        property_key=key,
-                        property_value=value,
+            try:
+                for key, value in create_properties.items():
+                    session.add(
+                        IcebergNamespaceProperties(
+                            catalog_name=self.name,
+                            namespace=namespace_string,
+                            property_key=key,
+                            property_value=value,
+                        )
                     )
-                )
-            session.commit()
+                session.commit()
+            except IntegrityError as e:
+                if any(k is None or v is None for k, v in create_properties.items()):
+                    raise
+                raise NamespaceAlreadyExistsError(f"Namespace {namespace} already exists") from e
 
     @override
     def drop_namespace(self, namespace: str | Identifier) -> None:

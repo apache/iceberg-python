@@ -226,7 +226,10 @@ class DynamoDbCatalog(MetastoreCatalog):
         try:
             self._put_dynamo_item(
                 item=_get_create_table_item(
-                    database_name=database_name, table_name=table_name, properties=properties, metadata_location=metadata_location
+                    database_name=database_name,
+                    table_name=table_name,
+                    properties=metadata.properties,
+                    metadata_location=metadata_location,
                 ),
                 condition_expression=f"attribute_not_exists({DYNAMODB_COL_IDENTIFIER})",
             )

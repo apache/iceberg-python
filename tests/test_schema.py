@@ -34,6 +34,7 @@ from pyiceberg.schema import (
     sanitize_column_names,
 )
 from pyiceberg.table import Table, Transaction
+from pyiceberg.table.metadata_columns import project_schema
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.typedef import EMPTY_DICT, StructProtocol
 from pyiceberg.types import (
@@ -878,6 +879,83 @@ def test_schema_select_cant_be_found(table_schema_nested: Schema) -> None:
     with pytest.raises(ValueError) as exc_info:
         table_schema_nested.select("BAZ", case_sensitive=True)
     assert "Could not find column: 'BAZ'" in str(exc_info.value)
+
+
+def test_schema_case_insensitive_lookup_of_case_variant_names_raises() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="ID", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="id", field_type=LongType(), required=False),
+    )
+    assert schema.find_field("ID").field_id == 1
+    assert schema.find_field("id").field_id == 2
+    for name in ("ID", "Id", "id"):
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            schema.find_field(name, case_sensitive=False)
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            schema.select(name, case_sensitive=False)
+
+
+def test_schema_case_insensitive_lookup_of_nested_case_variant_names_raises() -> None:
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="profile",
+            field_type=StructType(
+                NestedField(field_id=2, name="CODE", field_type=LongType(), required=False),
+                NestedField(field_id=3, name="code", field_type=LongType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+    assert schema.find_field("profile.code").field_id == 3
+    with pytest.raises(ValueError, match="Cannot build lower case index: profile.CODE and profile.code collide"):
+        schema.find_field("profile.code", case_sensitive=False)
+
+
+def test_schema_case_insensitive_lookup_of_list_element_struct_field() -> None:
+    """The short name of a list element struct field maps to the same field ID, which is not a collision."""
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="items",
+            field_type=ListType(
+                element_id=2,
+                element_type=StructType(NestedField(field_id=3, name="value", field_type=LongType(), required=False)),
+                element_required=False,
+            ),
+            required=False,
+        ),
+    )
+    assert schema.find_field("ITEMS.VALUE", case_sensitive=False).field_id == 3
+    assert schema.find_field("items.element.value", case_sensitive=False).field_id == 3
+
+
+def test_schema_case_insensitive_lookup_rejects_collision_for_any_name() -> None:
+    schema = Schema(
+        NestedField(1, "ID", LongType()),
+        NestedField(2, "id", LongType()),
+        NestedField(3, "safe", LongType()),
+    )
+    # As in Java, the lower-case index cannot be built, so unambiguous and missing names fail too
+    for name in ("safe", "missing"):
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            schema.find_field(name, case_sensitive=False)
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            schema.select(name, case_sensitive=False)
+
+
+def test_metadata_column_projection_propagates_case_collision() -> None:
+    schema = Schema(NestedField(1, "ID", LongType()), NestedField(2, "id", LongType()))
+    with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+        project_schema(schema, ("_row_id",), case_sensitive=False, format_version=3)
+
+
+def test_identifier_field_lookup_propagates_case_collision(table_v2: Table) -> None:
+    schema = Schema(NestedField(1, "ID", LongType(), required=True), NestedField(2, "id", LongType(), required=True))
+    update = UpdateSchema(transaction=Transaction(table_v2), schema=schema, case_sensitive=False)
+    update.set_identifier_fields("ID")
+    with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+        update._apply()
 
 
 def can_promote_decimal(file_type: DecimalType, read_type: DecimalType) -> bool:

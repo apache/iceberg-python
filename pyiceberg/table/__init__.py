@@ -79,6 +79,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortOrder
 from pyiceberg.table.update import (
     AddPartitionSpecUpdate,
     AddSchemaUpdate,
+    AddSnapshotUpdate,
     AddSortOrderUpdate,
     AssertCreate,
     AssertRefSnapshotId,
@@ -164,6 +165,9 @@ class TableProperties:
     PARQUET_PAGE_ROW_LIMIT = "write.parquet.page-row-limit"
     PARQUET_PAGE_ROW_LIMIT_DEFAULT = 20000
 
+    PARQUET_PAGE_INDEX_ENABLED = "write.parquet.page-index-enabled"
+    PARQUET_PAGE_INDEX_ENABLED_DEFAULT = True
+
     PARQUET_DICT_SIZE_BYTES = "write.parquet.dict-size-bytes"
     PARQUET_DICT_SIZE_BYTES_DEFAULT = 2 * 1024 * 1024  # 2 MB
 
@@ -226,7 +230,7 @@ class TableProperties:
     MANIFEST_MIN_MERGE_COUNT_DEFAULT = 100
 
     MANIFEST_MERGE_ENABLED = "commit.manifest-merge.enabled"
-    MANIFEST_MERGE_ENABLED_DEFAULT = False
+    MANIFEST_MERGE_ENABLED_DEFAULT = True
 
     METADATA_COMPRESSION = "write.metadata.compression-codec"
     METADATA_COMPRESSION_DEFAULT = "none"
@@ -1031,9 +1035,9 @@ class Transaction:
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
-    def _find_referenced_data_files(self, file_paths: list[str]) -> list[str]:
+    def _find_referenced_data_files(self, file_paths: list[str], branch: str | None = MAIN_BRANCH) -> list[str]:
         """Return file_paths already referenced by data files in the current snapshot."""
-        snapshot = self.table_metadata.current_snapshot()
+        snapshot = self.table_metadata.snapshot_by_name(branch)
         if snapshot is None:
             return []
 
@@ -1070,12 +1074,13 @@ class Transaction:
             FileNotFoundError: If the file does not exist.
             ValueError: Raises a ValueError given file_paths contains duplicate files
             ValueError: Raises a ValueError given file_paths already referenced by table
+            ValidationException: Raises a ValidationException if a file becomes referenced during a commit retry
         """
         if len(file_paths) != len(set(file_paths)):
             raise ValueError("File paths must be unique")
 
         if check_duplicate_files:
-            referenced_files = self._find_referenced_data_files(file_paths)
+            referenced_files = self._find_referenced_data_files(file_paths, branch)
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
@@ -1084,6 +1089,16 @@ class Transaction:
                 **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
             )
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
+            if check_duplicate_files:
+
+                def validate_duplicate_files() -> None:
+                    referenced_files = self._find_referenced_data_files(file_paths, branch)
+                    if referenced_files:
+                        raise ValidationException(
+                            f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}"
+                        )
+
+                append_files._set_retry_validator(validate_duplicate_files)
             data_files = _parquet_files_to_data_files(
                 table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
             )
@@ -1238,7 +1253,7 @@ class Transaction:
         return self._table
 
     def _attempt_landed(self) -> bool:
-        """Refresh the table and return whether a snapshot written by this transaction is present.
+        """Refresh the table and return whether the snapshots added by this transaction are present.
 
         Raises:
             CommitStateUnknownException: If the table cannot be refreshed, the outcome is unknown and
@@ -1251,8 +1266,9 @@ class Transaction:
                 f"Commit failed and the table could not be refreshed to check whether it landed: {e}"
             ) from e
 
-        return all(
-            self._table.metadata.snapshot_by_id(producer._snapshot_id) is not None for producer in self._snapshot_producers
+        added_snapshot_ids = {update.snapshot.snapshot_id for update in self._updates if isinstance(update, AddSnapshotUpdate)}
+        return bool(added_snapshot_ids) and all(
+            self._table.metadata.snapshot_by_id(snapshot_id) is not None for snapshot_id in added_snapshot_ids
         )
 
     def _cleanup_uncommitted_manifests(self) -> None:
@@ -1673,10 +1689,15 @@ class Table:
             timestamp_ms: Find snapshot that was current at/before this timestamp
             inclusive: Includes timestamp_ms in search when True. Excludes timestamp_ms when False
         """
-        for log_entry in reversed(self.history()):
-            if (inclusive and log_entry.timestamp_ms <= timestamp_ms) or log_entry.timestamp_ms < timestamp_ms:
-                return self.snapshot_by_id(log_entry.snapshot_id)
-        return None
+        # The snapshot log is not guaranteed to be ordered by timestamp, so pick the latest timestamp rather than the last entry
+        candidate: SnapshotLogEntry | None = None
+        for log_entry in self.history():
+            if log_entry.timestamp_ms > timestamp_ms or (not inclusive and log_entry.timestamp_ms == timestamp_ms):
+                continue
+            # On equal timestamps the later entry wins, it is the state that was current last
+            if candidate is None or log_entry.timestamp_ms >= candidate.timestamp_ms:
+                candidate = log_entry
+        return self.snapshot_by_id(candidate.snapshot_id) if candidate is not None else None
 
     def history(self) -> list[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
@@ -2358,16 +2379,19 @@ class FileScanTask(ScanTask):
     file: DataFile
     delete_files: set[DataFile]
     residual: BooleanExpression
+    data_sequence_number: int | None
 
     def __init__(
         self,
         data_file: DataFile,
         delete_files: set[DataFile] | None = None,
         residual: BooleanExpression = ALWAYS_TRUE,
+        data_sequence_number: int | None = None,
     ) -> None:
         self.file = data_file
         self.delete_files = delete_files or set()
         self.residual = residual
+        self.data_sequence_number = data_sequence_number
 
     @staticmethod
     def from_rest_response(
@@ -3026,6 +3050,7 @@ class ManifestGroupPlanner:
                     partition_key=data_entry.data_file.partition,
                 ),
                 residual=ALWAYS_TRUE if self._ignore_residuals else residual_for(data_entry.data_file),
+                data_sequence_number=data_entry.sequence_number,
             )
             for data_entry in data_entries
         ]
