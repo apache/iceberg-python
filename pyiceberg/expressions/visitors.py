@@ -50,7 +50,9 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     BoundTerm,
     BoundUnaryPredicate,
+    IsNull,
     Not,
+    NotNull,
     Or,
     UnboundPredicate,
 )
@@ -1969,35 +1971,28 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
             return predicate
 
         for part in parts:
-            strict_projection = part.transform.strict_project(part.name, predicate)
-            strict_result = None
-
-            if strict_projection is not None:
-                bound = strict_projection.bind(self.partition_schema, case_sensitive=self.case_sensitive)
-                if isinstance(bound, BoundPredicate):
-                    strict_result = super().visit_bound_predicate(bound)
-                else:
-                    # if the result is not a predicate, then it must be a constant like alwaysTrue or alwaysFalse
-                    strict_result = bound
-
-            if isinstance(strict_result, AlwaysTrue):
+            if isinstance(self._eval_projection(part.transform.strict_project(part.name, predicate)), AlwaysTrue):
                 return AlwaysTrue()
 
-            inclusive_projection = part.transform.project(part.name, predicate)
-            inclusive_result = None
-            if inclusive_projection is not None:
-                bound_inclusive = inclusive_projection.bind(self.partition_schema, case_sensitive=self.case_sensitive)
-                if isinstance(bound_inclusive, BoundPredicate):
-                    # using predicate method specific to inclusive
-                    inclusive_result = super().visit_bound_predicate(bound_inclusive)
-                else:
-                    # if the result is not a predicate, then it must be a constant like alwaysTrue or
-                    # alwaysFalse
-                    inclusive_result = bound_inclusive
-            if isinstance(inclusive_result, AlwaysFalse):
+            if isinstance(self._eval_projection(part.transform.project(part.name, predicate)), AlwaysFalse):
                 return AlwaysFalse()
 
         return predicate
+
+    def _eval_projection(self, projection: UnboundPredicate | None) -> BooleanExpression | None:
+        if projection is None:
+            return None
+
+        bound = projection.bind(self.partition_schema, case_sensitive=self.case_sensitive)
+        if not isinstance(bound, BoundPredicate):
+            # if the result is not a predicate, then it must be a constant like alwaysTrue or alwaysFalse
+            return bound
+
+        # A NULL partition value only decides null checks; leave other predicates to the reader's NULL semantics
+        if bound.as_unbound not in (IsNull, NotNull) and bound.term.eval(self.struct) is None:
+            return None
+
+        return super().visit_bound_predicate(bound)
 
     def visit_unbound_predicate(self, predicate: UnboundPredicate) -> BooleanExpression:
         bound = predicate.bind(self.schema, case_sensitive=self.case_sensitive)

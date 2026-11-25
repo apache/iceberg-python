@@ -77,6 +77,7 @@ class _Move:
 class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
     _schema: Schema
     _last_column_id: itertools.count[int]
+    _identifier_field_ids: set[int]
     _identifier_field_names: set[str]
 
     _adds: dict[int, list[NestedField]] = {}
@@ -108,7 +109,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             self._last_column_id = itertools.count(1 + self._transaction.table_metadata.last_column_id)
 
         self._name_mapping = name_mapping
-        self._identifier_field_names = self._schema.identifier_field_names()
+        self._identifier_field_ids = set(self._schema.identifier_field_ids)
+        self._identifier_field_names = set()
 
         self._adds = {}
         self._updates = {}
@@ -149,6 +151,12 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         new_schema: Schema | pa.Schema,
         format_version: TableVersion = 2,
     ) -> UpdateSchema:
+        """Merge new_schema into the existing schema by field name.
+
+        Raises:
+            ValueError: When case_sensitive is False and a field lookup searches an existing struct
+                containing two fields with the same lower-case name.
+        """
         from pyiceberg.catalog import Catalog
 
         visit_with_partner(
@@ -211,11 +219,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
 
             parent_id = parent_field.field_id
 
-        existing_field = None
-        try:
-            existing_field = self._schema.find_field(full_name, self._case_sensitive)
-        except ValueError:
-            pass
+        existing_field = self._schema._find_field_or_none(full_name, self._case_sensitive)
 
         if existing_field is not None and existing_field.field_id not in self._deletes:
             raise ValueError(f"Cannot add column, name already exists: {full_name}")
@@ -331,13 +335,6 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 write_default=field_from.write_default,
             )
 
-        # Lookup the field because of casing
-        from_field_correct_casing = self._schema.find_column_name(field_from.field_id)
-        if from_field_correct_casing in self._identifier_field_names:
-            self._identifier_field_names.remove(from_field_correct_casing)
-            new_identifier_path = f"{from_field_correct_casing[: -len(field_from.name)]}{new_name}"
-            self._identifier_field_names.add(new_identifier_path)
-
         return self
 
     def make_column_optional(self, path: str | tuple[str, ...]) -> UpdateSchema:
@@ -353,7 +350,13 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def set_identifier_fields(self, *fields: str) -> None:
-        self._identifier_field_names = set(fields)
+        self._identifier_field_ids = set()
+        self._identifier_field_names = set()
+        for field_name in fields:
+            try:
+                self._identifier_field_ids.add(self._schema.find_field(field_name, self._case_sensitive).field_id)
+            except ValueError:
+                self._identifier_field_names.add(field_name)
 
     def _set_column_requirement(self, path: str | tuple[str, ...], required: bool) -> None:
         path = (path,) if isinstance(path, str) else path
@@ -507,10 +510,8 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         if (added_id := self._added_name_to_id.get(name if self._case_sensitive else name.lower())) is not None:
             return added_id
 
-        try:
-            return self._schema.find_field(name, self._case_sensitive).field_id
-        except ValueError:
-            return None
+        field = self._schema._find_field_or_none(name, self._case_sensitive)
+        return field.field_id if field is not None else None
 
     def _move(self, move: _Move) -> None:
         if parent_name := self._id_to_parent.get(move.field_id):
@@ -672,14 +673,16 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
                 validate_partition_name(
                     partition_field.name, partition_field.transform, partition_field.source_id, new_schema, set()
                 )
-        field_ids = set()
+        field_ids = set(self._identifier_field_ids)
+        for field_id in self._identifier_field_ids:
+            if new_schema.find_column_name(field_id) is None:
+                name = self._schema.find_column_name(field_id)
+                raise ValueError(f"Cannot find identifier field {name}. In case of deletion, update the identifier fields first.")
+
         for name in self._identifier_field_names:
-            try:
-                field = new_schema.find_field(name, case_sensitive=self._case_sensitive)
-            except ValueError as e:
-                raise ValueError(
-                    f"Cannot find identifier field {name}. In case of deletion, update the identifier fields first."
-                ) from e
+            field = new_schema._find_field_or_none(name, case_sensitive=self._case_sensitive)
+            if field is None:
+                raise ValueError(f"Cannot find identifier field {name}. In case of deletion, update the identifier fields first.")
 
             field_ids.add(field.field_id)
 

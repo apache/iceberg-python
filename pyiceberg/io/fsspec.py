@@ -23,7 +23,6 @@ import logging
 import os
 import threading
 from collections.abc import Callable
-from copy import copy
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
@@ -38,6 +37,7 @@ from requests import HTTPError
 from typing_extensions import override
 
 from pyiceberg.catalog import TOKEN, URI
+from pyiceberg.catalog.rest import _user_agent
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
@@ -66,6 +66,7 @@ from pyiceberg.io import (
     GCS_SERVICE_HOST,
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
+    GCS_TOKEN_EXPIRES_AT_MS,
     GCS_VERSION_AWARE,
     HF_ENDPOINT,
     HF_TOKEN,
@@ -95,7 +96,9 @@ from pyiceberg.io import (
 )
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
+from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
+from pyiceberg.utils.transient import _TransientStateMixin
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +144,7 @@ class S3V4RestSigner(S3RequestSigner):
             signer_headers["Authorization"] = auth_header
 
         signer_headers.update(get_header_properties(self.properties))
+        signer_headers["User-Agent"] = _user_agent()
 
         signer_body = {
             "method": request.method,
@@ -160,6 +164,8 @@ class S3V4RestSigner(S3RequestSigner):
             raise SignError(f"Failed to sign request {response.status_code}: {signer_body}") from e
 
         for key, value in response_json["headers"].items():
+            # Replace instead of append, so a header the request already has is not sent twice
+            del request.headers[key]
             request.headers.add_header(key, ", ".join(value))
 
         request.url = response_json["uri"]
@@ -228,29 +234,42 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "config_kwargs": config_kwargs,
     }
 
+    session_kwargs: dict[str, Any] = {}
     if profile_name := get_first_property_value(properties, S3_PROFILE_NAME, AWS_PROFILE_NAME):
         s3_fs_kwargs["profile"] = profile_name
+        session_kwargs["profile"] = profile_name
 
     if s3_additional_kwargs:
         s3_fs_kwargs["s3_additional_kwargs"] = s3_additional_kwargs
 
-    fs = S3FileSystem(**s3_fs_kwargs)
+    if register_events:
+        from aiobotocore.session import AioSession
 
-    for event_name, event_function in register_events.items():
-        fs.s3.meta.events.unregister(event_name, unique_id=1925)
-        fs.s3.meta.events.register_last(event_name, event_function, unique_id=1925)
+        # Register the signer on a session that only this filesystem uses. s3fs caches and shares
+        # the client between threads, and unregistering the signer on a shared client leaves a
+        # window in which a request is sent unsigned.
+        session = AioSession(**session_kwargs)
+        event_emitter = session.get_component("event_emitter")
+        for event_name, event_function in register_events.items():
+            event_emitter.register_last(event_name, event_function, unique_id=1925)
+        s3_fs_kwargs["session"] = session
 
-    return fs
+    return S3FileSystem(**s3_fs_kwargs)
 
 
 def _gs(properties: Properties) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
+    from google.oauth2.credentials import Credentials
+
+    token: str | Credentials | None = properties.get(GCS_TOKEN)
+    if token and (expires_at := properties.get(GCS_TOKEN_EXPIRES_AT_MS)):
+        token = Credentials(token, expiry=millis_to_datetime(int(expires_at)))
 
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
         access=properties.get(GCS_ACCESS, "full_control"),
-        token=properties.get(GCS_TOKEN),
+        token=token,
         consistency=properties.get(GCS_CONSISTENCY, "none"),
         cache_timeout=properties.get(GCS_CACHE_TIMEOUT),
         requester_pays=property_as_bool(properties, GCS_REQUESTER_PAYS, False),
@@ -443,13 +462,18 @@ class FsspecOutputFile(OutputFile):
         return FsspecInputFile(location=self.location, fs=self._fs)
 
 
-class FsspecFileIO(FileIO):
+class FsspecFileIO(_TransientStateMixin, FileIO):
     """A FileIO implementation that uses fsspec."""
+
+    _transient_attrs = ("_thread_locals",)
 
     def __init__(self, properties: Properties):
         self._scheme_to_fs: dict[str, Callable[..., AbstractFileSystem]] = dict(SCHEME_TO_FS)
-        self._thread_locals = threading.local()
+        self._init_transient()
         super().__init__(properties=properties)
+
+    def _init_transient(self) -> None:
+        self._thread_locals = threading.local()
 
     @override
     def new_input(self, location: str) -> FsspecInputFile:
@@ -521,14 +545,3 @@ class FsspecFileIO(FileIO):
             return _adls(self.properties, hostname)
 
         return self._scheme_to_fs[scheme](self.properties)
-
-    def __getstate__(self) -> dict[str, Any]:
-        """Create a dictionary of the FsSpecFileIO fields used when pickling."""
-        fileio_copy = copy(self.__dict__)
-        del fileio_copy["_thread_locals"]
-        return fileio_copy
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Deserialize the state into a FsSpecFileIO instance."""
-        self.__dict__ = state
-        self._thread_locals = threading.local()

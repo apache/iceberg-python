@@ -613,7 +613,6 @@ def test_validate_no_new_delete_files_for_data_files_raises_on_conflict(
             _validate_no_new_deletes_for_data_files(
                 table=table,
                 starting_snapshot=newest_snapshot,
-                data_filter=None,
                 data_files={mocked_data_file},
                 parent_snapshot=oldest_snapshot,
             )

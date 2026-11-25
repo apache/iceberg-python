@@ -23,15 +23,17 @@ import sys
 import time
 import uuid
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from enum import Enum, StrEnum
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
+    TypeVar,
 )
 from urllib.parse import quote, unquote
 
-from pydantic import ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import BeforeValidator, ConfigDict, Field, TypeAdapter, field_validator
 from requests import HTTPError, PreparedRequest, Response, Session
 from requests.adapters import DEFAULT_RETRIES, HTTPAdapter
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
@@ -71,6 +73,7 @@ from pyiceberg.exceptions import (
     UnauthorizedError,
     ViewAlreadyExistsError,
 )
+from pyiceberg.expressions import AlwaysTrue, BooleanExpression
 from pyiceberg.io import (
     AWS_ACCESS_KEY_ID,
     AWS_PROFILE_NAME,
@@ -361,6 +364,11 @@ def _retry_hook(retry_state: RetryCallState) -> None:
     rest_catalog._refresh_token()  # pylint: disable=protected-access
 
 
+def _user_agent() -> str:
+    """Return the User-Agent recommended by the REST catalog spec, for example `pyiceberg/0.11.0 (cpython 3.11.4)`."""
+    return f"pyiceberg/{__version__} ({platform.python_implementation().lower()} {platform.python_version()})"
+
+
 _RETRY_ARGS = {
     "retry": retry_if_exception_type((AuthorizationExpiredError, UnauthorizedError)),
     "stop": stop_after_attempt(2),
@@ -369,11 +377,23 @@ _RETRY_ARGS = {
 }
 
 
+T = TypeVar("T")
+
+
+def _empty_if_none(factory: Callable[[], Any]) -> BeforeValidator:
+    return BeforeValidator(lambda v: factory() if v is None else v)
+
+
+# A JSON null is read as an empty list / map, like Java's `hasNonNull`
+NullableList = Annotated[list[T], _empty_if_none(list)]
+NullableProperties = Annotated[Properties, _empty_if_none(dict)]
+
+
 class TableResponse(IcebergBaseModel):
     metadata_location: str | None = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
-    config: Properties = Field(default_factory=dict)
-    storage_credentials: list[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
+    config: NullableProperties = Field(default_factory=dict)
+    storage_credentials: NullableList[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
     labels: Labels = Field(default_factory=Labels)
 
 
@@ -384,7 +404,7 @@ class LoadCredentialsResponse(IcebergBaseModel):
 class ViewResponse(IcebergBaseModel):
     metadata_location: str = Field(..., alias="metadata-location")
     metadata: ViewMetadata
-    config: Properties = Field(default_factory=dict)
+    config: NullableProperties = Field(default_factory=dict)
     labels: Labels = Field(default_factory=Labels)
 
 
@@ -437,8 +457,8 @@ class RegisterViewRequest(IcebergBaseModel):
 
 
 class ConfigResponse(IcebergBaseModel):
-    defaults: Properties | None = Field(default_factory=dict)
-    overrides: Properties | None = Field(default_factory=dict)
+    defaults: NullableProperties = Field(default_factory=dict)
+    overrides: NullableProperties = Field(default_factory=dict)
     endpoints: set[Endpoint] | None = Field(default=None)
     idempotency_key_lifetime: str | None = Field(alias="idempotency-key-lifetime", default=None)
 
@@ -855,13 +875,15 @@ class RestCatalog(Catalog):
             sleep_ms = min(sleep_ms * REST_SCAN_PLANNING_POLL_SCALE_FACTOR, REST_SCAN_PLANNING_POLL_MAX_SLEEP_MS)
             retries += 1
 
-    def _expand_plan_tasks(self, identifier: str | Identifier, response: PlanCompleted) -> list[FileScanTask]:
+    def _expand_plan_tasks(
+        self, identifier: str | Identifier, response: PlanCompleted, fallback_residual: BooleanExpression
+    ) -> list[FileScanTask]:
         """Expand a completed plan response into FileScanTask objects, including pagination."""
         tasks: list[FileScanTask] = []
 
         # Collect tasks from initial response
         for task in response.file_scan_tasks:
-            tasks.append(FileScanTask.from_rest_response(task, response.delete_files))
+            tasks.append(FileScanTask.from_rest_response(task, response.delete_files, fallback_residual=fallback_residual))
 
         # Fetch and collect from additional batches
         pending_tasks = deque(response.plan_tasks)
@@ -869,7 +891,7 @@ class RestCatalog(Catalog):
             plan_task = pending_tasks.popleft()
             batch = self._fetch_scan_tasks(identifier, plan_task)
             for task in batch.file_scan_tasks:
-                tasks.append(FileScanTask.from_rest_response(task, batch.delete_files))
+                tasks.append(FileScanTask.from_rest_response(task, batch.delete_files, fallback_residual=fallback_residual))
             pending_tasks.extend(batch.plan_tasks)
 
         return tasks
@@ -896,7 +918,7 @@ class RestCatalog(Catalog):
         if not isinstance(response, PlanCompleted):
             raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
 
-        tasks = self._expand_plan_tasks(identifier, response)
+        tasks = self._expand_plan_tasks(identifier, response, request.filter or AlwaysTrue())
         return PlannedScanResult(
             tasks=tasks,
             storage_credentials=list(response.storage_credentials or []),
@@ -1232,9 +1254,7 @@ class RestCatalog(Catalog):
         header_properties = get_header_properties(self.properties)
         session.headers.update(header_properties)
         session.headers["Content-type"] = "application/json"
-        session.headers["User-Agent"] = (
-            f"pyiceberg/{__version__} ({platform.python_implementation().lower()} {platform.python_version()})"
-        )
+        session.headers["User-Agent"] = _user_agent()
         session.headers["X-Client-Version"] = f"PyIceberg {__version__}"
         session.headers.setdefault("X-Iceberg-Access-Delegation", ACCESS_DELEGATION_DEFAULT)
 
@@ -1664,9 +1684,11 @@ class RestCatalog(Catalog):
             _handle_non_200_response(
                 exc,
                 {
+                    404: NoSuchTableError,
                     409: CommitFailedException,
                     500: CommitStateUnknownException,
                     502: CommitStateUnknownException,
+                    503: CommitStateUnknownException,
                     504: CommitStateUnknownException,
                 },
             )

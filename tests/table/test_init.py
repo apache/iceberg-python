@@ -50,6 +50,7 @@ from pyiceberg.table import (
 )
 from pyiceberg.table.labels import Labels
 from pyiceberg.table.metadata import EncryptedKey, TableMetadataUtil, TableMetadataV1, TableMetadataV2, _generate_snapshot_id
+from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID, project_schema, split_selected_fields
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     MetadataLogEntry,
@@ -124,6 +125,7 @@ from pyiceberg.types import (
     TimeType,
     UUIDType,
 )
+from tests.table.test_commit_retry import commit_partition_position_delete
 
 
 def test_schema(table_v2: Table) -> None:
@@ -380,6 +382,59 @@ def test_table_scan_projection_single_column_case_sensitive(table_v2: Table) -> 
     assert projection_schema.schema_id == 1
 
 
+def test_case_insensitive_operations_raise_on_case_variant_columns(catalog: Catalog) -> None:
+    """A case-insensitive lookup of ID on a table with ID and id raises, instead of acting on the id column."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "ID", LongType(), required=False), NestedField(2, "id", LongType(), required=False))
+    table = catalog.create_table("default.case_variants", schema=schema)
+    table.append(pa.table({"ID": pa.array([5, 6], pa.int64()), "id": pa.array([7, 5], pa.int64())}))
+    collision = "Cannot build lower case index: ID and id collide"
+
+    with pytest.raises(ValueError, match=collision):
+        table.delete("ID = 5", case_sensitive=False)
+    with pytest.raises(ValueError, match=collision):
+        table.scan(row_filter=EqualTo("ID", 5), case_sensitive=False).to_arrow()
+    with pytest.raises(ValueError, match=collision):
+        table.update_sort_order(case_sensitive=False).asc("ID", IdentityTransform()).commit()
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.delete_column("ID")
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.rename_column("ID", "key")
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.add_column("Id", LongType())
+    with pytest.raises(ValueError, match=collision):
+        with table.update_schema(case_sensitive=False) as update:
+            update.move_first("ID")
+
+    reloaded = catalog.load_table("default.case_variants")
+    assert reloaded.schema() == schema
+    assert sorted((row["ID"], row["id"]) for row in reloaded.scan().to_arrow().to_pylist()) == [(5, 7), (6, 5)]
+
+
+def test_case_sensitive_and_unambiguous_operations_are_unchanged(catalog: Catalog) -> None:
+    """Exact-case lookups still resolve each column on a table with ID and id, and unambiguous names work case-insensitively."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "ID", LongType(), required=False), NestedField(2, "id", LongType(), required=False))
+    table = catalog.create_table("default.case_variants_exact", schema=schema)
+    table.append(pa.table({"ID": pa.array([5, 6], pa.int64()), "id": pa.array([7, 5], pa.int64())}))
+
+    assert table.scan(row_filter=EqualTo("ID", 5)).to_arrow()["id"].to_pylist() == [7]
+    table.delete("ID = 5")
+    assert sorted((row["ID"], row["id"]) for row in table.scan().to_arrow().to_pylist()) == [(6, 5)]
+
+    unambiguous = catalog.create_table("default.unambiguous", schema=Schema(NestedField(1, "ID", LongType(), required=False)))
+    unambiguous.append(pa.table({"ID": pa.array([5, 6], pa.int64())}))
+    unambiguous.delete("id = 5", case_sensitive=False)
+    assert unambiguous.scan().to_arrow()["ID"].to_pylist() == [6]
+
+
 def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
     scan = table_v2.scan()
 
@@ -387,6 +442,51 @@ def test_table_scan_projection_unknown_column(table_v2: Table) -> None:
         _ = scan.select("a").projection()
 
     assert "Could not find column: 'a'" in str(exc_info.value)
+
+
+def test_table_scan_projection_row_lineage_columns(table_v3: Table) -> None:
+    projection_schema = table_v3.scan().select("x", "_row_id", "_last_updated_sequence_number").projection()
+    assert projection_schema == Schema(
+        NestedField(field_id=1, name="x", field_type=LongType(), required=True),
+        ROW_ID,
+        LAST_UPDATED_SEQUENCE_NUMBER,
+        identifier_field_ids=[1],
+    )
+    assert projection_schema.schema_id == 1
+
+
+def test_table_scan_projection_row_lineage_columns_with_star(table_v3: Table) -> None:
+    projection_schema = table_v3.scan(selected_fields=("*", "_row_id")).projection()
+    assert projection_schema.fields == (*table_v3.schema().fields, ROW_ID)
+
+
+def test_table_scan_projection_row_lineage_columns_case_insensitive(table_v3: Table) -> None:
+    projection_schema = table_v3.scan().with_case_sensitive(False).select("X", "_ROW_ID").projection()
+    assert [field.name for field in projection_schema.fields] == ["x", "_row_id"]
+
+
+def test_table_scan_projection_row_lineage_columns_case_sensitive(table_v3: Table) -> None:
+    with pytest.raises(ValueError, match="Could not find column: '_ROW_ID'"):
+        table_v3.scan().select("x", "_ROW_ID").projection()
+
+
+def test_table_scan_projection_row_lineage_columns_before_v3(table_v2: Table) -> None:
+    with pytest.raises(ValueError, match="Cannot select _row_id: row lineage requires format version 3"):
+        table_v2.scan().select("x", "_row_id").projection()
+
+
+def test_incremental_append_scan_projection_row_lineage_columns(table_v3: Table) -> None:
+    projection_schema = table_v3.incremental_append_scan(selected_fields=("x", "_row_id")).projection()
+    assert [field.name for field in projection_schema.fields] == ["x", "_row_id"]
+
+
+def test_project_schema_prefers_schema_column_over_metadata_column() -> None:
+    schema = Schema(NestedField(field_id=1, name="_row_id", field_type=LongType(), required=True))
+    assert project_schema(schema, ("_row_id",), case_sensitive=True, format_version=3) == schema
+    assert split_selected_fields(schema, ("_row_id", "_last_updated_sequence_number"), case_sensitive=True) == (
+        ("_row_id",),
+        (LAST_UPDATED_SEQUENCE_NUMBER,),
+    )
 
 
 def test_data_scan_plan_files_no_current_snapshot(example_table_metadata_no_snapshot_v1: dict[str, Any]) -> None:
@@ -1648,6 +1748,77 @@ def test_update_spec_remove_and_add_field_with_same_name(table_v1: Table, table_
             )
 
 
+def test_update_spec_rename_onto_removed_partition_field_name(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "x", IntegerType(), required=False),
+        NestedField(2, "y", IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"))
+    table = catalog.create_table(
+        "default.rename_onto_removed", schema=schema, partition_spec=spec, properties={"format-version": "1"}
+    )
+    table.update_spec().add_field("y", BucketTransform(16), "y_shard").commit()
+    table.update_spec().remove_field("y_shard").commit()
+    table.update_spec().rename_field("x", "y_shard").commit()
+
+    assert catalog.load_table("default.rename_onto_removed").spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="y_shard"),
+        PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+    )
+
+
+def test_update_spec_rename_onto_explicit_void_partition_field_name(table_v2: Table) -> None:
+    txn = table_v2.transaction()
+    txn.update_spec().add_field("y", VoidTransform(), "y_shard").commit()
+    txn.update_spec().rename_field("x", "y_shard").commit()
+
+    assert txn.table_metadata.spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="y_shard"),
+        PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+    )
+
+
+def test_update_spec_rename_to_unused_partition_field_name(table_v2: Table) -> None:
+    txn = table_v2.transaction()
+    txn.update_spec().rename_field("x", "x_shard").commit()
+
+    assert txn.table_metadata.spec().fields == (
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x_shard"),
+    )
+
+
+def test_update_spec_rename_onto_void_rejects_removal_in_same_update(table_v1: Table, table_v2: Table) -> None:
+    for table in (table_v1, table_v2):
+        txn = table.transaction()
+        txn.update_spec().add_field("y", VoidTransform(), "y_shard").commit()
+
+        with pytest.raises(ValueError, match="^Cannot delete and rename partition field y_shard$"):
+            txn.update_spec().remove_field("y_shard").rename_field("x", "y_shard").commit()
+
+        with pytest.raises(ValueError, match="^Cannot rename and delete field y_shard$"):
+            txn.update_spec().rename_field("x", "y_shard").remove_field("y_shard").commit()
+
+
+def test_update_spec_cascades_void_name_collisions(table_v2: Table) -> None:
+    for add_field in (False, True):
+        txn = table_v2.transaction()
+        txn.update_spec().add_field("y", VoidTransform(), "y_shard").add_field("z", VoidTransform(), "y_shard_1001").commit()
+
+        expected: tuple[PartitionField, ...] = (
+            PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x" if add_field else "y_shard"),
+            PartitionField(source_id=2, field_id=1001, transform=VoidTransform(), name="y_shard_1001"),
+            PartitionField(source_id=3, field_id=1002, transform=VoidTransform(), name="y_shard_1001_1002"),
+        )
+        if add_field:
+            txn.update_spec().add_field("y", BucketTransform(16), "y_shard").commit()
+            expected += (PartitionField(source_id=2, field_id=1003, transform=BucketTransform(16), name="y_shard"),)
+        else:
+            txn.update_spec().rename_field("x", "y_shard").commit()
+
+        assert txn.table_metadata.spec().fields == expected
+
+
 def test_assert_default_spec_id(table_v2: Table) -> None:
     base_metadata = table_v2.metadata
     AssertDefaultSpecId(default_spec_id=base_metadata.default_spec_id).validate(base_metadata)
@@ -2128,16 +2299,17 @@ def test_remove_partition_statistics_update(table_v2_with_statistics: Table) -> 
     assert len(remove_metadata.partition_statistics) == 0
 
 
-def test_remove_partition_statistics_update_with_invalid_snapshot_id(table_v2_with_statistics: Table) -> None:
-    # Remove the same partition statistics file.
-    with pytest.raises(
-        ValueError,
-        match="Partition Statistics with snapshot id 123456789 does not exist",
-    ):
-        update_table_metadata(
-            table_v2_with_statistics.metadata,
-            (RemovePartitionStatisticsUpdate(snapshot_id=123456789),),
-        )
+def test_remove_partition_statistics_update_without_file_is_noop(table_v2_with_statistics: Table) -> None:
+    # Removing a partition statistics file that does not exist leaves the metadata unchanged, also when repeated
+    new_metadata = update_table_metadata(
+        table_v2_with_statistics.metadata,
+        (
+            RemovePartitionStatisticsUpdate(snapshot_id=123456789),
+            RemovePartitionStatisticsUpdate(snapshot_id=123456789),
+        ),
+    )
+
+    assert new_metadata == table_v2_with_statistics.metadata
 
 
 def test_add_encryption_key_update(table_v3: Table) -> None:
@@ -2452,6 +2624,25 @@ def test_overwrite_delete_data_file_on_bucket_partition(catalog: Catalog) -> Non
             overwrite.delete_data_file(data_file)
 
     assert table.scan().to_arrow().num_rows == 0
+
+
+def test_partial_delete_keeps_earlier_deletes_outside_the_filter(catalog: Catalog) -> None:
+    """Rewriting a file applies all of its delete files, not only those whose bounds can match the delete filter."""
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(NestedField(1, "k", LongType(), required=False), NestedField(2, "v", StringType(), required=False))
+    table = catalog.create_table("default.partial_delete", schema=schema, properties={"format-version": "2"})
+    table.append(pa.table({"k": [1, 2, 3], "v": ["a", "b", "c"]}))
+    data_file = next(iter(table.scan().plan_files())).file
+
+    # The delete file stores the deleted row (2, 'b'), so a scan for k = 1 skips it.
+    commit_partition_position_delete(table, Record(), data_file.file_path, pos=1, row={"k": 2, "v": "b"})
+    assert [task.delete_files for task in table.scan(row_filter="k = 1").plan_files()] == [set()]
+
+    table.delete("k = 1")
+
+    assert table.scan().to_arrow()["k"].to_pylist() == [3]
 
 
 def test_static_table_forwards_location_to_table_file_io(metadata_location: str, monkeypatch: pytest.MonkeyPatch) -> None:
