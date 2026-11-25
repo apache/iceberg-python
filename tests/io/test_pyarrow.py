@@ -79,6 +79,7 @@ from pyiceberg.io import (
     ADLS_ACCOUNT_NAME,
     BOTOCORE_SESSION,
     S3_ACCESS_KEY_ID,
+    S3_ANONYMOUS,
     S3_REGION,
     S3_RETRY_STRATEGY_IMPL,
     S3_SECRET_ACCESS_KEY,
@@ -4216,6 +4217,7 @@ def test_pyarrow_file_io_botocore_session_credentials() -> None:
     cases: list[tuple[dict[str, Any], tuple[str | None, str | None, str | None]]] = [
         ({}, ("session-access-key", "session-secret-key", "session-token")),
         (explicit_credentials, ("explicit-access-key", "explicit-secret-key", None)),
+        ({S3_ANONYMOUS: "true"}, (None, None, None)),
     ]
     for properties, expected in cases:
         file_io = PyArrowFileIO({**properties, BOTOCORE_SESSION: session, S3_REGION: "us-east-1"})
@@ -4223,6 +4225,17 @@ def test_pyarrow_file_io_botocore_session_credentials() -> None:
             file_io.new_input("s3://bucket/key")
         kwargs = mock_s3_fs.call_args.kwargs
         assert (kwargs["access_key"], kwargs["secret_key"], kwargs["session_token"]) == expected
+
+
+def test_pyarrow_file_io_botocore_session_with_anonymous() -> None:
+    import botocore.session
+
+    session = botocore.session.get_session()
+    session.set_credentials("session-access-key", "session-secret-key", "session-token")
+    file_io = PyArrowFileIO({BOTOCORE_SESSION: session, S3_ANONYMOUS: "true", S3_REGION: "us-east-1"})
+
+    # Fails with ValueError when access_key and secret_key are passed together with anonymous=True
+    file_io.new_input("s3://bucket/key")
 
 
 def test_pyarrow_file_io_botocore_session_refreshed_credentials() -> None:

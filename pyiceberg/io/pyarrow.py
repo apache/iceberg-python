@@ -523,6 +523,8 @@ class PyArrowFileIO(_TransientStateMixin, FileIO):
             return None
         if get_first_property_value(self.properties, S3_ROLE_ARN, AWS_ASSUME_ROLE_ARN, AWS_ROLE_ARN) is not None:
             return None
+        if property_as_bool(self.properties, S3_ANONYMOUS, False):
+            return None
         if (credentials := session.get_credentials()) is None:
             return None
         # Refreshes the credentials when they are about to expire, which changes the fs_by_scheme cache key
