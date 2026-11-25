@@ -166,3 +166,29 @@ def test_inspect_bounds_after_type_promotion(catalog: InMemoryCatalog) -> None:
         partition_summaries = tbl.inspect.manifests().to_pydict()["partition_summaries"][0]
         assert partition_summaries[0]["lower_bound"] == str(values[0]), name
         assert partition_summaries[0]["upper_bound"] == str(values[-1]), name
+
+
+def test_all_entries_includes_entries_from_every_snapshot(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    tbl = catalog.create_table("default.all_entries", schema)
+    arrow_schema = pa.schema([pa.field("x", pa.int64(), nullable=True)])
+    tbl.append(pa.table({"x": [1]}, schema=arrow_schema))
+    tbl.append(pa.table({"x": [2]}, schema=arrow_schema))
+
+    all_entries = tbl.inspect.all_entries().to_pylist()
+    current_entries = tbl.inspect.entries().to_pylist()
+
+    assert len(all_entries) == 2
+    assert {row["data_file"]["file_path"] for row in all_entries} == {row["data_file"]["file_path"] for row in current_entries}
+    assert {row["snapshot_id"] for row in all_entries} == {snapshot.snapshot_id for snapshot in tbl.metadata.snapshots}
+
+
+def test_all_entries_empty_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    tbl = catalog.create_table("default.all_entries_empty", schema)
+
+    entries = tbl.inspect.all_entries()
+
+    assert entries.num_rows == 0
+    assert entries.schema.field("snapshot_id").type == pa.int64()
+    assert entries.schema.field("data_file").type.num_fields > 0
