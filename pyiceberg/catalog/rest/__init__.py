@@ -23,17 +23,15 @@ import sys
 import time
 import uuid
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from enum import Enum, StrEnum
 from typing import (
     TYPE_CHECKING,
-    Annotated,
     Any,
-    TypeVar,
 )
 from urllib.parse import quote, unquote
 
-from pydantic import BeforeValidator, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import ConfigDict, Field, TypeAdapter, field_validator
 from requests import HTTPError, PreparedRequest, Response, Session
 from requests.adapters import DEFAULT_RETRIES, HTTPAdapter
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
@@ -102,7 +100,7 @@ from pyiceberg.table.update import (
     TableRequirement,
     TableUpdate,
 )
-from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, Properties
+from pyiceberg.typedef import EMPTY_DICT, UTF8, IcebergBaseModel, Identifier, NullableList, NullableProperties, Properties
 from pyiceberg.types import transform_dict_value_to_str
 from pyiceberg.utils.deprecated import deprecation_message
 from pyiceberg.utils.properties import (
@@ -377,18 +375,6 @@ _RETRY_ARGS = {
 }
 
 
-T = TypeVar("T")
-
-
-def _empty_if_none(factory: Callable[[], Any]) -> BeforeValidator:
-    return BeforeValidator(lambda v: factory() if v is None else v)
-
-
-# A JSON null is read as an empty list / map, like Java's `hasNonNull`
-NullableList = Annotated[list[T], _empty_if_none(list)]
-NullableProperties = Annotated[Properties, _empty_if_none(dict)]
-
-
 class TableResponse(IcebergBaseModel):
     metadata_location: str | None = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
@@ -477,14 +463,7 @@ class ListNamespaceResponse(IcebergBaseModel):
 
 class NamespaceResponse(IcebergBaseModel):
     namespace: Identifier = Field()
-    properties: Properties = Field(default_factory=dict)
-
-    @field_validator("properties", mode="before")
-    @classmethod
-    def replace_none_with_dict(cls, v: Any) -> Properties:
-        if v is None:
-            return {}
-        return v
+    properties: NullableProperties = Field(default_factory=dict)
 
 
 class UpdateNamespacePropertiesResponse(IcebergBaseModel):
@@ -921,7 +900,7 @@ class RestCatalog(Catalog):
         tasks = self._expand_plan_tasks(identifier, response, request.filter or AlwaysTrue())
         return PlannedScanResult(
             tasks=tasks,
-            storage_credentials=list(response.storage_credentials or []),
+            storage_credentials=response.storage_credentials,
             plan_id=response.plan_id,
         )
 

@@ -249,7 +249,7 @@ def test_basic_scan_task() -> None:
     data = {"data-file": data_file}
     task = RESTFileScanTask.model_validate(data)
     assert task.data_file.file_path == "s3://bucket/table/file.parquet"
-    assert task.delete_file_references is None
+    assert task.delete_file_references == []
     assert task.residual_filter is None
 
 
@@ -420,8 +420,24 @@ def test_completed_response_with_credentials() -> None:
     }
     result = TypeAdapter(PlanningResponse).validate_python(data)
     assert isinstance(result, PlanCompleted)
-    assert result.storage_credentials is not None
     assert len(result.storage_credentials) == 1
+
+
+def test_completed_response_with_null_fields() -> None:
+    # Like Java, an explicit null reads as an empty list
+    data = {
+        "status": "completed",
+        "delete-files": None,
+        "file-scan-tasks": [{"data-file": _rest_data_file(), "delete-file-references": None}],
+        "plan-tasks": None,
+        "storage-credentials": None,
+    }
+    result = TypeAdapter(PlanningResponse).validate_python(data)
+    assert isinstance(result, PlanCompleted)
+    assert result.delete_files == []
+    assert result.file_scan_tasks[0].delete_file_references == []
+    assert result.plan_tasks == []
+    assert result.storage_credentials == []
 
 
 def test_submitted_response() -> None:

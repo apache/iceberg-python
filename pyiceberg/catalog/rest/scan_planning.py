@@ -27,7 +27,7 @@ from pydantic import Field, model_validator
 from pyiceberg.catalog.rest.response import ErrorResponseMessage
 from pyiceberg.expressions import BooleanExpression, SerializableBooleanExpression
 from pyiceberg.manifest import FileFormat
-from pyiceberg.typedef import IcebergBaseModel
+from pyiceberg.typedef import IcebergBaseModel, NullableList
 
 if TYPE_CHECKING:
     from pyiceberg.table import FileScanTask
@@ -125,23 +125,23 @@ class RESTFileScanTask(IcebergBaseModel):
     """A file scan task from the REST server."""
 
     data_file: RESTDataFile = Field(alias="data-file")
-    delete_file_references: list[int] | None = Field(alias="delete-file-references", default=None)
+    delete_file_references: NullableList[int] = Field(alias="delete-file-references", default_factory=list)
     residual_filter: BooleanExpression | None = Field(alias="residual-filter", default=None)
 
 
 class ScanTasks(IcebergBaseModel):
     """Container for scan tasks returned by the server."""
 
-    delete_files: list[RESTDeleteFile] = Field(alias="delete-files", default_factory=list)
-    file_scan_tasks: list[RESTFileScanTask] = Field(alias="file-scan-tasks", default_factory=list)
-    plan_tasks: list[str] = Field(alias="plan-tasks", default_factory=list)
+    delete_files: NullableList[RESTDeleteFile] = Field(alias="delete-files", default_factory=list)
+    file_scan_tasks: NullableList[RESTFileScanTask] = Field(alias="file-scan-tasks", default_factory=list)
+    plan_tasks: NullableList[str] = Field(alias="plan-tasks", default_factory=list)
 
     @model_validator(mode="after")
     def _validate_delete_file_references(self) -> ScanTasks:
         # validate delete file references are in bounds
         max_idx = len(self.delete_files) - 1
         for task in self.file_scan_tasks:
-            for idx in task.delete_file_references or []:
+            for idx in task.delete_file_references:
                 if idx < 0 or idx > max_idx:
                     raise ValueError(f"Invalid delete file reference: {idx} (valid range: 0-{max_idx})")
 
@@ -156,7 +156,7 @@ class PlanCompleted(ScanTasks):
 
     status: Literal["completed"] = "completed"
     plan_id: str | None = Field(alias="plan-id", default=None)
-    storage_credentials: list[StorageCredential] | None = Field(alias="storage-credentials", default=None)
+    storage_credentials: NullableList[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
 
 
 class PlanSubmitted(IcebergBaseModel):
