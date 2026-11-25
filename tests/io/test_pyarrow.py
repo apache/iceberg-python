@@ -3734,6 +3734,24 @@ def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
     assert table.scan(row_filter=EqualTo("event_time", "22:31:08")).to_arrow()["id"].to_pylist() == [2]
 
 
+def test_append_writes_parquet_page_index(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="id", field_type=LongType(), required=False))
+    catalog.create_namespace("default")
+
+    for page_index_enabled, identifier in [
+        (True, "default.test_append_page_index_enabled"),
+        (False, "default.test_append_page_index_disabled"),
+    ]:
+        properties = {} if page_index_enabled else {TableProperties.PARQUET_PAGE_INDEX_ENABLED: "false"}
+        table = catalog.create_table(identifier, schema=schema, properties=properties)
+        table.append(pa.table({"id": pa.array(range(1000), type=pa.int64())}))
+
+        file_path = next(iter(table.scan().plan_files())).file.file_path
+        column_chunk = pq.read_metadata(file_path).row_group(0).column(0)
+        assert column_chunk.has_column_index is page_index_enabled
+        assert column_chunk.has_offset_index is page_index_enabled
+
+
 def test_append_counts_nan_values(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="f", field_type=FloatType(), required=False),
