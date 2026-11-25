@@ -67,8 +67,8 @@ NestedField(1, "point", "geometry", required=True)
 NestedField(2, "region", "geography", required=True)
 
 # With parameters
-NestedField(3, "location", "geometry('EPSG:4326')", required=True)
-NestedField(4, "boundary", "geography('EPSG:4326', 'planar')", required=True)
+NestedField(3, "location", "geometry(EPSG:4326)", required=True)
+NestedField(4, "boundary", "geography(EPSG:4326, planar)", required=True)
 ```
 
 ## Data Representation
