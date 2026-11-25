@@ -39,7 +39,7 @@ from requests_mock import Mocker
 from pyiceberg.catalog.rest import _user_agent
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
-from pyiceberg.io import fsspec
+from pyiceberg.io import S3_REQUEST_SIGNER, fsspec
 from pyiceberg.io.fsspec import FsspecFileIO, S3V4RestSigner
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.typedef import Properties
@@ -1014,6 +1014,25 @@ def test_s3_registers_the_signer_on_the_session(requests_mock: Mocker) -> None:
 
     with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
         fsspec._s3({"s3.signer": "S3V4RestSigner", "uri": TEST_URI, "s3.endpoint": "http://localhost:9000"})
+
+    session = mock_s3fs.call_args.kwargs["session"]
+    request = _sign_with_session(session, "https://bucket/object")
+
+    assert request.url == new_uri
+    assert request.headers["Authorization"] == "AWS4-HMAC-SHA256 Credential=abc"
+
+
+def test_s3_uses_supplied_signer_instance(requests_mock: Mocker) -> None:
+    new_uri = "https://other-bucket/object"
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={"uri": new_uri, "headers": {"Authorization": ["AWS4-HMAC-SHA256 Credential=abc"]}, "extensions": {}},
+        status_code=200,
+    )
+    signer = S3V4RestSigner({"token": "abc", "uri": TEST_URI})
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        fsspec._s3({S3_REQUEST_SIGNER: signer, "s3.endpoint": "http://localhost:9000"})
 
     session = mock_s3fs.call_args.kwargs["session"]
     request = _sign_with_session(session, "https://bucket/object")

@@ -78,6 +78,8 @@ from pyiceberg.io import (
     AWS_REGION,
     AWS_SECRET_ACCESS_KEY,
     AWS_SESSION_TOKEN,
+    S3_REQUEST_SIGNER,
+    S3_SIGNER,
     FileIO,
     load_file_io,
 )
@@ -678,6 +680,10 @@ class RestCatalog(Catalog):
         merged_properties = {**table_properties, **self.properties, **properties}
         if self._auth_manager:
             merged_properties[AUTH_MANAGER] = self._auth_manager
+        if merged_properties.get(S3_SIGNER):
+            from pyiceberg.io.signer import create_s3_request_signer
+
+            merged_properties[S3_REQUEST_SIGNER] = create_s3_request_signer(merged_properties)
         return load_file_io(merged_properties, location)
 
     def _effective_scan_planning_mode(self, table_config: Properties) -> ScanPlanningMode:
