@@ -340,7 +340,10 @@ def _(
     elif update.format_version == base_metadata.format_version:
         return base_metadata
 
-    updated_metadata = base_metadata.model_copy(update={"format_version": update.format_version})
+    updates: dict[str, Any] = {"format_version": update.format_version}
+    if update.format_version >= 3 and getattr(base_metadata, "next_row_id", None) is None:
+        updates["next_row_id"] = INITIAL_ROW_ID
+    updated_metadata = base_metadata.model_copy(update=updates)
 
     context.add_update(update)
     return TableMetadataUtil._construct_without_validation(updated_metadata)
