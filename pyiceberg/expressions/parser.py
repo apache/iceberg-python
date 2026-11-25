@@ -274,9 +274,13 @@ def _evaluate_like_statement(result: ParseResults) -> BooleanExpression:
     if match and match.groupdict()["invalid_wildcard"]:
         raise ValueError("LIKE expressions only supports wildcard, '%', at the end of a string")
     elif match and match.groupdict()["valid_wildcard"]:
-        return StartsWith(result.column, StringLiteral(literal_like.value[:-1].replace("\\%", "%")))
+        return StartsWith(result.column, StringLiteral(_unescape_like(literal_like.value[:-1])))
     else:
-        return EqualTo(result.column, StringLiteral(literal_like.value.replace("\\%", "%")))
+        return EqualTo(result.column, StringLiteral(_unescape_like(literal_like.value)))
+
+
+def _unescape_like(pattern: str) -> str:
+    return pattern.replace("\\%", "%").replace("\\_", "_")
 
 
 predicate = (between | comparison | in_check | null_check | nan_check | starts_check | boolean).set_results_name("predicate")
