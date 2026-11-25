@@ -199,6 +199,20 @@ def test_create_table_default_sort_order(
     catalog.drop_table(test_table_identifier)
 
 
+def test_create_v1_tables_with_shared_properties(catalog: Catalog, table_schema_nested: Schema) -> None:
+    catalog.create_namespace("default")
+    properties = {"format-version": "1", "owner": "etl"}
+    catalog.create_table("default.first", table_schema_nested, properties=properties)
+    catalog.create_table_if_not_exists("default.first", table_schema_nested, properties=properties)
+    catalog.create_table("default.second", table_schema_nested, properties=properties)
+    catalog.create_table_transaction("default.third", table_schema_nested, properties=properties).commit_transaction()
+
+    tables = [catalog.load_table(f"default.{name}") for name in ("first", "second", "third")]
+    assert [table.format_version for table in tables] == [1, 1, 1]
+    assert [table.properties for table in tables] == [{"owner": "etl"}] * 3
+    assert properties == {"format-version": "1", "owner": "etl"}
+
+
 def test_create_v1_table(catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(test_table_identifier)
     catalog.create_namespace(namespace)
@@ -958,6 +972,45 @@ def test_table_metadata_legacy_invalid_compression_codec_on_commit(
     table.transaction().remove_properties(TableProperties.METADATA_COMPRESSION).commit_transaction()
     assert table.metadata_location != legacy_location
     assert table.metadata_location.endswith(".metadata.json")
+
+
+def test_union_by_name_case_insensitive_duplicates(catalog: Catalog) -> None:
+    catalog.create_namespace_if_not_exists("default")
+    schema = Schema(NestedField(1, "ID", LongType(), required=False), NestedField(2, "id", LongType(), required=False))
+    table = catalog.create_table("default.case_variants", schema=schema)
+    # A case-insensitive union fails on the table's ID and id, and the table is left unchanged
+    # An id-only schema adds nothing, so only the struct lookup can raise here
+    id_only = Schema(NestedField(1, "id", LongType(), required=False))
+    with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+        with table.update_schema(case_sensitive=False) as update:
+            update.union_by_name(id_only)
+    assert catalog.load_table("default.case_variants").schema() == schema
+
+    # The case-sensitive union matches id exactly and adds name
+    incoming = Schema(NestedField(1, "id", LongType(), required=False), NestedField(2, "name", StringType(), required=False))
+    with table.update_schema() as update:
+        update.union_by_name(incoming)
+    assert [field.name for field in catalog.load_table("default.case_variants").schema().fields] == ["ID", "id", "name"]
+
+    # Without a collision, a case-insensitive union still matches the existing column
+    single_schema = Schema(NestedField(1, "ID", LongType(), required=False))
+    single = catalog.create_table("default.single", schema=single_schema)
+    with single.update_schema(case_sensitive=False) as update:
+        update.union_by_name(Schema(NestedField(1, "id", LongType(), required=False)))
+    assert catalog.load_table("default.single").schema() == single_schema
+
+    # The same collision inside a struct column fails the union, and the table is left unchanged
+    profile = Schema(
+        NestedField(2, "ID", LongType(), required=False),
+        NestedField(3, "id", LongType(), required=False),
+    ).as_struct()
+    nested_schema = Schema(NestedField(1, "profile", profile, required=False))
+    nested = catalog.create_table("default.nested_variants", schema=nested_schema)
+    incoming_profile = Schema(NestedField(4, "id", LongType(), required=False)).as_struct()
+    with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+        with nested.update_schema(case_sensitive=False) as update:
+            update.union_by_name(Schema(NestedField(1, "profile", incoming_profile, required=False)))
+    assert catalog.load_table("default.nested_variants").schema() == nested_schema
 
 
 @pytest.mark.parametrize("format_version", [1, 2])

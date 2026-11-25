@@ -1682,9 +1682,11 @@ class RestCatalog(Catalog):
             _handle_non_200_response(
                 exc,
                 {
+                    404: NoSuchTableError,
                     409: CommitFailedException,
                     500: CommitStateUnknownException,
                     502: CommitStateUnknownException,
+                    503: CommitStateUnknownException,
                     504: CommitStateUnknownException,
                 },
             )

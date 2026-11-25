@@ -283,6 +283,15 @@ def test_new_table_metadata_with_explicit_v1_format() -> None:
     assert actual.sort_orders == [expected_sort_order]
 
 
+def test_new_table_metadata_does_not_change_properties() -> None:
+    properties = {"format-version": "1", "owner": "etl"}
+    metadata = new_table_metadata(
+        schema=Schema(), partition_spec=PartitionSpec(), sort_order=SortOrder(), location="s3://bucket", properties=properties
+    )
+    assert (metadata.format_version, metadata.properties) == (1, {"owner": "etl"})
+    assert properties == {"format-version": "1", "owner": "etl"}
+
+
 def test_invalid_format_version(example_table_metadata_v1: dict[str, Any]) -> None:
     """Test the exception when trying to load an unknown version"""
 

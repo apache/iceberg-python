@@ -58,6 +58,8 @@ from pyiceberg.table.snapshots import Operation
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     LongType,
     NestedField,
@@ -1250,6 +1252,49 @@ def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
     result_table = tbl.scan().filter("so_true == True").to_arrow()
 
     assert len(result_table) == 10
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_read_geospatial_types_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
+    pytest.importorskip("geoarrow.types")
+    identifier = "default.test_read_geospatial_types_written_by_spark"
+    geom_wkb = "01010000000000000000003e400000000000002440"  # POINT (30 10)
+    geog_wkb = "01010000000000000000c051c00000000000004540"  # POINT (-71 42)
+    geospatial_enabled = spark.conf.get("spark.sql.geospatial.enabled", "false")
+    spark.conf.set("spark.sql.geospatial.enabled", "true")
+    try:
+        spark.sql("CREATE NAMESPACE IF NOT EXISTS default")
+        spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+        spark.sql(
+            f"CREATE TABLE {identifier} (id BIGINT, geom GEOMETRY(4326), geog GEOGRAPHY(4326)) "
+            "USING iceberg TBLPROPERTIES ('format-version'='3')"
+        )
+        spark.sql(
+            f"INSERT INTO {identifier} VALUES "
+            f"(1, st_setsrid(st_geomfromwkb(X'{geom_wkb}'), 4326), st_setsrid(st_geogfromwkb(X'{geog_wkb}'), 4326)), "
+            "(2, NULL, NULL)"
+        )
+
+        table = catalog.load_table(identifier)
+        assert table.schema().find_type("geom") == GeometryType()
+        assert table.schema().find_type("geog") == GeographyType()
+
+        result = table.scan().to_arrow()
+        assert sorted(result.to_pylist(), key=lambda row: row["id"]) == [
+            {"id": 1, "geom": bytes.fromhex(geom_wkb), "geog": bytes.fromhex(geog_wkb)},
+            {"id": 2, "geom": None, "geog": None},
+        ]
+        for name in ("geom", "geog"):
+            arrow_type = result.schema.field(name).type
+            assert isinstance(arrow_type, pa.ExtensionType)
+            assert arrow_type.extension_name == "geoarrow.wkb"
+        assert pyarrow_to_schema(result.schema, name_mapping=table.schema().name_mapping, format_version=3) == table.schema()
+    finally:
+        try:
+            spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+        finally:
+            spark.conf.set("spark.sql.geospatial.enabled", geospatial_enabled)
 
 
 @pytest.mark.integration

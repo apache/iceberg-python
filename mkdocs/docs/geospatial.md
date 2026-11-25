@@ -14,7 +14,7 @@ Both types store values as WKB (Well-Known Binary) bytes.
 ## Requirements
 
 - Iceberg format version 3 or higher
-- Optional: `geoarrow-pyarrow` for GeoArrow extension type metadata and interoperability. Without it, geometry and geography are written as binary in Parquet while the Iceberg schema still preserves the spatial type. Install with `pip install pyiceberg[geoarrow]`.
+- Optional: `geoarrow-types` for GeoArrow extension type metadata and interoperability. Without it, geometry and geography are written as binary in Parquet while the Iceberg schema still preserves the spatial type. Install with `pip install pyiceberg[geoarrow]`.
 
 ## Usage
 
@@ -88,7 +88,7 @@ point_wkb = bytes.fromhex("0101000000000000000000000000000000000000")
 
 3. **Bounds Metrics**: Geometry/geography columns do not currently contribute to data file bounds metrics.
 
-4. **Without geoarrow-pyarrow**: When the `geoarrow-pyarrow` package is not installed, geometry and geography columns are stored as binary without GeoArrow extension type metadata. The Iceberg schema preserves type information, but other tools reading the Parquet files directly may not recognize them as spatial types. Install with `pip install pyiceberg[geoarrow]` for full GeoArrow support.
+4. **Without geoarrow-types**: When the `geoarrow-types` package is not installed, geometry and geography columns are stored as binary without GeoArrow extension type metadata. The Iceberg schema preserves type information, but other tools reading the Parquet files directly may not recognize them as spatial types. Install with `pip install pyiceberg[geoarrow]` for full GeoArrow support.
 
 ## Format Version
 

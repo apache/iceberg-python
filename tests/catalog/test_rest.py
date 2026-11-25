@@ -61,6 +61,8 @@ from pyiceberg.catalog.rest import (
 )
 from pyiceberg.exceptions import (
     AuthorizationExpiredError,
+    CommitFailedException,
+    CommitStateUnknownException,
     NamespaceAlreadyExistsError,
     NamespaceNotEmptyError,
     NoSuchIdentifierError,
@@ -3003,6 +3005,33 @@ def test_commit_table_does_not_mutate_session_headers(rest_mock: Mocker, example
 
     assert catalog._session.headers.get("Authorization") == session_auth
     assert rest_mock.last_request.headers["Authorization"] == f"Bearer {table_token}"
+
+
+def test_commit_table_error_mapping(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("catalog_name", uri=TEST_URI, token=TEST_TOKEN)
+    table = Table(
+        identifier=("namespace", "table_name"),
+        metadata=None,  # type: ignore
+        metadata_location="s3://some_bucket/metadata.json",
+        io=None,  # type: ignore
+        catalog=catalog,
+    )
+    for status_code, error_type, expected_exception in [
+        (404, "NoSuchTableException", NoSuchTableError),
+        (409, "CommitFailedException", CommitFailedException),
+        (500, "ServiceFailureException", CommitStateUnknownException),
+        (502, "BadGatewayException", CommitStateUnknownException),
+        (503, "ServiceUnavailableException", CommitStateUnknownException),
+        (504, "GatewayTimeoutException", CommitStateUnknownException),
+    ]:
+        rest_mock.post(
+            url=f"{TEST_URI}v1/namespaces/namespace/tables/table_name",
+            json={"error": {"message": "Commit error", "type": error_type, "code": status_code}},
+            status_code=status_code,
+            request_headers=TEST_HEADERS,
+        )
+        with pytest.raises(expected_exception, match="Commit error"):
+            catalog.commit_table(table, (), ())
 
 
 def test_register_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
