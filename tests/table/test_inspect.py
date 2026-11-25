@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from pathlib import Path, PosixPath
+from pathlib import PosixPath
 from typing import Any
 
 import pyarrow as pa
@@ -105,29 +105,18 @@ def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMem
 
 
 def test_inspect_snapshots_operation_is_null_without_summary(catalog: InMemoryCatalog) -> None:
-    import json
-
-    # The summary is optional in format v1 and holds the operation, so a snapshot without one has no
-    # operation: the nullable column must hold null, not the text "None"
     schema = Schema(NestedField(1, "x", LongType(), required=False))
-    arrow_table = pa.table({"x": [1, 2]}, schema=pa.schema([pa.field("x", pa.int64(), nullable=True)]))
+    tbl = catalog.create_table("default.snapshot_without_summary", schema)
+    tbl.append(pa.table({"x": [1]}, schema=pa.schema([pa.field("x", pa.int64())])))
+    assert tbl.inspect.snapshots().column("operation").to_pylist() == ["append"]
 
-    v2 = catalog.create_table("default.v2_snapshot_operation", schema, properties={"format-version": "2"})
-    v2.append(arrow_table)
-    assert v2.inspect.snapshots().column("operation").to_pylist() == ["append"]
+    # The summary is optional in v1, so a snapshot without one has no operation
+    snapshot = tbl.metadata.snapshots[0].model_copy(update={"summary": None})
+    tbl.metadata = tbl.metadata.model_copy(update={"snapshots": [snapshot]})
 
-    v1 = catalog.create_table("default.v1_snapshot_without_summary", schema, properties={"format-version": "1"})
-    v1.append(arrow_table)
-    metadata_path = Path(v1.metadata_location.removeprefix("file://"))
-    metadata = json.loads(metadata_path.read_text())
-    for snapshot in metadata["snapshots"]:
-        del snapshot["summary"]
-    metadata_path.write_text(json.dumps(metadata))
-
-    v1 = catalog.load_table("default.v1_snapshot_without_summary")
-    snapshots = v1.inspect.snapshots().to_pylist()
-    assert [row["operation"] for row in snapshots] == [None]
-    assert [row["summary"] for row in snapshots] == [None]
+    snapshots = tbl.inspect.snapshots()
+    assert snapshots.column("operation").to_pylist() == [None]
+    assert snapshots.column("summary").to_pylist() == [None]
 
 
 @pytest.mark.parametrize("newest_first", [False, True])
