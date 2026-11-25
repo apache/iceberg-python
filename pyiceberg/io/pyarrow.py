@@ -3158,43 +3158,28 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[
     """Bin-pack ``tbl`` into groups of RecordBatches, each ~``target_file_size``.
 
     Note:
-        ``target_file_size`` is measured in **uncompressed in-memory** Arrow
-        bytes, not compressed on-disk Parquet bytes. The size estimate uses
-        ``nbytes`` when available and falls back to referenced buffer size for
-        Arrow view types that do not support ``nbytes``. The resulting Parquet
-        file after compression (zstd by default, plus dictionary/RLE encoding)
-        is typically 3-10× smaller than ``target_file_size``. This is a coarse
-        proxy for the spec-defined
+        ``target_file_size`` is measured in **uncompressed in-memory** Arrow bytes
+        (``Table.nbytes`` / ``RecordBatch.nbytes``), not compressed on-disk Parquet
+        bytes. The resulting Parquet file after compression (zstd by default,
+        plus dictionary/RLE encoding) is typically 3-10× smaller than
+        ``target_file_size``. This is a coarse proxy for the spec-defined
         ``write.target-file-size-bytes`` and will be tightened to true on-disk
         bytes once the writer is switched to a rolling-``ParquetWriter`` with
         ``OutputStream.tell()`` (#2998).
     """
     from pyiceberg.utils.bin_packing import PackingIterator
 
-    avg_row_size_bytes = _arrow_data_size(tbl) / tbl.num_rows
+    avg_row_size_bytes = tbl.nbytes / tbl.num_rows
     target_rows_per_file = max(1, int(target_file_size / avg_row_size_bytes))
     batches = tbl.to_batches(max_chunksize=target_rows_per_file)
     bin_packed_record_batches = PackingIterator(
         items=batches,
         target_weight=target_file_size,
         lookback=len(batches),  # ignore lookback
-        weight_func=_arrow_data_size,
+        weight_func=lambda x: x.nbytes,
         largest_bin_first=False,
     )
     return bin_packed_record_batches
-
-
-def _arrow_data_size(data: pa.Table | pa.RecordBatch) -> int:
-    """Estimate Arrow data size for writer bin-packing.
-
-    ``nbytes`` is the better logical-size estimate, but PyArrow can raise for
-    view types such as ``string_view`` exported by libraries like Polars. Fall
-    back to total referenced buffer size so those streams can still be written.
-    """
-    try:
-        return data.nbytes
-    except pyarrow.lib.ArrowTypeError:
-        return data.get_total_buffer_size()
 
 
 def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
@@ -3212,11 +3197,9 @@ def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size:
 
     Note:
         ``target_file_size`` is measured in **uncompressed in-memory** Arrow
-        bytes, not compressed on-disk Parquet bytes. The size estimate uses
-        ``nbytes`` when available and falls back to referenced buffer size for
-        Arrow view types that do not support ``nbytes``. The resulting Parquet
-        file after compression is typically 3-10× smaller than
-        ``target_file_size``. Matches the existing
+        bytes (``RecordBatch.nbytes``), not compressed on-disk Parquet bytes.
+        The resulting Parquet file after compression is typically 3-10×
+        smaller than ``target_file_size``. Matches the existing
         :func:`bin_pack_arrow_table` semantics; both will be tightened to true
         on-disk bytes once the writer is switched to a rolling-
         ``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
@@ -3225,7 +3208,7 @@ def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size:
     buffer_bytes = 0
     for batch in batches:
         buffer.append(batch)
-        buffer_bytes += _arrow_data_size(batch)
+        buffer_bytes += batch.nbytes
         if buffer_bytes >= target_file_size:
             yield buffer
             buffer = []
@@ -3386,6 +3369,14 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
+    # Cast view types to plain string and binary. PyArrow cannot yet filter
+    # on view types or combine them with the plain columns of other data
+    # files, so a table written with them could not be scanned with a filter
+    # or deleted from. This cast can be removed once PyArrow supports both.
+    arrow_schema = visit_pyarrow(df.schema, _ConvertViewTypes())
+    if arrow_schema != df.schema:
+        df = df.cast(arrow_schema)
+
     name_mapping = table_metadata.schema().name_mapping
     downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
     task_schema = pyarrow_to_schema(

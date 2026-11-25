@@ -3138,17 +3138,6 @@ def test_bin_pack_arrow_table_target_size_smaller_than_row(arrow_table_with_null
     assert sum(batch.num_rows for bin_ in bin_packed for batch in bin_) == arrow_table_with_null.num_rows
 
 
-def test_bin_pack_arrow_table_with_string_view() -> None:
-    if not hasattr(pa, "string_view"):
-        pytest.skip("pyarrow does not support string_view")
-
-    table = pa.table({"region": pa.array(["ca", "mx"], type=pa.string_view())})
-
-    bins = list(bin_pack_arrow_table(table, target_file_size=1))
-
-    assert sum(batch.num_rows for bin_ in bins for batch in bin_) == table.num_rows
-
-
 def test_bin_pack_record_batches_single_bin(arrow_table_with_null: pa.Table) -> None:
     batches = arrow_table_with_null.to_batches()
     bins = list(bin_pack_record_batches(iter(batches), target_file_size=arrow_table_with_null.nbytes * 10))
@@ -3722,6 +3711,43 @@ def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> Non
 
     assert len(table.inspect.partitions()) == 2
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+
+
+def test_append_view_types_to_unpartitioned_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="region", field_type=StringType(), required=False),
+        NestedField(id=3, name="payload", field_type=BinaryType(), required=False),
+        NestedField(id=4, name="tags", field_type=ListType(element_id=5, element_type=StringType(), element_required=False)),
+    )
+    catalog.create_namespace("default")
+    plain_table = pa.table(
+        {
+            "id": pa.array([1], type=pa.int64()),
+            "region": pa.array(["us"], type=pa.string()),
+            "payload": pa.array([b"a"], type=pa.binary()),
+            "tags": pa.array([["x"]], type=pa.list_(pa.string())),
+        }
+    )
+    view_table = pa.table(
+        {
+            "id": pa.array([2, 3], type=pa.int64()),
+            "region": pa.array(["us", "eu"], type=pa.string_view()),
+            "payload": pa.array([b"a", b"b"], type=pa.binary_view()),
+            "tags": pa.array([["x"], ["y"]], type=pa.list_(pa.string_view())),
+        }
+    )
+
+    for name, df in (("table", view_table), ("reader", view_table.to_reader())):
+        table = catalog.create_table(f"default.test_append_view_types_{name}", schema=schema)
+        table.append(plain_table)
+        table.append(df)
+
+        assert sorted(table.scan().to_arrow()["tags"].to_pylist()) == [["x"], ["x"], ["y"]], name
+        assert sorted(table.scan(row_filter="region == 'us'").to_arrow()["id"].to_pylist()) == [1, 2], name
+        assert sorted(table.scan(row_filter=EqualTo("payload", b"a")).to_arrow()["id"].to_pylist()) == [1, 2], name
+        table.delete("region == 'us'")
+        assert table.scan().to_arrow()["id"].to_pylist() == [3], name
 
 
 def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:

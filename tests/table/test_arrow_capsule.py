@@ -153,6 +153,7 @@ def test_append_accepts_arrow_capsule_with_string_view(catalog: InMemoryCatalog)
     tbl.append(_ArrowStreamWrapper(_string_view_data([10, 11], ["ca", "mx"])))
 
     assert _rows(tbl.scan().to_arrow()) == _rows(_data([10, 11], ["ca", "mx"]))
+    assert _rows(tbl.scan(row_filter="region == 'ca'").to_arrow()) == _rows(_data([10], ["ca"]))
 
 
 def test_append_pa_table_to_partitioned_table(catalog: InMemoryCatalog) -> None:
