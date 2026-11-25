@@ -105,3 +105,24 @@ def test_get_first_property_value() -> None:
 
     assert get_first_property_value(properties, "prop_2", "prop_1") == "value_2"
     assert get_first_property_value(properties, "missing", "prop_1") == "value_1"
+
+
+def test_property_as_int_preserves_zero_and_treats_empty_as_unset() -> None:
+    for value in (0, "0"):
+        assert property_as_int({"retries": value}, "retries", default=4) == 0
+    for unset in (None, ""):
+        assert property_as_int({"retries": unset}, "retries", default=4) == 4
+
+
+def test_property_as_float_preserves_zero_and_treats_empty_as_unset() -> None:
+    for value in (0.0, 0, "0.0"):
+        assert property_as_float({"ratio": value}, "ratio", default=1.5) == 0.0
+    for unset in (None, ""):
+        assert property_as_float({"ratio": unset}, "ratio", default=1.5) == 1.5
+
+
+def test_get_first_property_value_preserves_falsy_non_empty_values() -> None:
+    for value in (0, 0.0, False):
+        assert get_first_property_value({"primary": value, "fallback": "fallback"}, "primary", "fallback") is value
+    for unset in (None, ""):
+        assert get_first_property_value({"primary": unset, "fallback": "fallback"}, "primary", "fallback") == "fallback"
