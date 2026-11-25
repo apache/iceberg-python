@@ -87,7 +87,7 @@ class UpdateSortOrder(UpdateTableMetadata["UpdateSortOrder"]):
         return new_sort_order_id
 
     def asc(
-        self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder = NullOrder.NULLS_LAST
+        self, source_column_name: str, transform: Transform[Any, Any], null_order: NullOrder = NullOrder.NULLS_FIRST
     ) -> UpdateSortOrder:
         """Add a sort field with ascending order."""
         return self._add_sort_field(

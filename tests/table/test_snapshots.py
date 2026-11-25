@@ -15,10 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name,eval-used
+import re
+import uuid
+from pathlib import Path
 from typing import cast
+from urllib.parse import urlparse
 
+import pyarrow as pa
 import pytest
 
+from pyiceberg import __version__
+from pyiceberg.catalog import Catalog
+from pyiceberg.exceptions import ValidationException
+from pyiceberg.io.pyarrow import _dataframe_to_data_files
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -166,6 +175,48 @@ def test_snapshot_with_properties_repr(snapshot_with_properties: Snapshot) -> No
         "manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND, **{'foo': 'bar'}), schema_id=3)"
     )
     assert snapshot_with_properties == eval(repr(snapshot_with_properties))
+
+
+@pytest.fixture
+def snapshot_with_key_id() -> Snapshot:
+    return Snapshot(
+        snapshot_id=25,
+        parent_snapshot_id=19,
+        sequence_number=200,
+        timestamp_ms=1602638573590,
+        manifest_list="s3:/a/b/c.avro",
+        summary=Summary(Operation.APPEND),
+        schema_id=3,
+        key_id="table-key-1",
+    )
+
+
+def test_serialize_snapshot_with_key_id(snapshot_with_key_id: Snapshot) -> None:
+    assert snapshot_with_key_id.model_dump_json() == (
+        '{"snapshot-id":25,"parent-snapshot-id":19,"sequence-number":200,"timestamp-ms":1602638573590,'
+        '"manifest-list":"s3:/a/b/c.avro","summary":{"operation":"append"},"schema-id":3,"key-id":"table-key-1"}'
+    )
+
+
+def test_deserialize_snapshot_with_key_id(snapshot_with_key_id: Snapshot) -> None:
+    payload = (
+        '{"snapshot-id": 25, "parent-snapshot-id": 19, "sequence-number": 200, "timestamp-ms": 1602638573590, '
+        '"manifest-list": "s3:/a/b/c.avro", "summary": {"operation": "append"}, "schema-id": 3, "key-id": "table-key-1"}'
+    )
+    assert Snapshot.model_validate_json(payload) == snapshot_with_key_id
+
+
+def test_snapshot_without_key_id_omits_it(snapshot: Snapshot) -> None:
+    assert snapshot.key_id is None
+    assert "key-id" not in snapshot.model_dump_json()
+
+
+def test_snapshot_with_key_id_repr(snapshot_with_key_id: Snapshot) -> None:
+    assert repr(snapshot_with_key_id) == (
+        "Snapshot(snapshot_id=25, parent_snapshot_id=19, sequence_number=200, timestamp_ms=1602638573590, "
+        "manifest_list='s3:/a/b/c.avro', summary=Summary(Operation.APPEND), schema_id=3, key_id='table-key-1')"
+    )
+    assert snapshot_with_key_id == eval(repr(snapshot_with_key_id))
 
 
 @pytest.fixture
@@ -537,8 +588,8 @@ def test_latest_ancestor_before_timestamp() -> None:
     from pyiceberg.table.metadata import TableMetadataV2
 
     # Create metadata with 4 snapshots at ordered timestamps
-    metadata = TableMetadataV2(
-        **{
+    metadata = TableMetadataV2.model_validate(
+        {
             "format-version": 2,
             "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
             "location": "s3://bucket/test/location",
@@ -620,9 +671,13 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
     from pyiceberg.table.update.snapshot import _FastAppendFiles, _MergeAppendFiles
 
     def make_file() -> DataFile:
-        return DataFile.from_args(content=DataFileContent.DATA, record_count=1, file_size_in_bytes=1, partition=Record())
+        return DataFile.from_args(
+            content=DataFileContent.DATA, record_count=1, file_size_in_bytes=1, partition=Record(), spec_id=0
+        )
 
     txn = table_v2.transaction()
+    # Stage an update, so every read calls update_table_metadata
+    txn.set_properties(test_a="test_a")
 
     with mock.patch("pyiceberg.table.update_table_metadata", wraps=update_table_metadata) as spy:
         # _summary() cost must not scale with the number of data files
@@ -649,3 +704,143 @@ def test_snapshot_producer_bounded_metadata_access(table_v2: Table) -> None:
             f"_MergeAppendFiles.__init__ made {merge_init - fast_init} extra update_table_metadata "
             "calls over its superclass; expected 1 (hoisted)"
         )
+
+
+def test_append_snapshot_producer_defaults_to_merge_append(table_v2: Table) -> None:
+    from pyiceberg.table.update.snapshot import _MergeAppendFiles
+
+    append = table_v2.transaction()._append_snapshot_producer({})
+
+    assert type(append) is _MergeAppendFiles
+
+
+def test_append_snapshot_producer_uses_fast_append_when_manifest_merge_disabled(table_v2: Table) -> None:
+    from pyiceberg.table.update.snapshot import _FastAppendFiles
+
+    transaction = table_v2.transaction()
+    transaction.set_properties({"commit.manifest-merge.enabled": "false"})
+
+    append = transaction._append_snapshot_producer({})
+
+    assert type(append) is _FastAppendFiles
+
+
+@pytest.fixture
+def overwrite_table(catalog: Catalog, arrow_table_simple: pa.Table) -> Table:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.overwrite", arrow_table_simple.schema)
+    table.append(arrow_table_simple)
+    return table
+
+
+def test_snapshot_writes_include_engine_metadata(
+    enable_environment_context: None, catalog: Catalog, arrow_table_simple: pa.Table
+) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.engine_metadata", arrow_table_simple.schema)
+    table.append(arrow_table_simple)
+    table.overwrite(arrow_table_simple)
+    table.delete()
+
+    table.refresh()
+    snapshots = table.snapshots()
+    assert snapshots
+    for snapshot in snapshots:
+        assert snapshot.summary is not None
+        assert snapshot.summary["engine-name"] == "pyiceberg"
+        assert snapshot.summary["engine-version"] == __version__
+
+
+def test_snapshot_engine_metadata_overrides_snapshot_properties(
+    enable_environment_context: None, catalog: Catalog, arrow_table_simple: pa.Table
+) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.engine_metadata", arrow_table_simple.schema)
+    table.append(
+        arrow_table_simple,
+        snapshot_properties={
+            "engine-name": "custom-engine",
+            "engine-version": "custom-version",
+            "job-id": "snapshot-job",
+        },
+    )
+
+    table.refresh()
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.summary is not None
+    assert snapshot.summary["engine-name"] == "pyiceberg"
+    assert snapshot.summary["engine-version"] == __version__
+    assert snapshot.summary["job-id"] == "snapshot-job"
+
+
+def _write_data_file(table: Table, rows: pa.Table) -> DataFile:
+    return next(
+        iter(
+            _dataframe_to_data_files(
+                table_metadata=table.metadata,
+                df=rows,
+                io=table.io,
+                write_uuid=uuid.uuid4(),
+            )
+        )
+    )
+
+
+def _total_data_file_count(table: Table) -> int:
+    snapshot = table.current_snapshot()
+    assert snapshot is not None and snapshot.summary is not None
+    return int(snapshot.summary.additional_properties["total-data-files"])
+
+
+def test_overwrite_replaces_existing_file(overwrite_table: Table, arrow_table_simple: pa.Table) -> None:
+    original_file = next(iter(overwrite_table.scan().plan_files())).file
+    replacement = _write_data_file(overwrite_table, arrow_table_simple.slice(0, 1))
+
+    with overwrite_table.transaction() as tx:
+        with tx.update_snapshot().overwrite() as overwrite:
+            overwrite.delete_data_file(original_file)
+            overwrite.append_data_file(replacement)
+
+    assert overwrite_table.scan().to_arrow()["foo"].to_pylist() == ["a"]
+    assert _total_data_file_count(overwrite_table) == 1
+
+
+def test_overwrite_rejects_explicit_delete_missing_from_base_snapshot(catalog: Catalog, overwrite_table: Table) -> None:
+    stale_file = next(iter(overwrite_table.scan().plan_files())).file
+    stale_rows = overwrite_table.scan().to_arrow()
+
+    # Delete the file before the replacement transaction begins
+    with catalog.load_table(overwrite_table.name()).transaction() as tx:
+        with tx.update_snapshot().overwrite() as overwrite:
+            overwrite.delete_data_file(stale_file)
+
+    current = catalog.load_table(overwrite_table.name())
+    replacement = _write_data_file(current, stale_rows)
+    expected_error = re.escape(f"Missing required files to delete: {stale_file.file_path}")
+
+    with pytest.raises(ValidationException, match=expected_error):
+        with current.transaction() as tx:
+            with tx.update_snapshot().overwrite() as overwrite:
+                overwrite.delete_data_file(stale_file)
+                overwrite.append_data_file(replacement)
+
+    metadata_path = Path(urlparse(current.location()).path) / "metadata"
+    assert not any(metadata_path.glob(f"{overwrite.commit_uuid}-m*.avro"))
+
+    committed = catalog.load_table(overwrite_table.name())
+    assert committed.scan().to_arrow()["foo"].to_pylist() == []
+    assert _total_data_file_count(committed) == 0
+
+
+def test_overwrite_rejects_explicit_delete_without_parent_snapshot(
+    catalog: Catalog, overwrite_table: Table, arrow_table_simple: pa.Table
+) -> None:
+    stale_file = next(iter(overwrite_table.scan().plan_files())).file
+    empty = catalog.create_table("default.empty", arrow_table_simple.schema)
+    expected_error = re.escape(f"Missing required files to delete: {stale_file.file_path}")
+
+    with pytest.raises(ValidationException, match=expected_error):
+        with empty.transaction() as tx:
+            with tx.update_snapshot().overwrite() as overwrite:
+                overwrite.delete_data_file(stale_file)

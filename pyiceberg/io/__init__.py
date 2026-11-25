@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import warnings
 from abc import ABC, abstractmethod
 from io import SEEK_SET
@@ -37,9 +38,23 @@ from typing import (
 )
 from urllib.parse import urlparse
 
+from pyiceberg.io.content_cache import ContentCache
 from pyiceberg.typedef import EMPTY_DICT, Properties
+from pyiceberg.utils.properties import property_as_bool, property_as_int
 
 logger = logging.getLogger(__name__)
+
+
+def _is_local_path(path: str) -> bool:
+    r"""Check if a path is a local filesystem path rather than a URI.
+
+    Uses os.path.splitdrive to detect Windows drive letters (e.g. 'C:\\...')
+    in a platform-aware way. On non-Windows systems, splitdrive always returns
+    an empty drive component, so this only triggers on Windows.
+    """
+    drive, _ = os.path.splitdrive(path)
+    return drive != ""
+
 
 AWS_PROFILE_NAME = "client.profile-name"
 AWS_REGION = "client.region"
@@ -48,6 +63,8 @@ AWS_SECRET_ACCESS_KEY = "client.secret-access-key"
 AWS_SESSION_TOKEN = "client.session-token"
 AWS_ROLE_ARN = "client.role-arn"
 AWS_ROLE_SESSION_NAME = "client.role-session-name"
+AWS_ASSUME_ROLE_ARN = "client.assume-role.arn"
+AWS_ASSUME_ROLE_SESSION_NAME = "client.assume-role.session-name"
 S3_PROFILE_NAME = "s3.profile-name"
 S3_ANONYMOUS = "s3.anonymous"
 S3_ENDPOINT = "s3.endpoint"
@@ -56,6 +73,7 @@ S3_SECRET_ACCESS_KEY = "s3.secret-access-key"
 S3_SESSION_TOKEN = "s3.session-token"
 S3_REGION = "s3.region"
 S3_RESOLVE_REGION = "s3.resolve-region"
+S3_SSL_CA_CERT = "s3.ssl.ca-cert"
 S3_PROXY_URI = "s3.proxy-uri"
 S3_CONNECT_TIMEOUT = "s3.connect-timeout"
 S3_REQUEST_TIMEOUT = "s3.request-timeout"
@@ -67,6 +85,8 @@ S3_ROLE_ARN = "s3.role-arn"
 S3_ROLE_SESSION_NAME = "s3.role-session-name"
 S3_FORCE_VIRTUAL_ADDRESSING = "s3.force-virtual-addressing"
 S3_RETRY_STRATEGY_IMPL = "s3.retry-strategy-impl"
+S3_SERVER_SIDE_ENCRYPTION = "s3.server-side-encryption"
+S3_SSE_KMS_KEY_ID = "s3.sse-kms-key-id"
 HDFS_HOST = "hdfs.host"
 HDFS_PORT = "hdfs.port"
 HDFS_USER = "hdfs.user"
@@ -99,6 +119,15 @@ GCS_DEFAULT_LOCATION = "gcs.default-bucket-location"
 GCS_VERSION_AWARE = "gcs.version-aware"
 HF_ENDPOINT = "hf.endpoint"
 HF_TOKEN = "hf.token"
+
+IO_MANIFEST_CACHE_ENABLED = "io.manifest.cache-enabled"
+IO_MANIFEST_CACHE_MAX_TOTAL_BYTES = "io.manifest.cache.max-total-bytes"
+IO_MANIFEST_CACHE_MAX_CONTENT_LENGTH = "io.manifest.cache.max-content-length"
+IO_MANIFEST_CACHE_EXPIRATION_INTERVAL_MS = "io.manifest.cache.expiration-interval-ms"
+
+IO_MANIFEST_CACHE_MAX_TOTAL_BYTES_DEFAULT = 100 * 1024 * 1024
+IO_MANIFEST_CACHE_MAX_CONTENT_LENGTH_DEFAULT = 8 * 1024 * 1024
+IO_MANIFEST_CACHE_EXPIRATION_INTERVAL_MS_DEFAULT = 60_000
 
 
 @runtime_checkable
@@ -254,6 +283,26 @@ class OutputFile(ABC):
         """
 
 
+def _content_cache_from_properties(properties: Properties) -> ContentCache | None:
+    if not property_as_bool(properties, IO_MANIFEST_CACHE_ENABLED, False):
+        return None
+
+    max_total_bytes: int = property_as_int(  # type: ignore[assignment]
+        properties, IO_MANIFEST_CACHE_MAX_TOTAL_BYTES, IO_MANIFEST_CACHE_MAX_TOTAL_BYTES_DEFAULT
+    )
+    max_content_length: int = property_as_int(  # type: ignore[assignment]
+        properties, IO_MANIFEST_CACHE_MAX_CONTENT_LENGTH, IO_MANIFEST_CACHE_MAX_CONTENT_LENGTH_DEFAULT
+    )
+    expiration_interval_ms: int = property_as_int(  # type: ignore[assignment]
+        properties, IO_MANIFEST_CACHE_EXPIRATION_INTERVAL_MS, IO_MANIFEST_CACHE_EXPIRATION_INTERVAL_MS_DEFAULT
+    )
+    return ContentCache(
+        max_total_bytes=max_total_bytes,
+        max_content_length=max_content_length,
+        expiration_interval_ms=expiration_interval_ms,
+    )
+
+
 class FileIO(ABC):
     """A base class for FileIO implementations."""
 
@@ -261,6 +310,12 @@ class FileIO(ABC):
 
     def __init__(self, properties: Properties = EMPTY_DICT):
         self.properties = properties
+        self._content_cache = _content_cache_from_properties(properties)
+
+    @property
+    def content_cache(self) -> ContentCache | None:
+        """Return the cache for immutable metadata file contents, when enabled."""
+        return self._content_cache
 
     @abstractmethod
     def new_input(self, location: str) -> InputFile:
@@ -335,14 +390,19 @@ PY_IO_IMPL = "py-io-impl"
 
 
 def _infer_file_io_from_scheme(path: str, properties: Properties) -> FileIO | None:
-    parsed_url = urlparse(path)
-    if parsed_url.scheme:
-        if file_ios := SCHEMA_TO_FILE_IO.get(parsed_url.scheme):
+    if _is_local_path(path):
+        scheme = "file"
+    else:
+        parsed_url = urlparse(path)
+        scheme = parsed_url.scheme
+
+    if scheme:
+        if file_ios := SCHEMA_TO_FILE_IO.get(scheme):
             for file_io_path in file_ios:
                 if file_io := _import_file_io(file_io_path, properties):
                     return file_io
         else:
-            warnings.warn(f"No preferred file implementation for scheme: {parsed_url.scheme}", stacklevel=2)
+            warnings.warn(f"No preferred file implementation for scheme: {scheme}", stacklevel=2)
     return None
 
 
@@ -356,14 +416,14 @@ def load_file_io(properties: Properties = EMPTY_DICT, location: str | None = Non
             raise ValueError(f"Could not initialize FileIO: {io_impl}")
 
     # Check the table location
-    if location:
-        if file_io := _infer_file_io_from_scheme(location, properties):
-            return file_io
+    if location and (file_io := _infer_file_io_from_scheme(location, properties)):
+        return file_io
 
     # Look at the schema of the warehouse
-    if warehouse_location := properties.get(WAREHOUSE):
-        if file_io := _infer_file_io_from_scheme(warehouse_location, properties):
-            return file_io
+    if (warehouse_location := properties.get(WAREHOUSE)) and (
+        file_io := _infer_file_io_from_scheme(warehouse_location, properties)
+    ):
+        return file_io
 
     try:
         # Default to PyArrow

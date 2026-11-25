@@ -23,7 +23,6 @@ import logging
 import os
 import threading
 from collections.abc import Callable
-from copy import copy
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
@@ -38,6 +37,7 @@ from requests import HTTPError
 from typing_extensions import override
 
 from pyiceberg.catalog import TOKEN, URI
+from pyiceberg.catalog.rest import _user_agent
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
 from pyiceberg.io import (
@@ -66,6 +66,7 @@ from pyiceberg.io import (
     GCS_SERVICE_HOST,
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
+    GCS_TOKEN_EXPIRES_AT_MS,
     GCS_VERSION_AWARE,
     HF_ENDPOINT,
     HF_TOKEN,
@@ -79,20 +80,25 @@ from pyiceberg.io import (
     S3_REGION,
     S3_REQUEST_TIMEOUT,
     S3_SECRET_ACCESS_KEY,
+    S3_SERVER_SIDE_ENCRYPTION,
     S3_SESSION_TOKEN,
     S3_SIGNER,
     S3_SIGNER_ENDPOINT,
     S3_SIGNER_ENDPOINT_DEFAULT,
     S3_SIGNER_URI,
+    S3_SSE_KMS_KEY_ID,
     FileIO,
     InputFile,
     InputStream,
     OutputFile,
     OutputStream,
+    _is_local_path,
 )
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
+from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
+from pyiceberg.utils.transient import _TransientStateMixin
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +128,7 @@ class S3V4RestSigner(S3RequestSigner):
         super().__init__(properties)
         self._session = requests.Session()
 
-    def __call__(self, request: "AWSRequest", **_: Any) -> None:
+    def __call__(self, request: "AWSRequest", operation_name: str | None = None, **_: Any) -> None:
         signer_url = self.properties.get(S3_SIGNER_URI, self.properties[URI]).rstrip("/")  # type: ignore
         signer_endpoint = self.properties.get(S3_SIGNER_ENDPOINT, S3_SIGNER_ENDPOINT_DEFAULT)
 
@@ -138,6 +144,7 @@ class S3V4RestSigner(S3RequestSigner):
             signer_headers["Authorization"] = auth_header
 
         signer_headers.update(get_header_properties(self.properties))
+        signer_headers["User-Agent"] = _user_agent()
 
         signer_body = {
             "method": request.method,
@@ -145,6 +152,9 @@ class S3V4RestSigner(S3RequestSigner):
             "uri": request.url,
             "headers": {key: [val] for key, val in request.headers.items()},
         }
+        # The signing service needs the DeleteObjects body to authorize the keys being deleted
+        if operation_name == "DeleteObjects":
+            signer_body["body"] = request.body.decode("utf-8")
 
         response = self._session.post(f"{signer_url}/{signer_endpoint.strip()}", headers=signer_headers, json=signer_body)
         try:
@@ -154,6 +164,8 @@ class S3V4RestSigner(S3RequestSigner):
             raise SignError(f"Failed to sign request {response.status_code}: {signer_body}") from e
 
         for key, value in response_json["headers"].items():
+            # Replace instead of append, so a header the request already has is not sent twice
+            del request.headers[key]
             request.headers.add_header(key, ", ".join(value))
 
         request.url = response_json["uri"]
@@ -177,6 +189,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "region_name": get_first_property_value(properties, S3_REGION, AWS_REGION),
     }
     config_kwargs = {}
+    s3_additional_kwargs = {}
     register_events: dict[str, Callable[[AWSRequest], None]] = {}
 
     if signer := properties.get(S3_SIGNER):
@@ -201,7 +214,7 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     if request_timeout := properties.get(S3_REQUEST_TIMEOUT):
         config_kwargs["read_timeout"] = float(request_timeout)
 
-    if _force_virtual_addressing := properties.get(S3_FORCE_VIRTUAL_ADDRESSING):
+    if property_as_bool(properties, S3_FORCE_VIRTUAL_ADDRESSING, False):
         config_kwargs["s3"] = {"addressing_style": "virtual"}
 
     if s3_anonymous := properties.get(S3_ANONYMOUS):
@@ -209,32 +222,54 @@ def _s3(properties: Properties) -> AbstractFileSystem:
     else:
         anon = False
 
+    if server_side_encryption := properties.get(S3_SERVER_SIDE_ENCRYPTION):
+        s3_additional_kwargs["ServerSideEncryption"] = server_side_encryption
+
+    if sse_kms_key_id := properties.get(S3_SSE_KMS_KEY_ID):
+        s3_additional_kwargs["SSEKMSKeyId"] = sse_kms_key_id
+
     s3_fs_kwargs = {
         "anon": anon,
         "client_kwargs": client_kwargs,
         "config_kwargs": config_kwargs,
     }
 
+    session_kwargs: dict[str, Any] = {}
     if profile_name := get_first_property_value(properties, S3_PROFILE_NAME, AWS_PROFILE_NAME):
         s3_fs_kwargs["profile"] = profile_name
+        session_kwargs["profile"] = profile_name
 
-    fs = S3FileSystem(**s3_fs_kwargs)
+    if s3_additional_kwargs:
+        s3_fs_kwargs["s3_additional_kwargs"] = s3_additional_kwargs
 
-    for event_name, event_function in register_events.items():
-        fs.s3.meta.events.unregister(event_name, unique_id=1925)
-        fs.s3.meta.events.register_last(event_name, event_function, unique_id=1925)
+    if register_events:
+        from aiobotocore.session import AioSession
 
-    return fs
+        # Register the signer on a session that only this filesystem uses. s3fs caches and shares
+        # the client between threads, and unregistering the signer on a shared client leaves a
+        # window in which a request is sent unsigned.
+        session = AioSession(**session_kwargs)
+        event_emitter = session.get_component("event_emitter")
+        for event_name, event_function in register_events.items():
+            event_emitter.register_last(event_name, event_function, unique_id=1925)
+        s3_fs_kwargs["session"] = session
+
+    return S3FileSystem(**s3_fs_kwargs)
 
 
 def _gs(properties: Properties) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
+    from google.oauth2.credentials import Credentials
+
+    token: str | Credentials | None = properties.get(GCS_TOKEN)
+    if token and (expires_at := properties.get(GCS_TOKEN_EXPIRES_AT_MS)):
+        token = Credentials(token, expiry=millis_to_datetime(int(expires_at)))
 
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
         access=properties.get(GCS_ACCESS, "full_control"),
-        token=properties.get(GCS_TOKEN),
+        token=token,
         consistency=properties.get(GCS_CONSISTENCY, "none"),
         cache_timeout=properties.get(GCS_CACHE_TIMEOUT),
         requester_pays=property_as_bool(properties, GCS_REQUESTER_PAYS, False),
@@ -252,17 +287,20 @@ def _adls(properties: Properties, hostname: str | None = None) -> AbstractFileSy
     from azure.core.credentials import AccessToken
     from azure.core.credentials_async import AsyncTokenCredential
 
-    for key, sas_token in {
+    account_name = properties.get(ADLS_ACCOUNT_NAME)
+    sas_token = properties.get(ADLS_SAS_TOKEN)
+
+    for key, per_account_sas_token in {
         key.replace(f"{ADLS_SAS_TOKEN}.", ""): value for key, value in properties.items() if key.startswith(f"{ADLS_SAS_TOKEN}.")
     }.items():
-        if ADLS_ACCOUNT_NAME not in properties:
-            properties[ADLS_ACCOUNT_NAME] = key.split(".")[0]
-        if ADLS_SAS_TOKEN not in properties:
-            properties[ADLS_SAS_TOKEN] = sas_token
+        if account_name is None:
+            account_name = key.split(".")[0]
+        if sas_token is None:
+            sas_token = per_account_sas_token
 
     # Fallback: extract account_name from URI hostname (e.g. "account.dfs.core.windows.net" -> "account")
-    if hostname and ADLS_ACCOUNT_NAME not in properties:
-        properties[ADLS_ACCOUNT_NAME] = hostname.split(".")[0]
+    if hostname and account_name is None:
+        account_name = hostname.split(".")[0]
 
     class StaticTokenCredential(AsyncTokenCredential):
         _DEFAULT_EXPIRY_SECONDS = 3600
@@ -285,9 +323,9 @@ def _adls(properties: Properties, hostname: str | None = None) -> AbstractFileSy
     return AzureBlobFileSystem(
         connection_string=properties.get(ADLS_CONNECTION_STRING),
         credential=credential,
-        account_name=properties.get(ADLS_ACCOUNT_NAME),
+        account_name=account_name,
         account_key=properties.get(ADLS_ACCOUNT_KEY),
-        sas_token=properties.get(ADLS_SAS_TOKEN),
+        sas_token=sas_token,
         tenant_id=properties.get(ADLS_TENANT_ID),
         client_id=properties.get(ADLS_CLIENT_ID),
         client_secret=properties.get(ADLS_CLIENT_SECRET),
@@ -424,13 +462,18 @@ class FsspecOutputFile(OutputFile):
         return FsspecInputFile(location=self.location, fs=self._fs)
 
 
-class FsspecFileIO(FileIO):
+class FsspecFileIO(_TransientStateMixin, FileIO):
     """A FileIO implementation that uses fsspec."""
+
+    _transient_attrs = ("_thread_locals",)
 
     def __init__(self, properties: Properties):
         self._scheme_to_fs: dict[str, Callable[..., AbstractFileSystem]] = dict(SCHEME_TO_FS)
-        self._thread_locals = threading.local()
+        self._init_transient()
         super().__init__(properties=properties)
+
+    def _init_transient(self) -> None:
+        self._thread_locals = threading.local()
 
     @override
     def new_input(self, location: str) -> FsspecInputFile:
@@ -443,7 +486,7 @@ class FsspecFileIO(FileIO):
             FsspecInputFile: An FsspecInputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self._get_fs_from_uri(uri)
+        fs = self._get_fs_from_uri(uri, location)
         return FsspecInputFile(location=location, fs=fs)
 
     @override
@@ -457,7 +500,7 @@ class FsspecFileIO(FileIO):
             FsspecOutputFile: An FsspecOutputFile instance for the given location.
         """
         uri = urlparse(location)
-        fs = self._get_fs_from_uri(uri)
+        fs = self._get_fs_from_uri(uri, location)
         return FsspecOutputFile(location=location, fs=fs)
 
     @override
@@ -475,11 +518,13 @@ class FsspecFileIO(FileIO):
             str_location = location
 
         uri = urlparse(str_location)
-        fs = self._get_fs_from_uri(uri)
+        fs = self._get_fs_from_uri(uri, str_location)
         fs.rm(str_location)
 
-    def _get_fs_from_uri(self, uri: "ParseResult") -> AbstractFileSystem:
+    def _get_fs_from_uri(self, uri: "ParseResult", location: str = "") -> AbstractFileSystem:
         """Get a filesystem from a parsed URI, using hostname for ADLS account resolution."""
+        if _is_local_path(location):
+            return self.get_fs("file")
         if uri.scheme in _ADLS_SCHEMES:
             return self.get_fs(uri.scheme, uri.hostname)
         return self.get_fs(uri.scheme)
@@ -500,14 +545,3 @@ class FsspecFileIO(FileIO):
             return _adls(self.properties, hostname)
 
         return self._scheme_to_fs[scheme](self.properties)
-
-    def __getstate__(self) -> dict[str, Any]:
-        """Create a dictionary of the FsSpecFileIO fields used when pickling."""
-        fileio_copy = copy(self.__dict__)
-        del fileio_copy["_thread_locals"]
-        return fileio_copy
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Deserialize the state into a FsSpecFileIO instance."""
-        self.__dict__ = state
-        self._thread_locals = threading.local()

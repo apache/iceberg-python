@@ -28,11 +28,11 @@ from datetime import (
 
 EPOCH_DATE = date.fromisoformat("1970-01-01")
 EPOCH_TIMESTAMP = datetime.fromisoformat("1970-01-01T00:00:00.000000")
-ISO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d{1,6})?")
+ISO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d{1,9})?")
 ISO_TIMESTAMP_NANO = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(.\d{1,6})?(\d{1,3})?")
 EPOCH_TIMESTAMPTZ = datetime.fromisoformat("1970-01-01T00:00:00.000000+00:00")
-ISO_TIMESTAMPTZ = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d{1,6})?[-+]\d{2}:\d{2}")
-ISO_TIMESTAMPTZ_NANO = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(.\d{1,6})?(\d{1,3})?([-+]\d{2}:\d{2})")
+ISO_TIMESTAMPTZ = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d{1,9})?[-+]\d{2}:\d{2}(:\d{2})?")
+ISO_TIMESTAMPTZ_NANO = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(.\d{1,6})?(\d{1,3})?([-+]\d{2}:\d{2}(:\d{2})?)")
 
 
 def micros_to_days(timestamp: int) -> int:
@@ -86,7 +86,8 @@ def datetime_to_micros(dt: datetime) -> int:
 def timestamp_to_micros(timestamp_str: str) -> int:
     """Convert an ISO-9601 formatted timestamp without zone to microseconds from 1970-01-01T00:00:00.000000."""
     if ISO_TIMESTAMP.fullmatch(timestamp_str):
-        return datetime_to_micros(datetime.fromisoformat(timestamp_str))
+        # Parse through the nanosecond path and truncate to microseconds, mirroring Java
+        return nanos_to_micros(timestamp_to_nanos(timestamp_str))
     if ISO_TIMESTAMPTZ.fullmatch(timestamp_str):
         # When we can match a timestamp without a zone, we can give a more specific error
         raise ValueError(f"Zone offset provided, but not expected: {timestamp_str}")
@@ -121,7 +122,9 @@ def timestamp_to_nanos(timestamp_str: str) -> int:
     if match := ISO_TIMESTAMP_NANO.fullmatch(timestamp_str):
         # Python datetime does not have native nanoseconds support
         # Hence we need to extract nanoseconds timestamp manually
-        ns_str = match.group(3) or "0"
+        # group(3) holds the sub-microsecond digits (fraction positions 7-9), so
+        # right-pad to 3 digits before reading them as nanoseconds (e.g. "7" -> 700).
+        ns_str = (match.group(3) or "0").ljust(3, "0")
         ms_str = match.group(2) if match.group(2) else ""
         timestamp_str_without_ns_str = match.group(1) + ms_str
         return datetime_to_nanos(datetime.fromisoformat(timestamp_str_without_ns_str)) + int(ns_str)
@@ -136,7 +139,9 @@ def timestamptz_to_nanos(timestamptz_str: str) -> int:
     if match := ISO_TIMESTAMPTZ_NANO.fullmatch(timestamptz_str):
         # Python datetime does not have native nanoseconds support
         # Hence we need to extract nanoseconds timestamp manually
-        ns_str = match.group(3) or "0"
+        # group(3) holds the sub-microsecond digits (fraction positions 7-9), so
+        # right-pad to 3 digits before reading them as nanoseconds (e.g. "7" -> 700).
+        ns_str = (match.group(3) or "0").ljust(3, "0")
         ms_str = match.group(2) if match.group(2) else ""
         timestamptz_str_without_ns_str = match.group(1) + ms_str + match.group(4)
         return datetime_to_nanos(datetime.fromisoformat(timestamptz_str_without_ns_str)) + int(ns_str)
@@ -164,7 +169,8 @@ def millis_to_datetime(millis: int) -> datetime:
 def timestamptz_to_micros(timestamptz_str: str) -> int:
     """Convert an ISO-8601 formatted timestamp with zone to microseconds from 1970-01-01T00:00:00.000000+00:00."""
     if ISO_TIMESTAMPTZ.fullmatch(timestamptz_str):
-        return datetime_to_micros(datetime.fromisoformat(timestamptz_str))
+        # Parse through the nanosecond path and truncate to microseconds, mirroring Java
+        return nanos_to_micros(timestamptz_to_nanos(timestamptz_str))
     if ISO_TIMESTAMP.fullmatch(timestamptz_str):
         # When we can match a timestamp without a zone, we can give a more specific error
         raise ValueError(f"Missing zone offset: {timestamptz_str} (must be ISO-8601)")

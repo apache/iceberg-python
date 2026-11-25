@@ -92,7 +92,7 @@ class SortField(IcebergBaseModel):
 
     @model_validator(mode="before")
     def set_null_order(cls, values: dict[str, Any]) -> dict[str, Any]:
-        values["direction"] = values["direction"] if values.get("direction") else SortDirection.ASC
+        values["direction"] = SortDirection(values["direction"]) if values.get("direction") else SortDirection.ASC
         if not values.get("null-order"):
             values["null-order"] = NullOrder.NULLS_FIRST if values["direction"] == SortDirection.ASC else NullOrder.NULLS_LAST
         return values
@@ -100,15 +100,16 @@ class SortField(IcebergBaseModel):
     @model_validator(mode="before")
     @classmethod
     def map_source_ids_onto_source_id(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            if "source-id" not in data and "source-ids" in data:
-                source_ids = data["source-ids"]
-                if isinstance(source_ids, list):
-                    if len(source_ids) == 0:
-                        raise ValueError("Empty source-ids is not allowed")
-                    if len(source_ids) > 1:
-                        raise ValueError("Multi argument transforms are not yet supported")
-                    data["source-id"] = source_ids[0]
+        if isinstance(data, dict) and "source-ids" in data:
+            if "source-id" in data:
+                raise ValueError("source-id and source-ids are mutually exclusive")
+            source_ids = data["source-ids"]
+            if isinstance(source_ids, list):
+                if len(source_ids) == 0:
+                    raise ValueError("Empty source-ids is not allowed")
+                if len(source_ids) > 1:
+                    raise ValueError("Multi argument transforms are not yet supported")
+                data["source-id"] = source_ids[0]
         return data
 
     source_id: int = Field(alias="source-id")

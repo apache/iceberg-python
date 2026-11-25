@@ -14,18 +14,117 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import struct
+import zlib
 from os import path
+from pathlib import Path
 
+import pyarrow as pa
 import pytest
 from pyroaring import BitMap
 
-from pyiceberg.table.deletion_vector import DeletionVector
+from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+from pyiceberg.table.deletion_vector import (
+    _DV_BLOB_MAGIC_NUMBER,
+    DeletionVector,
+    _deserialize_dv_blob,
+    _has_deletion_vector_content_reference,
+    read_deletion_vectors,
+)
 
 
 def _open_file(file: str) -> bytes:
     cur_dir = path.dirname(path.realpath(__file__))
     with open(f"{cur_dir}/bitmaps/{file}", "rb") as f:
         return f.read()
+
+
+def _dv_blob(bitmap_payload: bytes) -> bytes:
+    bitmap_data = struct.pack("<I", _DV_BLOB_MAGIC_NUMBER) + bitmap_payload
+    return struct.pack(">I", len(bitmap_data)) + bitmap_data + struct.pack(">I", zlib.crc32(bitmap_data) & 0xFFFFFFFF)
+
+
+def _bitmap_payload() -> bytes:
+    return (1).to_bytes(8, byteorder="little") + (0).to_bytes(4, byteorder="little") + BitMap([1, 3, 5]).serialize()
+
+
+def test_deserialize_deletion_vector_blob() -> None:
+    actual = _deserialize_dv_blob(_dv_blob(_bitmap_payload()), record_count=3)
+
+    assert actual == [BitMap([1, 3, 5])]
+
+
+def test_deserialize_deletion_vector_blob_invalid_length() -> None:
+    with pytest.raises(ValueError, match="Invalid bitmap data length"):
+        _deserialize_dv_blob(_dv_blob(_bitmap_payload())[:-1])
+
+
+def test_deserialize_deletion_vector_blob_invalid_magic() -> None:
+    bitmap_data = struct.pack("<I", _DV_BLOB_MAGIC_NUMBER + 1) + _bitmap_payload()
+    blob = struct.pack(">I", len(bitmap_data)) + bitmap_data + struct.pack(">I", zlib.crc32(bitmap_data) & 0xFFFFFFFF)
+
+    with pytest.raises(ValueError, match="Invalid magic number"):
+        _deserialize_dv_blob(blob)
+
+
+def test_deserialize_deletion_vector_blob_invalid_crc() -> None:
+    blob = bytearray(_dv_blob(_bitmap_payload()))
+    blob[-1] ^= 1
+
+    with pytest.raises(ValueError, match="Invalid CRC"):
+        _deserialize_dv_blob(bytes(blob))
+
+
+def test_deserialize_deletion_vector_blob_invalid_cardinality() -> None:
+    with pytest.raises(ValueError, match="Invalid cardinality"):
+        _deserialize_dv_blob(_dv_blob(_bitmap_payload()), record_count=4)
+
+
+def _data_file(
+    content_offset: int | None = None,
+    content_size_in_bytes: int | None = None,
+    referenced_data_file: str | None = None,
+) -> DataFile:
+    return DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path="deletes.puffin",
+        file_format=FileFormat.PUFFIN,
+        record_count=1,
+        content_offset=content_offset,
+        content_size_in_bytes=content_size_in_bytes,
+        referenced_data_file=referenced_data_file,
+    )
+
+
+def test_has_deletion_vector_content_reference() -> None:
+    assert not _has_deletion_vector_content_reference(_data_file())
+    assert _has_deletion_vector_content_reference(_data_file(content_offset=0))
+    assert _has_deletion_vector_content_reference(_data_file(content_size_in_bytes=1))
+    assert _has_deletion_vector_content_reference(_data_file(referenced_data_file="data.parquet"))
+
+
+def test_read_external_deletion_vector_content_range() -> None:
+    """Read an externally generated Iceberg DV blob from a .bin content range."""
+    fixture_path = Path(__file__).parent / "deletion_vector" / "v1" / "deletion-vector.bin"
+    # The V3 manifest points past the one-byte file prefix to the complete DV blob.
+    dv = DataFile.from_args(
+        _table_format_version=3,
+        content=DataFileContent.POSITION_DELETES,
+        file_path=str(fixture_path),
+        file_format=FileFormat.PUFFIN,
+        record_count=3,
+        content_offset=1,
+        content_size_in_bytes=46,
+        referenced_data_file="data.parquet",
+    )
+
+    deletion_vectors = read_deletion_vectors(PyArrowFileIO(), dv)
+
+    assert len(deletion_vectors) == 1
+    assert deletion_vectors[0].referenced_data_file == "data.parquet"
+    assert deletion_vectors[0].to_vector().to_pylist() == [1, 4, 5]
 
 
 def test_map_empty() -> None:
@@ -35,6 +134,23 @@ def test_map_empty() -> None:
     actual = DeletionVector._deserialize_bitmap(puffin)
 
     assert expected == actual
+    vector = DeletionVector("data.parquet", actual).to_vector()
+    assert vector.type == pa.int64()
+    assert vector.to_pylist() == []
+
+
+def test_to_vector_with_empty_bitmaps_for_low_keys() -> None:
+    # Keys without positions have empty bitmaps, such as key 0 when every position is at or above 2**32
+    for bitmaps, expected in [
+        ([BitMap(), BitMap([5])], [2**32 + 5]),
+        ([BitMap(), BitMap(), BitMap([0, 7])], [2 * 2**32, 2 * 2**32 + 7]),
+        ([BitMap([2]), BitMap(), BitMap([1])], [2, 2 * 2**32 + 1]),
+        ([BitMap()], []),
+        ([BitMap(), BitMap()], []),
+    ]:
+        vector = DeletionVector("data.parquet", bitmaps).to_vector()
+        assert vector.type == pa.int64()
+        assert vector.to_pylist() == expected
 
 
 def test_map_bitvals() -> None:
@@ -64,6 +180,43 @@ def test_map_spread_vals() -> None:
     actual = DeletionVector._deserialize_bitmap(puffin)
 
     assert expected == actual
+
+
+def test_map_mixed_containers_with_key_gaps() -> None:
+    array_bitmap = BitMap([1, 3, 5])
+    bitset_bitmap = BitMap(range(0, 20_000, 2))
+    run_bitmap = BitMap(range(100_000))
+    multi_container_bitmap = BitMap([1, 65_537])
+    bitmaps_by_key = {
+        0: BitMap(),
+        2: array_bitmap,
+        3: bitset_bitmap,
+        5: run_bitmap,
+        6: multi_container_bitmap,
+    }
+    payload = len(bitmaps_by_key).to_bytes(8, byteorder="little") + b"".join(
+        key.to_bytes(4, byteorder="little") + bitmap.serialize() for key, bitmap in bitmaps_by_key.items()
+    )
+
+    assert DeletionVector._deserialize_bitmap(payload) == [
+        BitMap(),
+        BitMap(),
+        array_bitmap,
+        bitset_bitmap,
+        BitMap(),
+        run_bitmap,
+        multi_container_bitmap,
+    ]
+
+
+def test_map_deserialization_does_not_reserialize(monkeypatch: pytest.MonkeyPatch) -> None:
+    class NonSerializingBitMap(BitMap):
+        def serialize(self) -> bytes:
+            raise AssertionError("Deletion vector deserialization must not serialize bitmaps")
+
+    monkeypatch.setattr("pyiceberg.table.deletion_vector.BitMap", NonSerializingBitMap)
+
+    assert DeletionVector._deserialize_bitmap(_bitmap_payload()) == [BitMap([1, 3, 5])]
 
 
 def test_map_high_vals() -> None:

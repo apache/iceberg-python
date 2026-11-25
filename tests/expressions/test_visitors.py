@@ -16,6 +16,8 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from typing import Any
 
 import pytest
@@ -64,9 +66,11 @@ from pyiceberg.expressions import (
 )
 from pyiceberg.expressions.literals import Literal, literal
 from pyiceberg.expressions.visitors import (
+    MAX_DNF_TERMS,
     BindVisitor,
     BooleanExpressionVisitor,
     BoundBooleanExpressionVisitor,
+    _ExpressionEvaluator,
     _ManifestEvalVisitor,
     expression_evaluator,
     expression_to_plain_format,
@@ -1591,6 +1595,23 @@ def test_to_dnf_not_and() -> None:
     assert rewrite_to_dnf(expr) == (EqualTo("Q", "b"), NotEqualTo("R", "c"))
 
 
+def _chained_or_pairs(groups: int) -> BooleanExpression:
+    # (a_0 = x OR b_0 = y) AND ... AND (a_n = x OR b_n = y), which expands to 2**groups DNF terms
+    expr: BooleanExpression = Or(EqualTo("a0", "x"), EqualTo("b0", "y"))
+    for idx in range(1, groups):
+        expr = And(expr, Or(EqualTo(f"a{idx}", "x"), EqualTo(f"b{idx}", "y")))
+    return expr
+
+
+def test_to_dnf_at_expansion_limit() -> None:
+    assert len(rewrite_to_dnf(_chained_or_pairs(14))) == MAX_DNF_TERMS
+
+
+def test_to_dnf_rejects_unbounded_expansion() -> None:
+    with pytest.raises(ValueError, match=f"maximum of {MAX_DNF_TERMS} DNF terms"):
+        rewrite_to_dnf(_chained_or_pairs(20))
+
+
 def test_dnf_to_dask(table_schema_simple: Schema) -> None:
     expr = (
         BoundGreaterThan(
@@ -1628,6 +1649,57 @@ def test_expression_evaluator_null() -> None:
     assert expression_evaluator(schema, LessThan("a", 1), case_sensitive=True)(struct) is False
     assert expression_evaluator(schema, StartsWith("a", 1), case_sensitive=True)(struct) is False
     assert expression_evaluator(schema, NotStartsWith("a", 1), case_sensitive=True)(struct) is True
+
+
+def test_expression_evaluator_does_not_mutate_prepared_state() -> None:
+    schema = Schema(
+        NestedField(1, "a", IntegerType(), required=True),
+        NestedField(2, "b", IntegerType(), required=True),
+    )
+    evaluator = _ExpressionEvaluator(schema, And(EqualTo("a", 1), EqualTo("b", 1)), case_sensitive=True)
+    initial_state = vars(evaluator).copy()
+
+    assert evaluator.eval(Record(1, 1)) is True
+    assert evaluator.eval(Record(0, 0)) is False
+    assert evaluator.eval(Record(1, 1)) is True
+
+    assert vars(evaluator) == initial_state
+
+
+def test_expression_evaluator_concurrent_calls_do_not_share_records() -> None:
+    class BlockingRecord(Record):
+        def __init__(self, first_read: Event, release_first_read: Event, *values: Any) -> None:
+            super().__init__(*values)
+            self.first_read = first_read
+            self.release_first_read = release_first_read
+
+        def __getitem__(self, pos: int) -> Any:
+            value = super().__getitem__(pos)
+            if pos == 0:
+                self.first_read.set()
+                if not self.release_first_read.wait(timeout=5):
+                    raise TimeoutError("Timed out waiting to interleave expression evaluations")
+            return value
+
+    schema = Schema(
+        NestedField(1, "a", IntegerType(), required=True),
+        NestedField(2, "b", IntegerType(), required=True),
+    )
+    evaluator = expression_evaluator(schema, And(EqualTo("a", 1), EqualTo("b", 1)), case_sensitive=True)
+    first_read = Event()
+    release_first_read = Event()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        matching_result = executor.submit(evaluator, BlockingRecord(first_read, release_first_read, 1, 1))
+        assert first_read.wait(timeout=5)
+
+        try:
+            non_matching_result = executor.submit(evaluator, Record(0, 0)).result(timeout=5)
+        finally:
+            release_first_read.set()
+
+        assert matching_result.result(timeout=5) is True
+        assert non_matching_result is False
 
 
 def test_expression_evaluator_binary_starts_with() -> None:

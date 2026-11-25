@@ -41,7 +41,7 @@ permissions:
 
 jobs:
   validate-inputs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     outputs:
       VERSION: ${{ steps.validate-inputs.outputs.VERSION }} # e.g. 0.8.0
       RC: ${{ steps.validate-inputs.outputs.RC }} # e.g. 1
@@ -96,21 +96,21 @@ jobs:
           STEPS_VALIDATE_INPUTS_OUTPUTS_RC: ${{ steps.validate-inputs.outputs.RC }}
 
   validate-library-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     needs:
       - validate-inputs
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
 
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: 3.12
 
       - name: Install UV
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: false
 

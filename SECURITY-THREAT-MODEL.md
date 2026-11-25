@@ -65,15 +65,24 @@ Iceberg Python should:
   already trusted with them
 - avoid creating new unauthorized capabilities in Iceberg Python-owned
   components
-- avoid violating trust boundaries that Iceberg Python itself owns, such as
-  leaking auth, transport, or credential-bearing state across catalog or
-  client boundaries in the same process
+- avoid violating trust boundaries that Iceberg Python itself documents as its
+  own
 
 Iceberg Python does not aim to be the primary enforcement point for:
 
 - user-to-user authorization inside the embedding application
 - storage-level authorization
 - service-side credential scoping performed by an external catalog
+- isolation between tenants, principals, or catalogs sharing a single process
+
+That last point is worth stating plainly, because it is the one most often
+assumed. Iceberg Python does not guarantee that state is partitioned between
+catalog instances, sessions, or tenants within one interpreter. Caches, client
+objects, and auth state may be process-wide. A deployment that serves multiple
+principals from one process and needs them isolated must provide that
+isolation itself — by process, interpreter, or another boundary it controls.
+Reports that a process-wide structure is shared across catalogs or tenants are
+accepted as bugs worth fixing, not as vulnerabilities.
 
 ## Roles
 
@@ -94,9 +103,10 @@ security boundary.
 ### REST catalog client
 
 The REST catalog client consumes catalog-provided metadata, configuration, and
-credentials. Client-side bugs in routing, caching, or reuse may still be
-security-relevant if they leak credential-bearing state across boundaries that
-the Iceberg Python client is expected to preserve.
+credentials. Client-side bugs in routing, caching, or reuse are real bugs and
+worth fixing, but they are security-relevant only where they expose a secret to
+an audience outside the process — not merely because state was shared between
+catalogs or sessions within it.
 
 ### Embedding application
 
@@ -167,20 +177,26 @@ when the report is credible and reproducible.
 
 Examples include:
 
-- catalog or storage credentials exposed through a user-visible surface
-- one catalog's credentials or auth state leaking into another catalog or
-  client
+- catalog or storage credentials exposed through a user-visible surface such
+  as logs, error messages, or serialized output
+- secrets written into a metadata plane readable by a wider audience than the
+  one already trusted with them
+
+Sharing of credential-bearing state between catalogs or sessions inside a
+single process is **not** covered here; see *Security Goals* on process
+isolation.
 
 ### 2. Iceberg Python-owned trust-boundary violations
 
-Security issues exist when Iceberg Python itself is expected to separate
-catalogs, clients, or principals and fails to do so.
+Security issues exist when Iceberg Python is the documented enforcement point
+for a boundary and fails to hold it.
 
-Examples include:
-
-- process-global auth or transport state crossing catalog instances
-- secret-bearing state from one principal reused for another principal within
-  an Iceberg Python-owned boundary
+The qualifier matters. A boundary belongs to Iceberg Python only where this
+model or the project's documentation says it does. Where the surrounding
+catalog, service, or deployment is the enforcement point, a client-side gap is
+a bug rather than a vulnerability — even when the consequence looks alarming.
+In particular, isolation between principals sharing one process is not an
+Iceberg Python-owned boundary.
 
 ## Usually Out of Scope or Non-Security by Default
 
@@ -208,6 +224,94 @@ service are usually outside Iceberg Python's primary security boundary.
 If the actor already has a legitimate capability that can cause the same harm,
 the new path is usually not a security issue.
 
+### 5. Reports requiring an authorized table writer or maintainer
+
+A principal who can already write or replace table metadata, set table
+properties, or write and delete table data is operating inside the capability
+set described under *Table writer or maintainer*. A report that only shows a
+new route to an effect that principal can already produce legitimately is not
+a security vulnerability in Iceberg Python.
+
+This covers, by default:
+
+- table properties that change client behavior for readers of that same table
+- metadata a writer is already entitled to replace wholesale
+- data or delete files a writer is already entitled to add
+
+Containment of what a writer commits — that manifest entries and write paths
+stay inside the table's location — is enforced by the catalog, not by this
+client. A report showing that Iceberg Python follows a path the catalog
+accepted is a hardening opportunity here and a containment question there.
+
+### 6. Resource exhaustion, allocation amplification, and algorithmic complexity
+
+Availability-only findings are not treated as security vulnerabilities in
+Iceberg Python by default. This includes:
+
+- out-of-memory conditions from attacker-influenced sizes or counts
+- allocation amplification, where a small input drives a large allocation
+- decompression bombs and unbounded decode output
+- superlinear or exponential algorithmic complexity on attacker-influenced
+  input
+
+Iceberg Python is a client library; the surrounding service owns request
+admission, resource limits, and process isolation. These reports are accepted
+as robustness and hardening work, not as vulnerabilities, unless they also
+demonstrate a confidentiality or integrity consequence.
+
+### 7. Out-of-bounds access and native memory-safety findings
+
+Bounds-checking gaps in native or compiled decode paths, including the Cython
+Avro decoders, are treated by default as parser hardening rather than as
+security vulnerabilities. Crashes, aborts, and read overruns that terminate the
+process fall under this rule.
+
+This applies to the root cause, not to a theory about the consequence. A report
+that a bounds check is missing is hardening. A report that demonstrates
+specific memory contents reaching an attacker-observable channel is a different
+report, and is assessed on what it shows.
+
+### 8. Configuration loaded from documented default locations
+
+Iceberg Python loads configuration from documented default locations, including
+`.pyiceberg.yaml` resolved from the working directory, the user home directory,
+and `PYICEBERG_HOME`, together with `PYICEBERG_`-prefixed environment
+variables. This resolution order is public, documented behavior and follows the
+same pattern as configuration loading in widely used tooling across the
+ecosystem.
+
+A report is not a vulnerability in Iceberg Python merely because it observes
+that configuration is discovered this way — for example, that a configuration
+file placed in a directory a user later works from will be read when Iceberg
+Python runs there. Choosing which directories to execute in, and which
+configuration files to trust on the local filesystem, belongs to the operator
+and to the surrounding environment, not to this library.
+
+### 9. Provenance of the table being read
+
+**Establishing the provenance of a catalog or table is the reader's
+responsibility.** Iceberg Python reads the metadata, manifests, and data files
+it is pointed at. It does not authenticate the authorship of that content, does
+not treat it as sandboxed input, and does not claim to.
+
+A caller who does not know who wrote a table is in the same position as one
+calling an API endpoint whose operator they cannot identify: the decision to
+trust the source was made before the library was involved, and the library is
+not where it can be recovered.
+
+Publicly published datasets are the common example, but they are only an
+example. The same reasoning applies to a `metadata.json` obtained out of band,
+a table registered by URL on a user's behalf, a warehouse path an operator
+cannot vouch for, or any other route by which content of unestablished
+authorship reaches a read. What matters is whether provenance was established,
+not how the content arrived.
+
+Reports whose precondition is that provenance was never established are
+therefore outside Iceberg Python's primary security boundary by default. Where
+a deployment needs that guarantee, it belongs upstream of this library — in the
+catalog that vends the table, or in whatever admits a dataset into the
+deployment.
+
 ## Scanner Calibration Rules
 
 A scanner targeting Iceberg Python should treat a finding as higher-confidence
@@ -223,6 +327,17 @@ A finding should be downgraded or rejected by default if it instead depends
 primarily on:
 
 - malformed-input robustness or denial-of-service behavior
-- a malicious catalog or external service
+- resource exhaustion, allocation amplification, or algorithmic complexity
+  with no confidentiality or integrity consequence
+- an out-of-bounds access that crashes or aborts without returning
+  attacker-observable memory contents
+- a malicious catalog or external service, including one that returns
+  malicious configuration overrides or credential-vending responses
 - a principal that already has equivalent power through legitimate write or
-  maintenance capabilities
+  maintenance capabilities, including an authorized table writer acting within
+  their own table
+- state shared between catalogs, sessions, or tenants inside a single process
+- configuration discovered from a documented default location on the local
+  filesystem or from the process environment
+- the victim having chosen to load a dataset, table, or catalog published by an
+  untrusted party

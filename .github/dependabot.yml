@@ -22,7 +22,7 @@ updates:
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 50
     ignore:
       - dependency-name: "datafusion"
@@ -31,6 +31,26 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      # The codeql-action init/autobuild/analyze steps must all run the
+      # same version - split PRs cause a version mismatch that fails the
+      # Analyze jobs. Group them so a single PR bumps all of them together.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
+  # dev/spark/Dockerfile is not listed: its base image tag comes from an ARG, which Dependabot cannot resolve
+  - package-ecosystem: "docker"
+    directory: "/dev/hive"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+  - package-ecosystem: "docker-compose"
+    directory: "/dev"
+    schedule:
+      interval: "monthly"
     cooldown:
       default-days: 7

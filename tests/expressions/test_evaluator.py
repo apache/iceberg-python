@@ -15,10 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name
+from collections.abc import Iterator, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
+from threading import Event
 from typing import Any
 
+import pyarrow as pa
 import pytest
 
+from pyiceberg.catalog import Catalog
 from pyiceberg.conversions import to_bytes
 from pyiceberg.expressions import (
     And,
@@ -53,6 +59,7 @@ from pyiceberg.manifest import DataFile, FileFormat
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record
 from pyiceberg.types import (
+    DateType,
     DoubleType,
     FloatType,
     IcebergType,
@@ -61,6 +68,7 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StringType,
+    TimestampType,
 )
 
 INT_MIN_VALUE = 30
@@ -78,6 +86,51 @@ INT_MAX = _to_byte_buffer(IntegerType(), INT_MAX_VALUE)
 
 STRING_MIN = _to_byte_buffer(StringType(), "a")
 STRING_MAX = _to_byte_buffer(StringType(), "z")
+
+
+class BlockingBounds(Mapping[int, bytes]):
+    """Pause one metrics evaluation while another runs to detect shared state between calls."""
+
+    def __init__(self, value: bytes, first_read: Event, release_first_read: Event) -> None:
+        self.value = value
+        self.first_read = first_read
+        self.release_first_read = release_first_read
+
+    def __getitem__(self, field_id: int) -> bytes:
+        if field_id != 1:
+            raise KeyError(field_id)
+        self.first_read.set()
+        if not self.release_first_read.wait(timeout=5):
+            raise TimeoutError("Timed out waiting to interleave metrics evaluations")
+        return self.value
+
+    def __iter__(self) -> Iterator[int]:
+        return iter((1,))
+
+    def __len__(self) -> int:
+        return 1
+
+
+def _single_value_metrics_file(
+    value: int,
+    *,
+    record_count: int = 100,
+    lower_bounds: Mapping[int, bytes] | None = None,
+    upper_bounds: Mapping[int, bytes] | None = None,
+) -> DataFile:
+    value_bytes = to_bytes(LongType(), value)
+    return DataFile.from_args(
+        file_path=f"file-{value}.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=record_count,
+        file_size_in_bytes=1,
+        value_counts={1: record_count},
+        null_value_counts={1: 0},
+        nan_value_counts={1: 0},
+        lower_bounds=lower_bounds if lower_bounds is not None else {1: value_bytes},
+        upper_bounds=upper_bounds if upper_bounds is not None else {1: value_bytes},
+    )
 
 
 @pytest.fixture
@@ -187,6 +240,38 @@ def data_file_4() -> DataFile:
         nan_value_counts=None,
         lower_bounds={3: to_bytes(StringType(), "abc")},
         upper_bounds={3: to_bytes(StringType(), "イロハニホヘト")},
+    )
+
+
+@pytest.fixture
+def data_file_5() -> DataFile:
+    return DataFile.from_args(
+        file_path="file_5.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=50,
+        file_size_in_bytes=3,
+        value_counts={3: 50},
+        null_value_counts={3: 0},
+        nan_value_counts=None,
+        lower_bounds={3: to_bytes(StringType(), "abc")},
+        upper_bounds={3: to_bytes(StringType(), "abcdefghi")},
+    )
+
+
+@pytest.fixture
+def data_file_6() -> DataFile:
+    return DataFile.from_args(
+        file_path="file_6.parquet",
+        file_format=FileFormat.PARQUET,
+        partition={},
+        record_count=50,
+        file_size_in_bytes=3,
+        value_counts={3: 50},
+        null_value_counts=None,
+        nan_value_counts=None,
+        lower_bounds={3: to_bytes(StringType(), "abc")},
+        upper_bounds={3: to_bytes(StringType(), "abcdefghi")},
     )
 
 
@@ -957,7 +1042,13 @@ def test_strict_metrics_evaluator_uses_empty_byte_bounds() -> None:
 
 
 def test_string_not_starts_with(
-    schema_data_file: Schema, data_file: DataFile, data_file_2: DataFile, data_file_3: DataFile, data_file_4: DataFile
+    schema_data_file: Schema,
+    data_file: DataFile,
+    data_file_2: DataFile,
+    data_file_3: DataFile,
+    data_file_4: DataFile,
+    data_file_5: DataFile,
+    data_file_6: DataFile,
 ) -> None:
     should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", "a")).eval(data_file)
     assert should_read, "Should read: no stats"
@@ -996,6 +1087,15 @@ def test_string_not_starts_with(
 
     # should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", above_max)).eval(data_file_4)
     # assert should_read, "Should not read: range doesn't match"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", "abc")).eval(data_file_5)
+    assert not should_read, "Should not read: no nulls and all strings start with the prefix"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", "abcd")).eval(data_file_5)
+    assert should_read, "Should read: lower bound is shorter than the prefix"
+
+    should_read = _InclusiveMetricsEvaluator(schema_data_file, NotStartsWith("required", "abc")).eval(data_file_6)
+    assert should_read, "Should read: null count is unknown, so the file may contain nulls that match"
 
 
 @pytest.fixture
@@ -1357,6 +1457,127 @@ def test_strict_zero_record_file_stats(strict_data_file_schema: Schema) -> None:
         assert should_read, f"Should always match 0-record file: {expression}"
 
 
+def test_metrics_evaluators_do_not_mutate_prepared_state() -> None:
+    schema = Schema(
+        NestedField(1, "x", LongType(), required=True),
+        NestedField(2, "nullable", StringType(), required=False),
+        NestedField(3, "floating", DoubleType(), required=True),
+    )
+    expression = And(EqualTo("x", 10), And(IsNull("nullable"), IsNaN("floating")))
+    matching_file = DataFile.from_args(
+        file_path="matching.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1,
+        value_counts={1: 100, 2: 100, 3: 100},
+        null_value_counts={1: 0, 2: 100, 3: 0},
+        nan_value_counts={1: 0, 3: 100},
+        lower_bounds={1: to_bytes(LongType(), 10)},
+        upper_bounds={1: to_bytes(LongType(), 10)},
+    )
+    non_matching_file = DataFile.from_args(
+        file_path="non-matching.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1,
+        value_counts={1: 100, 2: 100, 3: 100},
+        null_value_counts={1: 0, 2: 0, 3: 0},
+        nan_value_counts={1: 0, 3: 0},
+        lower_bounds={1: to_bytes(LongType(), 20)},
+        upper_bounds={1: to_bytes(LongType(), 20)},
+    )
+    missing_metrics_file = DataFile.from_args(
+        file_path="missing-metrics.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=100,
+        file_size_in_bytes=1,
+        value_counts=None,
+        null_value_counts=None,
+        nan_value_counts=None,
+        lower_bounds=None,
+        upper_bounds=None,
+    )
+
+    inclusive = _InclusiveMetricsEvaluator(schema, expression)
+    inclusive_state = vars(inclusive).copy()
+    assert inclusive.eval(matching_file) is ROWS_MIGHT_MATCH
+    assert inclusive.eval(non_matching_file) is ROWS_CANNOT_MATCH
+    assert inclusive.eval(missing_metrics_file) is ROWS_MIGHT_MATCH
+    assert inclusive.eval(matching_file) is ROWS_MIGHT_MATCH
+    assert vars(inclusive) == inclusive_state
+
+    strict = _StrictMetricsEvaluator(schema, expression)
+    strict_state = vars(strict).copy()
+    assert strict.eval(matching_file) is ROWS_MUST_MATCH
+    assert strict.eval(non_matching_file) is ROWS_MIGHT_NOT_MATCH
+    assert strict.eval(missing_metrics_file) is ROWS_MIGHT_NOT_MATCH
+    assert strict.eval(matching_file) is ROWS_MUST_MATCH
+    assert vars(strict) == strict_state
+
+
+def test_inclusive_metrics_evaluator_concurrent_calls_do_not_share_file_metrics() -> None:
+    schema = Schema(NestedField(1, "x", LongType(), required=True))
+    evaluator = _InclusiveMetricsEvaluator(schema, And(GreaterThan("x", 5), LessThan("x", 15)))
+    first_read = Event()
+    release_first_read = Event()
+    matching_file = _single_value_metrics_file(
+        10,
+        upper_bounds=BlockingBounds(to_bytes(LongType(), 10), first_read, release_first_read),
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        matching_result = executor.submit(evaluator.eval, matching_file)
+        assert first_read.wait(timeout=5)
+
+        try:
+            non_matching_result = executor.submit(evaluator.eval, _single_value_metrics_file(20)).result(timeout=5)
+        finally:
+            release_first_read.set()
+
+        assert matching_result.result(timeout=5) is ROWS_MIGHT_MATCH
+        assert non_matching_result is ROWS_CANNOT_MATCH
+
+
+def test_strict_metrics_evaluator_concurrent_calls_do_not_share_file_metrics() -> None:
+    schema = Schema(NestedField(1, "x", LongType(), required=True))
+    evaluator = _StrictMetricsEvaluator(schema, And(GreaterThan("x", 5), LessThan("x", 15)))
+    first_read = Event()
+    release_first_read = Event()
+    matching_file = _single_value_metrics_file(
+        10,
+        lower_bounds=BlockingBounds(to_bytes(LongType(), 10), first_read, release_first_read),
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        matching_result = executor.submit(evaluator.eval, matching_file)
+        assert first_read.wait(timeout=5)
+
+        try:
+            non_matching_result = executor.submit(evaluator.eval, _single_value_metrics_file(20)).result(timeout=5)
+        finally:
+            release_first_read.set()
+
+        assert matching_result.result(timeout=5) is ROWS_MUST_MATCH
+        assert non_matching_result is ROWS_MIGHT_NOT_MATCH
+
+
+def test_metrics_evaluator_record_count_short_circuits() -> None:
+    schema = Schema(NestedField(1, "x", LongType(), required=True))
+    zero_record_file = _single_value_metrics_file(10, record_count=0)
+    negative_record_file = _single_value_metrics_file(10, record_count=-1)
+
+    assert _InclusiveMetricsEvaluator(schema, EqualTo("x", 10)).eval(zero_record_file) is ROWS_CANNOT_MATCH
+    assert (
+        _InclusiveMetricsEvaluator(schema, EqualTo("x", 10), include_empty_files=True).eval(zero_record_file) is ROWS_MIGHT_MATCH
+    )
+    assert _InclusiveMetricsEvaluator(schema, EqualTo("x", 10)).eval(negative_record_file) is ROWS_MIGHT_MATCH
+    assert _StrictMetricsEvaluator(schema, EqualTo("x", 10)).eval(zero_record_file) is ROWS_MUST_MATCH
+    assert _StrictMetricsEvaluator(schema, EqualTo("x", 10)).eval(negative_record_file) is ROWS_MIGHT_NOT_MATCH
+
+
 def test_strict_not(schema_data_file: Schema, strict_data_file_1: DataFile) -> None:
     should_read = _StrictMetricsEvaluator(schema_data_file, Not(LessThan("id", INT_MIN_VALUE - 25))).eval(strict_data_file_1)
     assert should_read, "Should not match: not(false)"
@@ -1615,6 +1836,33 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
     assert not should_read, "Should not match: no_nulls field does not have bounds"
 
 
+def test_plan_and_inspect_after_date_to_timestamp_promotion(catalog: Catalog) -> None:
+    # PyIceberg cannot write v3 metadata yet (#1551), so the promotion is simulated on v2 metadata. The bound
+    # decoder does not depend on the format version, and the data files keep their 4-byte day counts either way.
+    catalog.create_namespace("default")
+    tbl = catalog.create_table("default.date_promotion", Schema(NestedField(1, "d", DateType(), required=False)))
+    tbl.append(pa.table({"d": pa.array([date(2020, 1, 1), date(2021, 6, 15)], pa.date32())}))
+    tbl.append(pa.table({"d": pa.array([date(2023, 3, 1), date(2024, 2, 29)], pa.date32())}))
+    paths = {row["readable_metrics"]["d"]["lower_bound"]: row["file_path"] for row in tbl.inspect.files().to_pylist()}
+    file_a, file_b = paths[date(2020, 1, 1)], paths[date(2023, 3, 1)]
+
+    # date -> timestamp is a v3 promotion that promote() does not implement, so the incompatible change is allowed
+    with tbl.update_schema(allow_incompatible_changes=True) as update:
+        update.update_column("d", field_type=TimestampType())
+
+    for row_filter, expected_files in [
+        # file A's latest date is 2021-06-15, file B's earliest date is 2023-03-01
+        (GreaterThan("d", "2022-01-01T00:00:00"), [file_b]),
+        (LessThan("d", "2021-01-01T00:00:00"), [file_a]),
+    ]:
+        planned = tbl.scan(row_filter=row_filter).plan_files()
+        assert [task.file.file_path for task in planned] == expected_files
+
+    bounds = {row["file_path"]: row["readable_metrics"]["d"] for row in tbl.inspect.files().to_pylist()}
+    assert (bounds[file_a]["lower_bound"], bounds[file_a]["upper_bound"]) == (datetime(2020, 1, 1), datetime(2021, 6, 15))
+    assert (bounds[file_b]["lower_bound"], bounds[file_b]["upper_bound"]) == (datetime(2023, 3, 1), datetime(2024, 2, 29))
+
+
 @pytest.mark.parametrize(
     "file_type, evolved_type, lower_bound, upper_bound, op, lit, expected",
     [
@@ -1624,6 +1872,9 @@ def test_strict_integer_not_in(strict_data_file_schema: Schema, strict_data_file
         # Float -> Double
         (FloatType(), DoubleType(), 30.0, 79.0, GreaterThan, 100.0, ROWS_CANNOT_MATCH),
         (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 50.0, ROWS_MIGHT_MATCH),
+        # Date -> Timestamp, including a day count before the epoch
+        (DateType(), TimestampType(), 30, 79, GreaterThan, "2022-01-01T00:00:00", ROWS_CANNOT_MATCH),
+        (DateType(), TimestampType(), -10, 79, LessThan, "1969-12-31T00:00:00", ROWS_MIGHT_MATCH),
     ],
 )
 def test_inclusive_metrics_eval_bounds_after_promotion(
@@ -1664,6 +1915,8 @@ def test_inclusive_metrics_eval_bounds_after_promotion(
         (FloatType(), DoubleType(), 30.0, 79.0, GreaterThan, 100.0, ROWS_MIGHT_NOT_MATCH),
         (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 100.0, ROWS_MUST_MATCH),
         (FloatType(), DoubleType(), 30.0, 79.0, LessThan, 20.0, ROWS_MIGHT_NOT_MATCH),
+        # Date -> Timestamp
+        (DateType(), TimestampType(), 30, 79, GreaterThan, "1970-01-15T00:00:00", ROWS_MUST_MATCH),
     ],
 )
 def test_strict_metrics_eval_bounds_after_promotion(

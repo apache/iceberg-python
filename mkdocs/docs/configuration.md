@@ -79,14 +79,21 @@ Iceberg tables support table properties to configure table behavior.
 
 | Key                                      | Options                            | Default                    | Description                                                                                                                                          |
 |------------------------------------------|------------------------------------|----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `write.parquet.compression-codec`        | `{uncompressed,zstd,gzip,snappy}`  | zstd                       | Sets the Parquet compression coddec.                                                                                                                 |
+| `write.parquet.compression-codec`        | `{uncompressed,zstd,gzip,snappy}`  | zstd                       | Sets the Parquet compression codec.                                                                                                                  |
 | `write.parquet.compression-level`        | Integer                            | null                       | Parquet compression level for the codec. If not set, it is up to PyIceberg                                                                           |
 | `write.parquet.row-group-limit`          | Number of rows                     | 1048576                    | The upper bound of the number of entries within a single row group                                                                                   |
 | `write.parquet.page-size-bytes`          | Size in bytes                      | 1MB                        | Set a target threshold for the approximate encoded size of data pages within a column chunk                                                          |
 | `write.parquet.page-row-limit`           | Number of rows                     | 20000                      | Set a target threshold for the maximum number of rows within a column chunk                                                                          |
 | `write.parquet.dict-size-bytes`          | Size in bytes                      | 2MB                        | Set the dictionary page size limit per row group                                                                                                     |
+| `write.target-file-size-bytes`           | Size in bytes                      | 536870912 (512MB)          | Target size of generated data files. Measured in uncompressed in-memory Arrow bytes, so files on disk are typically smaller after compression         |
+| `write.format.default`                   | `{parquet}`                        | parquet                    | File format for data files written by PyIceberg. Only Parquet is supported                                                                           |
+| `write.avro.compression-codec`           | `{gzip,zstd,snappy}`               | gzip                       | Compression codec for manifest files and manifest lists. For `snappy`, install with `pip install pyiceberg[snappy]`                                  |
+| `write.metadata.metrics.default`         | `{none,counts,truncate(N),full}`   | truncate(16)               | Default column metrics for data files: `none` records only column sizes, `counts` adds value and null counts, `full` adds lower/upper bounds, and `truncate(N)` truncates string and binary bounds to N characters or bytes. Nested fields collect at most counts |
+| `write.metadata.metrics.column.{column-name}` | `{none,counts,truncate(N),full}` | (value of `write.metadata.metrics.default`) | Overrides `write.metadata.metrics.default` for a single column. Use the dot-separated name for nested fields |
+| `write.summary.partition-limit`          | Integer                            | 0                          | Maximum number of changed partitions for which per-partition summaries are included in the snapshot summary. The default of 0 disables them          |
 | `write.metadata.previous-versions-max`   | Integer                            | 100                        | The max number of previous version metadata files to keep before deleting after commit.                                                              |
 | `write.metadata.delete-after-commit.enabled` | Boolean                        | False                      | Whether to automatically delete old *tracked* metadata files after each table commit. It will retain a number of the most recent metadata files, which can be set using property `write.metadata.previous-versions-max`. |
+| `write.metadata.compression-codec`       | `{none,gzip}`                      | none                       | Compression for the table metadata files that PyIceberg writes. `gzip` names new metadata files `*.gz.metadata.json` and gzips them. |
 | `write.object-storage.enabled`           | Boolean                            | False                      | Enables the [`ObjectStoreLocationProvider`](configuration.md#object-store-location-provider) that adds a hash component to file paths. |
 | `write.object-storage.partitioned-paths` | Boolean                            | True                       | Controls whether [partition values are included in file paths](configuration.md#partition-exclusion) when object storage is enabled                  |
 | `write.py-location-provider.impl`        | String of form `module.ClassName`  | null                       | Optional, [custom `LocationProvider`](configuration.md#loading-a-custom-location-provider) implementation                                            |
@@ -99,14 +106,34 @@ Iceberg tables support table properties to configure table behavior.
 | ------------------------------------ | ------------------- | ------------- | ----------------------------------------------------------- |
 | `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
 | `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Minimum number of manifests to accumulate before merging    |
-| `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
+| `commit.manifest-merge.enabled`      | Boolean             | True          | Controls whether to automatically merge manifests on writes |
 
 <!-- prettier-ignore-start -->
 
-!!! note "Fast append"
-    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-to-a-table) and thus `commit.manifest-merge.enabled` is set to `False` by default.
+!!! note "Append modes"
+    PyIceberg defaults to [merge append](api.md#write-to-a-table) to keep manifest metadata compact. Set `commit.manifest-merge.enabled` to `False` on a table to use fast append, which writes less metadata during each commit but accumulates more manifests over time.
 
 <!-- prettier-ignore-end -->
+
+### Commit retry options
+
+When a concurrent commit is detected, PyIceberg automatically retries the operation with exponential backoff. If the retry detects a real data conflict (e.g. concurrent deletes on the same partition), it raises `ValidationException` instead of retrying.
+
+| Key                              | Options          | Default   | Description                                                        |
+| -------------------------------- | ---------------- | --------- | ------------------------------------------------------------------ |
+| `commit.retry.num-retries`       | Integer          | 4         | Maximum number of retry attempts after a commit conflict            |
+| `commit.retry.min-wait-ms`      | Integer (ms)     | 100       | Minimum wait time before the first retry                            |
+| `commit.retry.max-wait-ms`      | Integer (ms)     | 60000     | Maximum wait time between retries (caps exponential backoff)        |
+| `commit.retry.total-timeout-ms` | Integer (ms)     | 1800000   | Total time allowed for all retry attempts before giving up          |
+
+### Isolation level options
+
+These properties control conflict detection behavior during concurrent writes.
+
+| Key                              | Options                          | Default      | Description                                                                                     |
+| -------------------------------- | -------------------------------- | ------------ | ----------------------------------------------------------------------------------------------- |
+| `write.delete.isolation-level`   | `{serializable,snapshot}`        | serializable | Isolation level for delete operations. Under `serializable`, concurrent appends to affected partitions cause `ValidationException`. Under `snapshot`, only conflicting deletes are rejected. |
+| `write.update.isolation-level`   | `{serializable,snapshot}`        | serializable | Isolation level for overwrite operations. Same semantics as `write.delete.isolation-level`.      |
 
 ## FileIO
 
@@ -152,6 +179,9 @@ For the FileIO there are several configuration options available:
 | s3.force-virtual-addressing | False                      | Whether to use virtual addressing of buckets. If true, then virtual addressing is always enabled. If false, then virtual addressing is only enabled if endpoint_override is empty. This can be used for non-AWS backends that only support virtual hosted-style access. |
 | s3.retry-strategy-impl      | None                       | Ability to set a custom S3 retry strategy. A full path to a class needs to be given that extends the [S3RetryStrategy](https://github.com/apache/arrow/blob/639201bfa412db26ce45e73851432018af6c945e/python/pyarrow/_s3fs.pyx#L110) base class.                         |
 | s3.anonymous                | True                       | Configure whether to use anonymous connection. If False (default), uses key/secret if configured or boto's credential resolver.                                                                                                                                         |
+| s3.server-side-encryption   | aws:kms                    | Configure server-side encryption (e.g. `AES256` or `aws:kms`). Only supported by `FsspecFileIO`.                                                                                                                                     |
+| s3.sse-kms-key-id           | alias/my-key               | Configure the SSE-KMS key id (or ARN) for multipart uploads. Only supported by `FsspecFileIO`.                                                                                                                                                               |
+| s3.ssl.ca-cert              | /etc/ssl/certs/ca.pem      | Path to a CA certificate bundle used to verify TLS connections to the S3 endpoint. Only supported by `PyArrowFileIO`, and requires pyarrow 21.0.0 or later. |
 
 <!-- markdown-link-check-enable-->
 
@@ -205,7 +235,7 @@ For the FileIO there are several configuration options available:
 | gcs.requester-pays          | False               | Configure whether to use requester-pays requests                                                                                                                                                                                                    |
 | gcs.session-kwargs          | {}                  | Configure a dict of parameters to pass on to aiohttp.ClientSession; can contain, for example, proxy settings.                                                                                                                                       |
 | gcs.service.host            | <http://0.0.0.0:4443> | Configure an alternative endpoint for the GCS FileIO to access (format protocol://host:port) If not given, defaults to the value of environment variable "STORAGE_EMULATOR_HOST"; if that is not set either, will use the standard Google endpoint. |
-| gcs.default-location        | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                              |
+| gcs.default-bucket-location | US                  | Configure the default location where buckets are created, like 'US' or 'EUROPE-WEST3'.                                                                                                                                                              |
 | gcs.version-aware           | False               | Configure whether to support object versioning on the GCS bucket.                                                                                                                                                                                   |
 
 <!-- markdown-link-check-enable-->
@@ -386,6 +416,42 @@ catalog:
 | snapshot-loading-mode | refs                           | The snapshots to return in the body of the metadata. Setting the value to `all` would return the full set of snapshots currently valid for the table. Setting the value to `refs` would load all snapshots referenced by branches or tags. |
 | `header.X-Iceberg-Access-Delegation` | `vended-credentials` | Signal to the server that the client supports delegated access via a comma-separated list of access mechanisms. The server may choose to supply access via any or none of the requested mechanisms. When using `vended-credentials`, the server provides temporary credentials to the client. When using `remote-signing`, the server signs requests on behalf of the client. (default: `vended-credentials`) |
 | view-endpoints-supported | false                           | For backwards compatibility with older REST servers. Set to `true` if the server supports view endpoints but doesn't send the `endpoints` field in the ConfigResponse. |
+| scan-planning-mode | client | When set to `server`, and the catalog advertises the plan-table-scan endpoint, `table.scan()` uses REST server-side scan planning. May be set by the client, returned by the catalog via `GET /v1/config` defaults/overrides, or returned per table in the `config` of the `loadTable` response. The `loadTable` value takes precedence over the catalog-level value, which lets a server request server-side planning only for specific tables. Async plans (`status=submitted`) are polled via `GET .../plan/{plan-id}` until terminal state (completed / failed / cancelled). |
+| rest-scan-planning.poll-timeout-ms | 300000 | Maximum time to wait for an async scan plan to complete before failing (default: 5 minutes). |
+
+When server-side planning returns `storage-credentials` on a completed plan, PyIceberg applies them to the scan-scoped FileIO (layered on top of the existing table/load-time IO properties) so planned data and delete files can be read using the creds vended by the server.
+
+#### Retry and timeout
+
+The REST Catalog uses `requests` with no retries and no timeout by default, so transient
+5xx / network failures bubble up immediately and slow servers can hang the client indefinitely.
+Set the `rest.client.*` catalog properties to opt in to a request timeout and a retry policy.
+The property names mirror the Java REST client so a single catalog configuration can serve both.
+
+```yaml
+catalog:
+  default:
+    uri: http://rest-catalog/ws/
+    rest.client.connection-timeout-ms: 5000  # milliseconds, time allowed to establish a connection
+    rest.client.socket-timeout-ms: 60000     # milliseconds, time allowed between bytes once connected
+    rest.client.max-retries: 5               # number of retry attempts on transient failures
+    rest.client.retry-backoff-factor: 1.0    # exponential backoff between retries
+```
+
+| Key                                     | Example  | Description                                                                                                        |
+| --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| rest.client.connection-timeout-ms       | 5000     | Time to establish a connection, in milliseconds. Must be a positive number.                                        |
+| rest.client.socket-timeout-ms           | 60000    | Time allowed between bytes once a connection is established, in milliseconds. Must be a positive number.            |
+| rest.client.max-retries                 | 5        | Number of retry attempts for transient failures. Must be non-negative.                                             |
+| rest.client.retry-backoff-factor        | 1.0      | Backoff factor between retry attempts. Must be non-negative. See [`urllib3` Retry docs](https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html#urllib3.util.Retry) for the formula. |
+
+`requests` cannot split the connection and socket timeouts, so the two values are summed and applied
+as a single request timeout (floored to whole seconds). Retries are applied to idempotent methods
+only (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`) and to the transient HTTP status codes `429`, `500`,
+`502`, `503`, `504`. Other failures are not retried.
+
+When the server advertises `idempotency-key-lifetime` in its config response, mutating requests carry an
+`Idempotency-Key` header and `POST` is retried as well, reusing the same key for each retry.
 
 #### Headers in REST Catalog
 
@@ -720,12 +786,13 @@ catalog:
 
 | Key                          | Example | Description                          |
 |------------------------------| ------- | ------------------------------------ |
-| hive.hive2-compatible        | true    | Using Hive 2.x compatibility mode    |
+| hive.hive2-compatible        | true    | Set to `true` when using a Hive 2.x metastore |
 | hive.kerberos-authentication | true    | Using authentication via Kerberos    |
 | hive.kerberos-service-name   | hive    | Kerberos service name (default hive) |
+| hive.kerberos-service-host   | hive-host | Kerberos service host (default URI host) |
 | ugi                 | t-1234:secret                    | Hadoop UGI for Hive client.                                                                        |
 
-When using Hive 2.x, make sure to set the compatibility flag:
+Hive 3 and newer need no extra configuration. When using a Hive 2.x metastore, set the compatibility flag:
 
 ```yaml
 catalog:
@@ -783,6 +850,8 @@ catalog:
 | glue.access-key-id     | admin                                  | Configure the static access key id used to access the Glue Catalog              |
 | glue.secret-access-key | password                               | Configure the static secret access key used to access the Glue Catalog          |
 | glue.session-token     | AQoDYXdzEJr...                         | Configure the static session token used to access the Glue Catalog              |
+| glue.role-arn          | arn:aws:...                            | AWS Role ARN. If provided, temporary credentials will be fetched by assuming this role before accessing the Glue Catalog |
+| glue.role-session-name | session                                | An optional identifier for the assumed role session used to access the Glue Catalog |
 | glue.max-retries       | 10                                     | Configure the maximum number of retries for the Glue service calls              |
 | glue.retry-mode        | standard                               | Configure the retry mode for the Glue service. Default to standard.             |
 
@@ -841,6 +910,8 @@ catalog:
 | dynamodb.access-key-id     | admin          | Configure the static access key id used to access the DynamoDB Catalog     |
 | dynamodb.secret-access-key | password       | Configure the static secret access key used to access the DynamoDB Catalog |
 | dynamodb.session-token     | AQoDYXdzEJr... | Configure the static session token used to access the DynamoDB Catalog     |
+| dynamodb.role-arn          | arn:aws:...    | AWS Role ARN. If provided, temporary credentials will be fetched by assuming this role before accessing the DynamoDB Catalog |
+| dynamodb.role-session-name | session        | An optional identifier for the assumed role session used to access the DynamoDB Catalog |
 
 <!-- markdown-link-check-enable-->
 
@@ -885,8 +956,10 @@ configures the AWS credentials for both Glue Catalog and S3 FileIO.
 | client.secret-access-key | password       | Configure the static secret access key used to access both the Glue/DynamoDB Catalog and the S3 FileIO                                 |
 | client.session-token     | AQoDYXdzEJr... | Configure the static session token used to access both the Glue/DynamoDB Catalog and the S3 FileIO                                     |
 | client.profile-name      | default        | Configure the AWS profile used to access both the Glue/DynamoDB Catalog and the S3 FileIO (only supported by `FsspecFileIO` currently) |
-| client.role-session-name | session        | An optional identifier for the assumed role session.                                                                                   |
-| client.role-arn          | arn:aws:...    | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role.           |
+| client.assume-role.arn          | arn:aws:...    | AWS Role ARN. If provided instead of access_key and secret_key, temporary credentials will be fetched by assuming this role before accessing both the Glue/DynamoDB Catalog and the S3 FileIO. |
+| client.assume-role.session-name | session        | An optional identifier for the assumed role session used to access both the Glue/DynamoDB Catalog and the S3 FileIO. |
+| client.role-arn                 | arn:aws:...    | Same as `client.assume-role.arn`, used when that key is not set. |
+| client.role-session-name        | session        | Same as `client.assume-role.session-name`, used when that key is not set. |
 
 <!-- prettier-ignore-start -->
 

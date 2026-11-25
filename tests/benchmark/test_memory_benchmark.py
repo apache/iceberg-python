@@ -27,7 +27,7 @@ Run with: uv run pytest tests/benchmark/test_memory_benchmark.py -v -s -m benchm
 
 import gc
 import tracemalloc
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pyarrow as pa
 import pytest
@@ -45,8 +45,8 @@ def generate_test_dataframe() -> pa.Table:
         {
             "event_type": ["playback"] * n_rows,
             "event_origin": ["origin1"] * n_rows,
-            "event_send_at": [datetime.now(timezone.utc)] * n_rows,
-            "event_saved_at": [datetime.now(timezone.utc)] * n_rows,
+            "event_send_at": [datetime.now(UTC)] * n_rows,
+            "event_saved_at": [datetime.now(UTC)] * n_rows,
             "id": list(range(n_rows)),
             "reference_id": [f"ref-{i}" for i in range(n_rows)],
         }

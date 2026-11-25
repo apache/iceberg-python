@@ -22,7 +22,7 @@ from uuid import UUID
 import pytest
 
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec, partition_record_value
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import (
     BucketTransform,
@@ -172,6 +172,14 @@ def test_partition_spec_to_path() -> None:
     assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
 
 
+def test_partition_spec_to_path_asterisk_and_tilde() -> None:
+    schema = Schema(NestedField(field_id=1, name="str", field_type=StringType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="my*str~field"))
+
+    # java.net.URLEncoder leaves "*" as is and escapes "~"
+    assert spec.partition_to_path(Record("a*b~c-d_e.f"), schema) == "my*str%7Efield=a*b%7Ec-d_e.f"
+
+
 def test_partition_spec_to_path_dropped_source_id() -> None:
     schema = Schema(
         NestedField(field_id=1, name="str", field_type=StringType(), required=False),
@@ -220,16 +228,26 @@ def test_partition_type_missing_source_field(table_schema_simple: Schema) -> Non
     )
 
 
+def test_uuid_identity_partition_record_value_and_path() -> None:
+    schema = Schema(NestedField(field_id=1, name="u", field_type=UUIDType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="u"))
+    value = UUID(int=1)
+    for raw in (value, value.bytes):
+        assert partition_record_value(spec.fields[0], raw, schema) == value, raw
+    # The partition path holds the uuid string, as in Java
+    assert spec.partition_to_path(Record(value), schema) == "u=00000000-0000-0000-0000-000000000001"
+
+
 @pytest.mark.parametrize(
     "source_type, value",
     [
         (IntegerType(), 22),
         (LongType(), 22),
-        (DecimalType(5, 9), Decimal(19.25)),
+        (DecimalType(9, 5), Decimal(19.25)),
         (DateType(), datetime.date(1925, 5, 22)),
         (TimeType(), datetime.time(19, 25, 00)),
         (TimestampType(), datetime.datetime(2022, 5, 1, 22, 1, 1)),
-        (TimestamptzType(), datetime.datetime(2022, 5, 1, 22, 1, 1, tzinfo=datetime.timezone.utc)),
+        (TimestamptzType(), datetime.datetime(2022, 5, 1, 22, 1, 1, tzinfo=datetime.UTC)),
         (StringType(), "abc"),
         (UUIDType(), UUID("12345678-1234-5678-1234-567812345678").bytes),
         (FixedType(5), 'b"\x8e\xd1\x87\x01"'),
@@ -270,6 +288,12 @@ def test_deserialize_partition_field_v3() -> None:
 def test_deserialize_partition_field_empty_source_ids_rejected() -> None:
     json_partition_spec = """{"source-ids": [], "field-id": 1000, "transform": "identity", "name": "x"}"""
     with pytest.raises(Exception, match="Empty source-ids is not allowed"):
+        PartitionField.model_validate_json(json_partition_spec)
+
+
+def test_deserialize_partition_field_source_id_and_source_ids_rejected() -> None:
+    json_partition_spec = """{"source-id": 5, "source-ids": [1, 2], "field-id": 1000, "transform": "bucket[4]", "name": "m"}"""
+    with pytest.raises(Exception, match="source-id and source-ids are mutually exclusive"):
         PartitionField.model_validate_json(json_partition_spec)
 
 

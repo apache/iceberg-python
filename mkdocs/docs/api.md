@@ -311,8 +311,8 @@ Next, write the data to the table. Both `append` and `overwrite` produce the sam
 
 <!-- prettier-ignore-start -->
 
-!!! note inline end "Fast append"
-    PyIceberg defaults to the [fast append](https://iceberg.apache.org/spec/#snapshots) to minimize the amount of data written. This enables fast commit operations, reducing the possibility of conflicts. The downside of the fast append is that it creates more metadata than a merge commit. [Compaction is planned](https://github.com/apache/iceberg-python/issues/270) and will automatically rewrite all the metadata when a threshold is hit, to maintain performant reads.
+!!! note inline end "Merge and fast append"
+    PyIceberg defaults to [merge append](https://iceberg.apache.org/spec/#snapshots), which automatically merges manifests when the configured threshold is reached to keep metadata compact and reads performant. Fast append remains available by setting the table property `commit.manifest-merge.enabled` to `False`. Fast append minimizes the metadata written during a commit, enabling faster commits and reducing the possibility of conflicts, but accumulates more manifest metadata over time.
 
 <!-- prettier-ignore-end -->
 
@@ -985,6 +985,7 @@ split_offsets: list<item: int64>
 equality_ids: list<item: int32>
   child 0, item: int32
 sort_order_id: int32
+first_row_id: int64
 readable_metrics: struct<city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string> not null, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null>
   child 0, city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null
       child 0, column_size: int64
@@ -1024,6 +1025,7 @@ key_metadata: [[0100,0100]]
 split_offsets:[[[],[]]]
 equality_ids:[[[],[]]]
 sort_order_id:[[[],[]]]
+first_row_id:[[null,null]]
 readable_metrics: [
   -- is_valid: all not null
   -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string>
@@ -1170,7 +1172,7 @@ You can also initiate a transaction if you want to make more changes than just e
 ```python
 with table.transaction() as transaction:
     with transaction.update_schema() as update_schema:
-        update.add_column("some_other_field", IntegerType(), "doc")
+        update_schema.add_column("some_other_field", IntegerType(), "doc")
     # ... Update properties etc
 ```
 
@@ -1405,6 +1407,9 @@ tbl.overwrite(df, snapshot_properties={"abc": "def"})
 assert tbl.metadata.snapshots[-1].summary["abc"] == "def"
 ```
 
+New snapshot summaries automatically include `engine-name` (`pyiceberg`) and `engine-version`
+(the installed PyIceberg version). These values override same-named entries in `snapshot_properties`.
+
 ## Snapshot Management
 
 Manage snapshots with operations through the `Table` API:
@@ -1481,6 +1486,110 @@ Remove an existing branch:
 
 ```python
 table.manage_snapshots().remove_branch("dev").commit()
+```
+
+#### Fast-forwarding a branch
+
+Fast-forward the `main` branch to the `audit-branch` branch:
+
+```python
+with table.manage_snapshots() as ms:
+    ms.fast_forward_branch(from_branch="main", to_ref="audit-branch")
+```
+
+Fast-forward `from_branch` to point at the snapshot referenced by `to_ref`.
+`to_ref` may be a branch or tag. `from_branch` must be a branch.
+
+<!-- markdownlint-disable MD046 -- Allowing indented multi-line formatting in admonition-->
+
+!!! info "Fast Forward Behavior"
+
+    * Case 1: If `from_branch` does not yet exist it is created and pointing at `to_ref`'s
+        snapshot. The default retention properties are applied on the auto-created snapshot.
+    * Case 2:** If both already point at the same snapshot the call is a no-op.
+    * Case 3: Otherwise `from_branch`'s current snapshot must be an ancestor of `to_ref`'s snapshot;
+    if not, `NotAncestorError` is raised.
+
+<!-- markdownlint-enable MD046 -->
+
+#### Example Use-Case: write-audit-publish (WAP)
+
+The use of branching & fast-forwarding enable the usage of the write-audit-publish (WAP) process:
+
+1. Writes proceed on a side branch
+2. Audit Validation runs against that branch
+3. Publish the new data by fast-forwarding the main branch
+
+```mermaid
+---
+title: Conceptually Illustration of the WAP Process
+---
+flowchart LR
+
+    subgraph audit [audit branch]
+        s1_audit["snapshot_1"] -- "1.2 append(new_rows)" --> s2_audit["snapshot_2"]
+        v@{ shape: comment, label: '2. Validation Performed & Passed' }
+         s2_audit ~~~ v
+         v -.-> s2_audit
+    end
+
+    subgraph main [main branch]
+        s1["snapshot_1"]
+        s2_main["snapshot_2"]
+
+    end
+
+    s1 -. "1.1 create_branch" .-> s1_audit
+    s2_audit -. "3. fast_forward_branch" .-> s2_main
+
+```
+
+If validation fails, callers simply skip the fast-forward step. The
+audit branch (and its data files) can then be inspected, rewritten,
+or removed via `remove_branch` and subsequent snapshot expiration -
+without ever having polluted the data on `main`.
+
+##### Programmatic Example
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("prod")
+table = catalog.load_table("sales.orders")
+
+# 1. WRITE — create a side branch off main and append to it.
+# 1.1 Create the Branch
+main_snapshot_id = table.current_snapshot().snapshot_id
+table.manage_snapshots().create_branch(
+    snapshot_id=main_snapshot_id,
+    branch_name="audit",
+).commit()
+
+new_rows = pa.table({
+    "order_id": [1001, 1002, 1003],
+    "amount":   [ 49.99, 129.00, 12.50],
+})
+
+# 1.2 Write into the branch
+table.append(new_rows, branch="audit")
+
+# 2. AUDIT — scan the audit branch and run whatever validation your data-quality contract requires.
+#    Nothing on `main` has changed yet, so readers of `main` still see the pre-write state.
+audit_snapshot_id = table.refs()["audit"].snapshot_id
+audit_data = table.scan(snapshot_id=audit_snapshot_id).to_arrow()
+
+assert audit_data.num_rows > 0, "audit branch is empty"
+assert pc.all(pc.greater(audit_data["amount"], 0)).as_py(), \
+    "found non-positive amounts"
+
+# 3. PUBLISH — validation passed; fast-forward main to audit.
+#    fast-forward can occur because the audit branch was created from main and
+#    main's current snapshot is an ancestor of audit's snapshot.
+with table.manage_snapshots() as ms:
+    ms.fast_forward_branch("main", "audit")
+    ms.remove_branch("audit")  # optional: clean up the side branch
 ```
 
 ## Table Maintenance
@@ -1639,6 +1748,17 @@ To list views in the `default` namespace:
 catalog.list_views("default")
 ```
 
+## Rename a view
+
+To rename a view:
+
+```python
+catalog.rename_view(
+    from_identifier="default.some_view",
+    to_identifier="default.some_view_renamed"
+)
+```
+
 ## Drop a view
 
 To drop a view:
@@ -1670,6 +1790,30 @@ with table.update_statistics() as update:
     update.remove_statistics(snapshot_id2)
 ```
 
+## Table Partition Statistics Management
+
+Manage partition statistics files with operations through the `Table` API:
+
+```python
+# Setting a file for a snapshot replaces the file already set for that snapshot
+table.update_partition_statistics().set_partition_statistics(
+    snapshot_id=snapshot_id, statistics_path="s3://bucket/partition-stats.parquet", file_size_in_bytes=1024
+).commit()
+table.update_partition_statistics().remove_partition_statistics(snapshot_id).commit()
+```
+
+You can also use context managers to make more changes:
+
+```python
+with table.update_partition_statistics() as update:
+    update.set_partition_statistics(
+        snapshot_id=snapshot_id, statistics_path="s3://bucket/partition-stats.parquet", file_size_in_bytes=1024
+    )
+    update.remove_partition_statistics(snapshot_id)
+```
+
+Within one update, sets are applied before removals, as in Java, so a removal wins over a set for the same snapshot regardless of the order of the calls. Removing partition statistics for a snapshot that has no file is a no-op.
+
 ## Query the data
 
 To query a table, a table scan is needed. A table scan accepts a filter, columns, optionally a limit and a snapshot ID:
@@ -1694,6 +1838,8 @@ scan = table.scan(
 
 [task.file.file_path for task in scan.plan_files()]
 ```
+
+When the REST catalog returns `scan-planning-mode=server` and advertises the plan endpoint, `plan_files()` / `to_arrow()` use server-side scan planning. The mode can also be returned per table in the `loadTable` response `config`, which takes precedence over the catalog-level setting, so a server can require server-side planning for some tables while others keep client-side planning. Catalogs that return async plans (`status=submitted`) are polled automatically until they reach a terminal state; see [REST Catalog configuration](configuration.md#rest-catalog).
 
 The low level API `plan_files` methods returns a set of tasks that provide the files that might contain matching rows:
 
@@ -1784,6 +1930,7 @@ This will return a Pandas dataframe:
 [116981 rows x 3 columns]
 ```
 
+<!-- markdown-link-check-disable-next-line -->
 It is recommended to use Pandas 2 or later, because it stores the data in an [Apache Arrow backend](https://datapythonista.me/blog/pandas-20-and-the-arrow-revolution-part-i) which avoids copies of data.
 
 ### DuckDB
@@ -1852,6 +1999,7 @@ Dataset(
 )
 ```
 
+<!-- markdown-link-check-disable-next-line -->
 Using [Ray Dataset API](https://docs.ray.io/en/latest/data/api/dataset.html) to interact with the dataset:
 
 ```python
@@ -1872,6 +2020,7 @@ print(ray_dataset.take(2))
 
 ### Bodo
 
+<!-- markdown-link-check-disable-next-line -->
 PyIceberg interfaces closely with Bodo Dataframes (see [Bodo Iceberg Quick Start](https://docs.bodo.ai/latest/quick_start/quickstart_local_iceberg/)),
 which provides a drop-in replacement for Pandas that applies query, compiler and HPC optimizations automatically.
 Bodo accelerates and scales Python code from single laptops to large clusters without code rewrites.
@@ -1918,6 +2067,7 @@ Bodo is optimized to take advantage of Iceberg features such as hidden partition
 
 ### Daft
 
+<!-- markdown-link-check-disable-next-line -->
 PyIceberg interfaces closely with Daft Dataframes (see also: [Daft integration with Iceberg](https://docs.daft.ai/en/stable/io/iceberg/)) which provides a full lazily optimized query engine interface on top of PyIceberg tables.
 
 <!-- prettier-ignore-start -->
@@ -2123,7 +2273,7 @@ PyIceberg integrates with [Apache DataFusion](https://datafusion.apache.org/) th
 
     The integration has a few caveats:
 
-    - Only works with `datafusion == 51`, aligns with the version used in `pyiceberg-core`
+    - Only works with `datafusion == 53`, aligns with the version used in `pyiceberg-core`
     - Depends directly on `iceberg-rust` instead of PyIceberg's implementation
     - Has limited features compared to the full PyIceberg API
 

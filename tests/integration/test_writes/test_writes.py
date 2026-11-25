@@ -669,6 +669,7 @@ def test_write_parquet_compression_properties(
     [
         ({"write.parquet.page-size-bytes": "42"}, {"data_page_size": 42}),
         ({"write.parquet.dict-size-bytes": "42"}, {"dictionary_pagesize_limit": 42}),
+        ({"write.parquet.page-row-limit": "42"}, {"max_rows_per_page": 42, "write_batch_size": None}),
     ],
 )
 def test_write_parquet_other_properties(
@@ -1571,7 +1572,7 @@ def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Tab
     tbl_a = _create_table(
         session_catalog,
         "default.merge_manifest_a",
-        {"commit.manifest-merge.enabled": "true", "commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        {"commit.manifest.min-count-to-merge": "1", "format-version": format_version},
         [],
     )
     tbl_b = _create_table(
@@ -1588,7 +1589,11 @@ def test_merge_manifests(session_catalog: Catalog, arrow_table_with_null: pa.Tab
     tbl_c = _create_table(
         session_catalog,
         "default.merge_manifest_c",
-        {"commit.manifest.min-count-to-merge": "1", "format-version": format_version},
+        {
+            "commit.manifest-merge.enabled": "false",
+            "commit.manifest.min-count-to-merge": "1",
+            "format-version": format_version,
+        },
         [],
     )
 
@@ -1687,7 +1692,7 @@ def test_merge_manifests_file_content(session_catalog: Catalog, arrow_table_with
             (11, b"\x01"),
             (12, b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
         ]
-        assert tbl_a_data_file["nan_value_counts"] == []
+        assert tbl_a_data_file["nan_value_counts"] == [(6, 0), (7, 0)]
         assert tbl_a_data_file["null_value_counts"] == [
             (1, 1),
             (2, 1),

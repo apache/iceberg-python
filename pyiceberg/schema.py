@@ -115,16 +115,13 @@ class Schema(IcebergBaseModel):
 
     def __eq__(self, other: Any) -> bool:
         """Return the equality of two instances of the Schema class."""
-        if not other:
-            return False
-
         if not isinstance(other, Schema):
             return False
 
         if len(self.columns) != len(other.columns):
             return False
 
-        identifier_field_ids_is_equal = self.identifier_field_ids == other.identifier_field_ids
+        identifier_field_ids_is_equal = set(self.identifier_field_ids) == set(other.identifier_field_ids)
         schema_is_equal = all(lhs == rhs for lhs, rhs in zip(self.columns, other.columns, strict=True))
 
         return identifier_field_ids_is_equal and schema_is_equal
@@ -162,9 +159,22 @@ class Schema(IcebergBaseModel):
     def _lazy_name_to_id_lower(self) -> dict[str, int]:
         """Return an index of lower-case field names to field IDs.
 
+        Raises:
+            ValueError: When two fields have names that differ only by case.
+
         This is calculated once when called for the first time. Subsequent calls to this method will use a cached index.
         """
-        return {name.lower(): field_id for name, field_id in self._name_to_id.items()}
+        index: dict[str, int] = {}
+        for name, field_id in self._name_to_id.items():
+            lower_name = name.lower()
+            # Names that map to the same field ID (for example, short names of list element structs) are not collisions
+            if lower_name in index and index[lower_name] != field_id:
+                raise ValueError(
+                    f"Cannot build lower case index: {self._lazy_id_to_name[index[lower_name]]} and "
+                    f"{self._lazy_id_to_name[field_id]} collide"
+                )
+            index[lower_name] = field_id
+        return index
 
     @cached_property
     def _lazy_id_to_name(self) -> dict[int, str]:
@@ -200,7 +210,8 @@ class Schema(IcebergBaseModel):
             case_sensitive (bool, optional): Whether to perform a case-sensitive lookup using a field name. Defaults to True.
 
         Raises:
-            ValueError: When the value cannot be found.
+            ValueError: When the value cannot be found, or when case_sensitive is False and two fields have names
+                that differ only by case.
 
         Returns:
             NestedField: The matched NestedField.
@@ -210,13 +221,25 @@ class Schema(IcebergBaseModel):
                 raise ValueError(f"Could not find field with id: {name_or_id}")
             return self._lazy_id_to_field[name_or_id]
 
+        field = self._find_field_or_none(name_or_id, case_sensitive)
+        if field is None:
+            raise ValueError(f"Could not find field with name {name_or_id}, case_sensitive={case_sensitive}")
+
+        return field
+
+    def _find_field_or_none(self, name: str, case_sensitive: bool) -> NestedField | None:
+        """Return the field with the given name, or None when no field has that name.
+
+        Raises:
+            ValueError: When case_sensitive is False and two fields have names that differ only by case.
+        """
         if case_sensitive:
-            field_id = self._name_to_id.get(name_or_id)
+            field_id = self._name_to_id.get(name)
         else:
-            field_id = self._lazy_name_to_id_lower.get(name_or_id.lower())
+            field_id = self._lazy_name_to_id_lower.get(name.lower())
 
         if field_id is None:
-            raise ValueError(f"Could not find field with name {name_or_id}, case_sensitive={case_sensitive}")
+            return None
 
         return self._lazy_id_to_field[field_id]
 
@@ -311,7 +334,8 @@ class Schema(IcebergBaseModel):
             Schema: A new schema with pruned columns.
 
         Raises:
-            ValueError: If a column is selected that doesn't exist.
+            ValueError: If a column is selected that doesn't exist, or when case_sensitive is False and two fields
+                have names that differ only by case.
         """
         try:
             if case_sensitive:
@@ -1697,7 +1721,7 @@ def _(file_type: BinaryType, read_type: IcebergType) -> IcebergType:
 @promote.register(DecimalType)
 def _(file_type: DecimalType, read_type: IcebergType) -> IcebergType:
     if isinstance(read_type, DecimalType):
-        if file_type.precision <= read_type.precision and file_type.scale == file_type.scale:
+        if file_type.precision <= read_type.precision and file_type.scale == read_type.scale:
             return read_type
         else:
             raise ResolveError(f"Cannot reduce precision from {file_type} to {read_type}")

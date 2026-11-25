@@ -104,7 +104,7 @@ lint: ## Run code linters via prek (pre-commit hooks)
 ##@ Testing
 
 test: ## Run all unit tests (excluding integration)
-	$(TEST_RUNNER) pytest tests/ -m "(unmarked or parametrize) and not integration" $(PYTEST_ARGS)
+	$(TEST_RUNNER) pytest tests/ -m unit --ignore=tests/integration $(PYTEST_ARGS)
 
 test-integration: test-integration-setup test-integration-exec test-integration-cleanup ## Run integration tests
 
@@ -129,7 +129,7 @@ test-integration-rebuild: ## Rebuild integration Docker services from scratch
 	docker compose -f dev/docker-compose-integration.yml build --no-cache
 
 test-s3: ## Run tests marked with @pytest.mark.s3
-	sh ./dev/run-minio.sh
+	sh ./dev/run-s3.sh
 	$(TEST_RUNNER) pytest tests/ -m s3 $(PYTEST_ARGS)
 
 test-adls: ## Run tests marked with @pytest.mark.adls
@@ -165,10 +165,10 @@ test-notebook: ## Run notebook tests (pyiceberg_example and spark_integration_ex
 ##@ Documentation
 
 docs-serve: ## Serve local docs preview (hot reload)
-	uv run $(PYTHON_ARG) --group docs mkdocs serve -f mkdocs/mkdocs.yml --livereload
+	uv run $(PYTHON_ARG) --no-default-groups --group docs mkdocs serve -f mkdocs/mkdocs.yml --livereload
 
 docs-build: ## Build the static documentation site
-	uv run $(PYTHON_ARG) --group docs mkdocs build -f mkdocs/mkdocs.yml --strict
+	uv run $(PYTHON_ARG) --no-default-groups --group docs mkdocs build -f mkdocs/mkdocs.yml --strict
 
 # ========================
 # Experimentation

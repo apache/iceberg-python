@@ -92,6 +92,7 @@ def test_load_view(catalog: RestCatalog, table_schema_nested: Schema, database_n
     )
     view = catalog.create_view(identifier, table_schema_nested, view_version=view_version)
     loaded_view = catalog.load_view(identifier)
+    assert view.metadata_location is not None
     assert view == loaded_view
 
 

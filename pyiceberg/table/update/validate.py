@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from collections import defaultdict
 from collections.abc import Iterator
 
 from pyiceberg.exceptions import ValidationException
@@ -40,17 +41,21 @@ VALIDATE_ADDED_DELETE_FILES_OPERATIONS: set[Operation] = {Operation.DELETE, Oper
 
 def _validation_history(
     table: Table,
-    from_snapshot: Snapshot,
+    from_snapshot: Snapshot | None,
     to_snapshot: Snapshot,
     matching_operations: set[Operation],
     manifest_content_filter: ManifestContent,
 ) -> tuple[list[ManifestFile], set[int]]:
     """Return newly added manifests and snapshot IDs between the starting snapshot and parent snapshot.
 
+    Walks from to_snapshot backwards towards from_snapshot, collecting manifests from
+    snapshots whose operations match. from_snapshot is excluded from results. A None
+    from_snapshot walks the entire history of to_snapshot down to the root.
+
     Args:
         table: Table to get the history from
-        from_snapshot: Parent snapshot to get the history from
-        to_snapshot: Starting snapshot
+        from_snapshot: Snapshot where the walk stops (exclusive), or None to walk the whole history
+        to_snapshot: Snapshot where the walk starts
         matching_operations: Operations to match on
         manifest_content_filter: Manifest content type to filter
 
@@ -60,11 +65,17 @@ def _validation_history(
     Returns:
         List of manifest files and set of snapshots ID's matching conditions
     """
+    if from_snapshot is not None and from_snapshot.snapshot_id == to_snapshot.snapshot_id:
+        return [], set()
+
     manifests_files: list[ManifestFile] = []
     snapshots: set[int] = set()
 
     last_snapshot = None
     for snapshot in ancestors_between(from_snapshot, to_snapshot, table.metadata):
+        if from_snapshot is not None and snapshot.snapshot_id == from_snapshot.snapshot_id:
+            last_snapshot = snapshot
+            break
         last_snapshot = snapshot
         summary = snapshot.summary
         if summary is None:
@@ -73,7 +84,6 @@ def _validation_history(
             continue
 
         snapshots.add(snapshot.snapshot_id)
-        # TODO: Maybe do the IO in a separate thread at some point, and collect at the bottom (we can easily merge the sets
         manifests_files.extend(
             [
                 manifest
@@ -82,7 +92,7 @@ def _validation_history(
             ]
         )
 
-    if last_snapshot is not None and last_snapshot.snapshot_id != from_snapshot.snapshot_id:
+    if from_snapshot is not None and (last_snapshot is None or last_snapshot.snapshot_id != from_snapshot.snapshot_id):
         raise ValidationException("No matching snapshot found.")
 
     return manifests_files, snapshots
@@ -95,6 +105,7 @@ def _filter_manifest_entries(
     partition_set: dict[int, set[Record]] | None,
     entry_status: ManifestEntryStatus | None,
     schema: Schema,
+    case_sensitive: bool = True,
 ) -> bool:
     """Filter manifest entries based on data filter and partition set.
 
@@ -105,6 +116,7 @@ def _filter_manifest_entries(
         partition_set: Optional set of partitions to match data files
         entry_status: Optional status to match data files
         schema: schema for filtering
+        case_sensitive: Whether the data filter binds column names case-sensitively
 
     Returns:
         True if the entry should be included, False otherwise
@@ -116,7 +128,7 @@ def _filter_manifest_entries(
         return False
 
     if data_filter is not None:
-        evaluator = _InclusiveMetricsEvaluator(schema, data_filter)
+        evaluator = _InclusiveMetricsEvaluator(schema, data_filter, case_sensitive=case_sensitive)
         if evaluator.eval(entry.data_file) is ROWS_CANNOT_MATCH:
             return False
 
@@ -135,6 +147,7 @@ def _deleted_data_files(
     data_filter: BooleanExpression | None,
     partition_set: dict[int, set[Record]] | None,
     parent_snapshot: Snapshot | None,
+    case_sensitive: bool = True,
 ) -> Iterator[ManifestEntry]:
     """Find deleted data files matching a filter since a starting snapshot.
 
@@ -144,14 +157,12 @@ def _deleted_data_files(
         data_filter: Expression used to find deleted data files
         partition_set: dict of {spec_id: set[partition]} to filter on
         parent_snapshot: Ending snapshot on the branch being validated
+        case_sensitive: Whether the data filter binds column names case-sensitively
 
     Returns:
         List of conflicting manifest-entries
     """
     # if there is no current table state, no files have been deleted
-    if parent_snapshot is None:
-        return
-
     manifests, snapshot_ids = _validation_history(
         table,
         parent_snapshot,
@@ -163,7 +174,7 @@ def _deleted_data_files(
     for manifest in manifests:
         for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=False):
             if _filter_manifest_entries(
-                entry, snapshot_ids, data_filter, partition_set, ManifestEntryStatus.DELETED, table.schema()
+                entry, snapshot_ids, data_filter, partition_set, ManifestEntryStatus.DELETED, table.schema(), case_sensitive
             ):
                 yield entry
 
@@ -172,7 +183,8 @@ def _validate_deleted_data_files(
     table: Table,
     starting_snapshot: Snapshot,
     data_filter: BooleanExpression | None,
-    parent_snapshot: Snapshot,
+    parent_snapshot: Snapshot | None,
+    case_sensitive: bool = True,
 ) -> None:
     """Validate that no files matching a filter have been deleted from the table since a starting snapshot.
 
@@ -181,12 +193,40 @@ def _validate_deleted_data_files(
         starting_snapshot: Snapshot current at the start of the operation
         data_filter: Expression used to find deleted data files
         parent_snapshot: Ending snapshot on the branch being validated
+        case_sensitive: Whether the data filter binds column names case-sensitively
 
     """
-    conflicting_entries = _deleted_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
+    conflicting_entries = _deleted_data_files(table, starting_snapshot, data_filter, None, parent_snapshot, case_sensitive)
     if any(conflicting_entries):
         conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries}
         raise ValidationException(f"Deleted data files were found matching the filter for snapshots {conflicting_snapshots}!")
+
+
+def _validate_data_files_exist(
+    table: Table,
+    starting_snapshot: Snapshot,
+    data_files: set[DataFile],
+    parent_snapshot: Snapshot | None,
+) -> None:
+    """Validate that explicitly replaced data files have not been concurrently deleted.
+
+    Args:
+        table: Table to validate
+        starting_snapshot: Snapshot at the end of the validation window
+        data_files: Data files that must still exist
+        parent_snapshot: Snapshot at the start of the validation window, excluded from the scan
+    """
+    partition_set: dict[int, set[Record]] = defaultdict(set)
+    for data_file in data_files:
+        partition_set[data_file.spec_id].add(data_file.partition)
+
+    conflicting_paths = {
+        entry.data_file.file_path
+        for entry in _deleted_data_files(table, starting_snapshot, None, partition_set, parent_snapshot)
+        if entry.data_file in data_files
+    }
+    if conflicting_paths:
+        raise ValidationException(f"Data files were concurrently deleted: {sorted(conflicting_paths)}")
 
 
 def _added_data_files(
@@ -195,6 +235,7 @@ def _added_data_files(
     data_filter: BooleanExpression | None,
     partition_set: dict[int, set[Record]] | None,
     parent_snapshot: Snapshot | None,
+    case_sensitive: bool = True,
 ) -> Iterator[ManifestEntry]:
     """Return manifest entries for data files added between the starting snapshot and parent snapshot.
 
@@ -204,13 +245,11 @@ def _added_data_files(
         data_filter: Optional filter to match data files
         partition_set: Optional set of partitions to match data files
         parent_snapshot: Parent snapshot to get the history from
+        case_sensitive: Whether the data filter binds column names case-sensitively
 
     Returns:
         Iterator of manifest entries for added data files matching the conditions
     """
-    if parent_snapshot is None:
-        return
-
     manifests, snapshot_ids = _validation_history(
         table,
         parent_snapshot,
@@ -221,7 +260,7 @@ def _added_data_files(
 
     for manifest in manifests:
         for entry in manifest.fetch_manifest_entry(table.io):
-            if _filter_manifest_entries(entry, snapshot_ids, data_filter, partition_set, None, table.schema()):
+            if _filter_manifest_entries(entry, snapshot_ids, data_filter, partition_set, None, table.schema(), case_sensitive):
                 yield entry
 
 
@@ -231,6 +270,7 @@ def _added_delete_files(
     data_filter: BooleanExpression | None,
     partition_set: dict[int, set[Record]] | None,
     parent_snapshot: Snapshot | None,
+    case_sensitive: bool = True,
 ) -> DeleteFileIndex:
     """Return matching delete files that have been added to the table since a starting snapshot.
 
@@ -240,11 +280,12 @@ def _added_delete_files(
         data_filter: Optional filter to match data files
         partition_set: Optional set of partitions to match data files
         parent_snapshot: Parent snapshot to get the history from
+        case_sensitive: Whether the data filter binds column names case-sensitively
 
     Returns:
         DeleteFileIndex
     """
-    if parent_snapshot is None or table.format_version < 2:
+    if table.format_version < 2:
         return DeleteFileIndex()
 
     manifests, snapshot_ids = _validation_history(
@@ -256,7 +297,7 @@ def _added_delete_files(
     for manifest in manifests:
         for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
             if _filter_manifest_entries(
-                entry, snapshot_ids, data_filter, partition_set, ManifestEntryStatus.ADDED, table.schema()
+                entry, snapshot_ids, data_filter, partition_set, ManifestEntryStatus.ADDED, table.schema(), case_sensitive
             ):
                 dfi.add_delete_file(entry, entry.data_file.partition)
 
@@ -270,7 +311,7 @@ def _starting_sequence_number(table: Table, starting_snapshot: Snapshot) -> int:
         table: Table to find snapshot from
         starting_snapshot: Snapshot from where to start looking
 
-    Returns
+    Returns:
         Sequence number as int
     """
     if starting_snapshot is not None:
@@ -284,6 +325,7 @@ def _validate_added_data_files(
     starting_snapshot: Snapshot,
     data_filter: BooleanExpression | None,
     parent_snapshot: Snapshot | None,
+    case_sensitive: bool = True,
 ) -> None:
     """Validate that no files matching a filter have been added to the table since a starting snapshot.
 
@@ -292,9 +334,10 @@ def _validate_added_data_files(
         starting_snapshot: Snapshot current at the start of the operation
         data_filter: Expression used to find added data files
         parent_snapshot: Ending snapshot on the branch being validated
+        case_sensitive: Whether the data filter binds column names case-sensitively
 
     """
-    conflicting_entries = _added_data_files(table, starting_snapshot, data_filter, None, parent_snapshot)
+    conflicting_entries = _added_data_files(table, starting_snapshot, data_filter, None, parent_snapshot, case_sensitive)
     if any(conflicting_entries):
         conflicting_snapshots = {entry.snapshot_id for entry in conflicting_entries if entry.snapshot_id is not None}
         raise ValidationException(f"Added data files were found matching the filter for snapshots {conflicting_snapshots}!")
@@ -306,6 +349,7 @@ def _validate_no_new_delete_files(
     data_filter: BooleanExpression | None,
     partition_set: dict[int, set[Record]] | None,
     parent_snapshot: Snapshot | None,
+    case_sensitive: bool = True,
 ) -> None:
     """Validate no new delete files matching a filter have been added to the table since starting a snapshot.
 
@@ -315,8 +359,9 @@ def _validate_no_new_delete_files(
         data_filter: Expression used to find added data files
         partition_set: Dictionary of partition spec to set of partition records
         parent_snapshot: Ending snapshot on the branch being validated
+        case_sensitive: Whether the data filter binds column names case-sensitively
     """
-    deletes = _added_delete_files(table, starting_snapshot, data_filter, partition_set, parent_snapshot)
+    deletes = _added_delete_files(table, starting_snapshot, data_filter, partition_set, parent_snapshot, case_sensitive)
 
     if deletes.is_empty():
         return
@@ -330,7 +375,6 @@ def _validate_no_new_delete_files(
 def _validate_no_new_deletes_for_data_files(
     table: Table,
     starting_snapshot: Snapshot,
-    data_filter: BooleanExpression | None,
     data_files: set[DataFile],
     parent_snapshot: Snapshot | None,
 ) -> None:
@@ -339,15 +383,15 @@ def _validate_no_new_deletes_for_data_files(
     Args:
         table: Table to validate
         starting_snapshot: Snapshot current at the start of the operation
-        data_filter: Expression used to find added data files
         data_files: data files to validate have no new deletes
         parent_snapshot: Ending snapshot on the branch being validated
     """
     # If there is no current state, or no files has been added
-    if parent_snapshot is None or table.format_version < 2:
+    if table.format_version < 2:
         return
 
-    deletes = _added_delete_files(table, starting_snapshot, data_filter, None, parent_snapshot)
+    # The data files are rewritten in full, so a delete file outside the operation's filter still applies to them
+    deletes = _added_delete_files(table, starting_snapshot, None, None, parent_snapshot)
     seq_num = _starting_sequence_number(table, starting_snapshot)
 
     # Fail to any delete file found that applies to files written in or before the starting snapshot

@@ -341,7 +341,7 @@ class NameMappingProjectionVisitor(SchemaWithPartnerVisitor[MappedField, Iceberg
             required=field.required,
             doc=field.doc,
             initial_default=field.initial_default,
-            initial_write=field.write_default,
+            write_default=field.write_default,
         )
 
     def list(self, list_type: ListType, list_partner: MappedField | None, element_result: IcebergType) -> IcebergType:

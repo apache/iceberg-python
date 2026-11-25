@@ -178,7 +178,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             dataset.external_catalog_dataset_options = self._create_external_catalog_dataset_options(properties, dataset_ref)
             self.client.create_dataset(dataset)
         except Conflict as e:
-            raise NamespaceAlreadyExistsError("Namespace {database_name} already exists") from e
+            raise NamespaceAlreadyExistsError(f"Namespace {database_name} already exists") from e
 
     @override
     def load_table(self, identifier: str | Identifier) -> Table:
@@ -334,8 +334,12 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
         raise NotImplementedError
 
     @override
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
+        raise NotImplementedError
+
+    @override
     def load_namespace_properties(self, namespace: str | Identifier) -> Properties:
-        dataset_name = self.identifier_to_database(namespace)
+        dataset_name = self.identifier_to_database(namespace, NoSuchNamespaceError)
 
         try:
             dataset = self.client.get_dataset(DatasetReference(project=self.project_id, dataset_id=dataset_name))
@@ -404,7 +408,7 @@ class BigQueryMetastoreCatalog(MetastoreCatalog):
             identifier=(dataset_name, table_name),
             metadata=metadata,
             metadata_location=metadata_location,
-            io=self._load_file_io(metadata.properties, metadata_location),
+            io=self._load_file_io(location=metadata_location, table_properties=metadata.properties),
             catalog=self,
         )
 

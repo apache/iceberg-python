@@ -34,6 +34,7 @@ from pyiceberg.schema import (
     sanitize_column_names,
 )
 from pyiceberg.table import Table, Transaction
+from pyiceberg.table.metadata_columns import project_schema
 from pyiceberg.table.update.schema import UpdateSchema
 from pyiceberg.typedef import EMPTY_DICT, StructProtocol
 from pyiceberg.types import (
@@ -67,7 +68,7 @@ TEST_PRIMITIVE_TYPES = [
     FloatType(),
     DoubleType(),
     DecimalType(10, 2),
-    DecimalType(100, 2),
+    DecimalType(38, 2),
     StringType(),
     DateType(),
     TimeType(),
@@ -117,6 +118,18 @@ def test_schema_repr_two_fields() -> None:
         "schema_id=1, identifier_field_ids=[])"
     )
     assert expected == actual
+
+
+def test_empty_schema_equality() -> None:
+    assert Schema() == Schema()
+
+
+def test_schema_equality_ignores_identifier_field_order() -> None:
+    fields = (
+        NestedField(field_id=1, name="foo", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="bar", field_type=LongType(), required=True),
+    )
+    assert Schema(*fields, identifier_field_ids=[1, 2]) == Schema(*fields, identifier_field_ids=[2, 1])
 
 
 def test_schema_raise_on_duplicate_names() -> None:
@@ -868,6 +881,87 @@ def test_schema_select_cant_be_found(table_schema_nested: Schema) -> None:
     assert "Could not find column: 'BAZ'" in str(exc_info.value)
 
 
+def test_schema_case_insensitive_lookup_of_case_variant_names_raises() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="ID", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="id", field_type=LongType(), required=False),
+    )
+    assert schema.find_field("ID").field_id == 1
+    assert schema.find_field("id").field_id == 2
+    for name in ("ID", "Id", "id"):
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            schema.find_field(name, case_sensitive=False)
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            schema.select(name, case_sensitive=False)
+
+
+def test_schema_case_insensitive_lookup_of_nested_case_variant_names_raises() -> None:
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="profile",
+            field_type=StructType(
+                NestedField(field_id=2, name="CODE", field_type=LongType(), required=False),
+                NestedField(field_id=3, name="code", field_type=LongType(), required=False),
+            ),
+            required=False,
+        ),
+    )
+    assert schema.find_field("profile.code").field_id == 3
+    with pytest.raises(ValueError, match="Cannot build lower case index: profile.CODE and profile.code collide"):
+        schema.find_field("profile.code", case_sensitive=False)
+
+
+def test_schema_case_insensitive_lookup_of_list_element_struct_field() -> None:
+    """The short name of a list element struct field maps to the same field ID, which is not a collision."""
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="items",
+            field_type=ListType(
+                element_id=2,
+                element_type=StructType(NestedField(field_id=3, name="value", field_type=LongType(), required=False)),
+                element_required=False,
+            ),
+            required=False,
+        ),
+    )
+    assert schema.find_field("ITEMS.VALUE", case_sensitive=False).field_id == 3
+    assert schema.find_field("items.element.value", case_sensitive=False).field_id == 3
+
+
+def test_schema_case_insensitive_lookup_rejects_collision_for_any_name() -> None:
+    schema = Schema(
+        NestedField(1, "ID", LongType()),
+        NestedField(2, "id", LongType()),
+        NestedField(3, "safe", LongType()),
+    )
+    # As in Java, the lower-case index cannot be built, so unambiguous and missing names fail too
+    for name in ("safe", "missing"):
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            schema.find_field(name, case_sensitive=False)
+        with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+            schema.select(name, case_sensitive=False)
+
+
+def test_metadata_column_projection_propagates_case_collision() -> None:
+    schema = Schema(NestedField(1, "ID", LongType()), NestedField(2, "id", LongType()))
+    with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+        project_schema(schema, ("_row_id",), case_sensitive=False, format_version=3)
+
+
+def test_identifier_field_lookup_propagates_case_collision(table_v2: Table) -> None:
+    schema = Schema(NestedField(1, "ID", LongType(), required=True), NestedField(2, "id", LongType(), required=True))
+    update = UpdateSchema(transaction=Transaction(table_v2), schema=schema, case_sensitive=False)
+    update.set_identifier_fields("ID")
+    with pytest.raises(ValueError, match="Cannot build lower case index: ID and id collide"):
+        update._apply()
+
+
+def can_promote_decimal(file_type: DecimalType, read_type: DecimalType) -> bool:
+    return file_type.precision <= read_type.precision and file_type.scale == read_type.scale
+
+
 def should_promote(file_type: IcebergType, read_type: IcebergType) -> bool:
     if isinstance(file_type, IntegerType) and isinstance(read_type, LongType):
         return True
@@ -878,7 +972,7 @@ def should_promote(file_type: IcebergType, read_type: IcebergType) -> bool:
     if isinstance(file_type, BinaryType) and isinstance(read_type, StringType):
         return True
     if isinstance(file_type, DecimalType) and isinstance(read_type, DecimalType):
-        return file_type.precision <= read_type.precision and file_type.scale == file_type.scale
+        return can_promote_decimal(file_type, read_type)
     if isinstance(file_type, FixedType) and isinstance(read_type, UUIDType) and len(file_type) == 16:
         return True
     return False
@@ -943,6 +1037,19 @@ def test_promotion(file_type: IcebergType, read_type: IcebergType) -> None:
     else:
         with pytest.raises(ResolveError):
             promote(file_type, read_type)
+
+
+def test_decimal_promotion() -> None:
+    # Widening precision while keeping the scale fixed is allowed.
+    assert promote(DecimalType(9, 2), DecimalType(18, 2)) == DecimalType(18, 2)
+    # Equal precision and scale resolves to the read type.
+    assert promote(DecimalType(9, 2), DecimalType(9, 2)) == DecimalType(9, 2)
+    # Changing the scale is never allowed, even when the precision widens.
+    with pytest.raises(ResolveError):
+        promote(DecimalType(9, 2), DecimalType(18, 4))
+    # Reducing the precision is not allowed.
+    with pytest.raises(ResolveError):
+        promote(DecimalType(18, 2), DecimalType(9, 2))
 
 
 def test_unknown_type_promotion_to_primitive() -> None:
@@ -1088,7 +1195,7 @@ def test_add_nested_lists(primitive_fields: NestedField, table_v2: Table) -> Non
                                     element_id=7,
                                     element_type=ListType(
                                         element_id=8,
-                                        element_type=ListType(element_id=9, element_type=DecimalType(precision=11, scale=20)),
+                                        element_type=ListType(element_id=9, element_type=DecimalType(precision=20, scale=11)),
                                         element_required=False,
                                     ),
                                     element_required=False,
@@ -1693,6 +1800,56 @@ def test_union_with_pa_schema(primitive_fields: NestedField, table_v2: Table) ->
     )
 
     assert new_schema == expected_schema
+
+
+def test_rename_struct_containing_identifier_field(table_v2: Table) -> None:
+    schema = Schema(
+        NestedField(
+            field_id=1,
+            name="user",
+            field_type=StructType(NestedField(field_id=2, name="id", field_type=LongType(), required=True)),
+            required=True,
+        ),
+        identifier_field_ids=[2],
+    )
+
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=schema).rename_column("user", "account")._apply()
+
+    assert applied.identifier_field_ids == [2]
+    assert applied.identifier_field_names() == {"account.id"}
+
+
+def test_rename_identifier_field(table_v2: Table) -> None:
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=True), identifier_field_ids=[1])
+
+    applied = UpdateSchema(transaction=Transaction(table_v2), schema=schema).rename_column("foo", "bar")._apply()
+
+    assert applied.identifier_field_ids == [1]
+    assert applied.identifier_field_names() == {"bar"}
+
+
+def test_rename_column_after_set_identifier_fields(table_v2: Table) -> None:
+    user = NestedField(
+        field_id=1,
+        name="user",
+        field_type=StructType(NestedField(field_id=2, name="id", field_type=LongType(), required=True)),
+        required=True,
+    )
+    update = UpdateSchema(transaction=Transaction(table_v2), schema=Schema(user))
+    update.set_identifier_fields("user.id")
+    applied = update.rename_column("user", "account")._apply()
+
+    assert applied.identifier_field_ids == [2]
+    assert applied.identifier_field_names() == {"account.id"}
+
+
+def test_delete_identifier_field(table_v2: Table) -> None:
+    schema = Schema(NestedField(field_id=1, name="foo", field_type=StringType(), required=True), identifier_field_ids=[1])
+
+    with pytest.raises(ValueError) as exc_info:
+        UpdateSchema(transaction=Transaction(table_v2), schema=schema).delete_column("foo")._apply()
+
+    assert "Cannot find identifier field foo. In case of deletion, update the identifier fields first." in str(exc_info)
 
 
 def test_arrow_schema() -> None:

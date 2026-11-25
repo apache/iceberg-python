@@ -33,6 +33,30 @@ def test_read_empty_uncompressed() -> None:
     assert pf.footer.properties == {}
 
 
+def test_read_compressed_zstd() -> None:
+    puffin_bytes = _open_file("v1/sample-metric-data-compressed-zstd.bin")
+    pf = PuffinFile(puffin_bytes)
+
+    assert pf.footer.properties == {"created-by": "Test 1234"}
+    assert len(pf.footer.blobs) == 2
+
+    blob1 = pf.footer.blobs[0]
+    assert blob1.type == "some-blob"
+    assert blob1.fields == [1]
+    assert blob1.snapshot_id == 2
+    assert blob1.sequence_number == 1
+    assert blob1.compression_codec == "zstd"
+    assert pf.get_blob_payload(blob1) == b"abcdefghi"
+
+    blob2 = pf.footer.blobs[1]
+    assert blob2.type == "some-other-blob"
+    assert blob2.fields == [2]
+    assert blob2.compression_codec == "zstd"
+    assert pf.get_blob_payload(blob2) == (
+        b"some blob \x00 binary data \xf0\x9f\xa4\xaf that is not very very very very very very long, is it?"
+    )
+
+
 def test_read_two_blobs_uncompressed() -> None:
     puffin_bytes = _open_file("v1/sample-metric-data-uncompressed.bin")
     pf = PuffinFile(puffin_bytes)

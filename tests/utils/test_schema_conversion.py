@@ -33,7 +33,9 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     UnknownType,
     UUIDType,
 )
@@ -317,9 +319,9 @@ def test_avro_list_missing_element_id() -> None:
 
 
 def test_convert_decimal_type() -> None:
-    avro_decimal_type = {"type": "bytes", "logicalType": "decimal", "precision": 19, "scale": 25}
+    avro_decimal_type = {"type": "bytes", "logicalType": "decimal", "precision": 25, "scale": 19}
     actual = AvroSchemaConversion()._convert_logical_type(avro_decimal_type)
-    expected = DecimalType(precision=19, scale=25)
+    expected = DecimalType(precision=25, scale=19)
     assert actual == expected
 
 
@@ -345,6 +347,29 @@ def test_convert_timestamp_micros_type() -> None:
     avro_logical_type = {"type": "int", "logicalType": "timestamp-micros"}
     actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
     assert actual == TimestampType()
+
+
+def test_convert_timestamp_nanos_type() -> None:
+    for adjust_to_utc, expected in [
+        (None, TimestampNanoType()),
+        (False, TimestampNanoType()),
+        (True, TimestamptzNanoType()),
+    ]:
+        avro_logical_type: dict[str, Any] = {"type": "long", "logicalType": "timestamp-nanos"}
+        if adjust_to_utc is not None:
+            avro_logical_type["adjust-to-utc"] = adjust_to_utc
+        actual = AvroSchemaConversion()._convert_logical_type(avro_logical_type)
+        assert actual == expected, f"adjust-to-utc={adjust_to_utc}"
+
+
+def test_timestamp_nanos_avro_schema_round_trip() -> None:
+    schema = Schema(
+        NestedField(field_id=1, name="ts_ns", field_type=TimestampNanoType(), required=True),
+        NestedField(field_id=2, name="tstz_ns", field_type=TimestamptzNanoType(), required=False),
+    )
+    avro_schema = AvroSchemaConversion().iceberg_to_avro(schema)
+    assert isinstance(avro_schema, dict)
+    assert AvroSchemaConversion().avro_to_iceberg(avro_schema) == schema
 
 
 def test_unknown_logical_type() -> None:

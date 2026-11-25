@@ -67,14 +67,23 @@ def test_property_as_float_with_invalid_value() -> None:
         assert "Could not parse table property some_float_prop to a float: invalid" in str(exc.value)
 
 
-def test_property_as_bool() -> None:
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("True", True),
+        ("False", False),
+        (True, True),
+        (False, False),
+    ],
+)
+def test_property_as_bool(value: str | bool, expected: bool) -> None:
     properties = {
-        "bool": "True",
+        "bool": value,
     }
 
-    assert property_as_bool(properties, "bool", default=False) is True
+    assert property_as_bool(properties, "bool", default=not expected) is expected
     assert property_as_bool(properties, "missing", default=False) is False
-    assert property_as_float(properties, "missing") is None
+    assert property_as_bool(properties, "missing", default=True) is True
 
 
 def test_property_as_bool_with_invalid_value() -> None:

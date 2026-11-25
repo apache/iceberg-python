@@ -17,16 +17,21 @@
 
 from __future__ import annotations
 
+import logging
 from typing import (
     TYPE_CHECKING,
+    Any,
 )
 
 from sqlalchemy import (
+    ColumnElement,
+    Engine,
     String,
     create_engine,
     delete,
     insert,
     select,
+    text,
     union,
     update,
 )
@@ -76,9 +81,12 @@ from pyiceberg.view.metadata import ViewVersion
 if TYPE_CHECKING:
     import pyarrow as pa
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_ECHO_VALUE = "false"
 DEFAULT_POOL_PRE_PING_VALUE = "false"
 DEFAULT_INIT_CATALOG_TABLES = "true"
+ICEBERG_TABLE_TYPE = "TABLE"
 
 
 class SqlCatalogBaseTable(MappedAsDataclass, DeclarativeBase):
@@ -93,6 +101,7 @@ class IcebergTables(SqlCatalogBaseTable):
     table_name: Mapped[str] = mapped_column(String(255), nullable=False, primary_key=True)
     metadata_location: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     previous_metadata_location: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    iceberg_type: Mapped[str | None] = mapped_column(String(5), nullable=True, deferred=True, init=False, default=None)
 
 
 class IcebergNamespaceProperties(SqlCatalogBaseTable):
@@ -118,40 +127,104 @@ class SqlCatalog(MetastoreCatalog):
     The `SqlCatalog` has a different convention where a `TableIdentifier` requires a `Namespace`.
     """
 
-    def __init__(self, name: str, **properties: str):
+    def __init__(self, name: str, engine: Engine | None = None, **properties: str):
         super().__init__(name, **properties)
 
-        if not (uri_prop := self.properties.get(URI)):
-            raise NoSuchPropertyException("SQL connection URI is required")
+        if engine is not None:
+            self.engine = engine
+        else:
+            if not (uri_prop := self.properties.get(URI)):
+                raise NoSuchPropertyException("SQL connection URI is required")
 
-        echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
-        echo = strtobool(echo_str) if echo_str != "debug" else "debug"
-        pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
+            echo_str = str(self.properties.get("echo", DEFAULT_ECHO_VALUE)).lower()
+            echo = strtobool(echo_str) if echo_str != "debug" else "debug"
+            pool_pre_ping = strtobool(self.properties.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE))
+
+            self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
+
+        self._init_catalog()
+
+    def _init_catalog(self) -> None:
+        """Detect schema state, create tables if absent, and migrate V0 to V1 when requested.
+
+        Rules:
+            - New catalogs always get v1 schema with view support.
+            - Existing v0 catalogs are not migrated unless schema_version='v1' is explicitly set.
+        """
+        # Get schema version from properties, ok if None
+        schema_version_prop = self.properties.get("schema_version", "v0")
+        if schema_version_prop not in ("v0", "v1"):
+            raise ValueError(f"Invalid schema_version property: '{schema_version_prop}'. Must be 'v0' or 'v1'.")
+
+        # Determine if catalog tables should be created if absent
         init_catalog_tables = strtobool(self.properties.get("init_catalog_tables", DEFAULT_INIT_CATALOG_TABLES))
 
-        self.engine = create_engine(uri_prop, echo=echo, pool_pre_ping=pool_pre_ping)
-
-        if init_catalog_tables:
-            self._ensure_tables_exist()
-
-    def _ensure_tables_exist(self) -> None:
         with Session(self.engine) as session:
-            for table in [IcebergTables, IcebergNamespaceProperties]:
-                stmt = select(1).select_from(table)
+            # 1. Check if catalog tables exist; create if absent
+            tables_absent = False
+            for tbl in [IcebergTables, IcebergNamespaceProperties]:
                 try:
-                    session.scalar(stmt)
-                except (
-                    OperationalError,
-                    ProgrammingError,
-                ):  # sqlalchemy returns OperationalError in case of sqlite and ProgrammingError with postgres.
+                    session.execute(select(1).select_from(tbl))
+                except (OperationalError, ProgrammingError):
+                    session.rollback()
+                    tables_absent = True
+                    break
+            # Tables are created with the v1 schema.
+            if tables_absent:
+                if init_catalog_tables:
                     self.create_tables()
-                    return
+                self._schema_version = "v1"
+                return
+
+            # 2. Tables exist at this point, so detect the schema version with a probe.
+            try:
+                stmt = text("SELECT iceberg_type FROM iceberg_tables LIMIT 0")
+                session.execute(stmt)
+                self._schema_version = "v1"
+                return
+            except (OperationalError, ProgrammingError):
+                session.rollback()
+
+            # 3. We only get here if tables exist and iceberg_type column is missing.
+            if schema_version_prop == "v1":
+                try:
+                    stmt = text(f"ALTER TABLE {IcebergTables.__tablename__} ADD COLUMN iceberg_type VARCHAR(5)")
+                    session.execute(stmt)
+                    session.commit()
+                except (OperationalError, ProgrammingError):
+                    session.rollback()
+                self._schema_version = "v1"
+            else:
+                logger.warning(
+                    "SqlCatalog detected a v0 schema (iceberg_type column missing). "
+                    "The catalog will operate in v0 mode. To migrate, set schema_version='v1'."
+                )
+                self._schema_version = "v0"
 
     def create_tables(self) -> None:
         SqlCatalogBaseTable.metadata.create_all(self.engine)
 
     def destroy_tables(self) -> None:
         SqlCatalogBaseTable.metadata.drop_all(self.engine)
+
+    def _create_table_row(self, namespace: str, table_name: str, metadata_location: str | None) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "catalog_name": self.name,
+            "table_namespace": namespace,
+            "table_name": table_name,
+            "metadata_location": metadata_location,
+            "previous_metadata_location": None,
+        }
+        if self._schema_version == "v1":
+            row["iceberg_type"] = ICEBERG_TABLE_TYPE
+        return row
+
+    def _iceberg_type_filter(self) -> ColumnElement[bool] | None:
+        # Excludes non-table rows (e.g. views written by iceberg-java or iceberg-rust) from table
+        # lookups. None on v0 schemas, where the iceberg_type column doesn't exist to filter on.
+        if self._schema_version != "v1":
+            return None
+        return (IcebergTables.iceberg_type == ICEBERG_TABLE_TYPE) | (IcebergTables.iceberg_type.is_(None))
 
     def _convert_orm_to_iceberg(self, orm_table: IcebergTables) -> Table:
         # Check for expected properties.
@@ -169,7 +242,7 @@ class SqlCatalog(MetastoreCatalog):
             identifier=Catalog.identifier_to_tuple(table_namespace) + (table_name,),
             metadata=metadata,
             metadata_location=metadata_location,
-            io=self._load_file_io(metadata.properties, metadata_location),
+            io=self._load_file_io(location=metadata_location, table_properties=metadata.properties),
             catalog=self,
         )
 
@@ -224,15 +297,7 @@ class SqlCatalog(MetastoreCatalog):
 
         with Session(self.engine) as session:
             try:
-                session.add(
-                    IcebergTables(
-                        catalog_name=self.name,
-                        table_namespace=namespace,
-                        table_name=table_name,
-                        metadata_location=metadata_location,
-                        previous_metadata_location=None,
-                    )
-                )
+                session.execute(insert(IcebergTables).values(**self._create_table_row(namespace, table_name, metadata_location)))
                 session.commit()
             except IntegrityError as e:
                 raise TableAlreadyExistsError(f"Table {namespace}.{table_name} already exists") from e
@@ -266,15 +331,7 @@ class SqlCatalog(MetastoreCatalog):
 
         with Session(self.engine) as session:
             try:
-                session.add(
-                    IcebergTables(
-                        catalog_name=self.name,
-                        table_namespace=namespace,
-                        table_name=table_name,
-                        metadata_location=metadata_location,
-                        previous_metadata_location=None,
-                    )
-                )
+                session.execute(insert(IcebergTables).values(**self._create_table_row(namespace, table_name, metadata_location)))
                 session.commit()
             except IntegrityError as e:
                 raise TableAlreadyExistsError(f"Table {namespace}.{table_name} already exists") from e
@@ -306,6 +363,8 @@ class SqlCatalog(MetastoreCatalog):
                 IcebergTables.table_namespace == namespace,
                 IcebergTables.table_name == table_name,
             )
+            if (type_filter := self._iceberg_type_filter()) is not None:
+                stmt = stmt.where(type_filter)
             result = session.scalar(stmt)
         if result:
             return self._convert_orm_to_iceberg(result)
@@ -324,20 +383,22 @@ class SqlCatalog(MetastoreCatalog):
         namespace_tuple = Catalog.namespace_from(identifier)
         namespace = Catalog.namespace_to_string(namespace_tuple)
         table_name = Catalog.table_name_from(identifier)
+        type_filter = self._iceberg_type_filter()
         with Session(self.engine) as session:
             if self.engine.dialect.supports_sane_rowcount:
-                res = session.execute(
-                    delete(IcebergTables).where(
-                        IcebergTables.catalog_name == self.name,
-                        IcebergTables.table_namespace == namespace,
-                        IcebergTables.table_name == table_name,
-                    )
+                stmt = delete(IcebergTables).where(
+                    IcebergTables.catalog_name == self.name,
+                    IcebergTables.table_namespace == namespace,
+                    IcebergTables.table_name == table_name,
                 )
+                if type_filter is not None:
+                    stmt = stmt.where(type_filter)
+                res = session.execute(stmt)
                 if res.rowcount < 1:
                     raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}")
             else:
                 try:
-                    tbl = (
+                    query = (
                         session.query(IcebergTables)
                         .with_for_update(of=IcebergTables)
                         .filter(
@@ -345,8 +406,10 @@ class SqlCatalog(MetastoreCatalog):
                             IcebergTables.table_namespace == namespace,
                             IcebergTables.table_name == table_name,
                         )
-                        .one()
                     )
+                    if type_filter is not None:
+                        query = query.filter(type_filter)
+                    tbl = query.one()
                     session.delete(tbl)
                 except NoResultFound as e:
                     raise NoSuchTableError(f"Table does not exist: {namespace}.{table_name}") from e
@@ -376,6 +439,7 @@ class SqlCatalog(MetastoreCatalog):
         to_table_name = Catalog.table_name_from(to_identifier)
         if not self.namespace_exists(to_namespace):
             raise NoSuchNamespaceError(f"Namespace does not exist: {to_namespace}")
+        type_filter = self._iceberg_type_filter()
         with Session(self.engine) as session:
             try:
                 if self.engine.dialect.supports_sane_rowcount:
@@ -388,12 +452,14 @@ class SqlCatalog(MetastoreCatalog):
                         )
                         .values(table_namespace=to_namespace, table_name=to_table_name)
                     )
+                    if type_filter is not None:
+                        stmt = stmt.where(type_filter)
                     result = session.execute(stmt)
                     if result.rowcount < 1:
                         raise NoSuchTableError(f"Table does not exist: {from_table_name}")
                 else:
                     try:
-                        tbl = (
+                        query = (
                             session.query(IcebergTables)
                             .with_for_update(of=IcebergTables)
                             .filter(
@@ -401,8 +467,10 @@ class SqlCatalog(MetastoreCatalog):
                                 IcebergTables.table_namespace == from_namespace,
                                 IcebergTables.table_name == from_table_name,
                             )
-                            .one()
                         )
+                        if type_filter is not None:
+                            query = query.filter(type_filter)
+                        tbl = query.one()
                         tbl.table_namespace = to_namespace
                         tbl.table_name = to_table_name
                     except NoResultFound as e:
@@ -492,15 +560,8 @@ class SqlCatalog(MetastoreCatalog):
             else:
                 # table does not exist, create it
                 try:
-                    session.add(
-                        IcebergTables(
-                            catalog_name=self.name,
-                            table_namespace=namespace,
-                            table_name=table_name,
-                            metadata_location=updated_staged_table.metadata_location,
-                            previous_metadata_location=None,
-                        )
-                    )
+                    row = self._create_table_row(namespace, table_name, updated_staged_table.metadata_location)
+                    session.execute(insert(IcebergTables).values(**row))
                     session.commit()
                 except IntegrityError as e:
                     raise TableAlreadyExistsError(f"Table {namespace}.{table_name} already exists") from e
@@ -556,20 +617,24 @@ class SqlCatalog(MetastoreCatalog):
         if self.namespace_exists(namespace):
             raise NamespaceAlreadyExistsError(f"Namespace {namespace} already exists")
 
-        if not properties:
-            properties = IcebergNamespaceProperties.NAMESPACE_MINIMAL_PROPERTIES
         create_properties = properties if properties else IcebergNamespaceProperties.NAMESPACE_MINIMAL_PROPERTIES
+        namespace_string = Catalog.namespace_to_string(namespace, NoSuchNamespaceError)
         with Session(self.engine) as session:
-            for key, value in create_properties.items():
-                session.add(
-                    IcebergNamespaceProperties(
-                        catalog_name=self.name,
-                        namespace=Catalog.namespace_to_string(namespace, NoSuchNamespaceError),
-                        property_key=key,
-                        property_value=value,
+            try:
+                for key, value in create_properties.items():
+                    session.add(
+                        IcebergNamespaceProperties(
+                            catalog_name=self.name,
+                            namespace=namespace_string,
+                            property_key=key,
+                            property_value=value,
+                        )
                     )
-                )
-            session.commit()
+                session.commit()
+            except IntegrityError as e:
+                if any(k is None or v is None for k, v in create_properties.items()):
+                    raise
+                raise NamespaceAlreadyExistsError(f"Namespace {namespace} already exists") from e
 
     @override
     def drop_namespace(self, namespace: str | Identifier) -> None:
@@ -615,7 +680,14 @@ class SqlCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace does not exist: {namespace}")
 
         namespace = Catalog.namespace_to_string(namespace)
-        stmt = select(IcebergTables).where(IcebergTables.catalog_name == self.name, IcebergTables.table_namespace == namespace)
+        stmt = select(IcebergTables).where(
+            IcebergTables.catalog_name == self.name,
+            IcebergTables.table_namespace == namespace,
+        )
+
+        if (type_filter := self._iceberg_type_filter()) is not None:
+            stmt = stmt.where(type_filter)
+
         with Session(self.engine) as session:
             result = session.scalars(stmt)
             return [(Catalog.identifier_to_tuple(table.table_namespace) + (table.table_name,)) for table in result]
@@ -772,6 +844,10 @@ class SqlCatalog(MetastoreCatalog):
 
     @override
     def load_view(self, identifier: str | Identifier) -> View:
+        raise NotImplementedError
+
+    @override
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
         raise NotImplementedError
 
     def close(self) -> None:

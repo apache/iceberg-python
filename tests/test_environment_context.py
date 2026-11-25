@@ -1,5 +1,3 @@
-#!/bin/bash
-#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -16,18 +14,19 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
+from pyiceberg import __version__
+from pyiceberg.environment_context import EnvironmentContext
 
-set -ex
 
-if [ $(docker ps -q --filter "name=pyiceberg-minio" --filter "status=running" ) ]; then
-    echo "Minio backend running"
-else
-    docker compose -f dev/docker-compose.yml kill
-    docker compose -f dev/docker-compose.yml up -d
-    while [ -z $(docker ps -q --filter "name=pyiceberg-minio" --filter "status=running" ) ]
-    do
-      echo "Waiting for Minio"
-      sleep 1
-    done
-fi
+def test_get_returns_fresh_engine_metadata(enable_environment_context: None) -> None:
+    first = EnvironmentContext.get()
+    second = EnvironmentContext.get()
+    assert first is not second
+
+    first.clear()
+
+    assert second == {
+        "engine-name": "pyiceberg",
+        "engine-version": __version__,
+    }
+    assert EnvironmentContext.get() == second

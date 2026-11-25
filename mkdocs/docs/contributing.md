@@ -155,7 +155,7 @@ For Python, `pytest` is used a testing framework in combination with `coverage` 
 make test
 ```
 
-By default, S3 and ADLS tests are ignored because that require minio and azurite to be running.
+By default, S3 and ADLS tests are ignored because that require RustFS and azurite to be running.
 To run the S3 suite:
 
 ```bash
@@ -257,7 +257,7 @@ This command spins up the full integration test infrastructure via Docker Compos
 - **Spark** (with Spark Connect)
 - **Iceberg REST Catalog** (using the [`apache/iceberg-rest-fixture`](https://hub.docker.com/r/apache/iceberg-rest-fixture) image)
 - **Hive Metastore**
-- **S3-compatible object storage** (Minio)
+- **S3-compatible object storage** (RustFS)
 
 **Spark Example Notebook** (`notebooks/spark_integration_example.ipynb`) is based on the [Spark Getting Started](https://iceberg.apache.org/docs/nightly/spark-getting-started/) guide. This notebook demonstrates how to work with PyIceberg alongside Spark, leveraging the Docker-based testing setup for a complete local development environment.
 
@@ -338,3 +338,17 @@ For the type annotation the types from the `Typing` package are used.
 ### Third party libraries
 
 PyIceberg naturally integrates into the rich Python ecosystem, however it is important to be hesitant adding third party packages. Adding a lot of packages makes the library heavyweight, and causes incompatibilities with other projects if they use a different version of the library. Also, big libraries such as `s3fs`, `adlfs`, `pyarrow`, `thrift` should be optional to avoid downloading everything, while not being sure if is actually being used.
+
+## Merging an urgent PR
+
+Committers can merge an urgent, approved pull request without waiting for the merge queue or required checks (for example, a security fix while CI is stuck). Use this only when necessary; otherwise, let the merge queue run.
+
+<!-- markdown-link-check-disable-next-line -->
+1. Join the [`apache/iceberg-public`](https://github.com/orgs/apache/teams/iceberg-public) team via [Boxer](https://gitbox.apache.org/boxer/) (one-time; membership syncs in about 15 minutes).
+2. Get the pull request approved by a committer.
+3. If the pull request is in the merge queue, click **Remove from queue**.
+4. Merge it directly:
+
+    ```sh
+    gh pr merge <number> --squash --admin
+    ```

@@ -61,5 +61,15 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences
+  - pymdownx.superfences:
+      preserve_tabs: true
+      custom_fences:
+        # Mermaid diagrams
+        #   Needed so that Superfences doesn't break Mermaid
+        #   See: https://facelessuser.github.io/pymdown-extensions/extras/mermaid/#using-in-mkdocs
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
   - toc:
       permalink: true

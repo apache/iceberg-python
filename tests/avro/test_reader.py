@@ -282,7 +282,21 @@ def test_fixed_reader() -> None:
 
 
 def test_decimal_reader() -> None:
-    assert construct_reader(DecimalType(19, 25)) == DecimalReader(19, 25)
+    assert construct_reader(DecimalType(25, 19)) == DecimalReader(25, 19)
+
+
+@pytest.mark.parametrize("decoder_class", AVAILABLE_DECODERS)
+def test_skip_projected_out_fixed_decimal(decoder_class: Callable[[bytes], BinaryDecoder]) -> None:
+    decoder = decoder_class(b"\x00\x01\x0a")
+    struct = StructType(
+        NestedField(1, "decimal", DecimalType(3, 0), required=True),
+        NestedField(2, "value", IntegerType(), required=True),
+    )
+
+    result = StructReader(((None, DecimalReader(3, 0)), (1, IntegerReader())), Record, struct).read(decoder)
+
+    assert result[1] == 5
+    assert decoder.tell() == 3
 
 
 def test_boolean_reader() -> None:

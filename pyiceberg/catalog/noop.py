@@ -98,7 +98,7 @@ class NoopCatalog(Catalog):
         raise NotImplementedError
 
     @override
-    def supports_server_side_planning(self) -> bool:
+    def supports_server_side_planning(self, table_config: Properties = EMPTY_DICT) -> bool:
         return False
 
     @override
@@ -174,4 +174,8 @@ class NoopCatalog(Catalog):
 
     @override
     def load_view(self, identifier: str | Identifier) -> View:
+        raise NotImplementedError
+
+    @override
+    def rename_view(self, from_identifier: str | Identifier, to_identifier: str | Identifier) -> None:
         raise NotImplementedError

@@ -16,7 +16,7 @@
 # under the License.
 import math
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import singledispatch
 from typing import (
     Any,
@@ -50,7 +50,9 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     BoundTerm,
     BoundUnaryPredicate,
+    IsNull,
     Not,
+    NotNull,
     Or,
     UnboundPredicate,
 )
@@ -331,6 +333,7 @@ class BoundBooleanExpressionVisitor(BooleanExpressionVisitor[T], ABC):
 
         Args:
             predicate (UnboundPredicate): An unbound predicate.
+
         Raises:
             TypeError: This always raises since an unbound predicate is not expected in a bound boolean expression.
         """
@@ -454,16 +457,25 @@ def expression_evaluator(schema: Schema, unbound: BooleanExpression, case_sensit
     return _ExpressionEvaluator(schema, unbound, case_sensitive).eval
 
 
-class _ExpressionEvaluator(BoundBooleanExpressionVisitor[bool]):
+class _ExpressionEvaluator:
+    """An evaluator that binds an expression once and keeps evaluation state local to each call."""
+
     bound: BooleanExpression
-    struct: StructProtocol
 
     def __init__(self, schema: Schema, unbound: BooleanExpression, case_sensitive: bool):
         self.bound = bind(schema, unbound, case_sensitive)
 
     def eval(self, struct: StructProtocol) -> bool:
+        return visit(self.bound, _ExpressionEvaluationVisitor(struct))
+
+
+class _ExpressionEvaluationVisitor(BoundBooleanExpressionVisitor[bool]):
+    """Evaluate a bound expression against one struct."""
+
+    struct: StructProtocol
+
+    def __init__(self, struct: StructProtocol):
         self.struct = struct
-        return visit(self.bound, self)
 
     def visit_in(self, term: BoundTerm, literals: set[L]) -> bool:
         return term.eval(self.struct) in literals
@@ -965,6 +977,12 @@ def extract_field_ids(expr: BooleanExpression) -> set[int]:
     return visit(expr, _ExpressionFieldIDs())
 
 
+# Converting to DNF distributes every AND over the ORs below it, so the number of
+# terms is exponential in the worst case. The expansion is bounded to keep a small
+# filter from producing an expression that no consumer can use.
+MAX_DNF_TERMS = 1 << 14
+
+
 class _RewriteToDNF(BooleanExpressionVisitor[tuple[BooleanExpression, ...]]):
     def visit_true(self) -> tuple[BooleanExpression, ...]:
         return (AlwaysTrue(),)
@@ -982,6 +1000,8 @@ class _RewriteToDNF(BooleanExpressionVisitor[tuple[BooleanExpression, ...]]):
         # ((P OR Q) AND (R OR S)) AND (((P AND R) OR (P AND S)) OR ((Q AND R) OR ((Q AND S)))
         # A AND (B OR C) = (A AND B) OR (A AND C)
         # (A OR B) AND C = (A AND C) OR (B AND C)
+        if len(left_result) * len(right_result) > MAX_DNF_TERMS:
+            raise ValueError(f"Expression expands to more than the maximum of {MAX_DNF_TERMS} DNF terms")
         return tuple(And(le, re) for le in left_result for re in right_result)
 
     def visit_or(
@@ -999,6 +1019,7 @@ class _RewriteToDNF(BooleanExpressionVisitor[tuple[BooleanExpression, ...]]):
 def rewrite_to_dnf(expr: BooleanExpression) -> tuple[BooleanExpression, ...]:
     # Rewrites an arbitrary boolean expression to disjunctive normal form (DNF):
     # (A AND NOT(B) AND C) OR (NOT(D) AND E AND F) OR (G)
+    # Raises ValueError when the expansion exceeds MAX_DNF_TERMS terms.
     expr_without_not = rewrite_not(expr)
     return visit(expr_without_not, _RewriteToDNF())
 
@@ -1112,12 +1133,19 @@ def expression_to_plain_format(
     return [visit(expression, visitor) for expression in expressions]
 
 
-class _MetricsEvaluator(BoundBooleanExpressionVisitor[bool], ABC):
-    value_counts: dict[int, int]
-    null_counts: dict[int, int]
-    nan_counts: dict[int, int]
-    lower_bounds: dict[int, bytes]
-    upper_bounds: dict[int, bytes]
+class _MetricsEvaluationVisitor(BoundBooleanExpressionVisitor[bool], ABC):
+    value_counts: Mapping[int, int]
+    null_counts: Mapping[int, int]
+    nan_counts: Mapping[int, int]
+    lower_bounds: Mapping[int, bytes]
+    upper_bounds: Mapping[int, bytes]
+
+    def __init__(self, file: DataFile) -> None:
+        self.value_counts = file.value_counts or EMPTY_DICT
+        self.null_counts = file.null_value_counts or EMPTY_DICT
+        self.nan_counts = file.nan_value_counts or EMPTY_DICT
+        self.lower_bounds = file.lower_bounds or EMPTY_DICT
+        self.upper_bounds = file.upper_bounds or EMPTY_DICT
 
     def visit_true(self) -> bool:
         # all rows match
@@ -1154,14 +1182,15 @@ class _MetricsEvaluator(BoundBooleanExpressionVisitor[bool], ABC):
             return False
 
 
-class _InclusiveMetricsEvaluator(_MetricsEvaluator):
-    struct: StructType
+class _InclusiveMetricsEvaluator:
+    """Bind an inclusive metrics expression once and evaluate files without mutating prepared state."""
+
     expr: BooleanExpression
+    include_empty_files: bool
 
     def __init__(
         self, schema: Schema, expr: BooleanExpression, case_sensitive: bool = True, include_empty_files: bool = False
     ) -> None:
-        self.struct = schema.as_struct()
         self.include_empty_files = include_empty_files
         self.expr = bind(schema, rewrite_not(expr), case_sensitive)
 
@@ -1176,16 +1205,16 @@ class _InclusiveMetricsEvaluator(_MetricsEvaluator):
             # be updated once we implemented and set correct record count.
             return ROWS_MIGHT_MATCH
 
-        self.value_counts = file.value_counts or EMPTY_DICT
-        self.null_counts = file.null_value_counts or EMPTY_DICT
-        self.nan_counts = file.nan_value_counts or EMPTY_DICT
-        self.lower_bounds = file.lower_bounds or EMPTY_DICT
-        self.upper_bounds = file.upper_bounds or EMPTY_DICT
+        return visit(self.expr, _InclusiveMetricsEvaluationVisitor(file))
 
-        return visit(self.expr, self)
+
+class _InclusiveMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
+    """Evaluate inclusive metrics for one data file."""
 
     def _may_contain_null(self, field_id: int) -> bool:
-        return self.null_counts is None or (field_id in self.null_counts and self.null_counts.get(field_id) is not None)
+        # A missing null count means the count is unknown, so the column may contain nulls.
+        null_count = self.null_counts.get(field_id)
+        return null_count is None or null_count != 0
 
     def _contains_nans_only(self, field_id: int) -> bool:
         if (nan_count := self.nan_counts.get(field_id)) and (value_count := self.value_counts.get(field_id)):
@@ -1489,9 +1518,12 @@ class StrictProjection(ProjectionEvaluator):
         return result
 
 
-class _StrictMetricsEvaluator(_MetricsEvaluator):
+class _StrictMetricsEvaluator:
+    """Bind a strict metrics expression once and evaluate files without mutating prepared state."""
+
     struct: StructType
     expr: BooleanExpression
+    include_empty_files: bool
 
     def __init__(
         self, schema: Schema, expr: BooleanExpression, case_sensitive: bool = True, include_empty_files: bool = False
@@ -1509,19 +1541,25 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
         Returns: false if the file may contain any row that doesn't match
                     the expression, true otherwise.
         """
-        if file.record_count <= 0:
-            # Older version don't correctly implement record count from avro file and thus
-            # set record count -1 when importing avro tables to iceberg tables. This should
-            # be updated once we implemented and set correct record count.
+        if file.record_count == 0:
             return ROWS_MUST_MATCH
 
-        self.value_counts = file.value_counts or EMPTY_DICT
-        self.null_counts = file.null_value_counts or EMPTY_DICT
-        self.nan_counts = file.nan_value_counts or EMPTY_DICT
-        self.lower_bounds = file.lower_bounds or EMPTY_DICT
-        self.upper_bounds = file.upper_bounds or EMPTY_DICT
+        if file.record_count < 0:
+            # Older versions set the record count to -1 when importing Avro tables.
+            # Treat an unknown count conservatively rather than as an empty file.
+            return ROWS_MIGHT_NOT_MATCH
 
-        return visit(self.expr, self)
+        return visit(self.expr, _StrictMetricsEvaluationVisitor(self.struct, file))
+
+
+class _StrictMetricsEvaluationVisitor(_MetricsEvaluationVisitor):
+    """Evaluate strict metrics for one data file."""
+
+    struct: StructType
+
+    def __init__(self, struct: StructType, file: DataFile) -> None:
+        super().__init__(file)
+        self.struct = struct
 
     def visit_is_null(self, term: BoundTerm) -> bool:
         # no need to check whether the field is required because binding evaluates that case
@@ -1786,31 +1824,32 @@ class _StrictMetricsEvaluator(_MetricsEvaluator):
 
 
 class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
-    """Finds the residuals for an Expression the partitions in the given PartitionSpec.
+    """Find residuals for an expression using partition values.
 
     A residual expression is made by partially evaluating an expression using partition values.
     For example, if a table is partitioned by day(utc_timestamp) and is read with a filter expression
-    utc_timestamp > a and utc_timestamp < b, then there are 4 possible residuals expressions
+    utc_timestamp > a and utc_timestamp < b, then there are 4 possible residual expressions
     for the partition data, d:
 
-
-    1. If d > day(a) and d &lt; day(b), the residual is always true
+    1. If d > day(a) and d < day(b), the residual is always true
     2. If d == day(a) and d != day(b), the residual is utc_timestamp > a
-    3. if d == day(b) and d != day(a), the residual is utc_timestamp < b
+    3. If d == day(b) and d != day(a), the residual is utc_timestamp < b
     4. If d == day(a) == day(b), the residual is utc_timestamp > a and utc_timestamp < b
-    Partition data is passed using StructLike. Residuals are returned by residualFor(StructLike).
     """
 
     schema: Schema
     spec: PartitionSpec
     case_sensitive: bool
     expr: BooleanExpression
+    partition_schema: Schema
+    struct: Record
 
     def __init__(self, schema: Schema, spec: PartitionSpec, case_sensitive: bool, expr: BooleanExpression) -> None:
         self.schema = schema
         self.spec = spec
         self.case_sensitive = case_sensitive
         self.expr = expr
+        self.partition_schema = Schema(*spec.partition_type(schema).fields)
 
     def eval(self, partition_data: Record) -> BooleanExpression:
         self.struct = partition_data
@@ -1852,10 +1891,10 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
 
     def visit_not_nan(self, term: BoundTerm) -> BooleanExpression:
         val = term.eval(self.struct)
-        if isinstance(val, SupportsFloat) and not math.isnan(val):
-            return self.visit_true()
-        else:
+        if isinstance(val, SupportsFloat) and math.isnan(val):
             return self.visit_false()
+        else:
+            return self.visit_true()
 
     def visit_less_than(self, term: BoundTerm, literal: LiteralValue) -> BooleanExpression:
         if term.eval(self.struct) < literal.value:
@@ -1931,43 +1970,29 @@ class ResidualVisitor(BoundBooleanExpressionVisitor[BooleanExpression], ABC):
         if parts == []:
             return predicate
 
-        def struct_to_schema(struct: StructType) -> Schema:
-            return Schema(*struct.fields)
-
         for part in parts:
-            strict_projection = part.transform.strict_project(part.name, predicate)
-            strict_result = None
-
-            if strict_projection is not None:
-                bound = strict_projection.bind(
-                    struct_to_schema(self.spec.partition_type(self.schema)), case_sensitive=self.case_sensitive
-                )
-                if isinstance(bound, BoundPredicate):
-                    strict_result = super().visit_bound_predicate(bound)
-                else:
-                    # if the result is not a predicate, then it must be a constant like alwaysTrue or alwaysFalse
-                    strict_result = bound
-
-            if isinstance(strict_result, AlwaysTrue):
+            if isinstance(self._eval_projection(part.transform.strict_project(part.name, predicate)), AlwaysTrue):
                 return AlwaysTrue()
 
-            inclusive_projection = part.transform.project(part.name, predicate)
-            inclusive_result = None
-            if inclusive_projection is not None:
-                bound_inclusive = inclusive_projection.bind(
-                    struct_to_schema(self.spec.partition_type(self.schema)), case_sensitive=self.case_sensitive
-                )
-                if isinstance(bound_inclusive, BoundPredicate):
-                    # using predicate method specific to inclusive
-                    inclusive_result = super().visit_bound_predicate(bound_inclusive)
-                else:
-                    # if the result is not a predicate, then it must be a constant like alwaysTrue or
-                    # alwaysFalse
-                    inclusive_result = bound_inclusive
-            if isinstance(inclusive_result, AlwaysFalse):
+            if isinstance(self._eval_projection(part.transform.project(part.name, predicate)), AlwaysFalse):
                 return AlwaysFalse()
 
         return predicate
+
+    def _eval_projection(self, projection: UnboundPredicate | None) -> BooleanExpression | None:
+        if projection is None:
+            return None
+
+        bound = projection.bind(self.partition_schema, case_sensitive=self.case_sensitive)
+        if not isinstance(bound, BoundPredicate):
+            # if the result is not a predicate, then it must be a constant like alwaysTrue or alwaysFalse
+            return bound
+
+        # A NULL partition value only decides null checks; leave other predicates to the reader's NULL semantics
+        if bound.as_unbound not in (IsNull, NotNull) and bound.term.eval(self.struct) is None:
+            return None
+
+        return super().visit_bound_predicate(bound)
 
     def visit_unbound_predicate(self, predicate: UnboundPredicate) -> BooleanExpression:
         bound = predicate.bind(self.schema, case_sensitive=self.case_sensitive)
