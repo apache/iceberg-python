@@ -17,8 +17,8 @@
 """Tests for Arrow PyCapsule interface support on the read and write paths.
 
 Covers the input/consumer side (write methods accept any object implementing
-``__arrow_c_stream__``) and the output/producer side (``Table`` and every scan
-expose ``__arrow_c_stream__`` so any Arrow consumer can ingest them).
+``__arrow_c_stream__``) and the output/producer side (scans expose
+``__arrow_c_stream__`` so any Arrow consumer can ingest them).
 """
 
 from collections.abc import Callable
@@ -32,7 +32,6 @@ from pyiceberg.catalog.memory import InMemoryCatalog
 from pyiceberg.io.pyarrow import _coerce_arrow_input
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table import Table
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import IntegerType, NestedField, StringType
 
@@ -172,19 +171,11 @@ def test_append_pa_table_to_partitioned_table(catalog: InMemoryCatalog) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "produce",
-    [
-        pytest.param(lambda tbl: tbl, id="table"),
-        pytest.param(lambda tbl: tbl.scan(), id="scan"),
-    ],
-)
-def test_supports_arrow_c_stream(catalog: InMemoryCatalog, produce: Callable[[Table], object]) -> None:
+def test_scan_supports_arrow_c_stream(catalog: InMemoryCatalog) -> None:
     tbl = catalog.create_table("default.stream", schema=SCHEMA)
     tbl.append(_data([1, 2, 3], ["us", "eu", "us"]))
 
-    # A consumer ingests the Table/DataScan directly via the PyCapsule interface.
-    consumed = pa.table(produce(tbl))
+    consumed = pa.table(tbl.scan())
 
     assert _rows(consumed) == _rows(tbl.scan().to_arrow())
 

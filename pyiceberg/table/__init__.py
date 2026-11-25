@@ -2079,10 +2079,6 @@ class Table:
         ).__datafusion_table_provider__
         return provider(session)
 
-    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
-        """Export this Table as an Arrow C stream (PyCapsule interface)."""
-        return self.scan().to_arrow_batch_reader().__arrow_c_stream__(requested_schema)
-
 
 class StaticTable(Table):
     """Load a table directly from a metadata file (i.e., without using a catalog)."""
