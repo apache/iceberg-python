@@ -40,6 +40,7 @@ from pyparsing import (
     ParserElement,
     ParseResults,
     QuotedString,
+    Regex,
     Suppress,
     Word,
     alphanums,
@@ -76,6 +77,7 @@ from pyiceberg.expressions import (
 from pyiceberg.expressions.literals import (
     BooleanLiteral,
     DecimalLiteral,
+    DoubleLiteral,
     Literal,
     LongLiteral,
     StringLiteral,
@@ -119,12 +121,14 @@ def _(result: ParseResults) -> Reference:
 
 boolean = one_of(["true", "false"], caseless=True)
 string = sgl_quoted_string.set_results_name("raw_quoted_string")
+# A number with an exponent is an approximate numeric literal (a double), as in ANSI SQL
+double = Regex(r"[+-]?(?:\d+\.?\d*|\.\d+)[eE][+-]?\d+").set_results_name("double")
 decimal = common.real().set_results_name("decimal")
 integer = common.signed_integer().set_results_name("integer")
-literal = Group(string | decimal | integer | boolean).set_results_name("literal")
-literal_set = Group(
-    DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer) | DelimitedList(boolean)
-).set_results_name("literal_set")
+literal = Group(string | double | decimal | integer | boolean).set_results_name("literal")
+literal_set = Group(DelimitedList(string) | DelimitedList(double | decimal | integer) | DelimitedList(boolean)).set_results_name(
+    "literal_set"
+)
 
 
 @boolean.set_parse_action
@@ -138,6 +142,11 @@ def _(result: ParseResults) -> Literal[bool]:
 @string.set_parse_action
 def _(result: ParseResults) -> Literal[str]:
     return StringLiteral(result.raw_quoted_string[1:-1].replace("''", "'"))
+
+
+@double.set_parse_action
+def _(result: ParseResults) -> Literal[float]:
+    return DoubleLiteral(float(result.double))
 
 
 @decimal.set_parse_action
