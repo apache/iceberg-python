@@ -16,13 +16,15 @@
 # under the License.
 
 from pathlib import PosixPath
+from types import SimpleNamespace
 from typing import Any
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from pyiceberg.conversions import to_bytes
-from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestContent, ManifestEntryStatus
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable, _readable_bound
@@ -166,3 +168,58 @@ def test_inspect_bounds_after_type_promotion(catalog: InMemoryCatalog) -> None:
         partition_summaries = tbl.inspect.manifests().to_pydict()["partition_summaries"][0]
         assert partition_summaries[0]["lower_bound"] == str(values[0]), name
         assert partition_summaries[0]["upper_bound"] == str(values[-1]), name
+
+
+def test_position_deletes_empty_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    tbl = catalog.create_table("default.position_deletes_empty", schema)
+
+    result = tbl.inspect.position_deletes()
+
+    assert result.num_rows == 0
+    assert result.column_names == ["file_path", "pos", "row", "partition", "spec_id", "delete_file_path"]
+
+
+def test_position_deletes_reads_live_delete_files(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    tbl = catalog.create_table("default.position_deletes", schema)
+    delete_path = f"{tbl.location().rstrip('/')}/data/deletes.parquet"
+    delete_records = pa.table(
+        {
+            "file_path": ["s3://bucket/data/a.parquet", "s3://bucket/data/b.parquet"],
+            "pos": pa.array([1, 4], type=pa.int64()),
+        }
+    )
+    with tbl.io.new_output(delete_path).create() as output:
+        pq.write_table(delete_records, output)
+
+    data_file = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES,
+        file_path=delete_path,
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=2,
+        file_size_in_bytes=0,
+        spec_id=tbl.metadata.default_spec_id,
+    )
+    manifest: Any = SimpleNamespace(
+        content=ManifestContent.DELETES,
+        partition_spec_id=tbl.metadata.default_spec_id,
+        fetch_manifest_entry=lambda io, discard_deleted=True: [
+            SimpleNamespace(status=ManifestEntryStatus.ADDED, data_file=data_file),
+            SimpleNamespace(status=ManifestEntryStatus.DELETED, data_file=data_file),
+        ],
+    )
+
+    rows = sorted(
+        tbl.inspect._position_deletes_from_manifest(manifest).to_pylist(),
+        key=lambda row: (row["file_path"], row["pos"]),
+    )
+
+    assert [(row["file_path"], row["pos"]) for row in rows] == [
+        ("s3://bucket/data/a.parquet", 1),
+        ("s3://bucket/data/b.parquet", 4),
+    ]
+    assert all(row["row"] is None for row in rows)
+    assert {row["delete_file_path"] for row in rows} == {delete_path}
+    assert {row["spec_id"] for row in rows} == {tbl.metadata.default_spec_id}

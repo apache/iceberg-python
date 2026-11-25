@@ -19,11 +19,18 @@ from __future__ import annotations
 import itertools
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression
-from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, PartitionFieldSummary
+from pyiceberg.manifest import (
+    DataFile,
+    DataFileContent,
+    ManifestContent,
+    ManifestEntryStatus,
+    ManifestFile,
+    PartitionFieldSummary,
+)
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
 from pyiceberg.types import PrimitiveType
@@ -1014,3 +1021,99 @@ class InspectTable:
                 See ``_get_files_schema`` for the full column list.
         """
         return self._all_files({DataFileContent.POSITION_DELETES, DataFileContent.EQUALITY_DELETES})
+
+    def _get_position_deletes_schema(self) -> pa.Schema:
+        """Build the PyArrow schema for the position deletes metadata table.
+
+        Returns:
+            pa.Schema: The position deletes schema.
+        """
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        return pa.schema(
+            [
+                pa.field("file_path", pa.string(), nullable=False),
+                pa.field("pos", pa.int64(), nullable=False),
+                pa.field("row", cast(pa.DataType, schema_to_pyarrow(self.tbl.metadata.schema().as_struct())), nullable=True),
+                pa.field("partition", cast(pa.DataType, schema_to_pyarrow(self.tbl.metadata.specs_struct())), nullable=False),
+                pa.field("spec_id", pa.int32(), nullable=False),
+                pa.field("delete_file_path", pa.string(), nullable=False),
+            ]
+        )
+
+    def _position_deletes_from_manifest(self, manifest: ManifestFile) -> pa.Table:
+        """Read the position delete records from a single manifest.
+
+        Args:
+            manifest: The manifest to read.
+
+        Returns:
+            pa.Table: Position delete rows conforming to the position deletes schema.
+        """
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import _read_deletes
+
+        schema = self._get_position_deletes_schema()
+        if manifest.content != ManifestContent.DELETES:
+            return schema.empty_table()
+
+        spec = self.tbl.metadata.specs()[manifest.partition_spec_id]
+        records = []
+        for entry in manifest.fetch_manifest_entry(io=self.tbl.io, discard_deleted=False):
+            if entry.status == ManifestEntryStatus.DELETED:
+                continue
+
+            data_file = entry.data_file
+            if data_file.content != DataFileContent.POSITION_DELETES:
+                continue
+
+            partition = {field.name: data_file.partition[pos] for pos, field in enumerate(spec.fields)}
+            for file_path, positions in _read_deletes(self.tbl.io, data_file).items():
+                for pos in positions.to_pylist():
+                    records.append(
+                        {
+                            "file_path": file_path,
+                            "pos": pos,
+                            "row": None,
+                            "partition": partition,
+                            "spec_id": manifest.partition_spec_id,
+                            "delete_file_path": data_file.file_path,
+                        }
+                    )
+
+        return pa.Table.from_pylist(records, schema=schema)
+
+    def position_deletes(self, snapshot_id: int | None = None) -> pa.Table:
+        """Return position delete records for a snapshot as a PyArrow Table.
+
+        Each row names a data file and the row position deleted from it. The
+        optional ``row`` column is null because position delete files are not
+        required to store the deleted row.
+
+        Args:
+            snapshot_id: The snapshot to inspect. Defaults to the current snapshot.
+
+        Returns:
+            pa.Table: A table with columns: ``file_path`` (string), ``pos``
+                (int64), ``row`` (struct, nullable), ``partition`` (struct),
+                ``spec_id`` (int32), and ``delete_file_path`` (string). Returns
+                an empty table when the table has no snapshots.
+        """
+        import pyarrow as pa
+
+        if snapshot_id is None and not self.tbl.metadata.current_snapshot():
+            return self._get_position_deletes_schema().empty_table()
+
+        snapshot = self._get_snapshot(snapshot_id)
+        results = list(
+            ExecutorFactory.get_or_create().map(
+                self._position_deletes_from_manifest,
+                snapshot.manifests(self.tbl.io, self.tbl.encryption_manager),
+            )
+        )
+        if not results:
+            return self._get_position_deletes_schema().empty_table()
+        return pa.concat_tables(results)
