@@ -42,7 +42,7 @@ dependencies = [
     "tenacity>=8.2.3",
     "pyroaring>=1.1.0",
     "cachetools>=5.5",
-    "zstandard>=0.13.0"
+    "zstandard>=0.13.0; python_version < '3.14'"
 ]
 
 [project.urls]

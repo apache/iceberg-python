@@ -16,38 +16,53 @@
 # under the License.
 from __future__ import annotations
 
+import sys
 from io import BytesIO
 
 from pyiceberg.avro.codecs.codec import Codec
 
-try:
-    from zstandard import ZstdCompressor, ZstdDecompressor
+if sys.version_info >= (3, 14):
+    from compression import zstd
 
     class ZStandardCodec(Codec):
         @staticmethod
         def compress(data: bytes) -> tuple[bytes, int]:
-            compressed_data = ZstdCompressor().compress(data)
+            compressed_data = zstd.compress(data)
             return compressed_data, len(compressed_data)
 
         @staticmethod
         def decompress(data: bytes) -> bytes:
-            uncompressed = bytearray()
-            dctx = ZstdDecompressor()
-            with dctx.stream_reader(BytesIO(data)) as reader:
-                while True:
-                    chunk = reader.read(16384)
-                    if not chunk:
-                        break
-                    uncompressed.extend(chunk)
-            return bytes(uncompressed)
+            return zstd.decompress(data)
 
-except ImportError:
+else:
+    try:
+        from zstandard import ZstdCompressor, ZstdDecompressor
 
-    class ZStandardCodec(Codec):  # type: ignore
-        @staticmethod
-        def compress(data: bytes) -> tuple[bytes, int]:
-            raise ImportError("Zstandard support not installed, please install using `pip install pyiceberg[zstandard]`")
+        class ZStandardCodec(Codec):
+            @staticmethod
+            def compress(data: bytes) -> tuple[bytes, int]:
+                compressed_data = ZstdCompressor().compress(data)
+                return compressed_data, len(compressed_data)
 
-        @staticmethod
-        def decompress(data: bytes) -> bytes:
-            raise ImportError("Zstandard support not installed, please install using `pip install pyiceberg[zstandard]`")
+            @staticmethod
+            def decompress(data: bytes) -> bytes:
+                uncompressed = bytearray()
+                dctx = ZstdDecompressor()
+                with dctx.stream_reader(BytesIO(data)) as reader:
+                    while True:
+                        chunk = reader.read(16384)
+                        if not chunk:
+                            break
+                        uncompressed.extend(chunk)
+                return bytes(uncompressed)
+
+    except ImportError:
+
+        class ZStandardCodec(Codec):  # type: ignore
+            @staticmethod
+            def compress(data: bytes) -> tuple[bytes, int]:
+                raise ImportError("Zstandard support not installed, please install using `pip install pyiceberg[zstandard]`")
+
+            @staticmethod
+            def decompress(data: bytes) -> bytes:
+                raise ImportError("Zstandard support not installed, please install using `pip install pyiceberg[zstandard]`")
