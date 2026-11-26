@@ -919,12 +919,16 @@ class Transaction:
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
+        difference_cols: list[str] | None = None,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
+            difference_cols: Columns to compare when deciding whether a matched row changed. Defaults to
+                every non-key column. Restricting the comparison helps when only some columns, such as a
+                hash column, signal a change.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
                 due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
@@ -1021,7 +1025,7 @@ class Transaction:
                 # values have actually changed. We don't want to do just a blanket overwrite for matched
                 # rows if the actual non-key column data hasn't changed.
                 # this extra step avoids unnecessary IO and writes
-                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
+                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols, difference_cols)
 
                 if len(rows_to_update) > 0:
                     # build the match predicate filter
@@ -1813,12 +1817,16 @@ class Table:
         case_sensitive: bool = True,
         branch: str | None = MAIN_BRANCH,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
+        difference_cols: list[str] | None = None,
     ) -> UpsertResult:
         """Shorthand API for performing an upsert to an iceberg table.
 
         Args:
             df: The input dataframe to upsert with the table's data.
             join_cols: Columns to join on, if not provided, it will use the identifier-field-ids.
+            difference_cols: Columns to compare when deciding whether a matched row changed. Defaults to
+                every non-key column. Restricting the comparison helps when only some columns, such as a
+                hash column, signal a change.
             when_matched_update_all: Bool indicating to update rows that are matched but require an update
                 due to a value in a non-key column changing
             when_not_matched_insert_all: Bool indicating new rows to be inserted that do not match any
@@ -1854,6 +1862,7 @@ class Table:
             return tx.upsert(
                 df=df,
                 join_cols=join_cols,
+                difference_cols=difference_cols,
                 when_matched_update_all=when_matched_update_all,
                 when_not_matched_insert_all=when_not_matched_insert_all,
                 case_sensitive=case_sensitive,
