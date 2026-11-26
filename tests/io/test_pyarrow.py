@@ -88,6 +88,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertViewTypes,
     _create_arrow_read_format,
     _determine_partitions,
+    _positional_deletes_for_task,
     _primitive_to_physical,
     _read_all_delete_files,
     _read_deletes,
@@ -2329,18 +2330,54 @@ def test_read_all_delete_files_keeps_multiple_dv_content_ranges_for_same_path(tm
         for referenced_data_file in referenced_data_files
     ]
 
-    deletes = _read_all_delete_files(
-        PyArrowFileIO(),
-        [
-            FileScanTask(data_file=data_file, delete_files={dv})
-            for data_file, dv in zip(data_files, [first_dv, second_dv], strict=True)
-        ],
-    )
+    tasks = [
+        FileScanTask(data_file=data_file, delete_files={dv})
+        for data_file, dv in zip(data_files, [first_dv, second_dv], strict=True)
+    ]
+    deletes = _read_all_delete_files(PyArrowFileIO(), tasks)
 
-    assert deletes == {
+    assert {task.file.file_path: _positional_deletes_for_task(task, deletes) for task in tasks} == {
         referenced_data_files[0]: [pa.chunked_array([[1, 3]])],
         referenced_data_files[1]: [pa.chunked_array([[5]])],
     }
+
+
+def test_positional_deletes_for_task_use_only_the_delete_files_attached_to_it(tmp_path: Path) -> None:
+    """A delete file that names rows of two data files only applies to the tasks that have it attached."""
+    first_path, second_path = f"{tmp_path}/data-0.parquet", f"{tmp_path}/data-1.parquet"
+    old_path, new_path = f"{tmp_path}/old-deletes.parquet", f"{tmp_path}/new-deletes.parquet"
+    pq.write_table(pa.table({"file_path": [first_path, second_path], "pos": [0, 0]}), old_path)
+    pq.write_table(pa.table({"file_path": [first_path], "pos": [1]}), new_path)
+    old_deletes = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES, file_path=old_path, file_format=FileFormat.PARQUET, record_count=2
+    )
+    new_deletes = DataFile.from_args(
+        content=DataFileContent.POSITION_DELETES, file_path=new_path, file_format=FileFormat.PARQUET, record_count=1
+    )
+    first_data = DataFile.from_args(
+        content=DataFileContent.DATA, file_path=first_path, file_format=FileFormat.PARQUET, record_count=10
+    )
+    second_data = DataFile.from_args(
+        content=DataFileContent.DATA, file_path=second_path, file_format=FileFormat.PARQUET, record_count=10
+    )
+    readded_first_data = DataFile.from_args(
+        content=DataFileContent.DATA, file_path=first_path, file_format=FileFormat.PARQUET, record_count=10
+    )
+    # (data file and delete files of the first task, of the second task) -> expected positions of each task
+    shapes = [
+        ((first_data, set()), (second_data, {old_deletes}), [[], [pa.chunked_array([[0]])]]),
+        ((first_data, {old_deletes}), (second_data, {old_deletes}), [[pa.chunked_array([[0]])], [pa.chunked_array([[0]])]]),
+        # The first data file has a newer delete file too; the old one must not add its row 0 to it.
+        ((first_data, {new_deletes}), (second_data, {old_deletes}), [[pa.chunked_array([[1]])], [pa.chunked_array([[0]])]]),
+        # The same path is live twice; the delete applies only to the entry it is attached to.
+        ((first_data, {old_deletes}), (readded_first_data, set()), [[pa.chunked_array([[0]])], []]),
+    ]
+    for first_task, second_task, expected in shapes:
+        tasks = [
+            FileScanTask(data_file=data_file, delete_files=delete_files) for data_file, delete_files in [first_task, second_task]
+        ]
+        deletes = _read_all_delete_files(PyArrowFileIO(), tasks)
+        assert [_positional_deletes_for_task(task, deletes) for task in tasks] == expected
 
 
 @pytest.mark.parametrize("selected_indices", [(0, 1, 2, 3, 4, 5), (0, 3, 5)])
@@ -2449,7 +2486,8 @@ def test_read_all_delete_files_from_external_packed_deletion_vectors(
     # Repeated tasks must not cause a DV to be loaded more than once.
     deletes = _read_all_delete_files(PyArrowFileIO(), iter(tasks + tasks[::-1]))
 
-    assert deletes == expected_deletes
+    assert len(deletes) == len(tasks)
+    assert {task.file.file_path: _positional_deletes_for_task(task, deletes) for task in tasks} == expected_deletes
 
     result = ArrowScan(
         table_metadata=TableMetadataV3(

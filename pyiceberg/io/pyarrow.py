@@ -2004,28 +2004,37 @@ class _DeleteFileKey:
     content_size_in_bytes: int | None
 
 
-def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[str, list[ChunkedArray]]:
-    deletes_per_file: dict[str, list[ChunkedArray]] = {}
+def _delete_file_key(delete_file: DataFile) -> _DeleteFileKey:
+    return _DeleteFileKey(delete_file.file_path, delete_file.content_offset, delete_file.content_size_in_bytes)
+
+
+def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[_DeleteFileKey, dict[str, ChunkedArray]]:
+    """Read each delete file of the tasks once and return its positions per data file path."""
     # DataFile equality uses only the path; DVs from different tasks may share a file.
     unique_deletes: dict[_DeleteFileKey, DataFile] = {}
     for task in tasks:
         for delete_file in task.delete_files:
-            key = _DeleteFileKey(delete_file.file_path, delete_file.content_offset, delete_file.content_size_in_bytes)
-            unique_deletes.setdefault(key, delete_file)
-    if len(unique_deletes) > 0:
-        executor = ExecutorFactory.get_or_create()
-        deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(
-            lambda args: _read_deletes(*args),
-            [(io, delete_file) for delete_file in unique_deletes.values()],
-        )
-        for delete in deletes_per_files:
-            for file, arr in delete.items():
-                if file in deletes_per_file:
-                    deletes_per_file[file].append(arr)
-                else:
-                    deletes_per_file[file] = [arr]
+            unique_deletes.setdefault(_delete_file_key(delete_file), delete_file)
+    if len(unique_deletes) == 0:
+        return {}
+    executor = ExecutorFactory.get_or_create()
+    deletes_per_files: Iterator[dict[str, ChunkedArray]] = executor.map(
+        lambda args: _read_deletes(*args),
+        [(io, delete_file) for delete_file in unique_deletes.values()],
+    )
+    return dict(zip(unique_deletes, deletes_per_files, strict=True))
 
-    return deletes_per_file
+
+def _positional_deletes_for_task(
+    task: FileScanTask, deletes_per_file: dict[_DeleteFileKey, dict[str, ChunkedArray]]
+) -> list[ChunkedArray]:
+    """Return the positions of the task's data file in the delete files attached to the task.
+
+    A delete file can list rows of several data files, and the same path can be live twice in a snapshot
+    with different delete files, so the positions are gathered per task and not per path.
+    """
+    positions = (deletes_per_file[_delete_file_key(delete_file)].get(task.file.file_path) for delete_file in task.delete_files)
+    return [arr for arr in positions if arr is not None]
 
 
 class ArrowScan:
@@ -2166,7 +2175,7 @@ class ArrowScan:
                 break
 
     def _record_batches_from_scan_tasks_and_deletes(
-        self, tasks: Iterable[FileScanTask], deletes_per_file: dict[str, list[ChunkedArray]]
+        self, tasks: Iterable[FileScanTask], deletes_per_file: dict[_DeleteFileKey, dict[str, ChunkedArray]]
     ) -> Iterator[pa.RecordBatch]:
         total_row_count = 0
         for task in tasks:
@@ -2179,7 +2188,7 @@ class ArrowScan:
                 self._projected_schema,
                 self._table_metadata.schema(),
                 self._projected_field_ids,
-                deletes_per_file.get(task.file.file_path),
+                _positional_deletes_for_task(task, deletes_per_file),
                 self._case_sensitive,
                 self._table_metadata.name_mapping(),
                 self._table_metadata.specs().get(task.file.spec_id),
