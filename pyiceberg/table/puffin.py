@@ -14,9 +14,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import sys
 from typing import TYPE_CHECKING
 
-import zstandard
 from pydantic import Field
 
 from pyiceberg.typedef import IcebergBaseModel
@@ -24,6 +24,15 @@ from pyiceberg.utils.deprecated import deprecated
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+if sys.version_info >= (3, 14):
+    from compression.zstd import decompress as _zstd_decompress
+else:
+    import zstandard
+
+    def _zstd_decompress(data: bytes) -> bytes:
+        return zstandard.ZstdDecompressor().decompress(data)
+
 
 # Short for: Puffin Fratercula arctica, version 1
 MAGIC_BYTES = b"PFA1"
@@ -73,7 +82,7 @@ class PuffinFile:
         if blob.compression_codec is None:
             return raw
         elif blob.compression_codec == "zstd":
-            return zstandard.ZstdDecompressor().decompress(raw)
+            return _zstd_decompress(raw)
         else:
             raise ValueError(f"Unsupported puffin compression codec: {blob.compression_codec!r}")
 

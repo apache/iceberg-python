@@ -1705,6 +1705,8 @@ def _(file_type: FloatType, read_type: IcebergType) -> IcebergType:
 @promote.register(StringType)
 def _(file_type: StringType, read_type: IcebergType) -> IcebergType:
     if isinstance(read_type, BinaryType):
+        # Not a valid promotion in the spec, but allowed on purpose: strings and binary are both stored as bytes, so one
+        # can be read as the other. See https://github.com/apache/iceberg/pull/5151. Schema updates use this rule too.
         return read_type
     else:
         raise ResolveError(f"Cannot promote an string to {read_type}")
@@ -1713,6 +1715,7 @@ def _(file_type: StringType, read_type: IcebergType) -> IcebergType:
 @promote.register(BinaryType)
 def _(file_type: BinaryType, read_type: IcebergType) -> IcebergType:
     if isinstance(read_type, StringType):
+        # Not a valid promotion in the spec, but allowed on purpose, see string -> binary above
         return read_type
     else:
         raise ResolveError(f"Cannot promote an binary to {read_type}")
@@ -1732,7 +1735,9 @@ def _(file_type: DecimalType, read_type: IcebergType) -> IcebergType:
 @promote.register(FixedType)
 def _(file_type: FixedType, read_type: IcebergType) -> IcebergType:
     if isinstance(read_type, UUIDType) and len(file_type) == 16:
-        # Since pyarrow reads parquet UUID as fixed 16-byte binary, the promotion is needed to ensure read compatibility
+        # Not a valid promotion in the spec, but allowed on purpose: older PyArrow versions had no UUID type and read
+        # Parquet UUIDs as fixed 16-byte binary. This keeps such columns readable as UUID, and lets update_column()
+        # turn them into UUID.
         return read_type
     else:
         raise ResolveError(f"Cannot promote {file_type} to {read_type}")

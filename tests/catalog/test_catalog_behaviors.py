@@ -199,6 +199,20 @@ def test_create_table_default_sort_order(
     catalog.drop_table(test_table_identifier)
 
 
+def test_create_v1_tables_with_shared_properties(catalog: Catalog, table_schema_nested: Schema) -> None:
+    catalog.create_namespace("default")
+    properties = {"format-version": "1", "owner": "etl"}
+    catalog.create_table("default.first", table_schema_nested, properties=properties)
+    catalog.create_table_if_not_exists("default.first", table_schema_nested, properties=properties)
+    catalog.create_table("default.second", table_schema_nested, properties=properties)
+    catalog.create_table_transaction("default.third", table_schema_nested, properties=properties).commit_transaction()
+
+    tables = [catalog.load_table(f"default.{name}") for name in ("first", "second", "third")]
+    assert [table.format_version for table in tables] == [1, 1, 1]
+    assert [table.properties for table in tables] == [{"owner": "etl"}] * 3
+    assert properties == {"format-version": "1", "owner": "etl"}
+
+
 def test_create_v1_table(catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier) -> None:
     namespace = Catalog.namespace_from(test_table_identifier)
     catalog.create_namespace(namespace)
@@ -1514,7 +1528,7 @@ def test_append_invalid_input_type_raises(catalog: Catalog) -> None:
     identifier = f"default.append_invalid_input_{catalog.name}"
     pa_table = _simple_arrow_table()
     tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema)
-    with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader"):
+    with pytest.raises(ValueError, match="Expected pa.Table, pa.RecordBatchReader, or an object implementing"):
         tbl.append("not an arrow object")
 
 

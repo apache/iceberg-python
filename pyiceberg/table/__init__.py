@@ -107,6 +107,7 @@ from pyiceberg.table.update.statistics import UpdateStatistics
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
+    ArrowStreamExportable,
     IcebergBaseModel,
     IcebergRootModel,
     Identifier,
@@ -164,6 +165,9 @@ class TableProperties:
 
     PARQUET_PAGE_ROW_LIMIT = "write.parquet.page-row-limit"
     PARQUET_PAGE_ROW_LIMIT_DEFAULT = 20000
+
+    PARQUET_PAGE_INDEX_ENABLED = "write.parquet.page-index-enabled"
+    PARQUET_PAGE_INDEX_ENABLED_DEFAULT = True
 
     PARQUET_DICT_SIZE_BYTES = "write.parquet.dict-size-bytes"
     PARQUET_DICT_SIZE_BYTES_DEFAULT = 2 * 1024 * 1024  # 2 MB
@@ -521,16 +525,46 @@ class Transaction:
         """
         return UpdatePartitionStatistics(transaction=self)
 
+    def _prepare_arrow_input(
+        self, df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable
+    ) -> pa.Table | pa.RecordBatchReader:
+        """Return the write input as Arrow data that matches the table schema."""
+        import pyarrow as pa
+
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
+
+        if isinstance(df, (pa.Table, pa.RecordBatchReader)):
+            arrow_data, read_into_memory = df, False
+        elif hasattr(df, "__arrow_c_stream__"):
+            # Streaming writes need an unpartitioned table, so the stream is
+            # read into memory for a partitioned one
+            arrow_data = pa.RecordBatchReader.from_stream(df)
+            read_into_memory = not self.table_metadata.spec().is_unpartitioned()
+        else:
+            raise ValueError(
+                f"Expected pa.Table, pa.RecordBatchReader, or an object implementing the "
+                f"Arrow PyCapsule interface (__arrow_c_stream__), got: {df!r}"
+            )
+
+        _check_pyarrow_schema_compatible(
+            self.table_metadata.schema(),
+            provided_schema=arrow_data.schema,
+            downcast_ns_timestamp_to_us=Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False,
+            format_version=self.table_metadata.format_version,
+        )
+
+        return arrow_data.read_all() if read_into_memory else arrow_data
+
     def append(
         self,
-        df: pa.Table | pa.RecordBatchReader,
+        df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for appending PyArrow data to a table transaction.
 
-        Accepts either a fully materialised ``pa.Table`` or a streaming
+        Accepts a fully materialised ``pa.Table`` or a streaming
         ``pa.RecordBatchReader``. Streaming is microbatched by
         ``write.target-file-size-bytes`` so memory stays bounded; the reader is
         consumed once and cannot be reused.
@@ -539,6 +573,11 @@ class Transaction:
         passing a ``pa.RecordBatchReader`` for a partitioned table raises
         ``NotImplementedError``. See
         https://github.com/apache/iceberg-python/issues/2152.
+
+        Any other object implementing the Arrow PyCapsule stream interface
+        (``__arrow_c_stream__``), such as a Polars DataFrame, is accepted as
+        well. It is streamed into an unpartitioned table and read into memory
+        for a partitioned one.
 
         Note:
             When ``df`` is a ``pa.RecordBatchReader`` the reader is consumed
@@ -567,7 +606,7 @@ class Transaction:
             rolling-``ParquetWriter`` with ``OutputStream.tell()`` (#2998).
 
         Args:
-            df: An Arrow Table or a RecordBatchReader of records to append.
+            df: An Arrow Table, RecordBatchReader or PyCapsule stream of records to append.
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the append operation
         """
@@ -576,18 +615,9 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+        from pyiceberg.io.pyarrow import _dataframe_to_data_files
 
-        if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
-            raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
-
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(),
-            provided_schema=df.schema,
-            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-            format_version=self.table_metadata.format_version,
-        )
+        df = self._prepare_arrow_input(df)
 
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
             # For pa.Table we can short-circuit empty inputs cheaply. For a
@@ -677,7 +707,7 @@ class Transaction:
 
     def overwrite(
         self,
-        df: pa.Table | pa.RecordBatchReader,
+        df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable,
         overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
@@ -686,7 +716,7 @@ class Transaction:
         """
         Shorthand for adding a table overwrite with a PyArrow table or RecordBatchReader to the transaction.
 
-        Accepts either a fully materialised ``pa.Table`` or a streaming
+        Accepts a fully materialised ``pa.Table`` or a streaming
         ``pa.RecordBatchReader``. Streaming is microbatched by
         ``write.target-file-size-bytes`` so memory stays bounded; the reader is
         consumed once and cannot be reused.
@@ -695,6 +725,11 @@ class Transaction:
         passing a ``pa.RecordBatchReader`` for a partitioned table raises
         ``NotImplementedError``. See
         https://github.com/apache/iceberg-python/issues/2152.
+
+        Any other object implementing the Arrow PyCapsule stream interface
+        (``__arrow_c_stream__``), such as a Polars DataFrame, is accepted as
+        well. It is streamed into an unpartitioned table and read into memory
+        for a partitioned one.
 
         Note:
             When ``df`` is a ``pa.RecordBatchReader`` the reader is consumed
@@ -729,7 +764,7 @@ class Transaction:
             - APPEND: In case new data is being inserted into the table.
 
         Args:
-            df: An Arrow Table or a RecordBatchReader of records to write.
+            df: An Arrow Table, RecordBatchReader or PyCapsule stream of records to write.
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary
@@ -741,18 +776,9 @@ class Transaction:
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError("For writes PyArrow needs to be installed") from e
 
-        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _dataframe_to_data_files
+        from pyiceberg.io.pyarrow import _dataframe_to_data_files
 
-        if not isinstance(df, (pa.Table, pa.RecordBatchReader)):
-            raise ValueError(f"Expected pa.Table or pa.RecordBatchReader, got: {df}")
-
-        downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(),
-            provided_schema=df.schema,
-            downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-            format_version=self.table_metadata.format_version,
-        )
+        df = self._prepare_arrow_input(df)
 
         if overwrite_filter != AlwaysFalse():
             # Only delete when the filter is != AlwaysFalse
@@ -1032,9 +1058,9 @@ class Transaction:
 
         return UpsertResult(rows_updated=update_row_cnt, rows_inserted=insert_row_cnt)
 
-    def _find_referenced_data_files(self, file_paths: list[str]) -> list[str]:
+    def _find_referenced_data_files(self, file_paths: list[str], branch: str | None = MAIN_BRANCH) -> list[str]:
         """Return file_paths already referenced by data files in the current snapshot."""
-        snapshot = self.table_metadata.current_snapshot()
+        snapshot = self.table_metadata.snapshot_by_name(branch)
         if snapshot is None:
             return []
 
@@ -1071,12 +1097,13 @@ class Transaction:
             FileNotFoundError: If the file does not exist.
             ValueError: Raises a ValueError given file_paths contains duplicate files
             ValueError: Raises a ValueError given file_paths already referenced by table
+            ValidationException: Raises a ValidationException if a file becomes referenced during a commit retry
         """
         if len(file_paths) != len(set(file_paths)):
             raise ValueError("File paths must be unique")
 
         if check_duplicate_files:
-            referenced_files = self._find_referenced_data_files(file_paths)
+            referenced_files = self._find_referenced_data_files(file_paths, branch)
             if referenced_files:
                 raise ValueError(f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}")
 
@@ -1085,6 +1112,16 @@ class Transaction:
                 **{TableProperties.DEFAULT_NAME_MAPPING: self.table_metadata.schema().name_mapping.model_dump_json()}
             )
         with self._append_snapshot_producer(snapshot_properties, branch=branch) as append_files:
+            if check_duplicate_files:
+
+                def validate_duplicate_files() -> None:
+                    referenced_files = self._find_referenced_data_files(file_paths, branch)
+                    if referenced_files:
+                        raise ValidationException(
+                            f"Cannot add files that are already referenced by table, files: {', '.join(referenced_files)}"
+                        )
+
+                append_files._set_retry_validator(validate_duplicate_files)
             data_files = _parquet_files_to_data_files(
                 table_metadata=self.table_metadata, file_paths=file_paths, io=self._table.io
             )
@@ -1675,10 +1712,15 @@ class Table:
             timestamp_ms: Find snapshot that was current at/before this timestamp
             inclusive: Includes timestamp_ms in search when True. Excludes timestamp_ms when False
         """
-        for log_entry in reversed(self.history()):
-            if (inclusive and log_entry.timestamp_ms <= timestamp_ms) or log_entry.timestamp_ms < timestamp_ms:
-                return self.snapshot_by_id(log_entry.snapshot_id)
-        return None
+        # The snapshot log is not guaranteed to be ordered by timestamp, so pick the latest timestamp rather than the last entry
+        candidate: SnapshotLogEntry | None = None
+        for log_entry in self.history():
+            if log_entry.timestamp_ms > timestamp_ms or (not inclusive and log_entry.timestamp_ms == timestamp_ms):
+                continue
+            # On equal timestamps the later entry wins, it is the state that was current last
+            if candidate is None or log_entry.timestamp_ms >= candidate.timestamp_ms:
+                candidate = log_entry
+        return self.snapshot_by_id(candidate.snapshot_id) if candidate is not None else None
 
     def history(self) -> list[SnapshotLogEntry]:
         """Get the snapshot history of this table."""
@@ -1821,19 +1863,20 @@ class Table:
 
     def append(
         self,
-        df: pa.Table | pa.RecordBatchReader,
+        df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         branch: str | None = MAIN_BRANCH,
     ) -> None:
         """
         Shorthand API for appending PyArrow data to the table.
 
-        Accepts either a ``pa.Table`` or a streaming ``pa.RecordBatchReader``.
-        See :meth:`Transaction.append` for streaming semantics and partition
+        Accepts a ``pa.Table``, a streaming ``pa.RecordBatchReader`` or any other
+        object implementing the Arrow PyCapsule stream interface. See
+        :meth:`Transaction.append` for streaming semantics and partition
         limitations.
 
         Args:
-            df: An Arrow Table or a RecordBatchReader of records to append.
+            df: An Arrow Table, RecordBatchReader or PyCapsule stream of records to append.
             snapshot_properties: Custom properties to be added to the snapshot summary
             branch: Branch Reference to run the append operation
         """
@@ -1856,7 +1899,7 @@ class Table:
 
     def overwrite(
         self,
-        df: pa.Table | pa.RecordBatchReader,
+        df: pa.Table | pa.RecordBatchReader | ArrowStreamExportable,
         overwrite_filter: BooleanExpression | str = ALWAYS_TRUE,
         snapshot_properties: dict[str, str] = EMPTY_DICT,
         case_sensitive: bool = True,
@@ -1865,8 +1908,9 @@ class Table:
         """
         Shorthand for overwriting the table with a PyArrow Table or RecordBatchReader.
 
-        Accepts either a ``pa.Table`` or a streaming ``pa.RecordBatchReader``.
-        See :meth:`Transaction.overwrite` for streaming semantics and partition
+        Accepts a ``pa.Table``, a streaming ``pa.RecordBatchReader`` or any other
+        object implementing the Arrow PyCapsule stream interface. See
+        :meth:`Transaction.overwrite` for streaming semantics and partition
         limitations.
 
         An overwrite may produce zero or more snapshots based on the operation:
@@ -1876,7 +1920,7 @@ class Table:
             - APPEND: In case new data is being inserted into the table.
 
         Args:
-            df: An Arrow Table or a RecordBatchReader of records to write.
+            df: An Arrow Table, RecordBatchReader or PyCapsule stream of records to write.
             overwrite_filter: ALWAYS_TRUE when you overwrite all the data,
                               or a boolean expression in case of a partial overwrite
             snapshot_properties: Custom properties to be added to the snapshot summary
@@ -2507,14 +2551,18 @@ def _to_arrow_via_file_scan_tasks(
 
 
 def _to_arrow_batch_reader_via_file_scan_tasks(
-    scan: BaseScan, projected_schema: Schema, tasks: Iterable[FileScanTask], dictionary_columns: tuple[str, ...] = ()
+    scan: BaseScan,
+    projected_schema: Schema,
+    tasks: Iterable[FileScanTask],
+    dictionary_columns: tuple[str, ...] = (),
+    include_field_ids: bool = True,
 ) -> pa.RecordBatchReader:
     """Stream a scan into an Arrow ``RecordBatchReader`` given its planned ``FileScanTask``s."""
     import pyarrow as pa
 
     from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
 
-    target_schema = schema_to_pyarrow(projected_schema)
+    target_schema = schema_to_pyarrow(projected_schema, include_field_ids=include_field_ids)
     batches = ArrowScan(
         scan.table_metadata,
         scan.io,
@@ -2665,6 +2713,16 @@ class DataScan(TableScan):
         return _to_arrow_batch_reader_via_file_scan_tasks(
             self, self.projection(), self.plan_files(), dictionary_columns=dictionary_columns
         )
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        """Export this scan's result as an Arrow C stream (PyCapsule interface).
+
+        Field IDs are dropped, as in to_arrow(). They only have meaning
+        inside this table, and a write to another table would match columns
+        by them.
+        """
+        reader = _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files(), include_field_ids=False)
+        return reader.__arrow_c_stream__(requested_schema)
 
     def count(self) -> int:
         from pyiceberg.io.pyarrow import ArrowScan
@@ -2844,6 +2902,16 @@ class IncrementalAppendScan(BaseScan):
                 which can be used to read a stream of record batches one by one.
         """
         return _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files())
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        """Export this scan's result as an Arrow C stream (PyCapsule interface).
+
+        Field IDs are dropped, as in to_arrow(). They only have meaning
+        inside this table, and a write to another table would match columns
+        by them.
+        """
+        reader = _to_arrow_batch_reader_via_file_scan_tasks(self, self.projection(), self.plan_files(), include_field_ids=False)
+        return reader.__arrow_c_stream__(requested_schema)
 
     def _validate_and_resolve_snapshots(self) -> tuple[int | None, int]:
         """Resolve the configured range to ``(from_snapshot_id_exclusive, to_snapshot_id_inclusive)``.
