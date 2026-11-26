@@ -2674,6 +2674,48 @@ def match_metrics_mode(mode: str) -> MetricsMode:
         raise ValueError(f"Unsupported metrics mode: {mode}")
 
 
+def _limit_metrics_field_ids(schema: Schema, limit: int) -> set[int]:
+    """Return the primitive field ids that get the default metrics mode, in schema order.
+
+    Mirrors Java's MetricsConfig.limitFieldIds: struct fields add their primitive children
+    before descending into nested fields, and list and map add their primitive element, key,
+    or value ids before descending.
+    """
+    field_ids: set[int] = set()
+
+    def add(field_id: int) -> None:
+        if len(field_ids) < limit:
+            field_ids.add(field_id)
+
+    def visit(iceberg_type: IcebergType) -> None:
+        if isinstance(iceberg_type, StructType):
+            for field in iceberg_type.fields:
+                if isinstance(field.field_type, PrimitiveType):
+                    add(field.field_id)
+            for field in iceberg_type.fields:
+                if len(field_ids) >= limit:
+                    return
+                if not isinstance(field.field_type, PrimitiveType):
+                    visit(field.field_type)
+        elif isinstance(iceberg_type, ListType):
+            if isinstance(iceberg_type.element_type, PrimitiveType):
+                add(iceberg_type.element_id)
+            else:
+                visit(iceberg_type.element_type)
+        elif isinstance(iceberg_type, MapType):
+            if isinstance(iceberg_type.key_type, PrimitiveType):
+                add(iceberg_type.key_id)
+            if isinstance(iceberg_type.value_type, PrimitiveType):
+                add(iceberg_type.value_id)
+            if not isinstance(iceberg_type.key_type, PrimitiveType):
+                visit(iceberg_type.key_type)
+            if not isinstance(iceberg_type.value_type, PrimitiveType):
+                visit(iceberg_type.value_type)
+
+    visit(schema.as_struct())
+    return field_ids
+
+
 @dataclass(frozen=True)
 class StatisticsCollector:
     field_id: int
@@ -2687,15 +2729,34 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[list[StatisticsCollector]
     _schema: Schema
     _properties: dict[str, str]
     _default_mode: str
+    _configured_default: bool
+    _inferred_field_ids: set[int]
 
     def __init__(self, schema: Schema, properties: dict[str, str]):
         from pyiceberg.table import TableProperties
 
         self._schema = schema
         self._properties = properties
+        self._configured_default = TableProperties.DEFAULT_WRITE_METRICS_MODE in self._properties
         self._default_mode = self._properties.get(
             TableProperties.DEFAULT_WRITE_METRICS_MODE, TableProperties.DEFAULT_WRITE_METRICS_MODE_DEFAULT
         )
+        max_inferred = property_as_int(
+            properties,
+            TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS,
+            TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT,
+        )
+        if max_inferred is None:
+            max_inferred = TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT
+        elif max_inferred < 0:
+            logger.warning(
+                "Invalid value for %s (negative): %s, falling back to %s",
+                TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS,
+                max_inferred,
+                TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT,
+            )
+            max_inferred = TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS_DEFAULT
+        self._inferred_field_ids = _limit_metrics_field_ids(schema, max_inferred)
 
     def schema(
         self, schema: Schema, struct_result: Callable[[], builtins.list[StatisticsCollector]]
@@ -2738,22 +2799,20 @@ class PyArrowStatisticsCollector(PreOrderSchemaVisitor[list[StatisticsCollector]
         if column_name is None:
             return []
 
-        metrics_mode = match_metrics_mode(self._default_mode)
-
         col_mode = self._properties.get(f"{TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX}.{column_name}")
         if col_mode:
             metrics_mode = match_metrics_mode(col_mode)
+        elif not self._configured_default and self._field_id not in self._inferred_field_ids:
+            # Only the first max-inferred-column-defaults primitive fields get the default mode.
+            return []
+        else:
+            metrics_mode = match_metrics_mode(self._default_mode)
 
         if (
             not (isinstance(primitive, StringType) or isinstance(primitive, BinaryType))
             and metrics_mode.type == MetricModeTypes.TRUNCATE
         ):
             metrics_mode = MetricsMode(MetricModeTypes.FULL)
-
-        is_nested = column_name.find(".") >= 0
-
-        if is_nested and metrics_mode.type in [MetricModeTypes.TRUNCATE, MetricModeTypes.FULL]:
-            metrics_mode = MetricsMode(MetricModeTypes.COUNTS)
 
         return [StatisticsCollector(field_id=self._field_id, iceberg_type=primitive, mode=metrics_mode, column_name=column_name)]
 
