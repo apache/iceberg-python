@@ -75,7 +75,19 @@ from pyiceberg.expressions import (
     Or,
 )
 from pyiceberg.expressions.literals import literal
-from pyiceberg.io import ADLS_ACCOUNT_NAME, S3_RETRY_STRATEGY_IMPL, S3_SSL_CA_CERT, InputStream, OutputStream, load_file_io
+from pyiceberg.io import (
+    ADLS_ACCOUNT_NAME,
+    BOTOCORE_SESSION,
+    S3_ACCESS_KEY_ID,
+    S3_ANONYMOUS,
+    S3_REGION,
+    S3_RETRY_STRATEGY_IMPL,
+    S3_SECRET_ACCESS_KEY,
+    S3_SSL_CA_CERT,
+    InputStream,
+    OutputStream,
+    load_file_io,
+)
 from pyiceberg.io.pyarrow import (
     ICEBERG_SCHEMA,
     PYARROW_PARQUET_FIELD_ID_KEY,
@@ -4453,6 +4465,53 @@ def test_pyarrow_file_io_fs_by_scheme_cache() -> None:
         filesystem_ap_southeast_2_cached = pyarrow_file_io.fs_by_scheme("s3", "ap-southeast-2-bucket")
         assert filesystem_ap_southeast_2_cached.region == ap_southeast_2_region
         assert pyarrow_file_io.fs_by_scheme.cache_info().hits == 2  # type: ignore
+
+
+def test_pyarrow_file_io_botocore_session_credentials() -> None:
+    import botocore.session
+
+    session = botocore.session.get_session()
+    session.set_credentials("session-access-key", "session-secret-key", "session-token")
+    explicit_credentials = {S3_ACCESS_KEY_ID: "explicit-access-key", S3_SECRET_ACCESS_KEY: "explicit-secret-key"}
+    cases: list[tuple[dict[str, Any], tuple[str | None, str | None, str | None]]] = [
+        ({}, ("session-access-key", "session-secret-key", "session-token")),
+        (explicit_credentials, ("explicit-access-key", "explicit-secret-key", None)),
+        ({S3_ANONYMOUS: "true"}, (None, None, None)),
+    ]
+    for properties, expected in cases:
+        file_io = PyArrowFileIO({**properties, BOTOCORE_SESSION: session, S3_REGION: "us-east-1"})
+        with patch("pyarrow.fs.S3FileSystem") as mock_s3_fs:
+            file_io.new_input("s3://bucket/key")
+        kwargs = mock_s3_fs.call_args.kwargs
+        assert (kwargs["access_key"], kwargs["secret_key"], kwargs["session_token"]) == expected
+
+
+def test_pyarrow_file_io_botocore_session_with_anonymous() -> None:
+    import botocore.session
+
+    session = botocore.session.get_session()
+    session.set_credentials("session-access-key", "session-secret-key", "session-token")
+    file_io = PyArrowFileIO({BOTOCORE_SESSION: session, S3_ANONYMOUS: "true", S3_REGION: "us-east-1"})
+
+    # Fails with ValueError when access_key and secret_key are passed together with anonymous=True
+    file_io.new_input("s3://bucket/key")
+
+
+def test_pyarrow_file_io_botocore_session_refreshed_credentials() -> None:
+    import botocore.session
+
+    session = botocore.session.get_session()
+    session.set_credentials("first-access-key", "first-secret-key", "first-token")
+    file_io = PyArrowFileIO({BOTOCORE_SESSION: session, S3_REGION: "us-east-1"})
+
+    with patch("pyarrow.fs.S3FileSystem") as mock_s3_fs:
+        file_io.new_input("s3://bucket/a")
+        file_io.new_input("s3://bucket/b")
+        session.set_credentials("second-access-key", "second-secret-key", "second-token")
+        file_io.new_input("s3://bucket/c")
+
+    assert [call.kwargs["access_key"] for call in mock_s3_fs.call_args_list] == ["first-access-key", "second-access-key"]
+    assert file_io.fs_by_scheme.cache_info().hits == 1  # type: ignore
 
 
 def test_pyarrow_io_new_input_multi_region(caplog: Any) -> None:
