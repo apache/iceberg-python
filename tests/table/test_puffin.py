@@ -20,7 +20,7 @@ from os import path
 
 import pytest
 
-from pyiceberg.avro.codecs import ZStandardCodec
+from pyiceberg.avro.codecs.zstandard_codec import ZStandardCodec
 from pyiceberg.table.puffin import PuffinFile
 from pyiceberg.utils import zstd
 
