@@ -1856,6 +1856,28 @@ def test_create_table_409(rest_mock: Mocker, table_schema_simple: Schema) -> Non
     assert "Table already exists" in str(e.value)
 
 
+def test_register_table_404(rest_mock: Mocker) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/register",
+        json={
+            "error": {
+                "message": "Namespace does not exist: fokko in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NoSuchNamespaceException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchNamespaceError) as e:
+        catalog.register_table(
+            identifier=("fokko", "registered_table"), metadata_location="s3://warehouse/database/table/metadata.json"
+        )
+    assert "Namespace does not exist" in str(e.value)
+
+
 def test_create_view_200(rest_mock: Mocker, table_schema_simple: Schema, example_view_metadata_rest_json: dict[str, Any]) -> None:
     rest_mock.post(
         f"{TEST_URI}v1/namespaces/fokko/views",
@@ -1943,6 +1965,66 @@ def test_create_view_409(
             properties={"owner": "fokko"},
         )
     assert "View already exists" in str(e.value)
+
+
+def test_register_view_404(rest_mock: Mocker) -> None:
+    rest_mock.head(
+        f"{TEST_URI}v1/namespaces/fokko/tables/registered_view",
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/register-view",
+        json={
+            "error": {
+                "message": "Namespace does not exist: fokko in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NoSuchNamespaceException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN)
+    with pytest.raises(NoSuchNamespaceError) as e:
+        catalog.register_view(
+            identifier=("fokko", "registered_view"), metadata_location="s3://warehouse/database/view/metadata.json"
+        )
+    assert "Namespace does not exist" in str(e.value)
+
+
+def test_create_view_404(
+    rest_mock: Mocker,
+    table_schema_simple: Schema,
+) -> None:
+    rest_mock.post(
+        f"{TEST_URI}v1/namespaces/fokko/views",
+        json={
+            "error": {
+                "message": "Namespace does not exist: fokko in warehouse 8bcb0838-50fc-472d-9ddb-8feb89ef5f1e",
+                "type": "NoSuchNamespaceException",
+                "code": 404,
+            }
+        },
+        status_code=404,
+        request_headers=TEST_HEADERS,
+    )
+
+    with pytest.raises(NoSuchNamespaceError) as e:
+        RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN).create_view(
+            identifier=("fokko", "fokko2"),
+            schema=table_schema_simple,
+            view_version=ViewVersion(
+                schema_id=1,
+                summary={"engine-name": "spark", "engineVersion": "3.3"},
+                representations=[],
+                default_namespace=[],
+            ),
+            location=None,
+            properties={"owner": "fokko"},
+        )
+    assert "Namespace does not exist" in str(e.value)
 
 
 def test_load_view_200(rest_mock: Mocker, example_view_metadata_rest_json: dict[str, Any]) -> None:
