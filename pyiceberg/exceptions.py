@@ -148,6 +148,14 @@ class ValidationException(Exception):
     """Raised when validation fails."""
 
 
+class CherrypickAncestorCommitException(ValidationException):
+    """Raised when a cherry-picked snapshot is already an ancestor of, or was already picked into, the current state."""
+
+
+class DuplicateWAPCommitException(ValidationException):
+    """Raised when a cherry-pick would publish a wap id that was already published."""
+
+
 class NoSuchSnapshotRefError(ValueError):
     """Raised when a named snapshot ref (branch or tag) does not exist."""
 
