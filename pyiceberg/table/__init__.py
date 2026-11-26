@@ -1128,6 +1128,56 @@ class Transaction:
             for data_file in data_files:
                 append_files.append_data_file(data_file)
 
+    def delete_files(
+        self,
+        file_paths: list[str],
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+    ) -> None:
+        """Remove data files from the table transaction.
+
+        Args:
+            file_paths: The full paths of the data files to remove.
+            snapshot_properties: Custom properties to be added to the snapshot summary.
+            branch: Branch Reference to run the delete operation.
+
+        Raises:
+            ValueError: If a path is duplicated, or is not referenced by the table.
+        """
+        if not file_paths:
+            return
+
+        if len(file_paths) != len(set(file_paths)):
+            raise ValueError("File paths must be unique")
+
+        snapshot = self.table_metadata.snapshot_by_name(branch) if branch is not None else self.table_metadata.current_snapshot()
+        if snapshot is None:
+            raise ValueError("Cannot delete files from a table without a snapshot")
+
+        candidates = set(file_paths)
+        io = self._table.io
+        data_manifests = [manifest for manifest in snapshot.manifests(io) if manifest.content == ManifestContent.DATA]
+
+        def path_filter(data_file: DataFile) -> bool:
+            return data_file.file_path in candidates
+
+        executor = ExecutorFactory.get_or_create()
+        entries = chain.from_iterable(
+            executor.map(
+                lambda args: _open_manifest(*args),
+                [(io, manifest, path_filter, lambda _: True) for manifest in data_manifests],
+            )
+        )
+        data_files = {entry.data_file.file_path: entry.data_file for entry in entries}
+
+        missing = candidates - data_files.keys()
+        if missing:
+            raise ValueError(f"Cannot delete files that are not referenced by table, files: {', '.join(sorted(missing))}")
+
+        with self.update_snapshot(snapshot_properties=snapshot_properties, branch=branch).overwrite() as overwrite:
+            for data_file in data_files.values():
+                overwrite.delete_data_file(data_file)
+
     def update_spec(self) -> UpdateSpec:
         """Create a new UpdateSpec to update the partitioning of the table.
 
@@ -1980,6 +2030,25 @@ class Table:
                 check_duplicate_files=check_duplicate_files,
                 branch=branch,
             )
+
+    def delete_files(
+        self,
+        file_paths: list[str],
+        snapshot_properties: dict[str, str] = EMPTY_DICT,
+        branch: str | None = MAIN_BRANCH,
+    ) -> None:
+        """Shorthand API for removing data files from the table.
+
+        Args:
+            file_paths: The full paths of the data files to remove.
+            snapshot_properties: Custom properties to be added to the snapshot summary.
+            branch: Branch Reference to run the delete operation.
+
+        Raises:
+            ValueError: If a path is duplicated, or is not referenced by the table.
+        """
+        with self.transaction() as tx:
+            tx.delete_files(file_paths=file_paths, snapshot_properties=snapshot_properties, branch=branch)
 
     def update_spec(self, case_sensitive: bool = True) -> UpdateSpec:
         return UpdateSpec(Transaction(self, autocommit=True), case_sensitive=case_sensitive)
