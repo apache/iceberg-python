@@ -58,6 +58,8 @@ from pyiceberg.table.snapshots import Operation
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     LongType,
     NestedField,
@@ -1254,6 +1256,49 @@ def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_read_geospatial_types_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
+    pytest.importorskip("geoarrow.types")
+    identifier = "default.test_read_geospatial_types_written_by_spark"
+    geom_wkb = "01010000000000000000003e400000000000002440"  # POINT (30 10)
+    geog_wkb = "01010000000000000000c051c00000000000004540"  # POINT (-71 42)
+    geospatial_enabled = spark.conf.get("spark.sql.geospatial.enabled", "false")
+    spark.conf.set("spark.sql.geospatial.enabled", "true")
+    try:
+        spark.sql("CREATE NAMESPACE IF NOT EXISTS default")
+        spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+        spark.sql(
+            f"CREATE TABLE {identifier} (id BIGINT, geom GEOMETRY(4326), geog GEOGRAPHY(4326)) "
+            "USING iceberg TBLPROPERTIES ('format-version'='3')"
+        )
+        spark.sql(
+            f"INSERT INTO {identifier} VALUES "
+            f"(1, st_setsrid(st_geomfromwkb(X'{geom_wkb}'), 4326), st_setsrid(st_geogfromwkb(X'{geog_wkb}'), 4326)), "
+            "(2, NULL, NULL)"
+        )
+
+        table = catalog.load_table(identifier)
+        assert table.schema().find_type("geom") == GeometryType()
+        assert table.schema().find_type("geog") == GeographyType()
+
+        result = table.scan().to_arrow()
+        assert sorted(result.to_pylist(), key=lambda row: row["id"]) == [
+            {"id": 1, "geom": bytes.fromhex(geom_wkb), "geog": bytes.fromhex(geog_wkb)},
+            {"id": 2, "geom": None, "geog": None},
+        ]
+        for name in ("geom", "geog"):
+            arrow_type = result.schema.field(name).type
+            assert isinstance(arrow_type, pa.ExtensionType)
+            assert arrow_type.extension_name == "geoarrow.wkb"
+        assert pyarrow_to_schema(result.schema, name_mapping=table.schema().name_mapping, format_version=3) == table.schema()
+    finally:
+        try:
+            spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+        finally:
+            spark.conf.set("spark.sql.geospatial.enabled", geospatial_enabled)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
 def test_read_first_row_ids_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
     identifier = "default.test_read_first_row_ids_written_by_spark"
     spark.sql(f"DROP TABLE IF EXISTS {identifier}")
@@ -1301,8 +1346,8 @@ def test_read_first_row_ids_written_by_spark(catalog: Catalog, spark: SparkSessi
 
 @pytest.mark.integration
 @pytest.mark.parametrize("catalog", [lf("session_catalog")])
-def test_read_row_ids_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
-    identifier = "default.test_read_row_ids_written_by_spark"
+def test_read_row_lineage_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
+    identifier = "default.test_read_row_lineage_written_by_spark"
     spark.sql(f"DROP TABLE IF EXISTS {identifier}")
     spark.sql(
         f"""
@@ -1335,17 +1380,16 @@ def test_read_row_ids_written_by_spark(catalog: Catalog, spark: SparkSession) ->
     # Rows in a new file inherit row IDs from their position, so a filter must not drop rows before they are counted
     spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (8, 'h'), (9, 'i'), (10, 'j')")
 
-    expected = sorted((row.id, row._row_id) for row in spark.sql(f"SELECT id, _row_id FROM {identifier}").collect())
-    assert all(row_id is not None for _, row_id in expected)
+    columns = ("id", "_row_id", "_last_updated_sequence_number")
+    expected = sorted(tuple(row) for row in spark.sql(f"SELECT {', '.join(columns)} FROM {identifier}").collect())
+    assert all(value is not None for row in expected for value in row)
+
+    def rows(result: pa.Table) -> list[tuple[int, int, int]]:
+        return sorted(zip(*(result[column].to_pylist() for column in columns), strict=True))
 
     table = catalog.load_table(identifier)
-    result = table.scan(selected_fields=("id", "_row_id")).to_arrow()
-    assert sorted(zip(result["id"].to_pylist(), result["_row_id"].to_pylist(), strict=True)) == expected
-
-    filtered = table.scan(row_filter="id >= 9", selected_fields=("id", "_row_id")).to_arrow()
-    assert sorted(zip(filtered["id"].to_pylist(), filtered["_row_id"].to_pylist(), strict=True)) == [
-        (id_, row_id) for id_, row_id in expected if id_ >= 9
-    ]
+    assert rows(table.scan(selected_fields=columns).to_arrow()) == expected
+    assert rows(table.scan(row_filter="id >= 9", selected_fields=columns).to_arrow()) == [row for row in expected if row[0] >= 9]
 
 
 @pytest.mark.integration

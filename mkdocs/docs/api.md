@@ -311,8 +311,8 @@ Next, write the data to the table. Both `append` and `overwrite` produce the sam
 
 <!-- prettier-ignore-start -->
 
-!!! note inline end "Fast append"
-    PyIceberg defaults to the [fast append](https://iceberg.apache.org/spec/#snapshots) to minimize the amount of data written. This enables fast commit operations, reducing the possibility of conflicts. The downside of the fast append is that it creates more metadata than a merge commit. [Compaction is planned](https://github.com/apache/iceberg-python/issues/270) and will automatically rewrite all the metadata when a threshold is hit, to maintain performant reads.
+!!! note inline end "Merge and fast append"
+    PyIceberg defaults to [merge append](https://iceberg.apache.org/spec/#snapshots), which automatically merges manifests when the configured threshold is reached to keep metadata compact and reads performant. Fast append remains available by setting the table property `commit.manifest-merge.enabled` to `False`. Fast append minimizes the metadata written during a commit, enabling faster commits and reducing the possibility of conflicts, but accumulates more manifest metadata over time.
 
 <!-- prettier-ignore-end -->
 
@@ -406,6 +406,27 @@ long: [[4.896029,-122.431297,6.0989],[6.56667]]
 ```
 
 In the case of `tbl.delete(delete_filter="city == 'Groningen'")`, the whole Parquet file will be dropped without checking it contents, since from the Iceberg metadata PyIceberg can derive that all the content in the file matches the predicate.
+
+### Arrow PyCapsule interface
+
+<!-- markdown-link-check-disable-next-line -->
+`tbl.append()` and `tbl.overwrite()` accept any object that implements the [Arrow PyCapsule stream interface](https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html) (`__arrow_c_stream__`), so a dataframe from a library such as Polars can be written without converting it to PyArrow first:
+
+```python
+import polars as pl
+
+tbl.append(pl.DataFrame({"city": ["Groningen"], "lat": [53.21917], "long": [6.56667]}))
+```
+
+Such an object is streamed into an unpartitioned table, and read into memory as a `pa.Table` for a partitioned one. A streamed batch is never split, so a dataframe that exports one large batch is written as one file.
+
+The stream's schema must match the table's, including nullability. Polars exports every column as optional, so a Polars dataframe cannot be written to a table with required fields.
+
+Scans implement the same interface, so any Arrow consumer can read one directly:
+
+```python
+df = pl.DataFrame(tbl.scan(row_filter="lat > 50"))
+```
 
 ### Partial overwrites
 
@@ -985,6 +1006,7 @@ split_offsets: list<item: int64>
 equality_ids: list<item: int32>
   child 0, item: int32
 sort_order_id: int32
+first_row_id: int64
 readable_metrics: struct<city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string> not null, lat: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null, long: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: double, upper_bound: double> not null>
   child 0, city: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: string, upper_bound: string> not null
       child 0, column_size: int64
@@ -1024,6 +1046,7 @@ key_metadata: [[0100,0100]]
 split_offsets:[[[],[]]]
 equality_ids:[[[],[]]]
 sort_order_id:[[[],[]]]
+first_row_id:[[null,null]]
 readable_metrics: [
   -- is_valid: all not null
   -- child 0 type: struct<column_size: int64, value_count: int64, null_value_count: int64, nan_value_count: int64, lower_bound: large_string, upper_bound: large_string>

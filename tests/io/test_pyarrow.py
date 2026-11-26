@@ -86,6 +86,7 @@ from pyiceberg.io.pyarrow import (
     _cast_to_transform_input_type,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
+    _ConvertViewTypes,
     _create_arrow_read_format,
     _determine_partitions,
     _primitive_to_physical,
@@ -100,6 +101,7 @@ from pyiceberg.io.pyarrow import (
     expression_to_pyarrow,
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
+    visit_pyarrow,
     write_file,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
@@ -724,44 +726,71 @@ def test_geography_type_to_pyarrow_without_geoarrow() -> None:
 
 def test_geometry_type_to_pyarrow_with_geoarrow() -> None:
     """Test geometry type uses geoarrow WKB extension type when available."""
-    pytest.importorskip("geoarrow.pyarrow")
-    import geoarrow.pyarrow as ga
+    pytest.importorskip("geoarrow.types")
+    import geoarrow.types as ga
 
     # Test default CRS
     iceberg_type = GeometryType()
     result = visit(iceberg_type, _ConvertToArrowSchema())
-    expected = ga.wkb().with_crs("OGC:CRS84")
+    expected = ga.wkb(crs="OGC:CRS84").to_pyarrow()
     assert result == expected
 
     # Test custom CRS
     iceberg_type_custom = GeometryType("EPSG:4326")
     result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
-    expected_custom = ga.wkb().with_crs("EPSG:4326")
+    expected_custom = ga.wkb(crs="EPSG:4326").to_pyarrow()
     assert result_custom == expected_custom
+    assert json.loads(result_custom.__arrow_ext_serialize__()) == {"crs": "EPSG:4326"}
+
+    schema = pa.schema([("geometry", result_custom)])
+    assert pa.ipc.read_schema(schema.serialize()).equals(schema, check_metadata=True)
 
 
 def test_geography_type_to_pyarrow_with_geoarrow() -> None:
     """Test geography type uses geoarrow WKB extension type with edge type when available."""
-    pytest.importorskip("geoarrow.pyarrow")
-    import geoarrow.pyarrow as ga
+    pytest.importorskip("geoarrow.types")
+    import geoarrow.types as ga
 
     # Test default (spherical algorithm)
     iceberg_type = GeographyType()
     result = visit(iceberg_type, _ConvertToArrowSchema())
-    expected = ga.wkb().with_crs("OGC:CRS84").with_edge_type(ga.EdgeType.SPHERICAL)
+    expected = ga.wkb(crs="OGC:CRS84", edge_type="spherical").to_pyarrow()
     assert result == expected
 
-    # Test custom CRS with spherical
-    iceberg_type_custom = GeographyType("EPSG:4326", "spherical")
-    result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
-    expected_custom = ga.wkb().with_crs("EPSG:4326").with_edge_type(ga.EdgeType.SPHERICAL)
-    assert result_custom == expected_custom
+    # Test custom CRS with each geography algorithm
+    for algorithm in ("spherical", "vincenty", "thomas", "andoyer", "karney"):
+        iceberg_type_custom = GeographyType("EPSG:4326", algorithm)
+        result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
+        assert result_custom.edge_type.name.lower() == algorithm
+        assert json.loads(result_custom.__arrow_ext_serialize__()) == {"crs": "EPSG:4326", "edges": algorithm}
 
-    # Test planar algorithm (no edge type set, uses default)
-    iceberg_type_planar = GeographyType("OGC:CRS84", "planar")
-    result_planar = visit(iceberg_type_planar, _ConvertToArrowSchema())
-    expected_planar = ga.wkb().with_crs("OGC:CRS84")
-    assert result_planar == expected_planar
+        schema = pa.schema([("geography", result_custom)])
+        restored_type = pa.ipc.read_schema(schema.serialize()).field("geography").type
+        assert restored_type.edge_type == result_custom.edge_type
+        assert restored_type.__arrow_ext_serialize__() == result_custom.__arrow_ext_serialize__()
+
+
+def test_geography_type_to_pyarrow_planar() -> None:
+    with pytest.raises(ValueError, match="The planar algorithm is not supported for geography types"):
+        visit(GeographyType("OGC:CRS84", "planar"), _ConvertToArrowSchema())
+
+
+def test_spatial_type_to_pyarrow_unspecified_crs() -> None:
+    pytest.importorskip("geoarrow.types")
+
+    for crs in ("srid:0", "SRID:0", "sRiD:0"):
+        for iceberg_type in (GeometryType(crs), GeographyType(crs)):
+            result = visit(iceberg_type, _ConvertToArrowSchema())
+            assert result.crs is None
+            expected_metadata = {"edges": "spherical"} if isinstance(iceberg_type, GeographyType) else {}
+            assert json.loads(result.__arrow_ext_serialize__()) == expected_metadata
+
+
+def test_geography_type_to_pyarrow_unsupported_algorithm() -> None:
+    pytest.importorskip("geoarrow.types")
+
+    with pytest.raises(ValueError, match="Unsupported geography edge interpolation algorithm: 'unsupported'"):
+        visit(GeographyType("OGC:CRS84", "unsupported"), _ConvertToArrowSchema())
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
@@ -1362,12 +1391,6 @@ def test_read_map(schema_map: Schema, file_map: str) -> None:
       child 0, key: large_string not null
       child 1, value: large_string not null"""
     )
-
-
-def test_projection_last_updated_sequence_number_not_supported(file_int: str) -> None:
-    schema = Schema(NestedField(1, "id", IntegerType(), required=False), LAST_UPDATED_SEQUENCE_NUMBER)
-    with pytest.raises(NotImplementedError, match="Reading _last_updated_sequence_number is not yet supported"):
-        project(schema, [file_int])
 
 
 def test_projection_add_column_struct(schema_int: Schema, file_int: str) -> None:
@@ -3560,6 +3583,8 @@ def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) ->
         {"region": None, "payload": b"c", "info": {"tags": ["y", None], "attrs": []}},
     ]
     arrow_table = pa.Table.from_pylist(rows, schema=arrow_schema)
+    # View types are cast before the table is split into partitions
+    arrow_table = arrow_table.cast(visit_pyarrow(arrow_schema, _ConvertViewTypes()))
 
     partitions = list(_determine_partitions(spec, schema, arrow_table))
 
@@ -3772,6 +3797,43 @@ def test_append_arrow_types_narrower_than_the_iceberg_type_to_partitioned_table(
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
 
 
+def test_append_view_types_to_unpartitioned_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="region", field_type=StringType(), required=False),
+        NestedField(id=3, name="payload", field_type=BinaryType(), required=False),
+        NestedField(id=4, name="tags", field_type=ListType(element_id=5, element_type=StringType(), element_required=False)),
+    )
+    catalog.create_namespace("default")
+    plain_table = pa.table(
+        {
+            "id": pa.array([1], type=pa.int64()),
+            "region": pa.array(["us"], type=pa.string()),
+            "payload": pa.array([b"a"], type=pa.binary()),
+            "tags": pa.array([["x"]], type=pa.list_(pa.string())),
+        }
+    )
+    view_table = pa.table(
+        {
+            "id": pa.array([2, 3], type=pa.int64()),
+            "region": pa.array(["us", "eu"], type=pa.string_view()),
+            "payload": pa.array([b"a", b"b"], type=pa.binary_view()),
+            "tags": pa.array([["x"], ["y"]], type=pa.list_(pa.string_view())),
+        }
+    )
+
+    for name, df in (("table", view_table), ("reader", view_table.to_reader())):
+        table = catalog.create_table(f"default.test_append_view_types_{name}", schema=schema)
+        table.append(plain_table)
+        table.append(df)
+
+        assert sorted(table.scan().to_arrow()["tags"].to_pylist()) == [["x"], ["x"], ["y"]], name
+        assert sorted(table.scan(row_filter="region == 'us'").to_arrow()["id"].to_pylist()) == [1, 2], name
+        assert sorted(table.scan(row_filter=EqualTo("payload", b"a")).to_arrow()["id"].to_pylist()) == [1, 2], name
+        table.delete("region == 'us'")
+        assert table.scan().to_arrow()["id"].to_pylist() == [3], name
+
+
 def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
     schema = Schema(
         NestedField(id=1, name="id", field_type=LongType(), required=False),
@@ -3791,6 +3853,24 @@ def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
 
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
     assert table.scan(row_filter=EqualTo("event_time", "22:31:08")).to_arrow()["id"].to_pylist() == [2]
+
+
+def test_append_writes_parquet_page_index(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="id", field_type=LongType(), required=False))
+    catalog.create_namespace("default")
+
+    for page_index_enabled, identifier in [
+        (True, "default.test_append_page_index_enabled"),
+        (False, "default.test_append_page_index_disabled"),
+    ]:
+        properties = {} if page_index_enabled else {TableProperties.PARQUET_PAGE_INDEX_ENABLED: "false"}
+        table = catalog.create_table(identifier, schema=schema, properties=properties)
+        table.append(pa.table({"id": pa.array(range(1000), type=pa.int64())}))
+
+        file_path = next(iter(table.scan().plan_files())).file.file_path
+        column_chunk = pq.read_metadata(file_path).row_group(0).column(0)
+        assert column_chunk.has_column_index is page_index_enabled
+        assert column_chunk.has_offset_index is page_index_enabled
 
 
 def test_append_counts_nan_values(catalog: InMemoryCatalog) -> None:
@@ -4211,6 +4291,35 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
         _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
 
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
+
+
+def test__to_requested_schema_time_ns_downcast() -> None:
+    """Test that a time64[ns] column is downcast to time64[us] on write when the flag is set."""
+    requested_schema = Schema(NestedField(1, "time_field", TimeType(), required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("time_field", pa.time64("ns"))])
+    data = pa.array([time(12, 0, 0, 1), None], type=pa.time64("ns"))
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    result = _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=True, include_field_ids=False)
+
+    assert result.schema[0].type == pa.time64("us")
+    assert result.column(0).to_pylist() == [time(12, 0, 0, 1), None]
+
+
+def test__to_requested_schema_time_ns_without_downcast_raises_exception() -> None:
+    requested_schema = Schema(NestedField(1, "time_field", TimeType(), required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("time_field", pa.time64("ns"))])
+    data = pa.array([time(12, 0, 0, 1), None], type=pa.time64("ns"))
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    with pytest.raises(ValueError) as exc_info:
+        _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
+
+    assert "Unsupported schema projection from time64[ns] to time64[us]" in str(exc_info.value)
 
 
 def test__to_requested_schema_null_map_of_structs() -> None:
@@ -4729,6 +4838,75 @@ def test_task_to_record_batches_row_ids(
     result = pa.Table.from_batches(result_batches)
     assert result.schema.field(ROW_ID.name).type == pa.int64()
     assert list(zip(result["id"].to_pylist(), result[ROW_ID.name].to_pylist(), strict=True)) == expected
+
+
+def _read_last_updated_sequence_numbers(
+    tmpdir: str, stored_sequence_numbers: list[int | None] | None, first_row_id: int | None, data_sequence_number: int | None
+) -> list[int | None]:
+    fields = [pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]
+    columns = [pa.array([1, 2, 3], type=pa.int32())]
+    if stored_sequence_numbers is not None:
+        fields.append(
+            pa.field(
+                LAST_UPDATED_SEQUENCE_NUMBER.name,
+                pa.int64(),
+                nullable=True,
+                metadata={PYARROW_PARQUET_FIELD_ID_KEY: str(LAST_UPDATED_SEQUENCE_NUMBER.field_id)},
+            )
+        )
+        columns.append(pa.array(stored_sequence_numbers, type=pa.int64()))
+    arrow_schema = pa.schema(fields)
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/last_updated_sequence_numbers.parquet", arrow_schema, pa.table(columns, schema=arrow_schema)
+    )
+    data_file.first_row_id = first_row_id
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    projected_schema = Schema(*table_schema.fields, ROW_ID, LAST_UPDATED_SEQUENCE_NUMBER)
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file, data_sequence_number=data_sequence_number),
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=projected_schema,
+            table_schema=table_schema,
+            projected_field_ids={1, ROW_ID.field_id, LAST_UPDATED_SEQUENCE_NUMBER.field_id},
+            positional_deletes=None,
+            case_sensitive=True,
+        )
+    )
+
+    result = pa.Table.from_batches(result_batches)
+    assert result.schema.field(LAST_UPDATED_SEQUENCE_NUMBER.name).type == pa.int64()
+    return result[LAST_UPDATED_SEQUENCE_NUMBER.name].to_pylist()
+
+
+@pytest.mark.parametrize(
+    "stored_sequence_numbers, first_row_id, data_sequence_number, expected",
+    [
+        # Last updated sequence numbers are inherited from the data sequence number of the file
+        (None, 100, 5, [5, 5, 5]),
+        # Last updated sequence numbers stored in the file take precedence
+        ([None, 2, None], 100, 5, [5, 2, 5]),
+        # Without a first row ID, last updated sequence numbers are null even when stored in the file
+        ([None, 2, None], None, 5, [None, None, None]),
+        # Without a first row ID, the data sequence number is not needed
+        ([None, 2, None], None, None, [None, None, None]),
+    ],
+)
+def test_task_to_record_batches_last_updated_sequence_numbers(
+    tmpdir: str,
+    stored_sequence_numbers: list[int | None] | None,
+    first_row_id: int | None,
+    data_sequence_number: int | None,
+    expected: list[int | None],
+) -> None:
+    assert _read_last_updated_sequence_numbers(tmpdir, stored_sequence_numbers, first_row_id, data_sequence_number) == expected
+
+
+def test_task_to_record_batches_last_updated_sequence_numbers_without_data_sequence_number(tmpdir: str) -> None:
+    with pytest.raises(NotImplementedError, match="requires the data sequence number"):
+        _read_last_updated_sequence_numbers(tmpdir, [None, 2, None], first_row_id=100, data_sequence_number=None)
 
 
 def test_task_to_record_batches_encrypted_by_iceberg_rust() -> None:

@@ -15,11 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
+import json
 import re
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
+from pyiceberg.catalog import Catalog
 from pyiceberg.expressions import (
     And,
     BoundEqualTo,
@@ -37,6 +40,7 @@ from pyiceberg.io.pyarrow import (
     _ConvertToIceberg,
     _ConvertToIcebergWithoutIDs,
     _expression_to_complementary_pyarrow,
+    _geoarrow_crs_to_iceberg,
     _HasIds,
     _NullNaNUnmentionedTermsCollector,
     _pyarrow_schema_ensure_large_types,
@@ -55,6 +59,8 @@ from pyiceberg.types import (
     DoubleType,
     FixedType,
     FloatType,
+    GeographyType,
+    GeometryType,
     IcebergType,
     IntegerType,
     ListType,
@@ -65,8 +71,11 @@ from pyiceberg.types import (
     StructType,
     TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UnknownType,
+    UUIDType,
 )
 
 
@@ -179,8 +188,22 @@ def test_pyarrow_time64_us_to_iceberg() -> None:
 
 def test_pyarrow_time64_ns_to_iceberg() -> None:
     pyarrow_type = pa.time64("ns")
-    with pytest.raises(TypeError, match=re.escape("Unsupported type: time64[ns]")):
+    with pytest.raises(
+        TypeError,
+        match=re.escape(
+            "Iceberg does not yet support 'ns' time precision. Use 'downcast-ns-timestamp-to-us-on-write' "
+            "configuration property to automatically downcast 'ns' to 'us' on write."
+        ),
+    ):
         visit_pyarrow(pyarrow_type, _ConvertToIceberg())
+
+
+def test_pyarrow_time64_ns_to_iceberg_downcast() -> None:
+    pyarrow_type = pa.time64("ns")
+    converted_iceberg_type = visit_pyarrow(pyarrow_type, _ConvertToIceberg(downcast_ns_timestamp_to_us=True))
+    assert converted_iceberg_type == TimeType()
+    # 'ns' time is downcast to 'us' precision
+    assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.time64("us")
 
 
 @pytest.mark.parametrize("precision", ["s", "ms", "us", "ns"])
@@ -259,6 +282,136 @@ def test_pyarrow_variable_binary_to_iceberg(pyarrow_type: pa.DataType) -> None:
     assert visit(converted_iceberg_type, _ConvertToArrowSchema()) == pa.large_binary()
 
 
+def test_pyarrow_geoarrow_edges_to_iceberg() -> None:
+    ga = pytest.importorskip("geoarrow.types")
+
+    for edges in ("planar", "spherical", "vincenty", "thomas", "andoyer", "karney"):
+        expected = GeometryType() if edges == "planar" else GeographyType(algorithm=edges)
+        for type_spec in (ga.wkb, ga.large_wkb):
+            arrow_type = type_spec(crs="OGC:CRS84", edge_type=edges).to_pyarrow()
+            assert visit_pyarrow(arrow_type, _ConvertToIceberg(format_version=3)) == expected
+
+
+def test_pyarrow_geoarrow_crs_to_iceberg() -> None:
+    ga = pytest.importorskip("geoarrow.types")
+
+    crs84 = ga.OGC_CRS84.to_json_dict()
+    epsg4326 = ga.OGC_CRS84.to_json_dict()
+    epsg4326["name"] = "WGS 84"
+    epsg4326["id"] = {"authority": "EPSG", "code": 4326}
+    epsg4326["coordinate_system"]["axis"].reverse()
+    for crs, expected_crs in (
+        (None, "srid:0"),
+        ("OGC:CRS84", "OGC:CRS84"),
+        ("ogc:crs84", "ogc:crs84"),
+        ("EPSG:4326", "OGC:CRS84"),
+        ("epsg:4326", "epsg:4326"),
+        (" \tEPSG:4326\n", " \tEPSG:4326\n"),
+        (crs84, "OGC:CRS84"),
+        (epsg4326, "OGC:CRS84"),
+        (json.dumps(epsg4326), "OGC:CRS84"),
+        (ga.OGC_CRS84, "OGC:CRS84"),
+        ("EPSG:3857", "EPSG:3857"),
+        ({"id": {"authority": "EPSG", "code": 3857}}, "EPSG:3857"),
+        ({"id": {"authority": "CUSTOM", "code": 1.5}}, "CUSTOM:1.5"),
+        ({"id": {"authority": "CUSTOM", "code": ""}}, "CUSTOM:"),
+        ("CUSTOM:" + "x" * 250, "CUSTOM:" + "x" * 250),
+        ({"id": {"authority": "CUSTOM", "code": "x" * 250}}, "CUSTOM:" + "x" * 250),
+    ):
+        for edges in ("planar", "spherical"):
+            arrow_type = ga.wkb(crs=crs, edge_type=edges).to_pyarrow()
+            expected = GeometryType(expected_crs) if edges == "planar" else GeographyType(expected_crs, edges)
+            assert visit_pyarrow(arrow_type, _ConvertToIceberg(format_version=3)) == expected
+
+
+def test_pyarrow_geoarrow_crs_matches_parquet() -> None:
+    ga = pytest.importorskip("geoarrow.types")
+
+    for crs in ("OGC:CRS84", "EPSG:4326", "ogc:crs84", "epsg:4326", " EPSG:4326 ", "EPSG:3857", "srid:4326"):
+        for edges in ("planar", "spherical"):
+            arrow_type = ga.wkb(crs=crs, edge_type=edges).to_pyarrow()
+            array = pa.ExtensionArray.from_storage(arrow_type, pa.array([], type=arrow_type.storage_type))
+            sink = pa.BufferOutputStream()
+            pq.write_table(pa.table({"geom": array}), sink)
+            logical_type = pq.read_metadata(pa.BufferReader(sink.getvalue())).schema.column(0).logical_type
+            if logical_type.type not in ("GEOMETRY", "GEOGRAPHY"):
+                pytest.skip("PyArrow does not support geospatial Parquet logical types")
+            parquet_crs = json.loads(logical_type.to_json()).get("crs", "OGC:CRS84")
+            iceberg_type = visit_pyarrow(arrow_type, _ConvertToIceberg(format_version=3))
+            assert isinstance(iceberg_type, (GeometryType, GeographyType))
+            assert iceberg_type.crs == parquet_crs
+
+
+def test_pyarrow_geoarrow_crs_without_authority_to_iceberg() -> None:
+    ga = pytest.importorskip("geoarrow.types")
+
+    crs = ga.OGC_CRS84.to_json_dict()
+    del crs["id"]
+    arrow_type = ga.wkb(crs=crs).to_pyarrow()
+    with pytest.raises(ValueError, match="PROJJSON CRS must have an authority/code ID"):
+        visit_pyarrow(arrow_type, _ConvertToIceberg(format_version=3))
+
+
+def test_pyarrow_geoarrow_invalid_crs() -> None:
+    ga = pytest.importorskip("geoarrow.types")
+
+    for crs in ("", " \t\n"):
+        for edges in ("planar", "spherical"):
+            arrow_type = ga.wkb(crs=crs, edge_type=edges).to_pyarrow()
+            with pytest.raises(ValueError, match="Geospatial CRS must be non-empty"):
+                visit_pyarrow(arrow_type, _ConvertToIceberg(format_version=3))
+
+
+def test_pyarrow_geoarrow_invalid_crs_id() -> None:
+    ga = pytest.importorskip("geoarrow.types")
+
+    crs_id: object
+    for crs_id in (
+        None,
+        [],
+        {"authority": "", "code": 4326},
+        {"authority": 42, "code": 4326},
+        {"authority": "EPSG"},
+        {"authority": "EPSG", "code": None},
+        {"authority": "EPSG", "code": True},
+        {"authority": "EPSG", "code": False},
+    ):
+        arrow_type = ga.wkb(crs={"id": crs_id}).to_pyarrow()
+        with pytest.raises(ValueError, match="PROJJSON CRS must have an authority/code ID"):
+            visit_pyarrow(arrow_type, _ConvertToIceberg(format_version=3))
+
+
+def test_geoarrow_crs_metadata_values() -> None:
+    # GeoArrow constructors parse JSON strings before serializing extension metadata.
+    for crs in ("{}", "[]", '{"name":"custom"}'):
+        assert _geoarrow_crs_to_iceberg(crs) == crs
+    invalid_crs: object
+    for invalid_crs in (42, 1.5, True, []):
+        with pytest.raises(ValueError, match="GeoArrow CRS must be a string, a PROJJSON object, or null"):
+            _geoarrow_crs_to_iceberg(invalid_crs)
+
+
+def test_pyarrow_geoarrow_schema_to_iceberg() -> None:
+    ga = pytest.importorskip("geoarrow.types")
+
+    schema = pa.schema(
+        [
+            pa.field("geometry", ga.wkb(crs=None).to_pyarrow()),
+            pa.field("geography", ga.wkb(crs="EPSG:4326", edge_type="karney").to_pyarrow()),
+        ]
+    )
+    converted = Catalog._convert_schema_if_needed(schema, format_version=3)
+    assert converted.fields[0].field_type == GeometryType("srid:0")
+    assert converted.fields[1].field_type == GeographyType("OGC:CRS84", "karney")
+
+    expected = Schema(
+        NestedField(1, "geometry", GeometryType("srid:0")),
+        NestedField(2, "geography", GeographyType("OGC:CRS84", "karney")),
+    )
+    assert pyarrow_to_schema(schema, name_mapping=expected.name_mapping, format_version=3) == expected
+    assert pyarrow_to_schema(schema_to_pyarrow(expected), format_version=3) == expected
+
+
 def test_pyarrow_struct_to_iceberg() -> None:
     pyarrow_struct = pa.struct(
         [
@@ -331,6 +484,89 @@ def test_pyarrow_map_to_iceberg() -> None:
 def test_pyarrow_dictionary_encoded_type_to_iceberg(value_type: pa.DataType, expected_result: IcebergType) -> None:
     pyarrow_dict = pa.dictionary(pa.int32(), value_type)
     assert visit_pyarrow(pyarrow_dict, _ConvertToIceberg()) == expected_result
+
+
+def test_every_supported_pyarrow_primitive_type_maps_to_iceberg() -> None:
+    """Every primitive Arrow type supported by the converter maps to the expected Iceberg type."""
+    cases: list[tuple[pa.DataType, IcebergType]] = [
+        (pa.bool_(), BooleanType()),
+        (pa.int8(), IntegerType()),
+        (pa.int16(), IntegerType()),
+        (pa.int32(), IntegerType()),
+        (pa.int64(), LongType()),
+        (pa.uint8(), IntegerType()),
+        (pa.uint16(), IntegerType()),
+        (pa.uint32(), IntegerType()),
+        (pa.uint64(), LongType()),
+        (pa.float16(), FloatType()),
+        (pa.float32(), FloatType()),
+        (pa.float64(), DoubleType()),
+        (pa.decimal128(38, 9), DecimalType(38, 9)),
+        (pa.string(), StringType()),
+        (pa.large_string(), StringType()),
+        (pa.string_view(), StringType()),
+        (pa.binary(), BinaryType()),
+        (pa.large_binary(), BinaryType()),
+        (pa.binary_view(), BinaryType()),
+        (pa.binary(16), FixedType(16)),
+        (pa.date32(), DateType()),
+        (pa.time64("us"), TimeType()),
+        (pa.timestamp("s"), TimestampType()),
+        (pa.timestamp("ms"), TimestampType()),
+        (pa.timestamp("us"), TimestampType()),
+        (pa.timestamp("ns"), TimestampNanoType()),
+        (pa.timestamp("us", tz="UTC"), TimestamptzType()),
+        (pa.timestamp("ns", tz="UTC"), TimestamptzNanoType()),
+        (pa.null(), UnknownType()),
+        (pa.uuid(), UUIDType()),
+    ]
+
+    for pyarrow_type, expected in cases:
+        assert visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3)) == expected, pyarrow_type
+
+
+def test_every_unsupported_pyarrow_primitive_type_is_rejected() -> None:
+    """Primitive Arrow types without an Iceberg equivalent raise instead of being coerced."""
+    unsupported: list[pa.DataType] = [
+        pa.decimal256(76, 9),
+        pa.date64(),
+        pa.time32("s"),
+        pa.time32("ms"),
+        pa.time64("ns"),
+        pa.duration("us"),
+    ]
+
+    for pyarrow_type in unsupported:
+        with pytest.raises(TypeError):
+            visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3))
+
+
+def test_every_iceberg_primitive_type_round_trips_through_pyarrow() -> None:
+    """Every primitive Iceberg type maps to the expected Arrow type and back."""
+    cases: list[tuple[IcebergType, pa.DataType]] = [
+        (BooleanType(), pa.bool_()),
+        (IntegerType(), pa.int32()),
+        (LongType(), pa.int64()),
+        (FloatType(), pa.float32()),
+        (DoubleType(), pa.float64()),
+        (DecimalType(38, 9), pa.decimal128(38, 9)),
+        (DateType(), pa.date32()),
+        (TimeType(), pa.time64("us")),
+        (TimestampType(), pa.timestamp("us")),
+        (TimestampNanoType(), pa.timestamp("ns")),
+        (TimestamptzType(), pa.timestamp("us", tz="UTC")),
+        (TimestamptzNanoType(), pa.timestamp("ns", tz="UTC")),
+        (StringType(), pa.large_string()),
+        (UUIDType(), pa.uuid()),
+        (UnknownType(), pa.null()),
+        (BinaryType(), pa.large_binary()),
+        (FixedType(16), pa.binary(16)),
+    ]
+
+    for iceberg_type, expected in cases:
+        pyarrow_type = visit(iceberg_type, _ConvertToArrowSchema())
+        assert pyarrow_type == expected, iceberg_type
+        assert visit_pyarrow(pyarrow_type, _ConvertToIceberg(format_version=3)) == iceberg_type, iceberg_type
 
 
 def test_round_schema_conversion_simple(table_schema_simple: Schema) -> None:

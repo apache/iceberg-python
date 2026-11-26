@@ -172,6 +172,14 @@ def test_partition_spec_to_path() -> None:
     assert spec.partition_to_path(record, schema) == "my%23str%25bucket=my%2Bstr/other+str%2Bbucket=%28+%29/my%21int%3Abucket=10"
 
 
+def test_partition_spec_to_path_asterisk_and_tilde() -> None:
+    schema = Schema(NestedField(field_id=1, name="str", field_type=StringType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="my*str~field"))
+
+    # java.net.URLEncoder leaves "*" as is and escapes "~"
+    assert spec.partition_to_path(Record("a*b~c-d_e.f"), schema) == "my*str%7Efield=a*b%7Ec-d_e.f"
+
+
 def test_partition_spec_to_path_dropped_source_id() -> None:
     schema = Schema(
         NestedField(field_id=1, name="str", field_type=StringType(), required=False),

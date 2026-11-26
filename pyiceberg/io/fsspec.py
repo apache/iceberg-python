@@ -66,6 +66,7 @@ from pyiceberg.io import (
     GCS_SERVICE_HOST,
     GCS_SESSION_KWARGS,
     GCS_TOKEN,
+    GCS_TOKEN_EXPIRES_AT_MS,
     GCS_VERSION_AWARE,
     HF_ENDPOINT,
     HF_TOKEN,
@@ -95,6 +96,7 @@ from pyiceberg.io import (
 )
 from pyiceberg.typedef import Properties
 from pyiceberg.types import strtobool
+from pyiceberg.utils.datetime import millis_to_datetime
 from pyiceberg.utils.properties import get_first_property_value, get_header_properties, property_as_bool
 from pyiceberg.utils.transient import _TransientStateMixin
 
@@ -232,29 +234,42 @@ def _s3(properties: Properties) -> AbstractFileSystem:
         "config_kwargs": config_kwargs,
     }
 
+    session_kwargs: dict[str, Any] = {}
     if profile_name := get_first_property_value(properties, S3_PROFILE_NAME, AWS_PROFILE_NAME):
         s3_fs_kwargs["profile"] = profile_name
+        session_kwargs["profile"] = profile_name
 
     if s3_additional_kwargs:
         s3_fs_kwargs["s3_additional_kwargs"] = s3_additional_kwargs
 
-    fs = S3FileSystem(**s3_fs_kwargs)
+    if register_events:
+        from aiobotocore.session import AioSession
 
-    for event_name, event_function in register_events.items():
-        fs.s3.meta.events.unregister(event_name, unique_id=1925)
-        fs.s3.meta.events.register_last(event_name, event_function, unique_id=1925)
+        # Register the signer on a session that only this filesystem uses. s3fs caches and shares
+        # the client between threads, and unregistering the signer on a shared client leaves a
+        # window in which a request is sent unsigned.
+        session = AioSession(**session_kwargs)
+        event_emitter = session.get_component("event_emitter")
+        for event_name, event_function in register_events.items():
+            event_emitter.register_last(event_name, event_function, unique_id=1925)
+        s3_fs_kwargs["session"] = session
 
-    return fs
+    return S3FileSystem(**s3_fs_kwargs)
 
 
 def _gs(properties: Properties) -> AbstractFileSystem:
     # https://gcsfs.readthedocs.io/en/latest/api.html#gcsfs.core.GCSFileSystem
     from gcsfs import GCSFileSystem
+    from google.oauth2.credentials import Credentials
+
+    token: str | Credentials | None = properties.get(GCS_TOKEN)
+    if token and (expires_at := properties.get(GCS_TOKEN_EXPIRES_AT_MS)):
+        token = Credentials(token, expiry=millis_to_datetime(int(expires_at)))
 
     return GCSFileSystem(
         project=properties.get(GCS_PROJECT_ID),
         access=properties.get(GCS_ACCESS, "full_control"),
-        token=properties.get(GCS_TOKEN),
+        token=token,
         consistency=properties.get(GCS_CONSISTENCY, "none"),
         cache_timeout=properties.get(GCS_CACHE_TIMEOUT),
         requester_pays=property_as_bool(properties, GCS_REQUESTER_PAYS, False),

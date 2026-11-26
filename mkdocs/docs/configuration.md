@@ -84,6 +84,7 @@ Iceberg tables support table properties to configure table behavior.
 | `write.parquet.row-group-limit`          | Number of rows                     | 1048576                    | The upper bound of the number of entries within a single row group                                                                                   |
 | `write.parquet.page-size-bytes`          | Size in bytes                      | 1MB                        | Set a target threshold for the approximate encoded size of data pages within a column chunk                                                          |
 | `write.parquet.page-row-limit`           | Number of rows                     | 20000                      | Set a target threshold for the maximum number of rows within a column chunk                                                                          |
+| `write.parquet.page-index-enabled`       | Boolean                            | True                       | Write Parquet column and offset indexes so readers can skip non-matching pages during predicate evaluation. Set to false to disable                     |
 | `write.parquet.dict-size-bytes`          | Size in bytes                      | 2MB                        | Set the dictionary page size limit per row group                                                                                                     |
 | `write.target-file-size-bytes`           | Size in bytes                      | 536870912 (512MB)          | Target size of generated data files. Measured in uncompressed in-memory Arrow bytes, so files on disk are typically smaller after compression         |
 | `write.format.default`                   | `{parquet}`                        | parquet                    | File format for data files written by PyIceberg. Only Parquet is supported                                                                           |
@@ -106,12 +107,12 @@ Iceberg tables support table properties to configure table behavior.
 | ------------------------------------ | ------------------- | ------------- | ----------------------------------------------------------- |
 | `commit.manifest.target-size-bytes`  | Size in bytes       | 8388608 (8MB) | Target size when merging manifest files                     |
 | `commit.manifest.min-count-to-merge` | Number of manifests | 100           | Minimum number of manifests to accumulate before merging    |
-| `commit.manifest-merge.enabled`      | Boolean             | False         | Controls whether to automatically merge manifests on writes |
+| `commit.manifest-merge.enabled`      | Boolean             | True          | Controls whether to automatically merge manifests on writes |
 
 <!-- prettier-ignore-start -->
 
-!!! note "Fast append"
-    Unlike Java implementation, PyIceberg default to the [fast append](api.md#write-to-a-table) and thus `commit.manifest-merge.enabled` is set to `False` by default.
+!!! note "Append modes"
+    PyIceberg defaults to [merge append](api.md#write-to-a-table) to keep manifest metadata compact. Set `commit.manifest-merge.enabled` to `False` on a table to use fast append, which writes less metadata during each commit but accumulates more manifests over time.
 
 <!-- prettier-ignore-end -->
 

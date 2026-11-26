@@ -23,15 +23,17 @@ import sys
 import time
 import uuid
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from enum import Enum, StrEnum
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
+    TypeVar,
 )
 from urllib.parse import quote, unquote
 
-from pydantic import ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import BeforeValidator, ConfigDict, Field, TypeAdapter, field_validator
 from requests import HTTPError, PreparedRequest, Response, Session
 from requests.adapters import DEFAULT_RETRIES, HTTPAdapter
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
@@ -375,11 +377,23 @@ _RETRY_ARGS = {
 }
 
 
+T = TypeVar("T")
+
+
+def _empty_if_none(factory: Callable[[], Any]) -> BeforeValidator:
+    return BeforeValidator(lambda v: factory() if v is None else v)
+
+
+# A JSON null is read as an empty list / map, like Java's `hasNonNull`
+NullableList = Annotated[list[T], _empty_if_none(list)]
+NullableProperties = Annotated[Properties, _empty_if_none(dict)]
+
+
 class TableResponse(IcebergBaseModel):
     metadata_location: str | None = Field(alias="metadata-location", default=None)
     metadata: TableMetadata
-    config: Properties = Field(default_factory=dict)
-    storage_credentials: list[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
+    config: NullableProperties = Field(default_factory=dict)
+    storage_credentials: NullableList[StorageCredential] = Field(alias="storage-credentials", default_factory=list)
     labels: Labels = Field(default_factory=Labels)
 
 
@@ -390,7 +404,7 @@ class LoadCredentialsResponse(IcebergBaseModel):
 class ViewResponse(IcebergBaseModel):
     metadata_location: str = Field(..., alias="metadata-location")
     metadata: ViewMetadata
-    config: Properties = Field(default_factory=dict)
+    config: NullableProperties = Field(default_factory=dict)
     labels: Labels = Field(default_factory=Labels)
 
 
@@ -443,8 +457,8 @@ class RegisterViewRequest(IcebergBaseModel):
 
 
 class ConfigResponse(IcebergBaseModel):
-    defaults: Properties | None = Field(default_factory=dict)
-    overrides: Properties | None = Field(default_factory=dict)
+    defaults: NullableProperties = Field(default_factory=dict)
+    overrides: NullableProperties = Field(default_factory=dict)
     endpoints: set[Endpoint] | None = Field(default=None)
     idempotency_key_lifetime: str | None = Field(alias="idempotency-key-lifetime", default=None)
 
@@ -1670,9 +1684,11 @@ class RestCatalog(Catalog):
             _handle_non_200_response(
                 exc,
                 {
+                    404: NoSuchTableError,
                     409: CommitFailedException,
                     500: CommitStateUnknownException,
                     502: CommitStateUnknownException,
+                    503: CommitStateUnknownException,
                     504: CommitStateUnknownException,
                 },
             )

@@ -15,21 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import os
 import pickle
 import tempfile
 import threading
 import uuid
+from datetime import datetime
 from typing import Any
 from unittest import mock
 
 import pytest
+from botocore import UNSIGNED
 from botocore.auth import S3SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.config import Config
 from botocore.credentials import Credentials
 from fsspec.implementations.local import LocalFileSystem
 from fsspec.spec import AbstractFileSystem
+from google.oauth2.credentials import Credentials as GoogleCredentials
 from requests_mock import Mocker
 
 from pyiceberg.catalog.rest import _user_agent
@@ -761,6 +765,29 @@ def test_adls_account_name_not_overridden_when_in_properties() -> None:
         )
 
 
+def test_fsspec_gcs_token_with_expiry() -> None:
+    """Test that a GCS token with an expiry is passed to gcsfs as google-auth credentials."""
+    properties: Properties = {"gcs.oauth2.token": "token", "gcs.oauth2.token-expires-at": "1700000000000"}
+
+    with mock.patch("gcsfs.GCSFileSystem") as mock_gcsfs:
+        FsspecFileIO(properties=properties).new_input(location="gs://bucket/path/file.parquet")
+
+    token = mock_gcsfs.call_args.kwargs["token"]
+    assert isinstance(token, GoogleCredentials)
+    assert token.token == "token"
+    assert token.expiry == datetime(2023, 11, 14, 22, 13, 20)
+
+
+def test_fsspec_gcs_token_without_expiry() -> None:
+    """Test that a GCS token without an expiry is passed to gcsfs unchanged."""
+    properties: Properties = {"gcs.oauth2.token": "token"}
+
+    with mock.patch("gcsfs.GCSFileSystem") as mock_gcsfs:
+        FsspecFileIO(properties=properties).new_input(location="gs://bucket/path/file.parquet")
+
+    assert mock_gcsfs.call_args.kwargs["token"] == "token"
+
+
 @pytest.mark.gcs
 def test_fsspec_new_input_file_gcs(fsspec_fileio_gcs: FsspecFileIO) -> None:
     """Test creating a new input file from a fsspec file-io"""
@@ -958,6 +985,64 @@ def _test_fsspec_pickle_round_trip(fsspec_fileio: FsspecFileIO, location: str) -
 
 
 TEST_URI = "https://iceberg-test-signer"
+
+
+def _sign_with_session(session: Any, uri: str) -> AWSRequest:
+    request = AWSRequest(method="PUT", url=uri, headers={}, data=b"", params={})
+    request.context = {"client_region": "us-east-1"}
+    asyncio.run(
+        session.get_component("event_emitter").emit(
+            "before-sign.s3",
+            request=request,
+            signing_name="s3",
+            region_name="us-east-1",
+            signature_version=UNSIGNED,
+            request_signer=None,
+            operation_name="PutObject",
+        )
+    )
+    return request
+
+
+def test_s3_registers_the_signer_on_the_session(requests_mock: Mocker) -> None:
+    new_uri = "https://other-bucket/object"
+    requests_mock.post(
+        f"{TEST_URI}/v1/aws/s3/sign",
+        json={"uri": new_uri, "headers": {"Authorization": ["AWS4-HMAC-SHA256 Credential=abc"]}, "extensions": {}},
+        status_code=200,
+    )
+
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        fsspec._s3({"s3.signer": "S3V4RestSigner", "uri": TEST_URI, "s3.endpoint": "http://localhost:9000"})
+
+    session = mock_s3fs.call_args.kwargs["session"]
+    request = _sign_with_session(session, "https://bucket/object")
+
+    assert request.url == new_uri
+    assert request.headers["Authorization"] == "AWS4-HMAC-SHA256 Credential=abc"
+
+
+def test_s3_registers_the_signer_per_session(requests_mock: Mocker) -> None:
+    signers = [
+        ("https://first-signer", "https://bucket/first"),
+        ("https://second-signer", "https://bucket/second"),
+    ]
+    for signer_uri, signed_uri in signers:
+        requests_mock.post(
+            f"{signer_uri}/v1/aws/s3/sign",
+            json={"uri": signed_uri, "headers": {"Authorization": ["AWS4-HMAC-SHA256 Credential=abc"]}, "extensions": {}},
+            status_code=200,
+        )
+
+    sessions = []
+    with mock.patch("s3fs.S3FileSystem") as mock_s3fs:
+        for signer_uri, _ in signers:
+            fsspec._s3({"s3.signer": "S3V4RestSigner", "uri": signer_uri, "s3.endpoint": "http://localhost:9000"})
+            sessions.append(mock_s3fs.call_args.kwargs["session"])
+
+    assert sessions[0] is not sessions[1]
+    for session, (_, signed_uri) in zip(sessions, signers, strict=True):
+        assert _sign_with_session(session, "https://bucket/object").url == signed_uri
 
 
 def test_s3v4_rest_signer(requests_mock: Mocker) -> None:
