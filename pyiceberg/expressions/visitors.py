@@ -924,7 +924,9 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             # https://iceberg.apache.org/spec/#column-projection
             # Evaluate column projection first if it exists, otherwise default to the initial-default-value
             field_value = (
-                self.projected_field_values[field_id] if field.field_id in self.projected_field_values else field.initial_default
+                self.projected_field_values[field_id]
+                if field.field_id in self.projected_field_values
+                else field._initial_default_value
             )
             return (
                 AlwaysTrue()

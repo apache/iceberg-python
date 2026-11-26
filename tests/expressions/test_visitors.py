@@ -16,6 +16,7 @@
 # under the License.
 # pylint:disable=redefined-outer-name
 
+import datetime as dt
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from typing import Any
@@ -86,6 +87,7 @@ from pyiceberg.typedef import Record
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
+    DateType,
     DoubleType,
     FloatType,
     IcebergType,
@@ -93,6 +95,9 @@ from pyiceberg.types import (
     NestedField,
     PrimitiveType,
     StringType,
+    TimestampType,
+    TimestamptzType,
+    TimeType,
 )
 
 
@@ -1848,6 +1853,45 @@ def test_translate_column_names_missing_column_match_explicit_null() -> None:
     # Should evaluate to AlwaysTrue because the missing column is treated as null
     # missing_col's default initial_default (None) satisfies the IsNull predicate
     assert translated_expr == AlwaysTrue()
+
+
+def test_translate_column_names_missing_column_with_temporal_initial_default() -> None:
+    """Test translate_column_names compares temporal initial_default values in the form the bound literal uses."""
+    file_schema = Schema(NestedField(field_id=1, name="existing_col", field_type=StringType(), required=False), schema_id=1)
+    cases = [
+        (DateType(), dt.date(2020, 1, 1), dt.date(2019, 12, 31), dt.date(2020, 1, 2)),
+        (TimeType(), dt.time(7, 15, 30), dt.time(7, 15, 29), dt.time(7, 15, 31)),
+        (TimestampType(), dt.datetime(2020, 1, 1, 12, 30), dt.datetime(2020, 1, 1, 12, 29), dt.datetime(2020, 1, 1, 12, 31)),
+        (
+            TimestamptzType(),
+            dt.datetime(2020, 1, 1, 12, 30, tzinfo=dt.UTC),
+            dt.datetime(2020, 1, 1, 12, 29, tzinfo=dt.UTC),
+            dt.datetime(2020, 1, 1, 12, 31, tzinfo=dt.UTC),
+        ),
+    ]
+    for field_type, default, earlier, later in cases:
+        original_schema = Schema(
+            NestedField(field_id=2, name="missing_col", field_type=field_type, required=False, initial_default=default),
+            schema_id=1,
+        )
+        for unbound_expr, expected in [
+            (EqualTo("missing_col", default), AlwaysTrue()),
+            (EqualTo("missing_col", later), AlwaysFalse()),
+            (NotEqualTo("missing_col", default), AlwaysFalse()),
+            (In("missing_col", {earlier, default}), AlwaysTrue()),
+            (GreaterThan("missing_col", earlier), AlwaysTrue()),
+        ]:
+            bound_expr = visit(unbound_expr, visitor=BindVisitor(schema=original_schema, case_sensitive=True))
+            assert translate_column_names(bound_expr, file_schema, case_sensitive=True) == expected, (field_type, unbound_expr)
+
+        # A missing optional column without a default is null, and the conversion must leave it alone
+        null_schema = Schema(NestedField(2, "missing_col", field_type, required=False))
+        for unbound_expr, expected in [
+            (IsNull("missing_col"), AlwaysTrue()),
+            (EqualTo("missing_col", default), AlwaysFalse()),
+        ]:
+            bound_expr = visit(unbound_expr, visitor=BindVisitor(schema=null_schema, case_sensitive=True))
+            assert translate_column_names(bound_expr, file_schema) == expected, (field_type, unbound_expr)
 
 
 def test_translate_column_names_missing_column_with_initial_default() -> None:
