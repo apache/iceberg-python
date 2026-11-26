@@ -1005,7 +1005,7 @@ class GeometryType(PrimitiveType):
         >>> GeometryType("EPSG:4326")
         GeometryType(crs='EPSG:4326')
         >>> str(GeometryType("EPSG:4326"))
-        "geometry('EPSG:4326')"
+        'geometry(EPSG:4326)'
     """
 
     root: str = Field(default=DEFAULT_GEOMETRY_CRS)
@@ -1018,7 +1018,7 @@ class GeometryType(PrimitiveType):
         """Serialize the model to a string."""
         if self.crs == DEFAULT_GEOMETRY_CRS:
             return "geometry"
-        return f"geometry('{self.crs}')"
+        return f"geometry({self.crs})"
 
     @property
     def crs(self) -> str:
@@ -1035,7 +1035,7 @@ class GeometryType(PrimitiveType):
         """Return the string representation."""
         if self.crs == DEFAULT_GEOMETRY_CRS:
             return "geometry"
-        return f"geometry('{self.crs}')"
+        return f"geometry({self.crs})"
 
     def __hash__(self) -> int:
         """Return the hash of the CRS."""
@@ -1074,7 +1074,7 @@ class GeographyType(PrimitiveType):
         >>> GeographyType("EPSG:4326", "planar")
         GeographyType(crs='EPSG:4326', algorithm='planar')
         >>> str(GeographyType("EPSG:4326", "planar"))
-        "geography('EPSG:4326', 'planar')"
+        'geography(EPSG:4326, planar)'
     """
 
     root: tuple[str, str] = Field(default=(DEFAULT_GEOGRAPHY_CRS, DEFAULT_GEOGRAPHY_ALGORITHM))
@@ -1088,8 +1088,8 @@ class GeographyType(PrimitiveType):
         if self.crs == DEFAULT_GEOGRAPHY_CRS and self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
             return "geography"
         if self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
-            return f"geography('{self.crs}')"
-        return f"geography('{self.crs}', '{self.algorithm}')"
+            return f"geography({self.crs})"
+        return f"geography({self.crs}, {self.algorithm})"
 
     @property
     def crs(self) -> str:
@@ -1114,8 +1114,8 @@ class GeographyType(PrimitiveType):
         if self.crs == DEFAULT_GEOGRAPHY_CRS and self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
             return "geography"
         if self.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM:
-            return f"geography('{self.crs}')"
-        return f"geography('{self.crs}', '{self.algorithm}')"
+            return f"geography({self.crs})"
+        return f"geography({self.crs}, {self.algorithm})"
 
     def __hash__(self) -> int:
         """Return the hash of the tuple."""

@@ -777,7 +777,7 @@ def test_geometry_type_custom_crs() -> None:
     """Test GeometryType with custom CRS."""
     type_var = GeometryType("EPSG:4326")
     assert type_var.crs == "EPSG:4326"
-    assert str(type_var) == "geometry('EPSG:4326')"
+    assert str(type_var) == "geometry(EPSG:4326)"
     assert repr(type_var) == "GeometryType(crs='EPSG:4326')"
 
 
@@ -799,7 +799,8 @@ def test_geometry_type_pickle() -> None:
 def test_geometry_type_serialization() -> None:
     """Test GeometryType JSON serialization."""
     assert GeometryType().model_dump_json() == '"geometry"'
-    assert GeometryType("EPSG:4326").model_dump_json() == "\"geometry('EPSG:4326')\""
+    assert GeometryType("EPSG:4326").model_dump_json() == '"geometry(EPSG:4326)"'
+    assert GeometryType.model_validate_json(GeometryType("EPSG:4326").model_dump_json()) == GeometryType("EPSG:4326")
 
 
 def test_geometry_type_deserialization() -> None:
@@ -847,7 +848,7 @@ def test_geography_type_custom_crs() -> None:
     type_var = GeographyType("EPSG:4326")
     assert type_var.crs == "EPSG:4326"
     assert type_var.algorithm == DEFAULT_GEOGRAPHY_ALGORITHM
-    assert str(type_var) == "geography('EPSG:4326')"
+    assert str(type_var) == "geography(EPSG:4326)"
     assert repr(type_var) == "GeographyType(crs='EPSG:4326')"
 
 
@@ -856,7 +857,7 @@ def test_geography_type_custom_crs_and_algorithm() -> None:
     type_var = GeographyType("EPSG:4326", "planar")
     assert type_var.crs == "EPSG:4326"
     assert type_var.algorithm == "planar"
-    assert str(type_var) == "geography('EPSG:4326', 'planar')"
+    assert str(type_var) == "geography(EPSG:4326, planar)"
     assert repr(type_var) == "GeographyType(crs='EPSG:4326', algorithm='planar')"
 
 
@@ -879,8 +880,12 @@ def test_geography_type_pickle() -> None:
 def test_geography_type_serialization() -> None:
     """Test GeographyType JSON serialization."""
     assert GeographyType().model_dump_json() == '"geography"'
-    assert GeographyType("EPSG:4326").model_dump_json() == "\"geography('EPSG:4326')\""
-    assert GeographyType("EPSG:4326", "planar").model_dump_json() == "\"geography('EPSG:4326', 'planar')\""
+    assert GeographyType("EPSG:4326").model_dump_json() == '"geography(EPSG:4326)"'
+    assert GeographyType("EPSG:4326", "planar").model_dump_json() == '"geography(EPSG:4326, planar)"'
+    assert GeographyType.model_validate_json(GeographyType("EPSG:4326").model_dump_json()) == GeographyType("EPSG:4326")
+    assert GeographyType.model_validate_json(GeographyType("EPSG:4326", "planar").model_dump_json()) == GeographyType(
+        "EPSG:4326", "planar"
+    )
 
 
 def test_geography_type_deserialization() -> None:
