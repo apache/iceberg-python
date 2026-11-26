@@ -166,6 +166,7 @@ class CatalogType(Enum):
     SQL = "sql"
     IN_MEMORY = "in-memory"
     BIGQUERY = "bigquery"
+    HADOOP = "hadoop"
 
 
 def load_rest(name: str, conf: Properties) -> Catalog:
@@ -199,6 +200,12 @@ def load_dynamodb(name: str, conf: Properties) -> Catalog:
         return DynamoDbCatalog(name, **conf)
     except ImportError as exc:
         raise NotInstalledError("AWS DynamoDB support not installed: pip install 'pyiceberg[dynamodb]'") from exc
+
+
+def load_hadoop(name: str, conf: Properties) -> Catalog:
+    from pyiceberg.catalog.hadoop import HadoopCatalog
+
+    return HadoopCatalog(name, **conf)
 
 
 def load_sql(name: str, conf: Properties) -> Catalog:
@@ -238,6 +245,7 @@ AVAILABLE_CATALOGS: dict[CatalogType, Callable[[str, Properties], Catalog]] = {
     CatalogType.SQL: load_sql,
     CatalogType.IN_MEMORY: load_in_memory,
     CatalogType.BIGQUERY: load_bigquery,
+    CatalogType.HADOOP: load_hadoop,
 }
 
 
@@ -276,6 +284,11 @@ def _check_required_catalog_properties(name: str, catalog_type: CatalogType, con
     if catalog_type in {CatalogType.REST, CatalogType.HIVE, CatalogType.SQL} and URI not in conf:
         raise ValueError(
             f"URI missing, please provide using --uri, the config or environment variable PYICEBERG_CATALOG__{name.upper()}__URI"
+        )
+    if catalog_type is CatalogType.HADOOP and WAREHOUSE_LOCATION not in conf:
+        raise ValueError(
+            "Warehouse missing, please provide using the warehouse property or environment variable "
+            f"PYICEBERG_CATALOG__{name.upper()}__WAREHOUSE"
         )
 
 
