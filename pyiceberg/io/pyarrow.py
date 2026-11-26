@@ -2296,6 +2296,7 @@ class ArrowProjectionVisitor(SchemaWithPartnerVisitor[pa.Array, pa.Array | None]
                         and (values.type.tz in UTC_ALIASES or values.type.tz is None)
                     ):
                         return values.cast(target_type)
+                    raise ValueError(f"Unsupported schema projection from {values.type} to {target_type}")
                 elif field.field_type == TimeType():
                     if pa.types.is_time(target_type) and pa.types.is_time(values.type):
                         # Downcasting of nanoseconds to microseconds
