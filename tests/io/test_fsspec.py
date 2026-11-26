@@ -18,6 +18,7 @@
 import asyncio
 import os
 import pickle
+import sys
 import tempfile
 import threading
 import uuid
@@ -39,8 +40,8 @@ from requests_mock import Mocker
 from pyiceberg.catalog.rest import _user_agent
 from pyiceberg.catalog.rest.auth import AUTH_MANAGER
 from pyiceberg.exceptions import SignError
-from pyiceberg.io import fsspec
-from pyiceberg.io.fsspec import FsspecFileIO, S3V4RestSigner
+from pyiceberg.io import S3_SIGNER, fsspec
+from pyiceberg.io.fsspec import FsspecFileIO, S3V4RestSigner, _s3
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.typedef import Properties
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
