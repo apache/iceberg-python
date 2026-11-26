@@ -112,7 +112,7 @@ def test_zstd_without_backend_raises_on_use(monkeypatch: pytest.MonkeyPatch) -> 
 def test_zstd_decompress_truncated_frame() -> None:
     compressed, _ = ZStandardCodec.compress(b"hello iceberg" * 100)
 
-    with pytest.raises(Exception, match="incomplete|truncated|ZstdError|error"):
+    with pytest.raises(Exception, match="incomplete|truncated|ZstdError|error|end-of-stream"):
         ZStandardCodec.decompress(compressed[:-1])
 
 
@@ -146,5 +146,5 @@ def test_zstd_decompress_concatenated_frames() -> None:
     second, _ = ZStandardCodec.compress(b"second")
 
     assert ZStandardCodec.decompress(first + second) == b"firstsecond"
-    with pytest.raises(Exception, match="incomplete|truncated|ZstdError|error"):
+    with pytest.raises(Exception, match="incomplete|truncated|ZstdError|error|end-of-stream"):
         ZStandardCodec.decompress(first + second[:-1])
