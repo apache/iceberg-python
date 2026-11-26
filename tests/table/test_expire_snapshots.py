@@ -16,12 +16,16 @@
 # under the License.
 import threading
 from datetime import datetime, timedelta
+from typing import Any
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
 import pytest
 
+from pyiceberg.catalog.noop import NoopCatalog
+from pyiceberg.io import load_file_io
 from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table.metadata import TableMetadataV2
 from pyiceberg.table.statistics import PartitionStatisticsFile
 from pyiceberg.table.update import RemoveSnapshotsUpdate, SetPartitionStatisticsUpdate, update_table_metadata
 from pyiceberg.table.update.snapshot import ExpireSnapshots
@@ -343,3 +347,86 @@ def test_update_remove_snapshots_with_partition_statistics(table_v2: Table) -> N
 
     assert [snapshot.snapshot_id for snapshot in new_metadata.snapshots] == [KEEP_SNAPSHOT]
     assert [stat.snapshot_id for stat in new_metadata.partition_statistics] == [KEEP_SNAPSHOT]
+
+
+def _table_with_branches(example_table_metadata_v2: dict[str, Any]) -> Table:
+    """Create a table where main is 1 <- 2 <- 3 <- 4 and branch "b" is 1 <- 2 <- 5."""
+    parents = {1: None, 2: 1, 3: 2, 4: 3, 5: 2}
+    snapshots = [
+        {
+            "snapshot-id": snapshot_id,
+            **({"parent-snapshot-id": parent_id} if parent_id is not None else {}),
+            "timestamp-ms": snapshot_id * 1000,
+            "sequence-number": snapshot_id,
+            "summary": {"operation": "append"},
+            "manifest-list": f"s3://a/b/{snapshot_id}.avro",
+        }
+        for snapshot_id, parent_id in parents.items()
+    ]
+    metadata = TableMetadataV2(
+        **{
+            **example_table_metadata_v2,
+            "current-snapshot-id": 4,
+            "last-sequence-number": 5,
+            "snapshots": snapshots,
+            "snapshot-log": [],
+            "refs": {"main": {"snapshot-id": 4, "type": "branch"}, "b": {"snapshot-id": 5, "type": "branch"}},
+        }
+    )
+    return Table(
+        identifier=("database", "table"),
+        metadata=metadata,
+        metadata_location=f"{metadata.location}/uuid.metadata.json",
+        io=load_file_io(),
+        catalog=NoopCatalog("NoopCatalog"),
+    )
+
+
+@pytest.mark.parametrize(
+    "num_snapshots, expected_remaining",
+    [(1, {4, 5}), (2, {2, 3, 4, 5}), (10, {1, 2, 3, 4, 5})],
+)
+def test_expire_snapshots_retain_last(
+    example_table_metadata_v2: dict[str, Any], num_snapshots: int, expected_remaining: set[int]
+) -> None:
+    table = _table_with_branches(example_table_metadata_v2)
+    future_datetime = datetime.now() + timedelta(days=1)
+
+    txn = table.transaction()
+    ExpireSnapshots(txn).older_than(future_datetime).retain_last(num_snapshots).commit()
+
+    assert {snapshot.snapshot_id for snapshot in txn.table_metadata.snapshots} == expected_remaining
+
+
+def test_expire_snapshots_retain_last_before_older_than(example_table_metadata_v2: dict[str, Any]) -> None:
+    table = _table_with_branches(example_table_metadata_v2)
+    future_datetime = datetime.now() + timedelta(days=1)
+
+    txn = table.transaction()
+    ExpireSnapshots(txn).retain_last(2).older_than(future_datetime).commit()
+
+    assert {snapshot.snapshot_id for snapshot in txn.table_metadata.snapshots} == {2, 3, 4, 5}
+
+
+def test_expire_snapshots_retain_last_without_older_than(example_table_metadata_v2: dict[str, Any]) -> None:
+    table = _table_with_branches(example_table_metadata_v2)
+
+    txn = table.transaction()
+    ExpireSnapshots(txn).retain_last(1).commit()
+
+    assert {snapshot.snapshot_id for snapshot in txn.table_metadata.snapshots} == {1, 2, 3, 4, 5}
+
+
+def test_expire_snapshots_retain_last_does_not_retain_by_id(example_table_metadata_v2: dict[str, Any]) -> None:
+    table = _table_with_branches(example_table_metadata_v2)
+
+    txn = table.transaction()
+    ExpireSnapshots(txn).retain_last(10).by_id(3).commit()
+
+    assert {snapshot.snapshot_id for snapshot in txn.table_metadata.snapshots} == {1, 2, 4, 5}
+
+
+@pytest.mark.parametrize("num_snapshots", [0, -1])
+def test_expire_snapshots_retain_last_invalid(table_v2: Table, num_snapshots: int) -> None:
+    with pytest.raises(ValueError, match=f"Number of snapshots to retain must be at least 1, cannot be: {num_snapshots}"):
+        table_v2.maintenance.expire_snapshots().retain_last(num_snapshots)

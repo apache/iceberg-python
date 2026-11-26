@@ -1628,6 +1628,11 @@ table.maintenance.expire_snapshots().older_than(
     datetime.now() - timedelta(days=3)
 ).commit()
 
+# Expire snapshots older than three days, but keep the 10 most recent ancestors of each branch
+table.maintenance.expire_snapshots().older_than(
+    datetime.now() - timedelta(days=3)
+).retain_last(10).commit()
+
 # Expire a specific snapshot by ID
 table.maintenance.expire_snapshots().by_id(12345).commit()
 
