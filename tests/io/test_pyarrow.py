@@ -85,6 +85,7 @@ from pyiceberg.io.pyarrow import (
     StatsAggregator,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
+    _ConvertViewTypes,
     _create_arrow_read_format,
     _determine_partitions,
     _primitive_to_physical,
@@ -99,6 +100,7 @@ from pyiceberg.io.pyarrow import (
     expression_to_pyarrow,
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
+    visit_pyarrow,
     write_file,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
@@ -3580,6 +3582,8 @@ def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) ->
         {"region": None, "payload": b"c", "info": {"tags": ["y", None], "attrs": []}},
     ]
     arrow_table = pa.Table.from_pylist(rows, schema=arrow_schema)
+    # View types are cast before the table is split into partitions
+    arrow_table = arrow_table.cast(visit_pyarrow(arrow_schema, _ConvertViewTypes()))
 
     partitions = list(_determine_partitions(spec, schema, arrow_table))
 
@@ -3711,6 +3715,43 @@ def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> Non
 
     assert len(table.inspect.partitions()) == 2
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+
+
+def test_append_view_types_to_unpartitioned_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="region", field_type=StringType(), required=False),
+        NestedField(id=3, name="payload", field_type=BinaryType(), required=False),
+        NestedField(id=4, name="tags", field_type=ListType(element_id=5, element_type=StringType(), element_required=False)),
+    )
+    catalog.create_namespace("default")
+    plain_table = pa.table(
+        {
+            "id": pa.array([1], type=pa.int64()),
+            "region": pa.array(["us"], type=pa.string()),
+            "payload": pa.array([b"a"], type=pa.binary()),
+            "tags": pa.array([["x"]], type=pa.list_(pa.string())),
+        }
+    )
+    view_table = pa.table(
+        {
+            "id": pa.array([2, 3], type=pa.int64()),
+            "region": pa.array(["us", "eu"], type=pa.string_view()),
+            "payload": pa.array([b"a", b"b"], type=pa.binary_view()),
+            "tags": pa.array([["x"], ["y"]], type=pa.list_(pa.string_view())),
+        }
+    )
+
+    for name, df in (("table", view_table), ("reader", view_table.to_reader())):
+        table = catalog.create_table(f"default.test_append_view_types_{name}", schema=schema)
+        table.append(plain_table)
+        table.append(df)
+
+        assert sorted(table.scan().to_arrow()["tags"].to_pylist()) == [["x"], ["x"], ["y"]], name
+        assert sorted(table.scan(row_filter="region == 'us'").to_arrow()["id"].to_pylist()) == [1, 2], name
+        assert sorted(table.scan(row_filter=EqualTo("payload", b"a")).to_arrow()["id"].to_pylist()) == [1, 2], name
+        table.delete("region == 'us'")
+        assert table.scan().to_arrow()["id"].to_pylist() == [3], name
 
 
 def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
