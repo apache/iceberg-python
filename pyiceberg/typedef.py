@@ -23,6 +23,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     Generic,
     Literal,
@@ -35,7 +36,7 @@ from typing import (
 )
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, RootModel
+from pydantic import BaseModel, BeforeValidator, ConfigDict, RootModel
 
 if TYPE_CHECKING:
     from pyiceberg.expressions.literals import Literal as IcebergLiteral
@@ -166,6 +167,15 @@ class IcebergBaseModel(BaseModel):
 
 
 T = TypeVar("T")
+
+
+def _empty_if_none(factory: Callable[[], Any]) -> BeforeValidator:
+    return BeforeValidator(lambda v: factory() if v is None else v)
+
+
+# A JSON null is read as an empty list / map, like Java's `hasNonNull`
+NullableList = Annotated[list[T], _empty_if_none(list)]
+NullableProperties = Annotated[Properties, _empty_if_none(dict)]
 
 
 class IcebergRootModel(RootModel[T], Generic[T]):
