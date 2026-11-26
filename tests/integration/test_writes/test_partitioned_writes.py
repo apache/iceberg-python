@@ -878,16 +878,13 @@ def test_identity_and_bucket_transform_spec(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "spec",
-    [
-        (PartitionSpec(PartitionField(source_id=11, field_id=1001, transform=TruncateTransform(2), name="binary_trunc"))),
-    ],
-)
-def test_unsupported_transform(
-    spec: PartitionSpec, spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_truncate_transform_on_large_binary(
+    format_version: int, spark: SparkSession, session_catalog: Catalog, arrow_table_with_null: pa.Table
 ) -> None:
-    identifier = "default.unsupported_transform"
+    # The Arrow table carries the binary column as large_binary; it is cast to binary before the truncate transform is applied.
+    identifier = "default.truncate_transform_on_large_binary"
+    spec = PartitionSpec(PartitionField(source_id=11, field_id=1001, transform=TruncateTransform(2), name="binary_trunc"))
 
     try:
         session_catalog.drop_table(identifier=identifier)
@@ -898,14 +895,16 @@ def test_unsupported_transform(
         identifier=identifier,
         schema=TABLE_SCHEMA,
         partition_spec=spec,
-        properties={"format-version": "1"},
+        properties={"format-version": str(format_version)},
     )
 
-    with pytest.raises(
-        ValueError,
-        match="FeatureUnsupported => Unsupported data type for truncate transform: LargeBinary",
-    ):
-        tbl.append(arrow_table_with_null)
+    tbl.append(arrow_table_with_null)
+
+    df = spark.table(identifier)
+    assert df.count() == 3, f"Expected 3 total rows for {identifier}"
+    assert df.where("binary is not null").count() == 2
+    assert df.where("binary is null").count() == 1
+    assert tbl.inspect.partitions().num_rows == 3
 
 
 @pytest.mark.integration

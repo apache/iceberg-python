@@ -83,6 +83,7 @@ from pyiceberg.io.pyarrow import (
     PyArrowFile,
     PyArrowFileIO,
     StatsAggregator,
+    _cast_to_transform_input_type,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
     _ConvertViewTypes,
@@ -117,7 +118,7 @@ from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
 from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
-from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
+from pyiceberg.transforms import BucketTransform, DayTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -3595,6 +3596,55 @@ def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) ->
     assert sorted(written.to_pylist(), key=str) == sorted(rows, key=str)
 
 
+def test_determine_partitions_with_arrow_types_narrower_than_the_iceberg_type() -> None:
+    # A write accepts these Arrow types for the Iceberg type, but the partition kernels need an exact match
+    cases: list[tuple[PrimitiveType, pa.DataType, list[Any], list[Transform[Any, Any]]]] = [
+        (IntegerType(), pa.int16(), [1, -5, 100, None], [BucketTransform(4), TruncateTransform(10)]),
+        (LongType(), pa.uint8(), [1, 5, 200, None], [BucketTransform(4), TruncateTransform(10)]),
+        (
+            TimestampType(),
+            pa.timestamp("ms"),
+            [datetime(2020, 1, 5, 3, 4, 5, 678000), datetime(1969, 12, 31, 23, 59, 59, 999000), None],
+            [BucketTransform(4), DayTransform(), HourTransform()],
+        ),
+        (
+            TimestamptzType(),
+            pa.timestamp("s", "UTC"),
+            [datetime(2020, 1, 5, 3, 4, 5, tzinfo=UTC), None],
+            [BucketTransform(4), DayTransform(), HourTransform()],
+        ),
+        (BinaryType(), pa.large_binary(), [b"abcdef", b"xy", None], [TruncateTransform(3)]),
+    ]
+    for iceberg_type, arrow_type, values, transforms in cases:
+        for transform in transforms:
+            schema = Schema(NestedField(id=1, name="p", field_type=iceberg_type, required=False))
+            spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=transform, name="p_part"))
+            arrow_table = pa.table({"p": pa.array(values, type=arrow_type)})
+
+            partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+            expected = {transform.transform(iceberg_type)(value) for value in values}
+            assert {p.partition_key.partition[0] for p in partitions} == expected, (arrow_type, transform)
+            assert sum(p.arrow_table_partition.num_rows for p in partitions) == len(values)
+
+
+def test_determine_partitions_keeps_large_binary_for_bucket() -> None:
+    # Only truncate needs the cast to binary: a large_binary chunk over 2 GiB cannot be cast to binary
+    schema = Schema(NestedField(id=1, name="p", field_type=BinaryType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(4), name="p_bucket"))
+    values = [b"abcdef", b"xy", None]
+    arrow_table = pa.table({"p": pa.array(values, type=pa.large_binary())})
+
+    assert (
+        _cast_to_transform_input_type(arrow_table["p"].combine_chunks(), BinaryType(), BucketTransform(4)).type
+        == pa.large_binary()
+    )
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    assert {p.partition_key.partition[0] for p in partitions} == {BucketTransform(4).transform(BinaryType())(v) for v in values}
+    assert sum(p.arrow_table_partition.num_rows for p in partitions) == len(values)
+
+
 def test_determine_partitions_with_uuid_column() -> None:
     schema = Schema(
         NestedField(id=1, name="id", field_type=LongType(), required=False),
@@ -3715,6 +3765,36 @@ def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> Non
     table.append(arrow_table)
 
     assert len(table.inspect.partitions()) == 2
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+
+
+def test_append_arrow_types_narrower_than_the_iceberg_type_to_partitioned_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="count", field_type=IntegerType(), required=False),
+        NestedField(id=2, name="ts", field_type=TimestampType(), required=False),
+        NestedField(id=3, name="payload", field_type=BinaryType(), required=False),
+        NestedField(id=4, name="id", field_type=LongType(), required=False),
+    )
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=BucketTransform(4), name="count_bucket"),
+        PartitionField(source_id=2, field_id=1001, transform=DayTransform(), name="ts_day"),
+        PartitionField(source_id=3, field_id=1002, transform=TruncateTransform(3), name="payload_trunc"),
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_narrow_arrow_types", schema=schema, partition_spec=spec)
+
+    arrow_table = pa.table(
+        {
+            "count": pa.array([1, 2, 3], type=pa.int16()),
+            "ts": pa.array([datetime(2024, 1, 1, 10), datetime(2024, 1, 2, 11), None], type=pa.timestamp("ms")),
+            "payload": pa.array([b"abcdef", b"xyz", None], type=pa.large_binary()),
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+        }
+    )
+    table.append(arrow_table)
+
+    assert len(table.inspect.partitions()) == 3
+    assert [row["id"] for row in table.scan(row_filter="count = 2").to_arrow().to_pylist()] == [2]
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
 
 
