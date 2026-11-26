@@ -45,7 +45,9 @@ from pyiceberg.types import (
     PrimitiveType,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
     UnknownType,
@@ -178,6 +180,22 @@ def test_partition_spec_to_path_asterisk_and_tilde() -> None:
 
     # java.net.URLEncoder leaves "*" as is and escapes "~"
     assert spec.partition_to_path(Record("a*b~c-d_e.f"), schema) == "my*str%7Efield=a*b%7Ec-d_e.f"
+
+
+def test_partition_spec_to_path_timestamp() -> None:
+    for field_type, expected_path in [
+        (TimestampType(), "ts=2025-02-23T20%3A21%3A44.375612"),
+        (TimestamptzType(), "ts=2025-02-23T20%3A21%3A44.375612%2B00%3A00"),
+        (TimestampNanoType(), "ts=2025-02-23T20%3A21%3A44.375612001"),
+        (TimestamptzNanoType(), "ts=2025-02-23T20%3A21%3A44.375612001%2B00%3A00"),
+    ]:
+        schema = Schema(NestedField(field_id=1, name="ts", field_type=field_type, required=False))
+        spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="ts"))
+
+        # Exercise nanosecond precision that cannot be represented in microseconds.
+        value = 1740342104375612001 if isinstance(field_type, (TimestampNanoType, TimestamptzNanoType)) else 1740342104375612
+
+        assert spec.partition_to_path(Record(value), schema) == expected_path
 
 
 def test_partition_spec_to_path_dropped_source_id() -> None:

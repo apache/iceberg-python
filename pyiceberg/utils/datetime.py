@@ -224,6 +224,20 @@ def to_human_timestamp(timestamp_micros: int) -> str:
     return (EPOCH_TIMESTAMP + timedelta(microseconds=timestamp_micros)).isoformat()
 
 
+def to_human_timestamp_ns(timestamp_nanos: int) -> str:
+    """Convert a TimestampNanoType value to human string, matching Java's ISO_LOCAL_DATE_TIME."""
+    seconds, nanos = divmod(timestamp_nanos, 1_000_000_000)
+    human = (EPOCH_TIMESTAMP + timedelta(seconds=seconds)).isoformat()
+    if nanos:
+        human += "." + f"{nanos:09d}".rstrip("0")
+    return human
+
+
+def to_human_timestamptz_ns(timestamp_nanos: int) -> str:
+    """Convert a TimestamptzNanoType value to human string, matching Java's ISO_LOCAL_DATE_TIME with offset."""
+    return to_human_timestamp_ns(timestamp_nanos) + "+00:00"
+
+
 def micros_to_hours(micros: int) -> int:
     """Convert a timestamp in microseconds to hours from 1970-01-01T00:00."""
     return micros // 3_600_000_000
