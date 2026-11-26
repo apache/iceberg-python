@@ -14,24 +14,20 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import sys
 from typing import TYPE_CHECKING
 
 from pydantic import Field
 
 from pyiceberg.typedef import IcebergBaseModel
+from pyiceberg.utils import zstd as _zstd
 from pyiceberg.utils.deprecated import deprecated
 
 if TYPE_CHECKING:
     import pyarrow as pa
 
-if sys.version_info >= (3, 14):
-    from compression.zstd import decompress as _zstd_decompress
-else:
-    import zstandard
 
-    def _zstd_decompress(data: bytes) -> bytes:
-        return zstandard.ZstdDecompressor().decompress(data)
+def _zstd_decompress(data: bytes) -> bytes:
+    return _zstd.decompress(data)
 
 
 # Short for: Puffin Fratercula arctica, version 1
