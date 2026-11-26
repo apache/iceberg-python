@@ -2709,7 +2709,7 @@ class DataScan(TableScan):
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
         """Export this scan's result as an Arrow C stream (PyCapsule interface).
 
-        We must drop field IDs, as to_arrow() does. They only have meaning
+        Field IDs are dropped, as in to_arrow(). They only have meaning
         inside this table, and a write to another table would match columns
         by them.
         """
@@ -2898,7 +2898,7 @@ class IncrementalAppendScan(BaseScan):
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
         """Export this scan's result as an Arrow C stream (PyCapsule interface).
 
-        We must drop field IDs, as to_arrow() does. They only have meaning
+        Field IDs are dropped, as in to_arrow(). They only have meaning
         inside this table, and a write to another table would match columns
         by them.
         """

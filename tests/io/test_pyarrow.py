@@ -85,6 +85,7 @@ from pyiceberg.io.pyarrow import (
     StatsAggregator,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
+    _ConvertViewTypes,
     _create_arrow_read_format,
     _determine_partitions,
     _primitive_to_physical,
@@ -99,6 +100,7 @@ from pyiceberg.io.pyarrow import (
     expression_to_pyarrow,
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
+    visit_pyarrow,
     write_file,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
@@ -3580,6 +3582,8 @@ def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) ->
         {"region": None, "payload": b"c", "info": {"tags": ["y", None], "attrs": []}},
     ]
     arrow_table = pa.Table.from_pylist(rows, schema=arrow_schema)
+    # View types are cast before the table is split into partitions
+    arrow_table = arrow_table.cast(visit_pyarrow(arrow_schema, _ConvertViewTypes()))
 
     partitions = list(_determine_partitions(spec, schema, arrow_table))
 

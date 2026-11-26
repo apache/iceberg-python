@@ -3369,10 +3369,11 @@ def _dataframe_to_data_files(
         property_name=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES,
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
-    # Cast view types to plain string and binary. PyArrow cannot yet filter
-    # on view types or combine them with the plain columns of other data
-    # files, so a table written with them could not be scanned with a filter
-    # or deleted from. This cast can be removed once PyArrow supports both.
+    # Cast view types to large_string and large_binary. PyArrow cannot yet
+    # filter on view types or combine them with the string and binary columns
+    # of other data files, so a table written with them could not be scanned
+    # with a filter or deleted from. This cast can be removed once PyArrow
+    # supports both.
     arrow_schema = visit_pyarrow(df.schema, _ConvertViewTypes())
     if arrow_schema != df.schema:
         df = df.cast(arrow_schema)
@@ -3451,11 +3452,6 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
     - Then we produce a set of partitions by filtering on each of the combinations
     - We combine the chunks to create a copy to avoid GIL congestion on the original table
     """
-    # PyArrow has no group by, filter or take kernels for view types, so replace them with their large counterparts
-    arrow_schema = visit_pyarrow(arrow_table.schema, _ConvertViewTypes())
-    if arrow_schema != arrow_table.schema:
-        arrow_table = arrow_table.cast(arrow_schema)
-
     # Assign unique names to columns where the partition transform has been applied
     # to avoid conflicts with the data columns
     partition_fields: list[str] = []

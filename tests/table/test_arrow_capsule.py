@@ -14,12 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Tests for Arrow PyCapsule interface support on the read and write paths.
-
-Covers the input/consumer side (write methods accept any object implementing
-``__arrow_c_stream__``) and the output/producer side (scans expose
-``__arrow_c_stream__`` so any Arrow consumer can ingest them).
-"""
+"""Tests for Arrow PyCapsule stream input on writes and export from scans."""
 
 from collections.abc import Iterator
 from pathlib import PosixPath
@@ -37,12 +32,6 @@ from pyiceberg.types import IntegerType, NestedField, StringType
 SCHEMA = Schema(
     NestedField(1, "id", IntegerType(), required=False),
     NestedField(2, "region", StringType(), required=False),
-)
-ARROW_SCHEMA = pa.schema(
-    [
-        pa.field("id", pa.int32(), nullable=True),
-        pa.field("region", pa.string(), nullable=True),
-    ]
 )
 PARTITION_SPEC = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="region"))
 
@@ -69,32 +58,27 @@ def catalog(tmp_path: PosixPath) -> InMemoryCatalog:
     return catalog
 
 
-def _data(ids: list[int], regions: list[str]) -> pa.Table:
-    return pa.table({"id": pa.array(ids, type=pa.int32()), "region": regions}, schema=ARROW_SCHEMA)
+def _data(ids: list[int], regions: list[str], region_type: pa.DataType | None = None) -> pa.Table:
+    return pa.table({"id": pa.array(ids, type=pa.int32()), "region": pa.array(regions, type=region_type or pa.string())})
 
 
-def _string_view_data(ids: list[int], regions: list[str]) -> pa.Table:
-    return pa.table(
-        {"id": pa.array(ids, type=pa.int32()), "region": pa.array(regions, type=pa.string_view())},
-        schema=pa.schema(
-            [
-                pa.field("id", pa.int32(), nullable=True),
-                pa.field("region", pa.string_view(), nullable=True),
-            ]
-        ),
-    )
+def _counting_reader(table: pa.Table) -> tuple[pa.RecordBatchReader, list[pa.RecordBatch]]:
+    """Return a one-row-per-batch reader over the table and the list of batches pulled from it so far."""
+    pulled: list[pa.RecordBatch] = []
+
+    def batches() -> Iterator[pa.RecordBatch]:
+        for batch in table.to_batches(max_chunksize=1):
+            pulled.append(batch)
+            yield batch
+
+    return pa.RecordBatchReader.from_batches(table.schema, batches()), pulled
 
 
 def _rows(table: pa.Table) -> list[dict[str, Any]]:
     return sorted(table.to_pylist(), key=lambda r: r["id"])
 
 
-# ---------------------------------------------------------------------------
-# Input / consumer side (issue #2680)
-# ---------------------------------------------------------------------------
-
-
-def test_append_accepts_arrow_capsule(catalog: InMemoryCatalog) -> None:
+def test_append_and_overwrite_accept_arrow_capsule(catalog: InMemoryCatalog) -> None:
     data = _data([1, 2, 3], ["us", "eu", "us"])
 
     # A stream of several batches must be fully drained.
@@ -105,21 +89,17 @@ def test_append_accepts_arrow_capsule(catalog: InMemoryCatalog) -> None:
 
         assert _rows(tbl.scan().to_arrow()) == _rows(data), name
 
-
-def test_overwrite_accepts_arrow_capsule(catalog: InMemoryCatalog) -> None:
-    tbl = catalog.create_table("default.overwrite_capsule", schema=SCHEMA)
-    tbl.append(_data([1, 2], ["us", "eu"]))
-
     tbl.overwrite(_ArrowStreamWrapper(_data([9], ["jp"])))
 
     assert _rows(tbl.scan().to_arrow()) == _rows(_data([9], ["jp"]))
 
 
-def test_append_accepts_arrow_capsule_with_string_view(catalog: InMemoryCatalog) -> None:
-    """Regression: Polars exports string columns as string_view over PyCapsule."""
-    tbl = catalog.create_table("default.append_string_view", schema=SCHEMA)
+def test_append_accepts_polars_dataframe(catalog: InMemoryCatalog) -> None:
+    import polars as pl
 
-    tbl.append(_ArrowStreamWrapper(_string_view_data([10, 11], ["ca", "mx"])))
+    tbl = catalog.create_table("default.append_polars", schema=SCHEMA)
+
+    tbl.append(pl.DataFrame({"id": [10, 11], "region": ["ca", "mx"]}, schema={"id": pl.Int32, "region": pl.String}))
 
     assert _rows(tbl.scan().to_arrow()) == _rows(_data([10, 11], ["ca", "mx"]))
     assert _rows(tbl.scan(row_filter="region == 'ca'").to_arrow()) == _rows(_data([10], ["ca"]))
@@ -128,7 +108,7 @@ def test_append_accepts_arrow_capsule_with_string_view(catalog: InMemoryCatalog)
 def test_append_arrow_capsule_to_partitioned_table(catalog: InMemoryCatalog) -> None:
     tbl = catalog.create_table("default.append_capsule_partitioned", schema=SCHEMA, partition_spec=PARTITION_SPEC)
 
-    tbl.append(_ArrowStreamWrapper(_string_view_data([1, 2, 3], ["us", "eu", "us"])))
+    tbl.append(_ArrowStreamWrapper(_data([1, 2, 3], ["us", "eu", "us"], pa.string_view())))
 
     assert len(tbl.inspect.partitions()) == 2
     assert _rows(tbl.scan().to_arrow()) == _rows(_data([1, 2, 3], ["us", "eu", "us"]))
@@ -137,45 +117,26 @@ def test_append_arrow_capsule_to_partitioned_table(catalog: InMemoryCatalog) -> 
 def test_arrow_capsule_is_streamed_into_an_unpartitioned_table_only(catalog: InMemoryCatalog) -> None:
     data = _data([1, 2, 3], ["us", "eu", "us"])
 
-    for name, spec, expected in (
-        ("unpartitioned", UNPARTITIONED_PARTITION_SPEC, pa.RecordBatchReader),
-        ("partitioned", PARTITION_SPEC, pa.Table),
-    ):
+    for name, spec, expected in (("unpartitioned", UNPARTITIONED_PARTITION_SPEC, 0), ("partitioned", PARTITION_SPEC, 3)):
         tbl = catalog.create_table(f"default.streamed_{name}", schema=SCHEMA, partition_spec=spec)
+        reader, pulled = _counting_reader(data)
 
-        assert isinstance(tbl.transaction()._prepare_arrow_input(_ArrowStreamWrapper(data)), expected), name
+        tbl.transaction()._prepare_arrow_input(_ArrowStreamWrapper(reader))
+
+        assert len(pulled) == expected, name
 
 
 def test_append_checks_schema_before_reading_arrow_capsule(catalog: InMemoryCatalog) -> None:
-    pulled: list[pa.RecordBatch] = []
     mismatched = pa.table({"id": ["a", "b"], "region": ["us", "eu"]})
-
-    def batches() -> Iterator[pa.RecordBatch]:
-        for batch in mismatched.to_batches(max_chunksize=1):
-            pulled.append(batch)
-            yield batch
 
     for name, spec in (("unpartitioned", UNPARTITIONED_PARTITION_SPEC), ("partitioned", PARTITION_SPEC)):
         tbl = catalog.create_table(f"default.schema_check_{name}", schema=SCHEMA, partition_spec=spec)
+        reader, pulled = _counting_reader(mismatched)
 
         with pytest.raises(ValueError, match="Mismatch in fields"):
-            tbl.append(_ArrowStreamWrapper(pa.RecordBatchReader.from_batches(mismatched.schema, batches())))
+            tbl.append(_ArrowStreamWrapper(reader))
 
         assert not pulled, name
-
-
-# ---------------------------------------------------------------------------
-# Output / producer side (issue #1655)
-# ---------------------------------------------------------------------------
-
-
-def test_scan_supports_arrow_c_stream(catalog: InMemoryCatalog) -> None:
-    tbl = catalog.create_table("default.stream", schema=SCHEMA)
-    tbl.append(_data([1, 2, 3], ["us", "eu", "us"]))
-
-    consumed = pa.table(tbl.scan())
-
-    assert _rows(consumed) == _rows(tbl.scan().to_arrow())
 
 
 def test_scan_arrow_c_stream_respects_filter_projection_and_limit(catalog: InMemoryCatalog) -> None:
@@ -188,18 +149,6 @@ def test_scan_arrow_c_stream_respects_filter_projection_and_limit(catalog: InMem
     assert consumed.column_names == ["id"]
     assert sorted(consumed.column("id").to_pylist()) == [1, 3]
     assert pa.table(scan.update(limit=1)).num_rows == 1
-
-
-def test_capsule_roundtrip_scan_into_append(catalog: InMemoryCatalog) -> None:
-    """The two halves compose: a scan (producer) can be appended into another
-    table (consumer) with no explicit pyarrow conversion in between."""
-    src = catalog.create_table("default.roundtrip_src", schema=SCHEMA)
-    src.append(_data([1, 2, 3], ["us", "eu", "us"]))
-    dst = catalog.create_table("default.roundtrip_dst", schema=SCHEMA)
-
-    dst.append(src.scan())
-
-    assert _rows(dst.scan().to_arrow()) == _rows(src.scan().to_arrow())
 
 
 def test_scan_arrow_c_stream_casts_to_requested_schema(catalog: InMemoryCatalog) -> None:

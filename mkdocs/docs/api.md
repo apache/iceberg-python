@@ -418,7 +418,9 @@ import polars as pl
 tbl.append(pl.DataFrame({"city": ["Groningen"], "lat": [53.21917], "long": [6.56667]}))
 ```
 
-Such an object is streamed into an unpartitioned table, and read into memory as a `pa.Table` for a partitioned one.
+Such an object is streamed into an unpartitioned table, and read into memory as a `pa.Table` for a partitioned one. A streamed batch is never split, so a dataframe that exports one large batch is written as one file.
+
+The stream's schema must match the table's, including nullability. Polars exports every column as optional, so a Polars dataframe cannot be written to a table with required fields.
 
 Scans implement the same interface, so any Arrow consumer can read one directly:
 
