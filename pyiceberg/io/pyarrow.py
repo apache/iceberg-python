@@ -3504,6 +3504,10 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
         # PyArrow has no group by or equality kernels for extension types such as arrow.uuid, so use their storage type
         if isinstance(partition_array.type, pa.BaseExtensionType):
             partition_array = partition_array.cast(partition_array.type.storage_type)
+        # Arrow groups floats by their bits, but NaNs with any sign or payload are one partition value
+        if pa.types.is_floating(partition_array.type):
+            nan = pa.scalar(math.nan, type=partition_array.type)
+            partition_array = pc.if_else(pc.is_nan(partition_array), nan, partition_array)
         arrow_table = arrow_table.append_column(name, partition_array)
 
     unique_partition_fields = arrow_table.select(partition_fields).group_by(partition_fields).aggregate([])

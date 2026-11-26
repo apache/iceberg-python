@@ -3499,6 +3499,34 @@ def test_partition_for_deep_nested_field() -> None:
     assert partition_values == {"data-1", "data-2"}
 
 
+def test_determine_partitions_identity_nan_sign_bits() -> None:
+    for field_type in (DoubleType(), FloatType()):
+        schema = Schema(
+            NestedField(id=1, name="id", field_type=IntegerType(), required=False),
+            NestedField(id=2, name="value", field_type=field_type, required=False),
+        )
+        spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="value"))
+        arrow_table = pa.Table.from_pydict(
+            {"id": [1, 2, 3, 4], "value": [float("nan"), -float("nan"), 1.0, None]},
+            schema=schema.as_arrow(),
+        )
+
+        partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+        # Both NaNs are one partition value, so each row is in exactly one partition
+        rows_by_partition = sorted(
+            (repr(p.partition_key.partition[0]), sorted(p.arrow_table_partition["id"].to_pylist())) for p in partitions
+        )
+        assert rows_by_partition == [("1.0", [3]), ("None", [4]), ("nan", [1, 2])], field_type
+
+        # Only the partition value is normalized, the data keeps the sign bit of each NaN
+        nan_partition = next(p for p in partitions if repr(p.partition_key.partition[0]) == "nan")
+        assert [struct.pack(">d", v).hex() for v in nan_partition.arrow_table_partition["value"].to_pylist()] == [
+            "7ff8000000000000",
+            "fff8000000000000",
+        ], field_type
+
+
 def test_determine_partitions_identity_nan() -> None:
     schema = Schema(
         NestedField(id=1, name="id", field_type=IntegerType(), required=False),
