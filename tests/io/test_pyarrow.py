@@ -3466,6 +3466,32 @@ def test_partition_for_nested_field() -> None:
     assert partition_values == {486729, 486730}
 
 
+def test_partition_for_nested_field_with_dotted_names() -> None:
+    # The full names a.b.c, d.e.f and g.h.i.j cannot be split on dots into the names of the nested fields
+    schema = Schema(
+        NestedField(1, "a.b", StructType(NestedField(2, "c", StringType()))),
+        NestedField(3, "d", StructType(NestedField(4, "e.f", StringType()))),
+        NestedField(5, "g", StructType(NestedField(6, "h.i", StructType(NestedField(7, "j", StringType()))))),
+    )
+    spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="c"),
+        PartitionField(source_id=4, field_id=1001, transform=IdentityTransform(), name="e_f"),
+        PartitionField(source_id=7, field_id=1002, transform=IdentityTransform(), name="j"),
+    )
+    rows = [
+        {"a.b": {"c": "x"}, "d": {"e.f": "y"}, "g": {"h.i": {"j": "z"}}},
+        {"a.b": {"c": "x"}, "d": {"e.f": None}, "g": None},
+    ]
+    arrow_table = pa.Table.from_pylist(rows, schema=schema.as_arrow())
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    assert {p.partition_key.partition: p.arrow_table_partition.to_pylist() for p in partitions} == {
+        Record("x", "y", "z"): [rows[0]],
+        Record("x", None, None): [rows[1]],
+    }
+
+
 def test_partition_for_deep_nested_field() -> None:
     schema = Schema(
         NestedField(

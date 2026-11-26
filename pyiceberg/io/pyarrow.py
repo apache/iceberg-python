@@ -3447,7 +3447,9 @@ def _dataframe_to_data_files(
             ),
         )
     else:
-        partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
+        partitions = _determine_partitions(
+            spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df, input_schema=task_schema
+        )
         yield from write_file(
             io=io,
             table_metadata=table_metadata,
@@ -3471,8 +3473,13 @@ class _TablePartition:
     arrow_table_partition: pa.Table
 
 
-def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.Table) -> Iterable[_TablePartition]:
+def _determine_partitions(
+    spec: PartitionSpec, schema: Schema, arrow_table: pa.Table, input_schema: Schema | None = None
+) -> Iterable[_TablePartition]:
     """Based on the iceberg table partition spec, filter the arrow table into partitions with their keys.
+
+    The source columns are found by field ID in input_schema, the Iceberg schema of the arrow table (schema if not
+    given), whose names can differ from schema, e.g. when the arrow table has field IDs from before a rename.
 
     Example:
     Input:
@@ -3496,10 +3503,7 @@ def _determine_partitions(spec: PartitionSpec, schema: Schema, arrow_table: pa.T
 
     for partition, name in zip(spec.fields, partition_fields, strict=True):
         source_field = schema.find_field(partition.source_id)
-        full_field_name = schema.find_column_name(partition.source_id)
-        if full_field_name is None:
-            raise ValueError(f"Could not find column name for field ID: {partition.source_id}")
-        field_array = _get_field_from_arrow_table(arrow_table, full_field_name)
+        field_array = _get_field_from_arrow_table(arrow_table, schema, partition.source_id, input_schema)
         partition_array = partition.transform.pyarrow_transform(source_field.field_type)(field_array)
         # PyArrow has no group by or equality kernels for extension types such as arrow.uuid, so use their storage type
         if isinstance(partition_array.type, pa.BaseExtensionType):
@@ -3545,30 +3549,36 @@ def _partition_value_filter(partition_field_name: str, value: Any) -> pc.Express
     return pc.field(partition_field_name) == value
 
 
-def _get_field_from_arrow_table(arrow_table: pa.Table, field_path: str) -> pa.Array:
-    """Get a field from an Arrow table, supporting both literal field names and nested field paths.
+def _get_field_from_arrow_table(
+    arrow_table: pa.Table, schema: Schema, field_id: int, input_schema: Schema | None = None
+) -> pa.Array:
+    """Get a field from an Arrow table by its field ID, where the field can be nested in structs.
 
-    This function handles two cases:
-    1. Literal field names that may contain dots (e.g., "some.id")
-    2. Nested field paths using dot notation (e.g., "bar.baz" for nested access)
+    Follow the target schema's parent IDs and resolve each name in input_schema, matching the writer.
+    A name can contain dots (e.g., "some.id"), so a nested field's full name cannot be split into these names.
 
     Args:
         arrow_table: The Arrow table containing the field
-        field_path: Field name or dot-separated path
+        schema: The target Iceberg table schema
+        field_id: The ID of the field
+        input_schema: The Iceberg schema of the Arrow table, if different from schema
 
     Returns:
         The field as a PyArrow Array
 
     Raises:
+        ValueError: If a field ID on the path is missing from either schema
         KeyError: If the field path cannot be resolved
     """
-    # Try exact column name match (handles field names containing literal dots)
-    if field_path in arrow_table.column_names:
-        return arrow_table[field_path]
+    source_schema = input_schema if input_schema is not None else schema
+    # Match ArrowAccessor: follow the target's parent IDs using each field's input name.
+    names = [source_schema.find_field(field_id).name]
+    parent_id = schema._lazy_id_to_parent.get(field_id)
+    while parent_id is not None:
+        names.append(source_schema.find_field(parent_id).name)
+        parent_id = schema._lazy_id_to_parent.get(parent_id)
 
-    # If not found as exact name, treat as nested field path
-    path_parts = field_path.split(".")
-    # Get the struct column from the table (e.g., "bar" from "bar.baz")
-    field_array = arrow_table[path_parts[0]]
-    # Navigate into the struct using the remaining path parts
-    return pc.struct_field(field_array, path_parts[1:])
+    # Get the column from the table (e.g., "bar" for "bar.baz") and navigate into its structs
+    column_name, *nested_names = reversed(names)
+    field_array = arrow_table[column_name]
+    return pc.struct_field(field_array, nested_names) if nested_names else field_array
