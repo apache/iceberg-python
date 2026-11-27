@@ -825,6 +825,8 @@ class TruncateTransform(Transform[S, S]):
 
         if isinstance(field_type, (IntegerType, LongType, DecimalType)):
             if isinstance(pred, BoundLiteralPredicate):
+                if isinstance(field_type, (IntegerType, LongType)):
+                    return _truncate_integer_strict(name, pred, self.transform(field_type), field_type, self._width)
                 return _truncate_number_strict(name, pred, self.transform(field_type))
             elif isinstance(pred, BoundNotIn):
                 return _set_apply_transform(name, pred, self.transform(field_type))
@@ -864,7 +866,7 @@ class TruncateTransform(Transform[S, S]):
         if isinstance(source, (IntegerType, LongType)):
 
             def truncate_func(v: Any) -> Any:
-                return v - v % self._width
+                return _wrap_integer(v - v % self._width, source)
 
         elif isinstance(source, (StringType, BinaryType)):
 
@@ -1028,6 +1030,50 @@ class VoidTransform(Transform[S, None], Singleton):
             raise ModuleNotFoundError("For partition transforms, PyArrow needs to be installed") from e
 
         return lambda arr: pa.nulls(len(arr), type=arr.type)
+
+
+def _integer_bounds(source: IcebergType) -> tuple[int, int]:
+    """Return the minimum value and the size of the range of an integer type."""
+    if isinstance(source, IntegerType):
+        return -(2**31), 2**32
+    return -(2**63), 2**64
+
+
+def _wrap_integer(value: int, source: IcebergType) -> int:
+    """Wrap an integer into the range of the source type, like Java's two's complement arithmetic."""
+    minimum, modulus = _integer_bounds(source)
+    return (value - minimum) % modulus + minimum
+
+
+def _truncate_integer_strict(
+    name: str,
+    pred: BoundLiteralPredicate,
+    transform: Callable[[Any | None], Any | None],
+    source: IcebergType,
+    width: int,
+) -> UnboundPredicate | None:
+    """Project a predicate strictly on a truncate partition of an integer column.
+
+    Values from the minimum of the source type truncate to a partition value at the top of the
+    type's range, which does not sort with the other partition values. No single predicate on the
+    partition value can account for that, so those ranges have no strict projection.
+    """
+    minimum, _ = _integer_bounds(source)
+    floor_mod = minimum % width
+    if floor_mod == 0 or not isinstance(pred.literal, LongLiteral):
+        return _truncate_number_strict(name, pred, transform)
+
+    first_block_end = minimum - floor_mod + width
+    if isinstance(pred, BoundLessThan):
+        if pred.literal.value < first_block_end:
+            return None
+    elif isinstance(pred, BoundLessThanOrEqual):
+        if pred.literal.increment().value < first_block_end:
+            return None
+    elif isinstance(pred, (BoundGreaterThan, BoundGreaterThanOrEqual)):
+        return None
+
+    return _truncate_number_strict(name, pred, transform)
 
 
 def _truncate_number(
