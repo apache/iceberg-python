@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from decimal import Decimal
 from pathlib import PosixPath
 from typing import Any
 
@@ -29,7 +30,7 @@ from pyiceberg.table.inspect import InspectTable, _readable_bound
 from pyiceberg.table.snapshots import Snapshot
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.typedef import Record
-from pyiceberg.types import DoubleType, FloatType, IntegerType, LongType, NestedField, PrimitiveType, StringType
+from pyiceberg.types import DecimalType, DoubleType, FloatType, IntegerType, LongType, NestedField, PrimitiveType, StringType
 from tests.catalog.test_base import InMemoryCatalog
 
 
@@ -102,6 +103,26 @@ def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMem
     files = tbl.inspect.files().to_pylist()
     assert len(files) == 1
     assert files[0]["column_sizes"] is None
+
+
+@pytest.mark.filterwarnings("ignore:Falling back to pure Python Avro decoder")
+def test_manifests_render_decimal_bounds_in_plain_notation(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "amount", DecimalType(20, 8), required=True))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="amount"))
+    tbl = catalog.create_table("default.dec_bounds", schema, partition_spec=spec)
+    tbl.append(
+        pa.table(
+            {"amount": pa.array([Decimal("0.00000012"), Decimal("100.00000000")], type=pa.decimal128(20, 8))},
+            schema=tbl.schema().as_arrow(),
+        )
+    )
+
+    summaries = tbl.inspect.manifests().to_pydict()["partition_summaries"][0]
+
+    # Plain notation per the decimal JSON convention (#4420): str() would render
+    # the small magnitude as 1.2E-7
+    assert summaries[0]["lower_bound"] == "0.00000012"
+    assert summaries[0]["upper_bound"] == "100.00000000"
 
 
 @pytest.mark.parametrize("newest_first", [False, True])
