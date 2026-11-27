@@ -76,6 +76,26 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
     assert files_metrics["upper_bound"] is None
 
 
+def test_partitions_row_filter_after_column_rename(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "category", StringType()))
+    table = catalog.create_table(
+        "default.renamed_partition",
+        schema=schema,
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "category")),
+    )
+    table.append(pa.table({"category": ["a", "b", "a"]}))
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    with table.update_schema() as update:
+        update.rename_column("category", "cat")
+
+    current = table.inspect.partitions(row_filter="cat = 'a'")
+    historical = table.inspect.partitions(snapshot_id=snapshot.snapshot_id, row_filter="category = 'a'")
+    expected = [{"partition": {"category": "a"}, "record_count": 2}]
+    assert current.select(["partition", "record_count"]).to_pylist() == expected
+    assert historical.select(["partition", "record_count"]).to_pylist() == expected
+
+
 def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMemoryCatalog) -> None:
     # column_sizes and the other metric maps are optional in a data file
     schema = Schema(NestedField(1, "x", LongType(), required=False))

@@ -66,7 +66,7 @@ from pyiceberg.table.maintenance import MaintenanceTable
 from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
 from pyiceberg.table.metadata_columns import project_schema, split_selected_fields
 from pyiceberg.table.name_mapping import NameMapping
-from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
+from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
     Snapshot,
@@ -2244,6 +2244,9 @@ class BaseScan(ABC):
         self.limit = limit
         self.encryption_manager = encryption_manager
 
+    def _scan_schema(self) -> Schema:
+        return self.table_metadata.schema()
+
     @abstractmethod
     def plan_files(self) -> Iterable[ScanTask]: ...
 
@@ -2325,6 +2328,7 @@ class TableScan(BaseScan):
     """A base class for table scans targeting a single snapshot."""
 
     snapshot_id: int | None
+    _branch_name: str | None
     catalog: Catalog | None
     table_identifier: Identifier | None
     table_config: Properties
@@ -2343,6 +2347,8 @@ class TableScan(BaseScan):
         table_identifier: Identifier | None = None,
         table_config: Properties = EMPTY_DICT,
         encryption_manager: EncryptionManager | None = None,
+        *,
+        _branch_name: str | None = None,
     ):
         super().__init__(
             table_metadata=table_metadata,
@@ -2355,6 +2361,7 @@ class TableScan(BaseScan):
             encryption_manager=encryption_manager,
         )
         self.snapshot_id = snapshot_id
+        self._branch_name = _branch_name
         self.catalog = catalog
         self.table_identifier = table_identifier
         self.table_config = table_config
@@ -2364,9 +2371,9 @@ class TableScan(BaseScan):
             return self.table_metadata.snapshot_by_id(self.snapshot_id)
         return self.table_metadata.current_snapshot()
 
-    def projection(self) -> Schema:
+    def _scan_schema(self) -> Schema:
         current_schema = self.table_metadata.schema()
-        if self.snapshot_id is not None:
+        if self.snapshot_id is not None and self._branch_name is None:
             snapshot = self.table_metadata.snapshot_by_id(self.snapshot_id)
             if snapshot is not None:
                 if snapshot.schema_id is not None:
@@ -2378,14 +2385,23 @@ class TableScan(BaseScan):
                         warnings.warn(f"Metadata does not contain schema with id: {snapshot.schema_id}", stacklevel=2)
             else:
                 raise ValueError(f"Snapshot not found: {self.snapshot_id}")
+        return current_schema
+
+    def projection(self) -> Schema:
+        current_schema = self._scan_schema()
 
         return project_schema(current_schema, self.selected_fields, self.case_sensitive, self.table_metadata.format_version)
 
     def use_ref(self: S, name: str) -> S:
+        """Select a branch using the table schema or a tag using its snapshot schema."""
         if self.snapshot_id is not None:
             raise ValueError(f"Cannot override ref, already set snapshot id={self.snapshot_id}")
         if snapshot := self.table_metadata.snapshot_by_name(name):
-            return self.update(snapshot_id=snapshot.snapshot_id)
+            ref = self.table_metadata.refs[name]
+            return self.update(
+                snapshot_id=snapshot.snapshot_id,
+                _branch_name=name if ref.snapshot_ref_type == SnapshotRefType.BRANCH else None,
+            )
 
         raise ValueError(f"Cannot scan unknown ref={name}")
 
@@ -2547,6 +2563,7 @@ def _to_arrow_via_file_scan_tasks(
         scan.case_sensitive,
         scan.limit,
         dictionary_columns=dictionary_columns,
+        row_filter_schema=scan._scan_schema(),
     ).to_table(tasks)
 
 
@@ -2571,6 +2588,7 @@ def _to_arrow_batch_reader_via_file_scan_tasks(
         scan.case_sensitive,
         scan.limit,
         dictionary_columns=dictionary_columns,
+        row_filter_schema=scan._scan_schema(),
     ).to_record_batches(tasks)
 
     if dictionary_columns:
@@ -2600,6 +2618,7 @@ class DataScan(TableScan):
             row_filter=self.row_filter,
             case_sensitive=self.case_sensitive,
             options=self.options,
+            schema=self._scan_schema(),
         )
 
     @cached_property
@@ -2746,6 +2765,7 @@ class DataScan(TableScan):
                     projected_schema=self.projection(),
                     row_filter=self.row_filter,
                     case_sensitive=self.case_sensitive,
+                    row_filter_schema=self._scan_schema(),
                 )
                 tbl = arrow_scan.to_table([task])
                 res += len(tbl)
@@ -2962,6 +2982,7 @@ class ManifestGroupPlanner:
     row_filter: BooleanExpression
     case_sensitive: bool
     options: Properties
+    schema: Schema
 
     def __init__(
         self,
@@ -2970,6 +2991,7 @@ class ManifestGroupPlanner:
         row_filter: str | BooleanExpression = ALWAYS_TRUE,
         case_sensitive: bool = True,
         options: Properties = EMPTY_DICT,
+        schema: Schema | None = None,
         _ignore_residuals: bool = False,
     ):
         self.table_metadata = table_metadata
@@ -2977,6 +2999,7 @@ class ManifestGroupPlanner:
         self.row_filter = _parse_row_filter(row_filter)
         self.case_sensitive = case_sensitive
         self.options = options
+        self.schema = schema if schema is not None else table_metadata.schema()
         # Set when the planned data files are read in full, as in a rewrite. Residuals are then always true, and delete
         # files are kept even if their bounds cannot match the row filter, as no residual drops the rows they delete.
         self._ignore_residuals = _ignore_residuals
@@ -3043,9 +3066,7 @@ class ManifestGroupPlanner:
         delete_index = DeleteFileIndex()
 
         residual_evaluators: dict[int, ResidualEvaluator] = KeyDefaultDict(self._build_residual_evaluator)
-        referenced_field_ids = extract_field_ids(
-            bind(self.table_metadata.schema(), self.row_filter, case_sensitive=self.case_sensitive)
-        )
+        referenced_field_ids = extract_field_ids(bind(self.schema, self.row_filter, case_sensitive=self.case_sensitive))
         partition_specs = self.table_metadata.specs()
         residual_cache_key_positions: dict[int, tuple[int, ...]] = KeyDefaultDict(
             lambda spec_id: tuple(
@@ -3105,16 +3126,16 @@ class ManifestGroupPlanner:
         ]
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
-        project = inclusive_projection(self.table_metadata.schema(), self.table_metadata.specs()[spec_id], self.case_sensitive)
+        project = inclusive_projection(self.schema, self.table_metadata.specs()[spec_id], self.case_sensitive)
         return project(self.row_filter)
 
     def _build_manifest_evaluator(self, spec_id: int) -> Callable[[ManifestFile], bool]:
         spec = self.table_metadata.specs()[spec_id]
-        return manifest_evaluator(spec, self.table_metadata.schema(), self.partition_filters[spec_id], self.case_sensitive)
+        return manifest_evaluator(spec, self.schema, self.partition_filters[spec_id], self.case_sensitive)
 
     def _build_partition_evaluator(self, spec_id: int) -> Callable[[DataFile], bool]:
         spec = self.table_metadata.specs()[spec_id]
-        partition_type = spec.partition_type(self.table_metadata.schema())
+        partition_type = spec.partition_type(self.schema)
         partition_schema = Schema(*partition_type.fields)
         partition_expr = self.partition_filters[spec_id]
         evaluator = expression_evaluator(partition_schema, partition_expr, self.case_sensitive)
@@ -3124,7 +3145,7 @@ class ManifestGroupPlanner:
         return lambda data_file: evaluator(data_file.partition)
 
     def _build_metrics_evaluator(self) -> Callable[[DataFile], bool]:
-        schema = self.table_metadata.schema()
+        schema = self.schema
         include_empty_files = strtobool(self.options.get("include_empty_files", "false"))
 
         # Metrics evaluators keep file-specific state local to each call, so one
@@ -3145,7 +3166,7 @@ class ManifestGroupPlanner:
             spec=spec,
             expr=self.row_filter,
             case_sensitive=self.case_sensitive,
-            schema=self.table_metadata.schema(),
+            schema=self.schema,
         )
 
     @staticmethod
