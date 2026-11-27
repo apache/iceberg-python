@@ -2861,36 +2861,52 @@ def parquet_path_to_id_mapping(
     return result
 
 
-def _nan_value_counts_from_arrow(table: pa.Table, stats_columns: dict[int, StatisticsCollector]) -> dict[int, int]:
-    """Count the non-null NaN values of the top-level float and double columns.
+def _nan_value_counts_from_arrow(
+    table: pa.Table, schema: Schema, stats_columns: dict[int, StatisticsCollector]
+) -> dict[int, int]:
+    """Count the non-null NaN values of the float and double columns, including nested fields.
 
     PyArrow does not expose the NaN count of a Parquet column statistic, so the counts are taken
-    from the data before it is written. Columns that cannot be counted are left out, which only
-    means the file cannot be pruned on NaN counts.
+    from the data before it is written. Float and double fields inside structs, list elements,
+    and map keys and values are counted as well. Columns that cannot be counted are left out,
+    which only means the file cannot be pruned on NaN counts.
 
     Args:
         table (pyarrow.Table): The data that is written to the file.
+        schema (Schema): The Iceberg schema of the file.
         stats_columns (dict[int, StatisticsCollector]): The statistics gathering plan.
 
     Returns:
         A mapping of Iceberg field ID to the number of non-null NaN values.
     """
+    nan_field_ids = {
+        field_id
+        for field_id, stats_col in stats_columns.items()
+        if isinstance(stats_col.iceberg_type, (FloatType, DoubleType)) and stats_col.mode != MetricsMode(MetricModeTypes.NONE)
+    }
     nan_value_counts: dict[int, int] = {}
-    for pos, arrow_field in enumerate(table.schema):
-        if (field_id := _get_field_id(arrow_field)) is None:
-            continue
+    if not nan_field_ids:
+        return nan_value_counts
 
-        stats_col = stats_columns.get(field_id)
-        if stats_col is None:
-            continue
+    def count(field_id: int, field_type: IcebergType, array: pa.Array) -> None:
+        if isinstance(field_type, StructType):
+            for nested_field in field_type.fields:
+                if array.type.get_field_index(nested_field.name) >= 0:
+                    # struct_field also applies the validity of the parent struct
+                    count(nested_field.field_id, nested_field.field_type, pc.struct_field(array, nested_field.name))
+        elif isinstance(field_type, ListType):
+            count(field_type.element_id, field_type.element_type, array.flatten())
+        elif isinstance(field_type, MapType):
+            entries = array.cast(pa.list_(pa.struct([array.type.key_field, array.type.item_field]))).flatten()
+            count(field_type.key_id, field_type.key_type, entries.field(0))
+            count(field_type.value_id, field_type.value_type, entries.field(1))
+        elif field_id in nan_field_ids and pa.types.is_floating(array.type):
+            nan_value_counts[field_id] = nan_value_counts.get(field_id, 0) + pc.sum(pc.is_nan(array), min_count=0).as_py()
 
-        if stats_col.mode == MetricsMode(MetricModeTypes.NONE):
-            continue
-
-        if not isinstance(stats_col.iceberg_type, (FloatType, DoubleType)):
-            continue
-
-        nan_value_counts[field_id] = pc.sum(pc.is_nan(table.column(pos)), min_count=0).as_py()
+    for field in schema.fields:
+        if table.schema.get_field_index(field.name) >= 0:
+            for chunk in table.column(field.name).chunks:
+                count(field.field_id, field.field_type, chunk)
 
     return nan_value_counts
 
@@ -3070,7 +3086,7 @@ class ParquetFormatWriter(FileFormatWriter):
                 raise
             self._fos = fos
         self._writer.write(table, row_group_size=self._row_group_size)
-        for field_id, count in _nan_value_counts_from_arrow(table, self._stats_columns).items():
+        for field_id, count in _nan_value_counts_from_arrow(table, self._file_schema, self._stats_columns).items():
             self._nan_value_counts[field_id] = self._nan_value_counts.get(field_id, 0) + count
 
     def close(self) -> DataFileStatistics:
