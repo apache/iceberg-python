@@ -862,6 +862,26 @@ def inclusive_projection(
     return InclusiveProjection(schema, spec, case_sensitive).project
 
 
+# For these predicates the expression evaluator and Arrow give the same result for a NULL value. For !=, NOT STARTS WITH
+# and NOT NAN the evaluator matches NULL and Arrow does not, so those keep the default-value result.
+_NULL_CONSISTENT_PREDICATES = (
+    BoundEqualTo,
+    BoundIn,
+    BoundNotIn,
+    BoundLessThan,
+    BoundLessThanOrEqual,
+    BoundGreaterThan,
+    BoundGreaterThanOrEqual,
+    BoundIsNull,
+    BoundNotNull,
+    BoundStartsWith,
+    BoundIsNaN,
+)
+
+# A NOT over these predicates is pushed into their complements, so NOT (c != 5) is handled as c = 5
+_NESTED_NOT_PREDICATES = (*_NULL_CONSISTENT_PREDICATES, BoundNotEqualTo, BoundNotStartsWith, BoundNotNaN)
+
+
 class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     """Converts the column names with the ones in the actual file.
 
@@ -869,6 +889,7 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
       file_schema (Schema): The schema of the file.
       case_sensitive (bool): Whether to consider case when binding a reference to a field in a schema, defaults to True.
       projected_field_values (Dict[int, Any]): Values for projected fields not present in the data file.
+      table_schema (Schema | None): The table schema, used to find the struct ancestors of a missing field.
 
     Raises:
         TypeError: In the case of an UnboundPredicate.
@@ -878,11 +899,19 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
     file_schema: Schema
     case_sensitive: bool
     projected_field_values: dict[int, Any]
+    table_schema: Schema | None
 
-    def __init__(self, file_schema: Schema, case_sensitive: bool, projected_field_values: dict[int, Any] = EMPTY_DICT) -> None:
+    def __init__(
+        self,
+        file_schema: Schema,
+        case_sensitive: bool,
+        projected_field_values: dict[int, Any] = EMPTY_DICT,
+        table_schema: Schema | None = None,
+    ) -> None:
         self.file_schema = file_schema
         self.case_sensitive = case_sensitive
         self.projected_field_values = projected_field_values
+        self.table_schema = table_schema
 
     def visit_true(self) -> BooleanExpression:
         return AlwaysTrue()
@@ -926,11 +955,16 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
             field_value = (
                 self.projected_field_values[field_id] if field.field_id in self.projected_field_values else field.initial_default
             )
-            return (
-                AlwaysTrue()
-                if expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)(Record(field_value))
-                else AlwaysFalse()
-            )
+            evaluate = expression_evaluator(Schema(field), pred, case_sensitive=self.case_sensitive)
+            matches_value = evaluate(Record(field_value))
+            if self.table_schema is None or not isinstance(predicate, _NULL_CONSISTENT_PREDICATES):
+                return AlwaysTrue() if matches_value else AlwaysFalse()
+            # A row whose optional ancestor struct is NULL reads the field as NULL, so it matches like a NULL value
+            matches_null = evaluate(Record(None))
+            if matches_value == matches_null:
+                return AlwaysTrue() if matches_value else AlwaysFalse()
+            present = self._ancestors_present(self.table_schema, field.field_id)
+            return present if matches_value else Not(present)
 
         if isinstance(predicate, BoundUnaryPredicate):
             return predicate.as_unbound(file_column_name)
@@ -941,11 +975,74 @@ class _ColumnNameTranslator(BooleanExpressionVisitor[BooleanExpression]):
         else:
             raise ValueError(f"Unsupported predicate: {predicate}")
 
+    def _ancestors_present(self, table_schema: Schema, field_id: int) -> BooleanExpression:
+        """Return the rows in which every optional struct around a missing field is present."""
+        present: BooleanExpression = AlwaysTrue()
+        for parent_id in _ancestor_ids(table_schema, field_id):
+            parent = table_schema.find_field(parent_id)
+            if not parent.required:
+                parent_name = self.file_schema.find_column_name(parent_id)
+                if parent_name is None:
+                    # The struct is missing from the file too, so its value is the same in every row
+                    if parent.initial_default is None:
+                        return AlwaysFalse()
+                else:
+                    present = And(present, NotNull(parent_name))
+        return present
+
+
+def _ancestor_ids(schema: Schema, field_id: int) -> list[int]:
+    """Return the IDs of the parents of a field, from the nearest one outwards."""
+    ancestor_ids: list[int] = []
+    parent_id = schema._lazy_id_to_parent.get(field_id)
+    while parent_id is not None:
+        ancestor_ids.append(parent_id)
+        parent_id = schema._lazy_id_to_parent.get(parent_id)
+    return ancestor_ids
+
+
+def _is_missing_nested_field(predicate: BoundPredicate, file_schema: Schema, table_schema: Schema) -> bool:
+    """Return whether the predicate reads a field that is missing from the file, under an optional struct."""
+    field_id = predicate.term.ref().field.field_id
+    return file_schema.find_column_name(field_id) is None and any(
+        not table_schema.find_field(parent_id).required for parent_id in _ancestor_ids(table_schema, field_id)
+    )
+
+
+def _rewrite_nested_not(
+    expr: BooleanExpression, file_schema: Schema, table_schema: Schema, negated: bool = False
+) -> BooleanExpression:
+    """Push NOT down to the predicates, and complement those on a missing nested field.
+
+    A row whose optional struct is NULL reads such a field as NULL. NOT (c < 4) must not match that row, as c >= 4
+    does not. Other negations are left in place.
+    """
+    if isinstance(expr, Not):
+        return _rewrite_nested_not(expr.child, file_schema, table_schema, not negated)
+    if isinstance(expr, (And, Or)):
+        # De Morgan's laws: NOT (A AND B) is NOT A OR NOT B, and NOT (A OR B) is NOT A AND NOT B
+        left = _rewrite_nested_not(expr.left, file_schema, table_schema, negated)
+        right = _rewrite_nested_not(expr.right, file_schema, table_schema, negated)
+        if isinstance(expr, And) != negated:
+            return And(left, right)
+        return Or(left, right)
+    if not negated:
+        return expr
+    if isinstance(expr, _NESTED_NOT_PREDICATES) and _is_missing_nested_field(expr, file_schema, table_schema):
+        return ~expr
+    return Not(child=expr)
+
 
 def translate_column_names(
-    expr: BooleanExpression, file_schema: Schema, case_sensitive: bool = True, projected_field_values: dict[int, Any] = EMPTY_DICT
+    expr: BooleanExpression,
+    file_schema: Schema,
+    case_sensitive: bool = True,
+    projected_field_values: dict[int, Any] = EMPTY_DICT,
+    table_schema: Schema | None = None,
 ) -> BooleanExpression:
-    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_field_values))
+    if table_schema is not None:
+        expr = _rewrite_nested_not(expr, file_schema, table_schema)
+    return visit(expr, _ColumnNameTranslator(file_schema, case_sensitive, projected_field_values, table_schema))
 
 
 class _ExpressionFieldIDs(BooleanExpressionVisitor[set[int]]):
