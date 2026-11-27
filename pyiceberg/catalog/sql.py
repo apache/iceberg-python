@@ -781,9 +781,9 @@ class SqlCatalog(MetastoreCatalog):
             raise NoSuchNamespaceError(f"Namespace {namespace_str} does not exists")
 
         current_properties = self.load_namespace_properties(namespace=namespace)
-        properties_update_summary = self._get_updated_props_and_update_summary(
+        properties_update_summary, updated_properties = self._get_updated_props_and_update_summary(
             current_properties=current_properties, removals=removals, updates=updates
-        )[0]
+        )
 
         with Session(self.engine) as session:
             if removals:
@@ -815,6 +815,18 @@ class SqlCatalog(MetastoreCatalog):
                 ]
                 insert_stmt = insert(IcebergNamespaceProperties).values(insert_stmt_values)
                 session.execute(insert_stmt)
+
+            if properties_update_summary.removed and not updated_properties:
+                # A namespace without tables only exists through its properties
+                for key, value in IcebergNamespaceProperties.NAMESPACE_MINIMAL_PROPERTIES.items():
+                    session.add(
+                        IcebergNamespaceProperties(
+                            catalog_name=self.name,
+                            namespace=namespace_str,
+                            property_key=key,
+                            property_value=value,
+                        )
+                    )
             session.commit()
         return properties_update_summary
 

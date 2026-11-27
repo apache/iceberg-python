@@ -1359,6 +1359,15 @@ def test_update_namespace_properties(catalog: Catalog, test_namespace: Identifie
     }
 
 
+def test_update_namespace_properties_removes_all_properties(catalog: Catalog, test_namespace: Identifier) -> None:
+    catalog.create_namespace(test_namespace, {"comment": "this is a test description"})
+    update_report = catalog.update_namespace_properties(test_namespace, removals={"comment"})
+    assert update_report.removed == ["comment"]
+    assert catalog.namespace_exists(test_namespace)
+    assert test_namespace in catalog.list_namespaces(test_namespace[:-1])
+    assert catalog.load_namespace_properties(test_namespace) == {"exists": "true"}
+
+
 def test_update_namespace_metadata_raises_error_when_namespace_does_not_exist(
     catalog: Catalog, test_namespace: Identifier, test_table_properties: dict[str, str]
 ) -> None:
