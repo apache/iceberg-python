@@ -23,6 +23,7 @@ from google.cloud.bigquery import Dataset, DatasetReference, Table, TableReferen
 from google.cloud.bigquery.external_config import ExternalCatalogDatasetOptions, ExternalCatalogTableOptions
 from pytest_mock import MockFixture
 
+from pyiceberg.catalog import LOCATION
 from pyiceberg.catalog.bigquery_metastore import ICEBERG_TABLE_TYPE_VALUE, TABLE_TYPE_PROP, BigQueryMetastoreCatalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError, NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.schema import Schema
@@ -135,6 +136,51 @@ def test_create_namespace_already_exists(mocker: MockFixture, gcp_dataset_name: 
 
     with pytest.raises(NamespaceAlreadyExistsError, match=f"^Namespace {gcp_dataset_name} already exists$"):
         catalog.create_namespace(gcp_dataset_name)
+
+
+def test_load_namespace_properties_returns_flat_parameters(mocker: MockFixture, gcp_dataset_name: str) -> None:
+    client_mock = MagicMock()
+
+    # Round-trip the Dataset that create_namespace persists back through get_dataset,
+    # mimicking how BigQuery stores and returns the namespace.
+    def create_dataset(dataset: Dataset) -> Dataset:
+        client_mock.get_dataset.return_value = dataset
+        return dataset
+
+    client_mock.create_dataset.side_effect = create_dataset
+
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+
+    test_catalog = BigQueryMetastoreCatalog(
+        "test_catalog", **{"gcp.bigquery.project-id": "my-project", "warehouse": "gs://test-bucket/"}
+    )
+
+    properties = {"owner": "test-owner", "comment": "namespace comment", LOCATION: "gs://stale-location/"}
+    test_catalog.create_namespace(namespace=gcp_dataset_name, properties=properties)
+
+    # The authoritative dataset location overrides a stale parameter, matching Java.
+    expected = {**properties, LOCATION: f"gs://test-bucket/{gcp_dataset_name}.db"}
+    assert test_catalog.load_namespace_properties(gcp_dataset_name) == expected
+
+
+def test_load_namespace_properties_without_parameters(mocker: MockFixture, gcp_dataset_name: str) -> None:
+    client_mock = MagicMock()
+
+    mocker.patch("pyiceberg.catalog.bigquery_metastore.Client", return_value=client_mock)
+    mocker.patch.dict(os.environ, values={"PYICEBERG_LEGACY_CURRENT_SNAPSHOT_ID": "True"})
+
+    test_catalog = BigQueryMetastoreCatalog("test_catalog", **{"gcp.bigquery.project-id": "my-project"})
+
+    for location in (None, "", "gs://test-bucket/iceberg-dataset"):
+        dataset = dataset_mock()
+        dataset.external_catalog_dataset_options = ExternalCatalogDatasetOptions(default_storage_location_uri=location)
+        client_mock.get_dataset.return_value = dataset
+        expected = {LOCATION: location} if location else {}
+        assert test_catalog.load_namespace_properties(gcp_dataset_name) == expected
+
+    client_mock.get_dataset.return_value = Dataset(DatasetReference(dataset_id=gcp_dataset_name, project="test-project"))
+    assert test_catalog.load_namespace_properties(gcp_dataset_name) == {}
 
 
 def test_list_tables(mocker: MockFixture, gcp_dataset_name: str) -> None:
