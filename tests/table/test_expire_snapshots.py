@@ -19,8 +19,10 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
+import pyarrow as pa
 import pytest
 
+from pyiceberg.catalog import Catalog
 from pyiceberg.table import CommitTableResponse, Table
 from pyiceberg.table.statistics import PartitionStatisticsFile
 from pyiceberg.table.update import RemoveSnapshotsUpdate, SetPartitionStatisticsUpdate, update_table_metadata
@@ -76,39 +78,22 @@ def test_cannot_expire_tagged_snapshot(table_v2: Table) -> None:
     table_v2.catalog.commit_table.assert_not_called()
 
 
-def test_expire_unprotected_snapshot(table_v2: Table) -> None:
+def test_expire_unprotected_snapshot(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
     """Test that an unprotected snapshot can be expired."""
-    EXPIRE_SNAPSHOT = 3051729675574597004
-    KEEP_SNAPSHOT = 3055729675574597004
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.expire_unprotected", arrow_table_simple.schema)
+    table.append(arrow_table_simple)
+    table.append(arrow_table_simple)
+    table.append(arrow_table_simple)
+    expire_id, tagged_id, head_id = (snapshot.snapshot_id for snapshot in table.snapshots())
+    table.manage_snapshots().create_tag(tagged_id, "tag1").commit()
 
-    mock_response = CommitTableResponse(
-        metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}),
-        metadata_location="mock://metadata/location",
-        uuid=uuid4(),
-    )
-    table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = mock_response
+    table.maintenance.expire_snapshots().by_id(expire_id).commit()
 
-    # Remove any refs that protect the snapshot to be expired
-    table_v2.metadata = table_v2.metadata.model_copy(
-        update={
-            "refs": {
-                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
-                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
-            }
-        }
-    )
-
-    # Assert fixture data
-    assert all(ref.snapshot_id != EXPIRE_SNAPSHOT for ref in table_v2.metadata.refs.values())
-
-    # Expire the snapshot
-    table_v2.maintenance.expire_snapshots().by_id(EXPIRE_SNAPSHOT).commit()
-
-    table_v2.catalog.commit_table.assert_called_once()
-    remaining_snapshots = table_v2.metadata.snapshots
-    assert EXPIRE_SNAPSHOT not in remaining_snapshots
-    assert len(table_v2.metadata.snapshots) == 1
+    reloaded = catalog.load_table("default.expire_unprotected")
+    assert {snapshot.snapshot_id for snapshot in reloaded.snapshots()} == {tagged_id, head_id}
+    assert reloaded.metadata.refs["main"].snapshot_id == head_id
+    assert reloaded.metadata.refs["tag1"].snapshot_id == tagged_id
 
 
 def test_expire_nonexistent_snapshot_raises(table_v2: Table) -> None:
@@ -175,58 +160,21 @@ def test_expire_snapshots_by_timestamp_skips_protected(table_v2: Table) -> None:
     assert remove_update.snapshot_ids == []
 
 
-def test_expire_snapshots_by_ids(table_v2: Table) -> None:
+def test_expire_snapshots_by_ids(catalog: Catalog, arrow_table_simple: pa.Table) -> None:
     """Test that multiple unprotected snapshots can be expired by IDs."""
-    EXPIRE_SNAPSHOT_1 = 3051729675574597004
-    EXPIRE_SNAPSHOT_2 = 3051729675574597005
-    KEEP_SNAPSHOT = 3055729675574597004
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.expire_by_ids", arrow_table_simple.schema)
+    for _ in range(4):
+        table.append(arrow_table_simple)
+    expire_id_1, expire_id_2, tagged_id, head_id = (snapshot.snapshot_id for snapshot in table.snapshots())
+    table.manage_snapshots().create_tag(tagged_id, "tag1").commit()
 
-    mock_response = CommitTableResponse(
-        metadata=table_v2.metadata.model_copy(update={"snapshots": [KEEP_SNAPSHOT]}),
-        metadata_location="mock://metadata/location",
-        uuid=uuid4(),
-    )
-    table_v2.catalog = MagicMock()
-    table_v2.catalog.commit_table.return_value = mock_response
+    table.maintenance.expire_snapshots().by_ids([expire_id_1, expire_id_2]).commit()
 
-    # Remove any refs that protect the snapshots to be expired
-    table_v2.metadata = table_v2.metadata.model_copy(
-        update={
-            "refs": {
-                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
-                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
-            }
-        }
-    )
-
-    # Add snapshots to metadata for multi-id test
-    from types import SimpleNamespace
-
-    table_v2.metadata = table_v2.metadata.model_copy(
-        update={
-            "refs": {
-                "main": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="branch"),
-                "tag1": MagicMock(snapshot_id=KEEP_SNAPSHOT, snapshot_ref_type="tag"),
-            },
-            "snapshots": [
-                SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT_1, timestamp_ms=1, parent_snapshot_id=None),
-                SimpleNamespace(snapshot_id=EXPIRE_SNAPSHOT_2, timestamp_ms=1, parent_snapshot_id=None),
-                SimpleNamespace(snapshot_id=KEEP_SNAPSHOT, timestamp_ms=2, parent_snapshot_id=None),
-            ],
-        }
-    )
-
-    # Assert fixture data
-    assert all(ref.snapshot_id not in (EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2) for ref in table_v2.metadata.refs.values())
-
-    # Expire the snapshots
-    table_v2.maintenance.expire_snapshots().by_ids([EXPIRE_SNAPSHOT_1, EXPIRE_SNAPSHOT_2]).commit()
-
-    table_v2.catalog.commit_table.assert_called_once()
-    remaining_snapshots = table_v2.metadata.snapshots
-    assert EXPIRE_SNAPSHOT_1 not in remaining_snapshots
-    assert EXPIRE_SNAPSHOT_2 not in remaining_snapshots
-    assert len(table_v2.metadata.snapshots) == 1
+    reloaded = catalog.load_table("default.expire_by_ids")
+    assert {snapshot.snapshot_id for snapshot in reloaded.snapshots()} == {tagged_id, head_id}
+    assert reloaded.metadata.refs["main"].snapshot_id == head_id
+    assert reloaded.metadata.refs["tag1"].snapshot_id == tagged_id
 
 
 def test_thread_safety_fix() -> None:
