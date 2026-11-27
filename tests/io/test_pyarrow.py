@@ -3177,6 +3177,48 @@ def test_sort_table_for_write_uses_identity_sort_order() -> None:
         assert sort_order_id == metadata.default_sort_order_id
 
 
+def test_sort_table_for_write_handles_nan_with_null_placement() -> None:
+    schema = Schema(NestedField(1, "value", DoubleType(), required=False))
+    table = pa.table({"value": [1.0, math.nan, None, -1.0, math.inf]})
+    cases = [
+        (SortDirection.ASC, NullOrder.NULLS_LAST, [-1.0, 1.0, math.inf, "nan", None]),
+        (SortDirection.DESC, NullOrder.NULLS_FIRST, [None, "nan", math.inf, 1.0, -1.0]),
+    ]
+
+    for direction, null_order, expected in cases:
+        metadata = new_table_metadata(
+            schema=schema,
+            partition_spec=PartitionSpec(),
+            sort_order=SortOrder(SortField(1, IdentityTransform(), direction, null_order)),
+            location="file:///tmp/sorted-nan",
+        )
+
+        sorted_table, sort_order_id = _sort_table_for_write(metadata, table)
+
+        values = [
+            "nan" if isinstance(value, float) and math.isnan(value) else value for value in sorted_table["value"].to_pylist()
+        ]
+        assert values == expected
+        assert sort_order_id == metadata.default_sort_order_id
+
+    for direction, null_order in [
+        (SortDirection.ASC, NullOrder.NULLS_FIRST),
+        (SortDirection.DESC, NullOrder.NULLS_LAST),
+    ]:
+        metadata = new_table_metadata(
+            schema=schema,
+            partition_spec=PartitionSpec(),
+            sort_order=SortOrder(SortField(1, IdentityTransform(), direction, null_order)),
+            location="file:///tmp/unsorted-nan",
+        )
+
+        with pytest.warns(UserWarning, match="Arrow places NaN next to the nulls"):
+            sorted_table, sort_order_id = _sort_table_for_write(metadata, table)
+
+        assert sorted_table is table
+        assert sort_order_id is None
+
+
 def test_sort_table_for_write_leaves_unsupported_sort_orders_unsorted() -> None:
     schema = Schema(
         NestedField(1, "id", LongType(), required=False),

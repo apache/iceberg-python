@@ -3503,6 +3503,16 @@ def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tup
                 stacklevel=2,
             )
             return table, None
+        nan_sorted_with_nulls = (
+            sort_field.direction == SortDirection.ASC and sort_field.null_order == NullOrder.NULLS_FIRST
+        ) or (sort_field.direction == SortDirection.DESC and sort_field.null_order == NullOrder.NULLS_LAST)
+        if isinstance(schema.find_field(sort_field.source_id).field_type, (FloatType, DoubleType)) and nan_sorted_with_nulls:
+            warnings.warn(
+                f"Sort field {column_name} is a float, and Arrow places NaN next to the nulls for "
+                f"{sort_field.direction} with {sort_field.null_order}; data files are marked unsorted",
+                stacklevel=2,
+            )
+            return table, None
         sort_key_pairs.append((column_name, "descending" if sort_field.direction == SortDirection.DESC else "ascending"))
         null_orders.add(sort_field.null_order)
 
