@@ -1934,12 +1934,16 @@ def _task_to_record_batches(
                 # (https://github.com/apache/arrow/pull/46057): RecordBatch.filter raises
                 # IndexError on PyArrow <21 when the result is empty; Table.filter does not.
                 table = pa.Table.from_batches([current_batch])
+                # Avoid conflicts with the data columns
+                position_column = _POSITION_COLUMN
+                while position_column in table.column_names:
+                    position_column = f"_{position_column}"
                 if positions is not None:
-                    table = table.append_column(_POSITION_COLUMN, positions)
+                    table = table.append_column(position_column, positions)
                 table = table.filter(pyarrow_filter)
                 if positions is not None:
-                    positions = table.column(_POSITION_COLUMN).combine_chunks()
-                    table = table.drop_columns([_POSITION_COLUMN])
+                    positions = table.column(position_column).combine_chunks()
+                    table = table.drop_columns([position_column])
                 if table.num_rows == 0:
                     current_batch = current_batch.slice(0, 0)
                 else:
