@@ -182,6 +182,14 @@ def _data_key_size(metadata: TableMetadata) -> AesKeySize:
     return AesKeySize.from_key_length(TableProperties.ENCRYPTION_DATA_KEY_LENGTH_DEFAULT if key_length is None else key_length)
 
 
+def _reject_encrypted_writes(metadata: TableMetadata) -> None:
+    """Raise if the table is encrypted, until encrypted manifests and manifest lists can be written."""
+    from pyiceberg.table import TableProperties
+
+    if TableProperties.ENCRYPTION_KEY_ID in metadata.properties:
+        raise NotImplementedError("Writing to encrypted tables is not yet supported")
+
+
 def _now_ms() -> int:
     return time.time_ns() // 1_000_000
 
