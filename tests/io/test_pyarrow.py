@@ -6912,6 +6912,7 @@ def test_to_arrow_batch_reader_preserves_dictionary_columns(tmpdir: str) -> None
     assert pa.types.is_dictionary(result.schema.field("label").type), (
         f"expected dictionary type, got {result.schema.field('label').type}"
     )
+    assert result.schema.field("label").metadata == arrow_schema.field("label").metadata
     # id is not in dictionary_columns — must remain int32
     assert result.schema.field("id").type == pa.int32()
     # Values must be identical to the source data
