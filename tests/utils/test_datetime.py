@@ -23,6 +23,12 @@ import pytz
 from pyiceberg.utils.datetime import (
     datetime_to_millis,
     datetime_to_nanos,
+    days_to_date,
+    days_to_months,
+    days_to_years,
+    micros_to_days,
+    micros_to_months,
+    micros_to_years,
     millis_to_datetime,
     nanos_to_hours,
     nanos_to_micros,
@@ -32,6 +38,13 @@ from pyiceberg.utils.datetime import (
     timestamp_to_nanos,
     timestamptz_to_micros,
     timestamptz_to_nanos,
+    to_human_day,
+    to_human_hour,
+    to_human_month,
+    to_human_time,
+    to_human_timestamp,
+    to_human_timestamptz,
+    to_human_year,
 )
 
 timezones = [
@@ -220,3 +233,88 @@ def test_nanos_to_micros(nanos: int, micros: int) -> None:
 )
 def test_nanos_to_hours(nanos: int, hours: int) -> None:
     assert hours == nanos_to_hours(nanos)
+
+
+def test_micros_to_days() -> None:
+    for micros, days in [(0, 0), (86_400_000_000, 1), (-1, -1)]:
+        assert micros_to_days(micros) == days
+
+
+def test_days_to_date() -> None:
+    for days, expected in [
+        (0, "1970-01-01"),
+        (31, "1970-02-01"),
+        (-1, "1969-12-31"),
+        # Proleptic Gregorian (per the Iceberg spec) has no gap at the 1582 Julian/Gregorian switch.
+        (-141438, "1582-10-04"),
+        (-141437, "1582-10-05"),
+        (-141427, "1582-10-15"),
+    ]:
+        assert days_to_date(days).isoformat() == expected
+
+
+def test_to_human_year() -> None:
+    for ordinal, expected in [(0, "1970"), (1, "1971"), (-1, "1969"), (30, "2000")]:
+        assert to_human_year(ordinal) == expected
+
+
+def test_to_human_month() -> None:
+    for ordinal, expected in [(0, "1970-01"), (11, "1970-12"), (12, "1971-01"), (13, "1971-02"), (-1, "1969-12")]:
+        assert to_human_month(ordinal) == expected
+
+
+def test_to_human_day() -> None:
+    for ordinal, expected in [(0, "1970-01-01"), (31, "1970-02-01"), (-1, "1969-12-31")]:
+        assert to_human_day(ordinal) == expected
+
+
+def test_to_human_hour() -> None:
+    for ordinal, expected in [(0, "1970-01-01-00"), (1, "1970-01-01-01"), (24, "1970-01-02-00"), (-1, "1969-12-31-23")]:
+        assert to_human_hour(ordinal) == expected
+
+
+def test_to_human_time() -> None:
+    for micros, expected in [(0, "00:00:00"), (3_661_000_000, "01:01:01"), (73_304_375_612, "20:21:44.375612")]:
+        assert to_human_time(micros) == expected
+
+
+def test_to_human_timestamp() -> None:
+    for micros, expected in [
+        (0, "1970-01-01T00:00:00"),
+        (-1, "1969-12-31T23:59:59.999999"),
+        (1_740_342_104_375_612, "2025-02-23T20:21:44.375612"),
+    ]:
+        assert to_human_timestamp(micros) == expected
+
+
+def test_to_human_timestamptz() -> None:
+    for micros, expected in [
+        (0, "1970-01-01T00:00:00+00:00"),
+        (-1, "1969-12-31T23:59:59.999999+00:00"),
+        (1_740_342_104_375_612, "2025-02-23T20:21:44.375612+00:00"),
+    ]:
+        assert to_human_timestamptz(micros) == expected
+
+
+@pytest.mark.parametrize(
+    "days, years, months",
+    [
+        (0, 0, 0),
+        (-1, -1, -1),
+        (2932896, 8029, 96359),
+        (2932897, 8030, 96360),
+        (-719162, -1969, -23628),
+        (-719163, -1970, -23629),
+        (-719529, -1971, -23641),
+    ],
+)
+def test_days_to_years_and_months(days: int, years: int, months: int) -> None:
+    assert days_to_years(days) == years
+    assert days_to_months(days) == months
+
+
+def test_years_and_months_beyond_the_date_range() -> None:
+    day_micros = 86_400_000_000
+
+    assert micros_to_years(2932897 * day_micros) == 8030
+    assert micros_to_months(2932897 * day_micros) == 96360

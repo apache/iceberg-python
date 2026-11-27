@@ -17,6 +17,7 @@
 # pylint: disable=protected-access,unused-argument,redefined-outer-name
 import json
 import logging
+import math
 import os
 import struct
 import sys
@@ -24,9 +25,10 @@ import tempfile
 import uuid
 import warnings
 import zlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import MagicMock, patch
@@ -43,6 +45,7 @@ from pyarrow.fs import AwsDefaultS3RetryStrategy, FileType, LocalFileSystem, S3F
 from pyroaring import BitMap
 
 from pyiceberg.catalog.rest.scan_planning import RESTDataFile, RESTDeleteFile, RESTFileScanTask, RESTPositionDeleteFile
+from pyiceberg.conversions import to_bytes
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.encryption.stream import _encrypt_ags1
 from pyiceberg.exceptions import ResolveError
@@ -68,8 +71,13 @@ from pyiceberg.expressions import (
     BoundStartsWith,
     EqualTo,
     GreaterThan,
+    GreaterThanOrEqual,
+    In,
     IsNull,
+    LessThan,
+    LessThanOrEqual,
     Not,
+    NotEqualTo,
     Or,
 )
 from pyiceberg.expressions.literals import literal
@@ -83,6 +91,7 @@ from pyiceberg.io.pyarrow import (
     StatsAggregator,
     _check_pyarrow_schema_compatible,
     _ConvertToArrowSchema,
+    _ConvertViewTypes,
     _create_arrow_read_format,
     _determine_partitions,
     _primitive_to_physical,
@@ -97,6 +106,7 @@ from pyiceberg.io.pyarrow import (
     expression_to_pyarrow,
     parquet_path_to_id_mapping,
     schema_to_pyarrow,
+    visit_pyarrow,
     write_file,
 )
 from pyiceberg.manifest import DataFile, DataFileContent, FileFormat, ManifestEntry, ManifestEntryStatus
@@ -110,9 +120,10 @@ from pyiceberg.table.deletion_vector import (
     deletion_vectors_from_puffin_file,
 )
 from pyiceberg.table.metadata import TableMetadataV2, TableMetadataV3
+from pyiceberg.table.metadata_columns import LAST_UPDATED_SEQUENCE_NUMBER, ROW_ID
 from pyiceberg.table.name_mapping import create_mapping_from_schema
 from pyiceberg.table.puffin import MAGIC_BYTES, PuffinFile
-from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform
+from pyiceberg.transforms import BucketTransform, HourTransform, IdentityTransform, Transform, TruncateTransform, YearTransform
 from pyiceberg.typedef import UTF8, Properties, Record, TableVersion
 from pyiceberg.types import (
     BinaryType,
@@ -134,8 +145,10 @@ from pyiceberg.types import (
     StructType,
     TimestampNanoType,
     TimestampType,
+    TimestamptzNanoType,
     TimestamptzType,
     TimeType,
+    UUIDType,
 )
 from tests.catalog.test_base import InMemoryCatalog
 from tests.conftest import UNIFIED_AWS_SESSION_PROPERTIES
@@ -719,44 +732,71 @@ def test_geography_type_to_pyarrow_without_geoarrow() -> None:
 
 def test_geometry_type_to_pyarrow_with_geoarrow() -> None:
     """Test geometry type uses geoarrow WKB extension type when available."""
-    pytest.importorskip("geoarrow.pyarrow")
-    import geoarrow.pyarrow as ga
+    pytest.importorskip("geoarrow.types")
+    import geoarrow.types as ga
 
     # Test default CRS
     iceberg_type = GeometryType()
     result = visit(iceberg_type, _ConvertToArrowSchema())
-    expected = ga.wkb().with_crs("OGC:CRS84")
+    expected = ga.wkb(crs="OGC:CRS84").to_pyarrow()
     assert result == expected
 
     # Test custom CRS
     iceberg_type_custom = GeometryType("EPSG:4326")
     result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
-    expected_custom = ga.wkb().with_crs("EPSG:4326")
+    expected_custom = ga.wkb(crs="EPSG:4326").to_pyarrow()
     assert result_custom == expected_custom
+    assert json.loads(result_custom.__arrow_ext_serialize__()) == {"crs": "EPSG:4326"}
+
+    schema = pa.schema([("geometry", result_custom)])
+    assert pa.ipc.read_schema(schema.serialize()).equals(schema, check_metadata=True)
 
 
 def test_geography_type_to_pyarrow_with_geoarrow() -> None:
     """Test geography type uses geoarrow WKB extension type with edge type when available."""
-    pytest.importorskip("geoarrow.pyarrow")
-    import geoarrow.pyarrow as ga
+    pytest.importorskip("geoarrow.types")
+    import geoarrow.types as ga
 
     # Test default (spherical algorithm)
     iceberg_type = GeographyType()
     result = visit(iceberg_type, _ConvertToArrowSchema())
-    expected = ga.wkb().with_crs("OGC:CRS84").with_edge_type(ga.EdgeType.SPHERICAL)
+    expected = ga.wkb(crs="OGC:CRS84", edge_type="spherical").to_pyarrow()
     assert result == expected
 
-    # Test custom CRS with spherical
-    iceberg_type_custom = GeographyType("EPSG:4326", "spherical")
-    result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
-    expected_custom = ga.wkb().with_crs("EPSG:4326").with_edge_type(ga.EdgeType.SPHERICAL)
-    assert result_custom == expected_custom
+    # Test custom CRS with each geography algorithm
+    for algorithm in ("spherical", "vincenty", "thomas", "andoyer", "karney"):
+        iceberg_type_custom = GeographyType("EPSG:4326", algorithm)
+        result_custom = visit(iceberg_type_custom, _ConvertToArrowSchema())
+        assert result_custom.edge_type.name.lower() == algorithm
+        assert json.loads(result_custom.__arrow_ext_serialize__()) == {"crs": "EPSG:4326", "edges": algorithm}
 
-    # Test planar algorithm (no edge type set, uses default)
-    iceberg_type_planar = GeographyType("OGC:CRS84", "planar")
-    result_planar = visit(iceberg_type_planar, _ConvertToArrowSchema())
-    expected_planar = ga.wkb().with_crs("OGC:CRS84")
-    assert result_planar == expected_planar
+        schema = pa.schema([("geography", result_custom)])
+        restored_type = pa.ipc.read_schema(schema.serialize()).field("geography").type
+        assert restored_type.edge_type == result_custom.edge_type
+        assert restored_type.__arrow_ext_serialize__() == result_custom.__arrow_ext_serialize__()
+
+
+def test_geography_type_to_pyarrow_planar() -> None:
+    with pytest.raises(ValueError, match="The planar algorithm is not supported for geography types"):
+        visit(GeographyType("OGC:CRS84", "planar"), _ConvertToArrowSchema())
+
+
+def test_spatial_type_to_pyarrow_unspecified_crs() -> None:
+    pytest.importorskip("geoarrow.types")
+
+    for crs in ("srid:0", "SRID:0", "sRiD:0"):
+        for iceberg_type in (GeometryType(crs), GeographyType(crs)):
+            result = visit(iceberg_type, _ConvertToArrowSchema())
+            assert result.crs is None
+            expected_metadata = {"edges": "spherical"} if isinstance(iceberg_type, GeographyType) else {}
+            assert json.loads(result.__arrow_ext_serialize__()) == expected_metadata
+
+
+def test_geography_type_to_pyarrow_unsupported_algorithm() -> None:
+    pytest.importorskip("geoarrow.types")
+
+    with pytest.raises(ValueError, match="Unsupported geography edge interpolation algorithm: 'unsupported'"):
+        visit(GeographyType("OGC:CRS84", "unsupported"), _ConvertToArrowSchema())
 
 
 def test_struct_type_to_pyarrow(table_schema_simple: Schema) -> None:
@@ -911,6 +951,25 @@ def test_expr_not_starts_with_to_pyarrow(bound_reference: BoundReference) -> Non
     )
 
 
+def test_uuid_expressions_to_pyarrow() -> None:
+    schema = Schema(NestedField(1, "u", UUIDType(), required=False))
+    ref = BoundReference(schema.find_field(1), schema.accessor_for_field(1))
+    first, second = uuid.UUID(int=1), uuid.UUID(int=2)
+    literals = {literal(first), literal(second)}
+    # PyArrow builds uuid values from their 16 bytes, so compare with expressions built from bytes in either set order
+    expected_in = [
+        ds.field("u").isin(pa.array(values, type=pa.uuid()))
+        for values in ([first.bytes, second.bytes], [second.bytes, first.bytes])
+    ]
+    for expression, expected in [
+        (BoundEqualTo(ref, literal(first)), [ds.field("u") == pa.scalar(first.bytes, type=pa.uuid())]),
+        (BoundIn(ref, literals), expected_in),
+        (BoundNotIn(ref, literals), [~candidate for candidate in expected_in]),
+    ]:
+        actual = expression_to_pyarrow(expression)
+        assert any(actual.equals(candidate) for candidate in expected), expression
+
+
 def test_and_to_pyarrow(bound_reference: BoundReference) -> None:
     assert (
         repr(expression_to_pyarrow(And(BoundEqualTo(bound_reference, literal("hello")), BoundIsNull(bound_reference))))
@@ -938,6 +997,49 @@ def test_always_true_to_pyarrow(bound_reference: BoundReference) -> None:
 
 def test_always_false_to_pyarrow(bound_reference: BoundReference) -> None:
     assert repr(expression_to_pyarrow(AlwaysFalse())) == "<pyarrow.compute.Expression false>"
+
+
+def test_decimal_literal_wider_than_column_to_pyarrow() -> None:
+    schema = Schema(NestedField(1, "amt", DecimalType(5, 2), required=False))
+    ref = BoundReference(schema.find_field(1), schema.accessor_for_field(1))
+    wide = literal(Decimal("1000.00")).to(DecimalType(5, 2))
+    narrow = literal(Decimal("1.25")).to(DecimalType(5, 2))
+    arrow_table = pa.table({"amt": pa.array([Decimal("1.25"), Decimal("99.99")], pa.decimal128(5, 2))})
+    for bound_expr, expected in [
+        (BoundLessThan(term=ref, literal=wide), [Decimal("1.25"), Decimal("99.99")]),
+        (BoundNotEqualTo(term=ref, literal=wide), [Decimal("1.25"), Decimal("99.99")]),
+        (BoundIn(term=ref, literals={wide, narrow}), [Decimal("1.25")]),
+        (BoundNotIn(term=ref, literals={wide, narrow}), [Decimal("99.99")]),
+    ]:
+        assert arrow_table.filter(expression_to_pyarrow(bound_expr))["amt"].to_pylist() == expected, bound_expr
+
+
+def test_row_filter_decimal_literal_wider_than_column(catalog: InMemoryCatalog) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_decimal_literal_wider_than_column",
+        schema=Schema(
+            NestedField(1, "id", IntegerType(), required=False),
+            NestedField(2, "amt", DecimalType(5, 2), required=False),
+        ),
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3], pa.int32()),
+                "amt": pa.array([Decimal("1.25"), Decimal("99.99"), None], pa.decimal128(5, 2)),
+            }
+        )
+    )
+
+    # 1000.00 needs one more digit than decimal(5, 2) holds, but every value is below it
+    for row_filter, expected in [
+        ("amt < 1000.00", [1, 2]),
+        ("amt > -1000.00", [1, 2]),
+        ("amt < 50.00", [1]),
+        ("amt IN (1.25, 1000.00)", [1]),
+    ]:
+        assert sorted(table.scan(row_filter=row_filter).to_arrow()["id"].to_pylist()) == expected, row_filter
 
 
 @pytest.fixture
@@ -1516,6 +1618,53 @@ def test_identity_transform_column_projection_with_falsy_value(
     assert table.scan(row_filter=row_filter, selected_fields=("other_field",)).to_arrow() == pa.table(
         {"other_field": ["foo", "bar"]}
     )
+
+
+def test_identity_transform_column_projection_uuid(tmp_path: str, catalog: InMemoryCatalog) -> None:
+    """A filter on a uuid identity partition column matches the files that do not contain the column."""
+    schema = Schema(
+        NestedField(1, "other_field", StringType(), required=False),
+        NestedField(2, "partition_col", UUIDType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "partition_col"))
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.test_projection_partition_uuid",
+        schema=schema,
+        partition_spec=partition_spec,
+        properties={TableProperties.DEFAULT_NAME_MAPPING: create_mapping_from_schema(schema).model_dump_json()},
+    )
+
+    file_loc = f"{tmp_path}/test.parquet"
+    pq.write_table(pa.table([pa.array(["foo", "bar"], type=pa.string())], names=["other_field"]), file_loc)
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=pq.read_metadata(file_loc),
+        stats_columns=compute_statistics_plan(table.schema(), table.metadata.properties),
+        parquet_column_mapping=parquet_path_to_id_mapping(table.schema()),
+    )
+    partition_value = uuid.UUID(int=1)
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=file_loc,
+        file_format=FileFormat.PARQUET,
+        partition=Record(partition_value),
+        file_size_in_bytes=os.path.getsize(file_loc),
+        sort_order_id=None,
+        spec_id=table.metadata.default_spec_id,
+        equality_ids=None,
+        key_metadata=None,
+        **statistics.to_serialized_dict(),
+    )
+    with table.transaction() as transaction:
+        with transaction.update_snapshot().overwrite() as update:
+            update.append_data_file(data_file)
+
+    for row_filter, expected in [
+        (f"partition_col = '{partition_value}'", ["foo", "bar"]),
+        (f"partition_col != '{partition_value}'", []),
+    ]:
+        result = table.scan(row_filter=row_filter, selected_fields=("other_field",)).to_arrow()
+        assert result["other_field"].to_pylist() == expected, row_filter
 
 
 def test_identity_transform_null_partition_value_takes_precedence_over_initial_default(tmpdir: str) -> None:
@@ -2911,6 +3060,29 @@ def test_stats_aggregator_update_max(vals: list[Any], primitive_type: PrimitiveT
 
 
 @pytest.mark.parametrize(
+    "vals, primitive_type",
+    [
+        ([0.0, -0.0], DoubleType()),
+        ([-0.0, 0.0], DoubleType()),
+        ([0.0, -0.0], FloatType()),
+        ([-0.0, 0.0], FloatType()),
+    ],
+)
+def test_stats_aggregator_orders_negative_zero_below_zero(vals: list[float], primitive_type: PrimitiveType) -> None:
+    # min/max keep whichever zero came first, but the serialized bounds must
+    # order -0.0 below 0.0, whichever order the values arrive in
+    stats_min = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+    stats_max = StatsAggregator(primitive_type, _primitive_to_physical(primitive_type))
+
+    for val in vals:
+        stats_min.update_min(val)
+        stats_max.update_max(val)
+
+    assert stats_min.min_as_bytes() == to_bytes(primitive_type, -0.0)
+    assert stats_max.max_as_bytes() == to_bytes(primitive_type, 0.0)
+
+
+@pytest.mark.parametrize(
     "iceberg_type, physical_type_string",
     [
         # Exact match
@@ -3353,6 +3525,32 @@ def test_determine_partitions_identity_nan() -> None:
     assert rows_by_partition == {"1.0": [1], "nan": [2, 4], "None": [3]}
 
 
+def test_determine_partitions_with_column_named_like_partition_helper() -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="_partition_region", field_type=StringType(), required=False),
+        NestedField(id=3, name="region", field_type=StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="region"))
+    arrow_table = pa.Table.from_pydict(
+        {"id": [1, 2, 3], "_partition_region": ["a", "b", "c"], "region": ["us", "eu", "us"]},
+        schema=schema.as_arrow(),
+    )
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    rows_by_partition = {
+        p.partition_key.partition[0]: sorted(p.arrow_table_partition.to_pylist(), key=lambda row: row["id"]) for p in partitions
+    }
+    assert rows_by_partition == {
+        "us": [
+            {"id": 1, "_partition_region": "a", "region": "us"},
+            {"id": 3, "_partition_region": "c", "region": "us"},
+        ],
+        "eu": [{"id": 2, "_partition_region": "b", "region": "eu"}],
+    }
+
+
 @pytest.mark.parametrize("transform", [IdentityTransform(), BucketTransform(4), TruncateTransform(1)])
 def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) -> None:
     schema = Schema(
@@ -3391,6 +3589,8 @@ def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) ->
         {"region": None, "payload": b"c", "info": {"tags": ["y", None], "attrs": []}},
     ]
     arrow_table = pa.Table.from_pylist(rows, schema=arrow_schema)
+    # View types are cast before the table is split into partitions
+    arrow_table = arrow_table.cast(visit_pyarrow(arrow_schema, _ConvertViewTypes()))
 
     partitions = list(_determine_partitions(spec, schema, arrow_table))
 
@@ -3399,6 +3599,100 @@ def test_determine_partitions_with_view_types(transform: Transform[Any, Any]) ->
     }
     written = pa.concat_tables([p.arrow_table_partition for p in partitions])
     assert sorted(written.to_pylist(), key=str) == sorted(rows, key=str)
+
+
+def test_determine_partitions_with_uuid_column() -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="uuid"))
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3, 4], type=pa.int64()),
+            "uuid": pa.array([uuid.UUID(int=1).bytes, uuid.UUID(int=2).bytes, uuid.UUID(int=1).bytes, None], type=pa.uuid()),
+        }
+    )
+
+    partitions = list(_determine_partitions(spec, schema, arrow_table))
+
+    # The partition values are uuid.UUID, as they are read back from the manifests
+    rows_by_partition = {p.partition_key.partition[0]: sorted(p.arrow_table_partition["id"].to_pylist()) for p in partitions}
+    assert rows_by_partition == {uuid.UUID(int=1): [1, 3], uuid.UUID(int=2): [2], None: [4]}
+    # The written data keeps the uuid type
+    assert all(p.arrow_table_partition.schema.field("uuid").type == pa.uuid() for p in partitions)
+
+
+def test_append_uuid_to_table_partitioned_on_uuid(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="uuid"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_uuid_partitioned", schema=schema, partition_spec=spec)
+
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "uuid": pa.array([uuid.UUID(int=1).bytes, uuid.UUID(int=2).bytes, None], type=pa.uuid()),
+        }
+    )
+    table.append(arrow_table)
+
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+    assert {task.file.partition[0] for task in table.scan().plan_files()} == {uuid.UUID(int=1), uuid.UUID(int=2), None}
+
+
+def test_scan_plans_uuid_identity_partitions(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="uuid"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_uuid_partitioned", schema=schema, partition_spec=spec)
+    first, second, third = uuid.UUID(int=1), uuid.UUID(int=2), uuid.UUID(int=3)
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3], type=pa.int64()),
+                "uuid": pa.array([first.bytes, second.bytes, third.bytes], type=pa.uuid()),
+            }
+        )
+    )
+
+    # UUID partition values read from manifests must compare equal to bound UUID literals
+    for row_filter, expected in [
+        (f"uuid = '{first}'", {first}),
+        (f"uuid in ('{first}', '{second}')", {first, second}),
+        (f"uuid != '{first}'", {second, third}),
+        (f"uuid not in ('{first}', '{second}')", {third}),
+    ]:
+        scan = table.scan(row_filter=row_filter)
+        assert {task.file.partition[0] for task in scan.plan_files()} == expected, row_filter
+        assert scan.count() == len(expected), row_filter
+
+
+def test_scan_prunes_uuid_files_by_bounds(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="uuid", field_type=UUIDType(), required=False),
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_uuid_bounds", schema=schema)
+    for ids in ([1, 2], [3, 4]):
+        values = [uuid.UUID(int=value).bytes for value in ids]
+        table.append(pa.table({"id": pa.array(ids, type=pa.int64()), "uuid": pa.array(values, type=pa.uuid())}))
+
+    # The lower and upper bounds of the uuid column are compared with the literal to prune files
+    for row_filter, expected_files in [
+        (f"uuid = '{uuid.UUID(int=1)}'", 1),
+        (f"uuid > '{uuid.UUID(int=2)}'", 1),
+        (f"uuid < '{uuid.UUID(int=5)}'", 2),
+        (f"uuid in ('{uuid.UUID(int=1)}', '{uuid.UUID(int=4)}')", 2),
+    ]:
+        assert len(list(table.scan(row_filter=row_filter).plan_files())) == expected_files, row_filter
 
 
 def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> None:
@@ -3428,6 +3722,164 @@ def test_append_view_types_to_partitioned_table(catalog: InMemoryCatalog) -> Non
 
     assert len(table.inspect.partitions()) == 2
     assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+
+
+def test_append_view_types_to_unpartitioned_table(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="region", field_type=StringType(), required=False),
+        NestedField(id=3, name="payload", field_type=BinaryType(), required=False),
+        NestedField(id=4, name="tags", field_type=ListType(element_id=5, element_type=StringType(), element_required=False)),
+    )
+    catalog.create_namespace("default")
+    plain_table = pa.table(
+        {
+            "id": pa.array([1], type=pa.int64()),
+            "region": pa.array(["us"], type=pa.string()),
+            "payload": pa.array([b"a"], type=pa.binary()),
+            "tags": pa.array([["x"]], type=pa.list_(pa.string())),
+        }
+    )
+    view_table = pa.table(
+        {
+            "id": pa.array([2, 3], type=pa.int64()),
+            "region": pa.array(["us", "eu"], type=pa.string_view()),
+            "payload": pa.array([b"a", b"b"], type=pa.binary_view()),
+            "tags": pa.array([["x"], ["y"]], type=pa.list_(pa.string_view())),
+        }
+    )
+
+    for name, df in (("table", view_table), ("reader", view_table.to_reader())):
+        table = catalog.create_table(f"default.test_append_view_types_{name}", schema=schema)
+        table.append(plain_table)
+        table.append(df)
+
+        assert sorted(table.scan().to_arrow()["tags"].to_pylist()) == [["x"], ["x"], ["y"]], name
+        assert sorted(table.scan(row_filter="region == 'us'").to_arrow()["id"].to_pylist()) == [1, 2], name
+        assert sorted(table.scan(row_filter=EqualTo("payload", b"a")).to_arrow()["id"].to_pylist()) == [1, 2], name
+        table.delete("region == 'us'")
+        assert table.scan().to_arrow()["id"].to_pylist() == [3], name
+
+
+def test_append_to_table_bucketed_by_time(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=LongType(), required=False),
+        NestedField(id=2, name="event_time", field_type=TimeType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=BucketTransform(4), name="event_time_bucket"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_bucketed_by_time", schema=schema, partition_spec=spec)
+
+    arrow_table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "event_time": pa.array([time(9, 30), time(22, 31, 8), None], type=pa.time64("us")),
+        }
+    )
+    table.append(arrow_table)
+
+    assert sorted(table.scan().to_arrow().to_pylist(), key=lambda row: row["id"]) == arrow_table.to_pylist()
+    assert table.scan(row_filter=EqualTo("event_time", "22:31:08")).to_arrow()["id"].to_pylist() == [2]
+
+
+def test_scan_filters_on_infinity(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="x", field_type=FloatType(), required=False))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_infinity", schema=schema)
+    table.append(pa.table({"x": pa.array([1.5, math.inf, -math.inf], type=pa.float32())}))
+
+    assert table.scan(row_filter=EqualTo("x", math.inf)).to_arrow()["x"].to_pylist() == [math.inf]
+    assert table.scan(row_filter=NotEqualTo("x", math.inf)).to_arrow()["x"].to_pylist() == [1.5, -math.inf]
+    assert sorted(table.scan(row_filter=In("x", {math.inf, 1.5})).to_arrow()["x"].to_pylist()) == [1.5, math.inf]
+
+
+def test_scan_and_delete_filters_on_infinity(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(id=2, name="x", field_type=FloatType(), required=False),
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_and_delete_infinity", schema=schema)
+    table.append(
+        pa.table(
+            {
+                "id": pa.array([1, 2, 3, 4, 5], type=pa.int32()),
+                "x": pa.array([1.5, math.inf, -math.inf, math.nan, None], type=pa.float32()),
+            }
+        )
+    )
+
+    assert table.scan(row_filter=LessThan("x", math.inf)).to_arrow()["id"].to_pylist() == [1, 3]
+    assert table.scan(row_filter=LessThanOrEqual("x", math.inf)).to_arrow()["id"].to_pylist() == [1, 2, 3]
+    assert table.scan(row_filter=GreaterThan("x", -math.inf)).to_arrow()["id"].to_pylist() == [1, 2]
+    assert table.scan(row_filter=GreaterThanOrEqual("x", math.inf)).to_arrow()["id"].to_pylist() == [2]
+
+    table.delete(LessThan("x", math.inf))
+
+    assert table.scan().to_arrow()["id"].to_pylist() == [2, 4, 5]
+
+
+def test_scan_filters_at_the_end_of_the_date_range(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="x", field_type=DateType(), required=False))
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=YearTransform(), name="x_year"))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_date_range", schema=schema, partition_spec=spec)
+    last_day = date(9999, 12, 31)
+    table.append(pa.table({"x": pa.array([date(2024, 5, 1), last_day], type=pa.date32())}))
+
+    assert table.scan(row_filter=LessThanOrEqual("x", last_day)).count() == 2
+    assert table.scan(row_filter=GreaterThan("x", last_day)).count() == 0
+
+
+def test_append_writes_parquet_page_index(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="id", field_type=LongType(), required=False))
+    catalog.create_namespace("default")
+
+    for page_index_enabled, identifier in [
+        (True, "default.test_append_page_index_enabled"),
+        (False, "default.test_append_page_index_disabled"),
+    ]:
+        properties = {} if page_index_enabled else {TableProperties.PARQUET_PAGE_INDEX_ENABLED: "false"}
+        table = catalog.create_table(identifier, schema=schema, properties=properties)
+        table.append(pa.table({"id": pa.array(range(1000), type=pa.int64())}))
+
+        file_path = next(iter(table.scan().plan_files())).file.file_path
+        column_chunk = pq.read_metadata(file_path).row_group(0).column(0)
+        assert column_chunk.has_column_index is page_index_enabled
+        assert column_chunk.has_offset_index is page_index_enabled
+
+
+def test_append_counts_nan_values(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(id=1, name="f", field_type=FloatType(), required=False),
+        NestedField(id=2, name="d", field_type=DoubleType(), required=False),
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_append_nan_counts", schema=schema)
+
+    table.append(
+        pa.table(
+            {
+                "f": pa.array([float("nan"), float("nan"), 1.0, None], type=pa.float32()),
+                "d": pa.array([float("nan"), 2.0, None, float("nan")], type=pa.float64()),
+            }
+        )
+    )
+
+    data_file = next(iter(table.scan().plan_files())).file
+    assert dict(data_file.nan_value_counts) == {1: 2, 2: 2}
+
+
+def test_scan_prunes_files_without_nan_values(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(id=1, name="d", field_type=DoubleType(), required=False))
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.test_scan_prunes_nan_counts", schema=schema)
+
+    table.append(pa.table({"d": pa.array([float("nan"), 1.0], type=pa.float64())}))
+    table.append(pa.table({"d": pa.array([2.0, 3.0], type=pa.float64())}))
+
+    assert len(list(table.scan(row_filter="d IS NAN").plan_files())) == 1
+    assert len(list(table.scan(row_filter="d IS NOT NAN").plan_files())) == 2
 
 
 def test_inspect_partition_for_nested_field(catalog: InMemoryCatalog) -> None:
@@ -3626,6 +4078,34 @@ def test__to_requested_schema_timestamptz_to_timestamp_projection() -> None:
     assert expected.equals(actual_result)
 
 
+def test__to_requested_schema_timestamptz_ns_utc_alias_concatenates() -> None:
+    table_schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "ts_field", TimestamptzNanoType(), required=False),
+    )
+
+    # file written before the column was added
+    old_file_schema = Schema(NestedField(1, "id", LongType(), required=False))
+    old_batch = pa.record_batch([pa.array([1], type=pa.int64())], names=["id"])
+
+    # file written by another writer that labels UTC as "+00:00"
+    new_batch = pa.record_batch(
+        [
+            pa.array([2], type=pa.int64()),
+            pa.array([1755172800123456789], type=pa.timestamp("ns", tz="+00:00")),
+        ],
+        names=["id", "ts_field"],
+    )
+
+    old_result = _to_requested_schema(table_schema, old_file_schema, old_batch)
+    new_result = _to_requested_schema(table_schema, table_schema, new_batch)
+
+    assert new_result.schema.field("ts_field").type == pa.timestamp("ns", tz="UTC")
+    combined = pa.concat_tables([pa.Table.from_batches([old_result]), pa.Table.from_batches([new_result])])
+    assert combined.column("ts_field").to_pylist()[0] is None
+    assert combined.column("ts_field").cast(pa.int64()).to_pylist()[1] == 1755172800123456789
+
+
 def test__to_requested_schema_timestamptz_to_timestamp_write_rejects() -> None:
     """Test that the write path (default) rejects timestamptz to timestamp casting.
 
@@ -3741,6 +4221,50 @@ def test_write_file_parquet_round_trip(tmp_path: Path, table_schema_simple: Sche
     assert result.column_names == ["foo", "bar", "baz"]
 
 
+def test_write_file_encrypts_parquet_for_encrypted_table(tmp_path: Path, table_schema_simple: Schema) -> None:
+    from pyarrow.parquet import encryption
+
+    _, task = _simple_write_task_and_metadata(tmp_path, table_schema_simple, {})
+    table_metadata = TableMetadataV3(
+        location=f"file://{tmp_path}",
+        last_column_id=3,
+        current_schema_id=1,
+        schemas=[table_schema_simple],
+        partition_specs=[PartitionSpec()],
+        properties={TableProperties.ENCRYPTION_KEY_ID: "master-1", TableProperties.ENCRYPTION_DATA_KEY_LENGTH: "32"},
+        next_row_id=0,
+    )
+
+    data_file, other_data_file = write_file(
+        io=PyArrowFileIO(), table_metadata=table_metadata, tasks=iter([task, replace(task, task_id=1)])
+    )
+
+    assert data_file.key_metadata is not None and other_data_file.key_metadata is not None
+    key_metadata = StandardKeyMetadata.from_bytes(data_file.key_metadata)
+    other_key_metadata = StandardKeyMetadata.from_bytes(other_data_file.key_metadata)
+    assert len(key_metadata.encryption_key) == 32
+    assert key_metadata.encryption_key != other_key_metadata.encryption_key
+    assert key_metadata.aad_prefix != other_key_metadata.aad_prefix
+    file_path = data_file.file_path.removeprefix("file://")
+    with open(file_path, "rb") as f:
+        assert f.read(4) == b"PARE"
+
+    with pytest.raises(OSError, match="AAD prefix used for file encryption, but not stored in file"):
+        pq.read_table(file_path, decryption_properties=encryption.create_decryption_properties(key_metadata.encryption_key))
+
+    batches = _task_to_record_batches(
+        PyArrowFileIO(),
+        FileScanTask(data_file),
+        bound_row_filter=AlwaysTrue(),
+        projected_schema=table_schema_simple,
+        table_schema=table_schema_simple,
+        projected_field_ids={1, 2, 3},
+        positional_deletes=None,
+        case_sensitive=True,
+    )
+    assert pa.Table.from_batches(batches).to_pydict() == {"foo": ["a", "b", "c"], "bar": [1, 2, 3], "baz": [True, False, True]}
+
+
 def test__to_requested_schema_timestamps(
     arrow_table_schema_with_all_timestamp_precisions: pa.Schema,
     arrow_table_with_all_timestamp_precisions: pa.Table,
@@ -3771,6 +4295,35 @@ def test__to_requested_schema_timestamps_without_downcast_raises_exception(
         _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
 
     assert "Unsupported schema projection from timestamp[ns] to timestamp[us]" in str(exc_info.value)
+
+
+def test__to_requested_schema_time_ns_downcast() -> None:
+    """Test that a time64[ns] column is downcast to time64[us] on write when the flag is set."""
+    requested_schema = Schema(NestedField(1, "time_field", TimeType(), required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("time_field", pa.time64("ns"))])
+    data = pa.array([time(12, 0, 0, 1), None], type=pa.time64("ns"))
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    result = _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=True, include_field_ids=False)
+
+    assert result.schema[0].type == pa.time64("us")
+    assert result.column(0).to_pylist() == [time(12, 0, 0, 1), None]
+
+
+def test__to_requested_schema_time_ns_without_downcast_raises_exception() -> None:
+    requested_schema = Schema(NestedField(1, "time_field", TimeType(), required=False))
+    file_schema = requested_schema
+
+    arrow_schema = pa.schema([pa.field("time_field", pa.time64("ns"))])
+    data = pa.array([time(12, 0, 0, 1), None], type=pa.time64("ns"))
+    batch = pa.RecordBatch.from_arrays([data], schema=arrow_schema)
+
+    with pytest.raises(ValueError) as exc_info:
+        _to_requested_schema(requested_schema, file_schema, batch, downcast_ns_timestamp_to_us=False, include_field_ids=False)
+
+    assert "Unsupported schema projection from time64[ns] to time64[us]" in str(exc_info.value)
 
 
 def test__to_requested_schema_null_map_of_structs() -> None:
@@ -3874,6 +4427,41 @@ def test__to_requested_schema_float_promotion(
 
     assert result.schema[0].type == expected_arrow_type
     assert result.column(0).to_pylist() == [1.5, 2.25, 3.0, None]
+
+
+@pytest.mark.parametrize("list_type", [pa.list_, pa.large_list])
+def test__to_requested_schema_null_list_of_structs(list_type: Callable[[pa.DataType], pa.DataType]) -> None:
+    requested_schema = Schema(
+        NestedField(
+            1,
+            "col_list_with_struct",
+            ListType(11, StructType(NestedField(111, "test", IntegerType(), required=False)), element_required=False),
+            required=False,
+        ),
+        NestedField(2, "col_list", ListType(21, IntegerType(), element_required=False), required=False),
+    )
+    arrow_schema = pa.schema(
+        [
+            pa.field("col_list_with_struct", list_type(pa.struct([pa.field("test", pa.int32())]))),
+            pa.field("col_list", list_type(pa.int32())),
+        ]
+    )
+    batch = pa.RecordBatch.from_arrays(
+        [
+            pa.array([[{"test": 1}], [], None, [{"test": 2}, None]], type=arrow_schema.field(0).type),
+            pa.array([[1], [], None, [2, None]], type=arrow_schema.field(1).type),
+        ],
+        schema=arrow_schema,
+    )
+
+    result = _to_requested_schema(requested_schema, requested_schema, batch)
+    assert result.column(0).to_pylist() == [[{"test": 1}], [], None, [{"test": 2}, None]]
+    assert result.column(1).to_pylist() == [[1], [], None, [2, None]]
+
+    # A sliced batch has to keep the nulls as well
+    result = _to_requested_schema(requested_schema, requested_schema, batch.slice(1, 3))
+    assert result.column(0).to_pylist() == [[], None, [{"test": 2}, None]]
+    assert result.column(1).to_pylist() == [[], None, [2, None]]
 
 
 @skip_if_pyarrow_too_old
@@ -4196,6 +4784,133 @@ def test_task_to_record_batches_filter_after_positional_deletes_empty_result(tmp
     )
 
     assert result_batches == []
+
+
+@pytest.mark.parametrize(
+    "stored_row_ids, first_row_id, deleted_positions, row_filter, expected",
+    [
+        # Row IDs are inherited from the first row ID plus the position
+        (None, 100, None, AlwaysTrue(), [(1, 100), (2, 101), (3, 102), (4, 103), (5, 104)]),
+        # Row IDs stored in the file take precedence
+        ([None, 7, None, 9, None], 100, None, AlwaysTrue(), [(1, 100), (2, 7), (3, 102), (4, 9), (5, 104)]),
+        # Positions are counted before positional deletes are applied
+        (None, 100, [1, 3], AlwaysTrue(), [(1, 100), (3, 102), (5, 104)]),
+        # Positions are counted before the row filter is applied
+        (None, 100, None, GreaterThan("id", 2), [(3, 102), (4, 103), (5, 104)]),
+        (None, 100, [1, 3], GreaterThan("id", 2), [(3, 102), (5, 104)]),
+        # Without a first row ID, row IDs are null even when stored in the file
+        ([None, 7, None, 9, None], None, None, AlwaysTrue(), [(1, None), (2, None), (3, None), (4, None), (5, None)]),
+    ],
+)
+def test_task_to_record_batches_row_ids(
+    tmpdir: str,
+    stored_row_ids: list[int | None] | None,
+    first_row_id: int | None,
+    deleted_positions: list[int] | None,
+    row_filter: BooleanExpression,
+    expected: list[tuple[int, int | None]],
+) -> None:
+    from pyiceberg.expressions.visitors import bind
+
+    fields = [pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]
+    columns = [pa.array([1, 2, 3, 4, 5], type=pa.int32())]
+    if stored_row_ids is not None:
+        fields.append(
+            pa.field(ROW_ID.name, pa.int64(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: str(ROW_ID.field_id)})
+        )
+        columns.append(pa.array(stored_row_ids, type=pa.int64()))
+    arrow_schema = pa.schema(fields)
+    data_file = _write_table_to_data_file(f"{tmpdir}/row_ids.parquet", arrow_schema, pa.table(columns, schema=arrow_schema))
+    data_file.first_row_id = first_row_id
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    projected_schema = Schema(*table_schema.fields, ROW_ID)
+    positional_deletes = [pa.chunked_array([pa.array(deleted_positions, type=pa.int64())])] if deleted_positions else None
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file),
+            bound_row_filter=bind(table_schema, row_filter, case_sensitive=True),
+            projected_schema=projected_schema,
+            table_schema=table_schema,
+            projected_field_ids={1, ROW_ID.field_id},
+            positional_deletes=positional_deletes,
+            case_sensitive=True,
+        )
+    )
+
+    result = pa.Table.from_batches(result_batches)
+    assert result.schema.field(ROW_ID.name).type == pa.int64()
+    assert list(zip(result["id"].to_pylist(), result[ROW_ID.name].to_pylist(), strict=True)) == expected
+
+
+def _read_last_updated_sequence_numbers(
+    tmpdir: str, stored_sequence_numbers: list[int | None] | None, first_row_id: int | None, data_sequence_number: int | None
+) -> list[int | None]:
+    fields = [pa.field("id", pa.int32(), nullable=True, metadata={PYARROW_PARQUET_FIELD_ID_KEY: "1"})]
+    columns = [pa.array([1, 2, 3], type=pa.int32())]
+    if stored_sequence_numbers is not None:
+        fields.append(
+            pa.field(
+                LAST_UPDATED_SEQUENCE_NUMBER.name,
+                pa.int64(),
+                nullable=True,
+                metadata={PYARROW_PARQUET_FIELD_ID_KEY: str(LAST_UPDATED_SEQUENCE_NUMBER.field_id)},
+            )
+        )
+        columns.append(pa.array(stored_sequence_numbers, type=pa.int64()))
+    arrow_schema = pa.schema(fields)
+    data_file = _write_table_to_data_file(
+        f"{tmpdir}/last_updated_sequence_numbers.parquet", arrow_schema, pa.table(columns, schema=arrow_schema)
+    )
+    data_file.first_row_id = first_row_id
+
+    table_schema = Schema(NestedField(1, "id", IntegerType(), required=False))
+    projected_schema = Schema(*table_schema.fields, ROW_ID, LAST_UPDATED_SEQUENCE_NUMBER)
+    result_batches = list(
+        _task_to_record_batches(
+            PyArrowFileIO(),
+            FileScanTask(data_file, data_sequence_number=data_sequence_number),
+            bound_row_filter=AlwaysTrue(),
+            projected_schema=projected_schema,
+            table_schema=table_schema,
+            projected_field_ids={1, ROW_ID.field_id, LAST_UPDATED_SEQUENCE_NUMBER.field_id},
+            positional_deletes=None,
+            case_sensitive=True,
+        )
+    )
+
+    result = pa.Table.from_batches(result_batches)
+    assert result.schema.field(LAST_UPDATED_SEQUENCE_NUMBER.name).type == pa.int64()
+    return result[LAST_UPDATED_SEQUENCE_NUMBER.name].to_pylist()
+
+
+@pytest.mark.parametrize(
+    "stored_sequence_numbers, first_row_id, data_sequence_number, expected",
+    [
+        # Last updated sequence numbers are inherited from the data sequence number of the file
+        (None, 100, 5, [5, 5, 5]),
+        # Last updated sequence numbers stored in the file take precedence
+        ([None, 2, None], 100, 5, [5, 2, 5]),
+        # Without a first row ID, last updated sequence numbers are null even when stored in the file
+        ([None, 2, None], None, 5, [None, None, None]),
+        # Without a first row ID, the data sequence number is not needed
+        ([None, 2, None], None, None, [None, None, None]),
+    ],
+)
+def test_task_to_record_batches_last_updated_sequence_numbers(
+    tmpdir: str,
+    stored_sequence_numbers: list[int | None] | None,
+    first_row_id: int | None,
+    data_sequence_number: int | None,
+    expected: list[int | None],
+) -> None:
+    assert _read_last_updated_sequence_numbers(tmpdir, stored_sequence_numbers, first_row_id, data_sequence_number) == expected
+
+
+def test_task_to_record_batches_last_updated_sequence_numbers_without_data_sequence_number(tmpdir: str) -> None:
+    with pytest.raises(NotImplementedError, match="requires the data sequence number"):
+        _read_last_updated_sequence_numbers(tmpdir, [None, 2, None], first_row_id=100, data_sequence_number=None)
 
 
 def test_task_to_record_batches_encrypted_by_iceberg_rust() -> None:

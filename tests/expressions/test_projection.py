@@ -16,6 +16,8 @@
 #  under the License.
 # pylint:disable=redefined-outer-name
 
+from datetime import date
+
 import pytest
 
 from pyiceberg.expressions import (
@@ -43,6 +45,7 @@ from pyiceberg.transforms import (
     HourTransform,
     IdentityTransform,
     TruncateTransform,
+    YearTransform,
 )
 from pyiceberg.types import (
     DateType,
@@ -235,6 +238,18 @@ def test_day_projection(schema: Schema, day_spec: PartitionSpec) -> None:
     for index, predicate in enumerate(predicates):
         expr = project(predicate)
         assert expected[index] == expr, predicate
+
+
+def test_year_projection_at_date_limits(schema: Schema) -> None:
+    year_spec = PartitionSpec(PartitionField(3, 1000, YearTransform(), "event_year"))
+    max_date = date(9999, 12, 31)
+    min_date = date(1, 1, 1)
+
+    project = inclusive_projection(schema, year_spec)
+    assert project(LessThanOrEqual("event_date", max_date)) == LessThanOrEqual("event_year", 8029)
+    assert project(GreaterThan("event_date", max_date)) == GreaterThanOrEqual("event_year", 8030)
+    assert project(LessThan("event_date", min_date)) == LessThanOrEqual("event_year", -1970)
+    assert project(GreaterThanOrEqual("event_date", min_date)) == GreaterThanOrEqual("event_year", -1969)
 
 
 def test_date_day_projection(schema: Schema, day_spec: PartitionSpec) -> None:

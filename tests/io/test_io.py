@@ -26,11 +26,13 @@ import pytest
 from pyiceberg.io import (
     ARROW_FILE_IO,
     PY_IO_IMPL,
+    FileIO,
     _import_file_io,
     _infer_file_io_from_scheme,
     _is_local_path,
     load_file_io,
 )
+from pyiceberg.io.fsspec import FsspecFileIO
 from pyiceberg.io.pyarrow import PyArrowFileIO
 
 
@@ -75,10 +77,13 @@ def test_custom_local_output_file() -> None:
         assert len(output_file) == 3
 
 
-def test_pickled_pyarrow_round_trip() -> None:
+@pytest.mark.parametrize("file_io_class", [PyArrowFileIO, FsspecFileIO])
+def test_pickled_file_io_round_trip(file_io_class: type[FileIO]) -> None:
     with tempfile.TemporaryDirectory() as tmpdirname:
         file_location = os.path.join(tmpdirname, "foo.txt")
-        file_io = PyArrowFileIO()
+        file_io = file_io_class(properties={})
+        # Exercise the cached filesystem so the transient state is populated before pickling
+        file_io.new_input(location=os.path.abspath(file_location)).exists()
         serialized_file_io = pickle.dumps(file_io)
         deserialized_file_io = pickle.loads(serialized_file_io)
         absolute_file_location = os.path.abspath(file_location)

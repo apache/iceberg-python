@@ -304,14 +304,14 @@ def load_catalog(name: str | None = None, **properties: str | None) -> Catalog:
     catalog_type: CatalogType | None
     provided_catalog_type = conf.get(TYPE)
 
-    if catalog_impl := properties.get(PY_CATALOG_IMPL):
+    if catalog_impl := conf.get(PY_CATALOG_IMPL):
         if provided_catalog_type:
             raise ValueError(
                 "Must not set both catalog type and py-catalog-impl configurations, "
                 f"but found type {provided_catalog_type} and py-catalog-impl {catalog_impl}"
             )
 
-        if catalog := _import_catalog(name, catalog_impl, properties):
+        if catalog := _import_catalog(name, cast(str, catalog_impl), cast(dict[str, str], conf)):
             logger.info("Loaded Catalog: %s", catalog_impl)
             return catalog
         else:
@@ -1117,9 +1117,12 @@ class MetastoreCatalog(Catalog, ABC):
             metadata_location=current_table.metadata_location if current_table else None,
         )
 
-        new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
-        provider = load_location_provider(updated_metadata.location, updated_metadata.properties)
-        new_metadata_location = provider.new_table_metadata_file_location(new_metadata_version)
+        if current_table and updated_metadata == current_table.metadata:
+            new_metadata_location = current_table.metadata_location
+        else:
+            new_metadata_version = self._parse_metadata_version(current_table.metadata_location) + 1 if current_table else 0
+            provider = load_location_provider(updated_metadata.location, updated_metadata.properties)
+            new_metadata_location = provider.new_table_metadata_file_location(new_metadata_version)
 
         return StagedTable(
             identifier=table_identifier,

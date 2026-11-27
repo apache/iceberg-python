@@ -14,6 +14,20 @@
 #  KIND, either express or implied.  See the License for the
 #  specific language governing permissions and limitations
 #  under the License.
+"""Parser that converts a SQL-like filter string into an Iceberg BooleanExpression.
+
+This module enables:
+    - Parsing comparisons (<, <=, >, >=, =, !=, <>), BETWEEN, IN and NOT IN.
+    - Parsing IS [NOT] NULL, IS [NOT] NAN and LIKE (prefix matching only).
+    - Combining predicates with NOT, AND and OR.
+
+Note:
+    The grammar should follow ANSI SQL where possible, so that a filter behaves the same
+    as it would in a SQL engine. For example, identifiers are quoted with double quotes,
+    string literals with single quotes, and a single quote within a string is escaped by
+    doubling it. Deviations from ANSI SQL should be avoided when extending the grammar.
+"""
+
 import re
 from decimal import Decimal
 
@@ -107,9 +121,11 @@ boolean = one_of(["true", "false"], caseless=True)
 string = sgl_quoted_string.set_results_name("raw_quoted_string")
 decimal = common.real().set_results_name("decimal")
 integer = common.signed_integer().set_results_name("integer")
-literal = Group(string | decimal | integer | boolean).set_results_name("literal")
+literal = Group((string | decimal | integer | boolean).set_name("a literal value")).set_results_name("literal")
 literal_set = Group(
-    DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer) | DelimitedList(boolean)
+    (DelimitedList(string) | DelimitedList(decimal) | DelimitedList(integer) | DelimitedList(boolean)).set_name(
+        "a non-empty list of literals"
+    )
 ).set_results_name("literal_set")
 
 

@@ -213,6 +213,56 @@ def test_migrate_v1_partition_specs(example_table_metadata_v1: dict[str, Any]) -
     ]
 
 
+def test_v1_partition_fields_without_field_id(example_table_metadata_v1: dict[str, Any]) -> None:
+    metadata = copy(example_table_metadata_v1)
+    metadata["partition-spec"] = [
+        {"name": "x", "transform": "identity", "source-id": 1},
+        {"name": "y", "transform": "identity", "source-id": 2},
+    ]
+    metadata.pop("partition-specs", None)
+
+    table_metadata = TableMetadataV1(**metadata)
+
+    assert table_metadata.partition_specs == [
+        PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x"),
+            PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="y"),
+        )
+    ]
+    assert table_metadata.last_partition_id == 1001
+
+    metadata["partition-specs"] = [
+        {"spec-id": 0, "fields": [{"name": "x", "transform": "identity", "source-id": 1}]},
+        {
+            "spec-id": 1,
+            "fields": [
+                {"name": "x", "transform": "identity", "source-id": 1},
+                {"name": "y", "transform": "identity", "source-id": 2},
+            ],
+        },
+    ]
+
+    table_metadata = TableMetadataV1(**metadata)
+
+    assert [[field.field_id for field in spec.fields] for spec in table_metadata.partition_specs] == [[1000], [1000, 1001]]
+    assert table_metadata.last_partition_id == 1001
+
+    # A spec that mixes fields with and without ids is rejected, as in Java
+    for fields in (
+        [
+            {"name": "x", "transform": "identity", "source-id": 1},
+            {"name": "y", "transform": "identity", "source-id": 2, "field-id": 1000},
+        ],
+        [
+            {"name": "x", "transform": "identity", "source-id": 1, "field-id": 1000},
+            {"name": "y", "transform": "identity", "source-id": 2},
+        ],
+    ):
+        metadata["partition-specs"] = [{"spec-id": 0, "fields": fields}]
+        with pytest.raises(PydanticValidationError, match="Cannot parse spec with missing field IDs: 1 missing of 2 fields"):
+            TableMetadataV1(**metadata)
+
+
 def test_new_table_metadata_with_explicit_v1_format() -> None:
     schema = Schema(
         NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
@@ -281,6 +331,15 @@ def test_new_table_metadata_with_explicit_v1_format() -> None:
     assert actual.schemas == [expected_schema]
     assert actual.partition_specs == [expected_spec]
     assert actual.sort_orders == [expected_sort_order]
+
+
+def test_new_table_metadata_does_not_change_properties() -> None:
+    properties = {"format-version": "1", "owner": "etl"}
+    metadata = new_table_metadata(
+        schema=Schema(), partition_spec=PartitionSpec(), sort_order=SortOrder(), location="s3://bucket", properties=properties
+    )
+    assert (metadata.format_version, metadata.properties) == (1, {"owner": "etl"})
+    assert properties == {"format-version": "1", "owner": "etl"}
 
 
 def test_invalid_format_version(example_table_metadata_v1: dict[str, Any]) -> None:
@@ -880,6 +939,27 @@ def test_new_table_metadata_format_v2_with_v3_schema_fails(field_type: Primitive
         )
 
 
+def test_new_table_metadata_with_duplicate_partition_name_fails() -> None:
+    schema = Schema(
+        NestedField(field_id=10, name="foo", field_type=StringType(), required=False),
+        NestedField(field_id=22, name="bar", field_type=IntegerType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=10, field_id=1000, transform=IdentityTransform(), name="part"),
+        PartitionField(source_id=22, field_id=1001, transform=IdentityTransform(), name="part"),
+    )
+
+    with pytest.raises(ValueError, match="Partition name has to be unique: part"):
+        new_table_metadata(
+            schema=schema,
+            partition_spec=partition_spec,
+            sort_order=SortOrder(),
+            location="s3://some_v1_location/",
+            properties={"format-version": "2"},
+        )
+
+
 def test_encrypted_key_minimal() -> None:
     # Mirrors Java's TestEncryptedKeyParser, where the key metadata is base64 of b"key"
     key = EncryptedKey.model_validate_json('{"key-id": "a", "encrypted-key-metadata": "a2V5"}')
@@ -992,3 +1072,53 @@ def test_v3_metadata_with_encryption_keys_serializes_them(example_table_metadata
     assert table_metadata.model_dump(mode="json")["encryption-keys"] == [
         {"key-id": "a", "encrypted-key-metadata": "a2V5", "properties": {}}
     ]
+
+
+def test_specs_struct_resolves_dropped_partition_source_from_historical_schemas() -> None:
+    initial_schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "p", StringType()),
+        NestedField(3, "v", IntegerType()),
+        schema_id=0,
+    )
+    promoted_schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "p", StringType()),
+        NestedField(3, "v", LongType()),
+        schema_id=1,
+    )
+    dropped_schema = Schema(NestedField(1, "id", LongType()), schema_id=2)
+
+    spec_p = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p"), spec_id=0)
+    spec_v = PartitionSpec(PartitionField(3, 1001, IdentityTransform(), "v"), spec_id=1)
+
+    table_metadata = TableMetadataV2(
+        location="s3://bucket/test/location",
+        schemas=[initial_schema, promoted_schema, dropped_schema],
+        current_schema_id=2,
+        partition_specs=[spec_p, spec_v, PartitionSpec(spec_id=2)],
+        default_spec_id=2,
+        last_column_id=3,
+        last_partition_id=1001,
+    )
+
+    assert table_metadata.specs_struct() == StructType(
+        NestedField(1000, "p", StringType(), required=False),
+        NestedField(1001, "v", LongType(), required=False),
+    )
+
+
+def test_specs_struct_falls_back_to_unknown_when_source_missing_from_all_schemas() -> None:
+    table_metadata = TableMetadataV2(
+        location="s3://bucket/test/location",
+        schemas=[Schema(NestedField(1, "id", LongType()), schema_id=0)],
+        current_schema_id=0,
+        partition_specs=[PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p"), spec_id=0)],
+        default_spec_id=0,
+        last_column_id=2,
+        last_partition_id=1000,
+    )
+
+    assert table_metadata.specs_struct() == StructType(
+        NestedField(1000, "p", UnknownType(), required=False),
+    )

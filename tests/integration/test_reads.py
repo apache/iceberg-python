@@ -51,12 +51,15 @@ from pyiceberg.expressions import (
 from pyiceberg.io.pyarrow import (
     pyarrow_to_schema,
 )
+from pyiceberg.manifest import DataFileContent
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.snapshots import Operation
 from pyiceberg.types import (
     BinaryType,
     BooleanType,
+    GeographyType,
+    GeometryType,
     IntegerType,
     LongType,
     NestedField,
@@ -1001,10 +1004,7 @@ def test_null_list_and_map(catalog: Catalog) -> None:
     arrow_table = table_test_empty_list_and_map.scan().to_arrow()
     assert arrow_table["col_list"].to_pylist() == [None, []]
     assert arrow_table["col_map"].to_pylist() == [None, []]
-    # This should be:
-    # assert arrow_table["col_list_with_struct"].to_pylist() == [None, [{'test': 1}]]
-    # Once https://github.com/apache/arrow/issues/38809 has been fixed
-    assert arrow_table["col_list_with_struct"].to_pylist() == [[], [{"test": 1}]]
+    assert arrow_table["col_list_with_struct"].to_pylist() == [None, [{"test": 1}]]
 
 
 @pytest.mark.integration
@@ -1252,6 +1252,144 @@ def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
     result_table = tbl.scan().filter("so_true == True").to_arrow()
 
     assert len(result_table) == 10
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_read_geospatial_types_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
+    pytest.importorskip("geoarrow.types")
+    identifier = "default.test_read_geospatial_types_written_by_spark"
+    geom_wkb = "01010000000000000000003e400000000000002440"  # POINT (30 10)
+    geog_wkb = "01010000000000000000c051c00000000000004540"  # POINT (-71 42)
+    geospatial_enabled = spark.conf.get("spark.sql.geospatial.enabled", "false")
+    spark.conf.set("spark.sql.geospatial.enabled", "true")
+    try:
+        spark.sql("CREATE NAMESPACE IF NOT EXISTS default")
+        spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+        spark.sql(
+            f"CREATE TABLE {identifier} (id BIGINT, geom GEOMETRY(4326), geog GEOGRAPHY(4326)) "
+            "USING iceberg TBLPROPERTIES ('format-version'='3')"
+        )
+        spark.sql(
+            f"INSERT INTO {identifier} VALUES "
+            f"(1, st_setsrid(st_geomfromwkb(X'{geom_wkb}'), 4326), st_setsrid(st_geogfromwkb(X'{geog_wkb}'), 4326)), "
+            "(2, NULL, NULL)"
+        )
+
+        table = catalog.load_table(identifier)
+        assert table.schema().find_type("geom") == GeometryType()
+        assert table.schema().find_type("geog") == GeographyType()
+
+        result = table.scan().to_arrow()
+        assert sorted(result.to_pylist(), key=lambda row: row["id"]) == [
+            {"id": 1, "geom": bytes.fromhex(geom_wkb), "geog": bytes.fromhex(geog_wkb)},
+            {"id": 2, "geom": None, "geog": None},
+        ]
+        for name in ("geom", "geog"):
+            arrow_type = result.schema.field(name).type
+            assert isinstance(arrow_type, pa.ExtensionType)
+            assert arrow_type.extension_name == "geoarrow.wkb"
+        assert pyarrow_to_schema(result.schema, name_mapping=table.schema().name_mapping, format_version=3) == table.schema()
+    finally:
+        try:
+            spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+        finally:
+            spark.conf.set("spark.sql.geospatial.enabled", geospatial_enabled)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_read_first_row_ids_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
+    identifier = "default.test_read_first_row_ids_written_by_spark"
+    spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (id int, data string)
+        USING ICEBERG
+        TBLPROPERTIES (
+            'format-version'='3',
+            'write.update.mode'='copy-on-write',
+            'write.delete.mode'='merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (1, 'a'), (2, 'b'), (3, 'c')")
+    spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (4, 'd'), (5, 'e')")
+    # Rewriting manifests stores explicit first row IDs on the existing data files
+    spark.sql(f"CALL rest.system.rewrite_manifests('{identifier}')")
+    # Copy-on-write rewrites the data file, and merge-on-read adds a deletion vector in a delete manifest
+    spark.sql(f"UPDATE {identifier} SET data = 'x' WHERE id = 2")
+    spark.sql(f"DELETE FROM {identifier} WHERE id = 5")
+    spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (6, 'f'), (7, 'g')")
+
+    expected = {
+        (row.status, row.content, row.file_path): row.first_row_id
+        for row in spark.sql(
+            f"""
+            SELECT status, data_file.content, data_file.file_path, data_file.first_row_id
+            FROM {identifier}.entries
+            """
+        ).collect()
+    }
+    assert {content for _, content, _ in expected} == {DataFileContent.DATA, DataFileContent.POSITION_DELETES}
+
+    table = catalog.load_table(identifier)
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    actual = {
+        (entry.status, entry.data_file.content, entry.data_file.file_path): entry.data_file.first_row_id
+        for manifest in snapshot.manifests(table.io)
+        for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=False)
+    }
+    assert actual == expected
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("catalog", [lf("session_catalog")])
+def test_read_row_lineage_written_by_spark(catalog: Catalog, spark: SparkSession) -> None:
+    identifier = "default.test_read_row_lineage_written_by_spark"
+    spark.sql(f"DROP TABLE IF EXISTS {identifier}")
+    spark.sql(
+        f"""
+        CREATE TABLE {identifier} (id int, data string)
+        USING ICEBERG
+        TBLPROPERTIES (
+            'format-version'='3',
+            'write.update.mode'='copy-on-write',
+            'write.delete.mode'='merge-on-read',
+            'write.merge.mode'='merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')")
+    spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (5, 'e'), (6, 'f')")
+    # Copy-on-write rewrites the data file and stores the existing row IDs in it
+    spark.sql(f"UPDATE {identifier} SET data = 'x' WHERE id = 2")
+    # Merge-on-read adds deletion vectors, and new rows inherit their row IDs
+    spark.sql(f"DELETE FROM {identifier} WHERE id = 3")
+    spark.sql(
+        f"""
+        MERGE INTO {identifier} t
+        USING (SELECT * FROM VALUES (5, 'y'), (7, 'g') AS s(id, data)) s
+        ON t.id = s.id
+        WHEN MATCHED THEN UPDATE SET t.data = s.data
+        WHEN NOT MATCHED THEN INSERT *
+        """
+    )
+    spark.sql(f"CALL rest.system.rewrite_data_files(table => '{identifier}', options => map('rewrite-all', 'true'))")
+    # Rows in a new file inherit row IDs from their position, so a filter must not drop rows before they are counted
+    spark.sql(f"INSERT INTO {identifier} SELECT /*+ COALESCE(1) */ * FROM VALUES (8, 'h'), (9, 'i'), (10, 'j')")
+
+    columns = ("id", "_row_id", "_last_updated_sequence_number")
+    expected = sorted(tuple(row) for row in spark.sql(f"SELECT {', '.join(columns)} FROM {identifier}").collect())
+    assert all(value is not None for row in expected for value in row)
+
+    def rows(result: pa.Table) -> list[tuple[int, int, int]]:
+        return sorted(zip(*(result[column].to_pylist() for column in columns), strict=True))
+
+    table = catalog.load_table(identifier)
+    assert rows(table.scan(selected_fields=columns).to_arrow()) == expected
+    assert rows(table.scan(row_filter="id >= 9", selected_fields=columns).to_arrow()) == [row for row in expected if row[0] >= 9]
 
 
 @pytest.mark.integration

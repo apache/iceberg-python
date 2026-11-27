@@ -22,7 +22,7 @@ import pyarrow as pa
 import pytest
 
 from pyiceberg.conversions import to_bytes
-from pyiceberg.manifest import DataFile, DataFileContent
+from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.inspect import InspectTable, _readable_bound
@@ -76,6 +76,34 @@ def test_inspect_entries_and_files_render_null_bound(catalog: InMemoryCatalog) -
     assert files_metrics["upper_bound"] is None
 
 
+def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMemoryCatalog) -> None:
+    # column_sizes and the other metric maps are optional in a data file
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    tbl = catalog.create_table("default.no_metrics", schema)
+    data_file = DataFile.from_args(
+        content=DataFileContent.DATA,
+        file_path=f"{tbl.location()}/data/a.parquet",
+        file_format=FileFormat.PARQUET,
+        partition=Record(),
+        record_count=1,
+        file_size_in_bytes=1,
+        spec_id=tbl.metadata.default_spec_id,
+    )
+    with tbl.transaction() as tx:
+        with tx.update_snapshot().fast_append() as fast_append:
+            fast_append.append_data_file(data_file)
+
+    entries = tbl.inspect.entries().to_pylist()
+    assert len(entries) == 1
+    for metric in ("column_sizes", "value_counts", "null_value_counts", "nan_value_counts"):
+        assert entries[0]["data_file"][metric] == []
+    assert entries[0]["readable_metrics"]["x"]["column_size"] is None
+
+    files = tbl.inspect.files().to_pylist()
+    assert len(files) == 1
+    assert files[0]["column_sizes"] is None
+
+
 @pytest.mark.parametrize("newest_first", [False, True])
 def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest_first: bool) -> None:
     # Manifest entries are visited in manifest order, which is not chronological, so the
@@ -88,7 +116,7 @@ def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest
     data_file.spec_id = 0
 
     inspect = InspectTable.__new__(InspectTable)
-    partitions_map: dict[tuple[str, Any], Any] = {}
+    partitions_map: dict[tuple[int, Any], Any] = {}
     for snapshot in [newer, older] if newest_first else [older, newer]:
         inspect._update_partitions_map_from_manifest_entry(partitions_map, data_file, {"part": "a"}, snapshot)
 
@@ -138,3 +166,128 @@ def test_inspect_bounds_after_type_promotion(catalog: InMemoryCatalog) -> None:
         partition_summaries = tbl.inspect.manifests().to_pydict()["partition_summaries"][0]
         assert partition_summaries[0]["lower_bound"] == str(values[0]), name
         assert partition_summaries[0]["upper_bound"] == str(values[-1]), name
+
+
+def test_inspect_partitions_and_files_after_rename_field(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "p", StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p"))
+    tbl = catalog.create_table("default.renamed_partition_col", schema, partition_spec=spec)
+    tbl.append(pa.table({"id": [1, 2], "p": ["a", "b"]}))
+
+    with tbl.update_spec() as spec_update:
+        spec_update.rename_field("p", "p_renamed")
+    tbl.append(pa.table({"id": [3], "p": ["c"]}))
+
+    partitions = tbl.inspect.partitions().to_pydict()
+    assert sorted(part["p_renamed"] for part in partitions["partition"]) == ["a", "b", "c"]
+    assert set(partitions["spec_id"]) == {0, 1}
+
+    for files_table in [
+        tbl.inspect.files(),
+        tbl.inspect.data_files(),
+        tbl.inspect.all_files(),
+        tbl.inspect.all_data_files(),
+    ]:
+        assert sorted(part["p_renamed"] for part in files_table.to_pydict()["partition"]) == ["a", "b", "c"]
+
+    entries = tbl.inspect.entries().to_pydict()
+    assert sorted(df["partition"]["p_renamed"] for df in entries["data_file"]) == ["a", "b", "c"]
+
+
+def test_inspect_files_after_v1_partition_field_readd(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "p", StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p"))
+    tbl = catalog.create_table("default.v1_partition_readd", schema, partition_spec=spec, properties={"format-version": "1"})
+    tbl.append(pa.table({"id": [1, 2], "p": ["a", "b"]}))
+
+    with tbl.update_spec() as spec_update:
+        spec_update.remove_field("p")
+    with tbl.update_spec() as spec_update:
+        spec_update.add_identity("p")
+
+    # In v1, the voided field is renamed to p_1000 and the new identity field is assigned id 1001 with name p.
+    # Pre-existing data files from spec 0 belong to field 1000 (p_1000), not the newly added field 1001 (p).
+    for files_table in [tbl.inspect.files(), tbl.inspect.all_files()]:
+        partitions = files_table.to_pydict()["partition"]
+        assert sorted(part["p_1000"] for part in partitions) == ["a", "b"]
+        assert all(part["p"] is None for part in partitions)
+
+    entries = tbl.inspect.entries().to_pydict()
+    entry_partitions = [df["partition"] for df in entries["data_file"]]
+    assert sorted(part["p_1000"] for part in entry_partitions) == ["a", "b"]
+    assert all(part["p"] is None for part in entry_partitions)
+
+
+def test_inspect_after_dropping_old_partition_column(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "p", StringType(), required=False),
+        NestedField(3, "q", StringType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p"))
+    tbl = catalog.create_table("default.dropped_partition_col", schema, partition_spec=spec)
+    tbl.append(pa.table({"id": [1, 2], "p": ["a", "b"], "q": ["x", "y"]}))
+
+    with tbl.update_spec() as spec_update:
+        spec_update.remove_field("p")
+    with tbl.update_schema() as schema_update:
+        schema_update.delete_column("p")
+
+    assert tbl.inspect.partitions().to_pydict()["partition"] == [{"p": "a"}, {"p": "b"}]
+    for table_view in [
+        tbl.inspect.entries(),
+        tbl.inspect.files(),
+        tbl.inspect.data_files(),
+        tbl.inspect.all_files(),
+        tbl.inspect.all_data_files(),
+    ]:
+        assert table_view.num_rows == 2
+    assert tbl.inspect.delete_files().num_rows == 0
+    assert tbl.inspect.all_delete_files().num_rows == 0
+
+    for manifest_table in [tbl.inspect.manifests(), tbl.inspect.all_manifests()]:
+        assert manifest_table.to_pydict()["partition_summaries"][0] == [
+            {"contains_null": False, "contains_nan": False, "lower_bound": "a", "upper_bound": "b"}
+        ]
+
+    # Appending under an unpartitioned spec and a newly evolved partition column also stays readable
+    tbl.append(pa.table({"id": [3], "q": ["z"]}))
+    with tbl.update_spec() as spec_update:
+        spec_update.add_identity("q")
+    tbl.append(pa.table({"id": [4], "q": ["w"]}))
+
+    assert sorted(
+        [(row["p"], row["q"]) for row in tbl.inspect.partitions().to_pydict()["partition"]],
+        key=lambda item: (item[0] or "", item[1] or ""),
+    ) == [(None, None), (None, "w"), ("a", None), ("b", None)]
+    assert tbl.inspect.entries().num_rows == 4
+    assert tbl.inspect.files().num_rows == 4
+    assert tbl.inspect.all_files().num_rows == 4
+
+
+def test_inspect_after_promoting_then_dropping_partition_column(catalog: InMemoryCatalog) -> None:
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(2, "v", IntegerType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "v"))
+    tbl = catalog.create_table("default.promoted_then_dropped", schema, partition_spec=spec)
+    tbl.append(pa.table({"id": pa.array([1, 2], pa.int64()), "v": pa.array([10, 20], pa.int32())}))
+
+    with tbl.update_schema() as schema_update:
+        schema_update.update_column("v", field_type=LongType())
+    with tbl.update_spec() as spec_update:
+        spec_update.remove_field("v")
+    with tbl.update_schema() as schema_update:
+        schema_update.delete_column("v")
+
+    assert sorted(row["v"] for row in tbl.inspect.partitions().to_pydict()["partition"]) == [10, 20]
+    assert tbl.inspect.manifests().to_pydict()["partition_summaries"][0] == [
+        {"contains_null": False, "contains_nan": False, "lower_bound": "10", "upper_bound": "20"}
+    ]

@@ -229,22 +229,39 @@ def micros_to_hours(micros: int) -> int:
     return micros // 3_600_000_000
 
 
+def _civil_from_days(days: int) -> tuple[int, int]:
+    """Return the year and month of the number of days from 1970-01-01.
+
+    The conversion uses integer arithmetic, so values outside the range of ``datetime.date``, such
+    as the day after 9999-12-31, are converted as well. Based on
+    https://howardhinnant.github.io/date_algorithms.html#civil_from_days.
+    """
+    z = days + 719468
+    era = z // 146097
+    doe = z - era * 146097
+    yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+    mp = (5 * doy + 2) // 153
+    month = mp + 3 if mp < 10 else mp - 9
+    year = yoe + era * 400 + (1 if month <= 2 else 0)
+    return year, month
+
+
 def days_to_months(days: int) -> int:
-    d = days_to_date(days)
-    return (d.year - EPOCH_DATE.year) * 12 + (d.month - EPOCH_DATE.month)
+    year, month = _civil_from_days(days)
+    return (year - EPOCH_DATE.year) * 12 + (month - EPOCH_DATE.month)
 
 
 def micros_to_months(micros: int) -> int:
-    dt = micros_to_timestamp(micros)
-    return (dt.year - EPOCH_TIMESTAMP.year) * 12 + (dt.month - EPOCH_TIMESTAMP.month)
+    return days_to_months(micros // 86_400_000_000)
 
 
 def days_to_years(days: int) -> int:
-    return days_to_date(days).year - EPOCH_DATE.year
+    return _civil_from_days(days)[0] - EPOCH_DATE.year
 
 
 def micros_to_years(micros: int) -> int:
-    return micros_to_timestamp(micros).year - EPOCH_TIMESTAMP.year
+    return days_to_years(micros // 86_400_000_000)
 
 
 def nanos_to_timestamp(nanos: int) -> datetime:
@@ -254,12 +271,11 @@ def nanos_to_timestamp(nanos: int) -> datetime:
 
 
 def nanos_to_years(nanos: int) -> int:
-    return nanos_to_timestamp(nanos).year - EPOCH_TIMESTAMP.year
+    return days_to_years(nanos // 86_400_000_000_000)
 
 
 def nanos_to_months(nanos: int) -> int:
-    dt = nanos_to_timestamp(nanos)
-    return (dt.year - EPOCH_TIMESTAMP.year) * 12 + (dt.month - EPOCH_TIMESTAMP.month)
+    return days_to_months(nanos // 86_400_000_000_000)
 
 
 def nanos_to_days(nanos: int) -> int:

@@ -22,6 +22,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 from copy import copy
 from enum import Enum, StrEnum
+from io import BytesIO
 from types import TracebackType
 from typing import (
     Any,
@@ -37,7 +38,7 @@ from pyiceberg.conversions import to_bytes
 from pyiceberg.encryption.io import EncryptedInputFile
 from pyiceberg.encryption.key_metadata import StandardKeyMetadata
 from pyiceberg.exceptions import ValidationError
-from pyiceberg.io import FileIO, InputFile, OutputFile
+from pyiceberg.io import FileIO, InputFile, InputStream, OutputFile
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.typedef import Record, TableVersion
@@ -60,6 +61,38 @@ DEFAULT_BLOCK_SIZE = 67108864  # 64 * 1024 * 1024
 DEFAULT_READ_VERSION: Literal[3] = 3
 
 INITIAL_SEQUENCE_NUMBER = 0
+
+
+class _MemoryInputFile(InputFile):
+    """An InputFile that serves bytes already read from the file at the location."""
+
+    def __init__(self, location: str, data: bytes) -> None:
+        super().__init__(location)
+        self._data = data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def exists(self) -> bool:
+        return True
+
+    def open(self, seekable: bool = True) -> InputStream:
+        return BytesIO(self._data)
+
+
+def _open_metadata_file(io: FileIO, location: str) -> InputFile:
+    """Open a metadata file, reading its bytes through the content cache when the FileIO has one."""
+    cache = io.content_cache
+    if cache is None:
+        return io.new_input(location)
+
+    if (data := cache.get(location)) is None:
+        input_file = io.new_input(location)
+        with input_file.open() as stream:
+            data = stream.read()
+        cache.put(location, data)
+
+    return _MemoryInputFile(location, data)
 
 
 class DataFileContent(int, Enum):
@@ -550,6 +583,10 @@ class DataFile(Record):
     def first_row_id(self) -> int | None:
         return self._data[16]
 
+    @first_row_id.setter
+    def first_row_id(self, value: int | None) -> None:
+        self._data[16] = value
+
     @property
     def referenced_data_file(self) -> str | None:
         return self._data[17]
@@ -670,6 +707,10 @@ class ManifestEntry(Record):
     @data_file.setter
     def data_file(self, value: DataFile) -> None:
         self._data[4] = value
+
+    def is_live(self) -> bool:
+        """Return whether the entry is live (added or existing) in the snapshot."""
+        return self.status in (ManifestEntryStatus.ADDED, ManifestEntryStatus.EXISTING)
 
 
 PARTITION_FIELD_SUMMARY_TYPE = StructType(
@@ -916,7 +957,7 @@ class ManifestFile(Record):
         Returns:
             An Iterator of manifest entries.
         """
-        input_file = io.new_input(self.manifest_path)
+        input_file = _open_metadata_file(io, self.manifest_path)
         if self.key_metadata is not None:
             input_file = EncryptedInputFile(input_file, StandardKeyMetadata.from_bytes(self.key_metadata))
         with AvroFile[ManifestEntry](
@@ -926,11 +967,20 @@ class ManifestFile(Record):
             read_enums={0: ManifestEntryStatus, 101: FileFormat, 134: DataFileContent},
         ) as reader:
             result = []
+            next_row_id = self.first_row_id if self.content == ManifestContent.DATA else None
 
             for entry in reader:
-                if discard_deleted and entry.status == ManifestEntryStatus.DELETED:
+                if discard_deleted and not entry.is_live():
                     continue
                 _inherit_from_manifest(entry, self)
+
+                # Inherit first row IDs, which are only valid when a data manifest has a first_row_id
+                data_file = entry.data_file
+                if next_row_id is None:
+                    data_file.first_row_id = None
+                elif entry.is_live() and data_file.first_row_id is None:
+                    data_file.first_row_id = next_row_id
+                    next_row_id += data_file.record_count
 
                 if entry_filter is None or entry_filter(entry):
                     result.append(entry)
@@ -1033,7 +1083,7 @@ def _manifests(io: FileIO, manifest_list: str, key_metadata: StandardKeyMetadata
     Returns:
         A tuple of ManifestFile objects.
     """
-    file = io.new_input(manifest_list)
+    file = _open_metadata_file(io, manifest_list)
     if key_metadata is not None:
         file = EncryptedInputFile(file, key_metadata)
     manifest_files = list(read_manifest_list(file))
@@ -1241,7 +1291,7 @@ class ManifestWriter(ABC):
         self._partitions.append(entry.data_file.partition)
 
         if (
-            (entry.status == ManifestEntryStatus.ADDED or entry.status == ManifestEntryStatus.EXISTING)
+            entry.is_live()
             and entry.sequence_number is not None
             and (self._min_sequence_number is None or entry.sequence_number < self._min_sequence_number)
         ):

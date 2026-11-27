@@ -45,7 +45,7 @@ from pyiceberg.typedef import (
     IcebergRootModel,
     Properties,
 )
-from pyiceberg.types import NestedField, StructType, transform_dict_value_to_str
+from pyiceberg.types import IcebergType, NestedField, StructType, UnknownType, transform_dict_value_to_str
 from pyiceberg.utils.config import Config
 from pyiceberg.utils.datetime import datetime_to_millis
 
@@ -68,6 +68,7 @@ FIELDS = "fields"
 
 INITIAL_SEQUENCE_NUMBER = 0
 INITIAL_SPEC_ID = 0
+INITIAL_ROW_ID = 0
 DEFAULT_SCHEMA_ID = 0
 
 SUPPORTED_TABLE_FORMAT_VERSION = 2
@@ -297,6 +298,16 @@ class TableMetadataCommonFields(IcebergBaseModel):
         """Return a dict the partition specs this table."""
         return {spec.spec_id: spec for spec in self.partition_specs}
 
+    def _resolve_field_type(self, field_id: int) -> IcebergType:
+        """Resolve a field's type from the current schema or historical schemas."""
+        if field := self.schema()._lazy_id_to_field.get(field_id):
+            return field.field_type
+        # Historical partition specs may reference columns dropped in later schema evolutions.
+        for schema in reversed(self.schemas):
+            if field := schema._lazy_id_to_field.get(field_id):
+                return field.field_type
+        return UnknownType()
+
     def specs_struct(self, spec_ids: Iterable[int] | None = None) -> StructType:
         """Produce a struct of the combined PartitionSpecs.
 
@@ -315,13 +326,11 @@ class TableMetadataCommonFields(IcebergBaseModel):
         # Collect all the fields
         struct_fields = {field.field_id: field for spec in selected_specs for field in spec.fields}
 
-        schema = self.schema()
-
         nested_fields = []
         # Sort them by field_id in order to get a deterministic output
         for field_id in sorted(struct_fields):
             field = struct_fields[field_id]
-            source_type = schema.find_type(field.source_id)
+            source_type = self._resolve_field_type(field.source_id)
             result_type = field.transform.result_type(source_type)
             nested_fields.append(NestedField(field_id=field.field_id, name=field.name, type=result_type, required=False))
 
@@ -434,9 +443,8 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         """
         # When the schema doesn't have an ID
         schema = data.get("schema")
-        if isinstance(schema, dict):
-            if "schema_id" not in schema and "schema-id" not in schema:
-                schema["schema_id"] = DEFAULT_SCHEMA_ID
+        if isinstance(schema, dict) and "schema_id" not in schema and "schema-id" not in schema:
+            schema["schema_id"] = DEFAULT_SCHEMA_ID
 
         return data
 
@@ -486,6 +494,16 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
                 data[DEFAULT_SPEC_ID] = INITIAL_SPEC_ID
             else:
                 data[PARTITION_SPECS] = [{"field-id": 0, "fields": ()}]
+
+        # In v1 the partition field ids were not tracked, but assigned sequentially from 1000 in each spec
+        for spec in data[PARTITION_SPECS]:
+            fields = spec[FIELDS]
+            missing = sum(1 for field in fields if field.get(FIELD_ID) is None)
+            if missing == len(fields):
+                for pos, field in enumerate(fields):
+                    field[FIELD_ID] = PARTITION_FIELD_ID_START + pos
+            elif missing:
+                raise ValueError(f"Cannot parse spec with missing field IDs: {missing} missing of {len(fields)} fields.")
 
         data[LAST_PARTITION_ID] = max(
             [field.get(FIELD_ID) for spec in data[PARTITION_SPECS] for field in spec[FIELDS]],
@@ -668,7 +686,8 @@ def new_table_metadata(
 ) -> TableMetadata:
     from pyiceberg.table import TableProperties
 
-    # Remove format-version so it does not get persisted
+    # Remove format-version so it does not get persisted, without changing the caller's properties
+    properties = dict(properties)
     format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
 
     schema.check_format_version_compatibility(format_version)
