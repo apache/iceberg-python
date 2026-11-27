@@ -3486,7 +3486,7 @@ def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tup
         return table, None
 
     schema = table_metadata.schema()
-    sort_keys: list[tuple[str, str]] = []
+    sort_key_pairs: list[tuple[str, str]] = []
     null_orders: set[NullOrder] = set()
     for sort_field in sort_order.fields:
         if not isinstance(sort_field.transform, IdentityTransform):
@@ -3503,7 +3503,7 @@ def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tup
                 stacklevel=2,
             )
             return table, None
-        sort_keys.append((column_name, "descending" if sort_field.direction == SortDirection.DESC else "ascending"))
+        sort_key_pairs.append((column_name, "descending" if sort_field.direction == SortDirection.DESC else "ascending"))
         null_orders.add(sort_field.null_order)
 
     if len(null_orders) != 1:
@@ -3511,11 +3511,12 @@ def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tup
         return table, None
 
     null_placement = "at_start" if NullOrder.NULLS_FIRST in null_orders else "at_end"
+    sort_keys: list[tuple[str, str, str]] = [(name, order, null_placement) for name, order in sort_key_pairs]
     if int(pa.__version__.split(".")[0]) >= 25:
         # Per-key null placement replaced the SortOptions-level argument in Arrow 25.
-        indices = pc.sort_indices(table, sort_keys=cast(Any, [(*key, null_placement) for key in sort_keys]))
+        indices = pc.sort_indices(table, sort_keys=cast(Any, sort_keys))
     else:
-        indices = pc.sort_indices(table, sort_keys=cast(Any, sort_keys), null_placement=cast(Any, null_placement))
+        indices = pc.sort_indices(table, sort_keys=cast(Any, sort_key_pairs), null_placement=cast(Any, null_placement))
     return table.take(indices), sort_order.order_id
 
 
