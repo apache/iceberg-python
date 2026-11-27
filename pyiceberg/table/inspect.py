@@ -21,12 +21,12 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from pyiceberg.conversions import from_bytes
+from pyiceberg.conversions import from_bytes, to_json
 from pyiceberg.expressions import AlwaysTrue, BooleanExpression
 from pyiceberg.manifest import DataFile, DataFileContent, ManifestContent, ManifestFile, PartitionFieldSummary
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.snapshots import Snapshot, ancestors_of
-from pyiceberg.types import IcebergType, PrimitiveType
+from pyiceberg.types import DecimalType, IcebergType, PrimitiveType
 from pyiceberg.utils.concurrent import ExecutorFactory
 from pyiceberg.utils.singleton import _convert_to_hashable_type
 
@@ -40,6 +40,18 @@ ALWAYS_TRUE = AlwaysTrue()
 
 def _readable_bound(field_type: PrimitiveType, bound: bytes | None) -> Any | None:
     return from_bytes(field_type, bound) if bound is not None else None
+
+
+def _partition_bound_to_human(partition_field_type: PrimitiveType, transform: Any, value: Any) -> str:
+    """Render a partition bound for display.
+
+    Decimal values use the plain JSON notation (#4420): to_human_string falls
+    through to str(), which switches to scientific notation for small
+    magnitudes, so a partition value of 0.00000012 would display as 1.2E-7.
+    """
+    if isinstance(partition_field_type, DecimalType):
+        return to_json(partition_field_type, value)
+    return transform.to_human_string(partition_field_type, value)
 
 
 class InspectTable:
@@ -576,19 +588,19 @@ class InspectTable:
                 field = spec.fields[i]
                 partition_field_type = partition_field_types[field.field_id]
                 lower_bound = (
-                    (
-                        field.transform.to_human_string(
-                            partition_field_type, from_bytes(partition_field_type, field_summary.lower_bound)
-                        )
+                    _partition_bound_to_human(
+                        partition_field_type,
+                        field.transform,
+                        from_bytes(partition_field_type, field_summary.lower_bound),
                     )
                     if field_summary.lower_bound is not None
                     else None
                 )
                 upper_bound = (
-                    (
-                        field.transform.to_human_string(
-                            partition_field_type, from_bytes(partition_field_type, field_summary.upper_bound)
-                        )
+                    _partition_bound_to_human(
+                        partition_field_type,
+                        field.transform,
+                        from_bytes(partition_field_type, field_summary.upper_bound),
                     )
                     if field_summary.upper_bound is not None
                     else None
