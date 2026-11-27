@@ -934,6 +934,10 @@ class ManifestFile(Record):
     def first_row_id(self) -> int | None:
         return self._data[15]
 
+    @first_row_id.setter
+    def first_row_id(self, value: int | None) -> None:
+        self._data[15] = value
+
     def has_added_files(self) -> bool:
         return self.added_files_count is None or self.added_files_count > 0
 
@@ -1393,6 +1397,39 @@ class ManifestWriterV2(ManifestWriter):
         return entry
 
 
+class ManifestWriterV3(ManifestWriterV2):
+    """Writes V3 manifest files.
+
+    An optional `first_row_id` can be provided when rewriting a manifest whose
+    `first_row_id` is already known; it is carried into the produced manifest file
+    so the manifest list writer preserves it instead of assigning a new one. For
+    new manifests it is None and assigned when writing the manifest list.
+    """
+
+    _first_row_id: int | None
+
+    def __init__(
+        self,
+        spec: PartitionSpec,
+        schema: Schema,
+        output_file: OutputFile,
+        snapshot_id: int,
+        avro_compression: AvroCompressionCodec,
+        first_row_id: int | None = None,
+    ):
+        super().__init__(spec, schema, output_file, snapshot_id, avro_compression)
+        self._first_row_id = first_row_id
+
+    @property
+    def version(self) -> TableVersion:
+        return 3
+
+    def to_manifest_file(self) -> ManifestFile:
+        manifest_file = super().to_manifest_file()
+        manifest_file.first_row_id = self._first_row_id
+        return manifest_file
+
+
 def write_manifest(
     format_version: TableVersion,
     spec: PartitionSpec,
@@ -1400,11 +1437,16 @@ def write_manifest(
     output_file: OutputFile,
     snapshot_id: int,
     avro_compression: AvroCompressionCodec,
+    first_row_id: int | None = None,
 ) -> ManifestWriter:
+    if first_row_id is not None and format_version < 3:
+        raise ValueError(f"First-row-id is only supported for V3 tables: {format_version}")
     if format_version == 1:
         return ManifestWriterV1(spec, schema, output_file, snapshot_id, avro_compression)
     elif format_version == 2:
         return ManifestWriterV2(spec, schema, output_file, snapshot_id, avro_compression)
+    elif format_version == 3:
+        return ManifestWriterV3(spec, schema, output_file, snapshot_id, avro_compression, first_row_id)
     else:
         raise ValueError(f"Cannot write manifest for table version: {format_version}")
 
@@ -1528,6 +1570,57 @@ class ManifestListWriterV2(ManifestListWriter):
         return wrapped_manifest_file
 
 
+class ManifestListWriterV3(ManifestListWriterV2):
+    """Writes V3 manifest lists, assigning `first_row_id` to data manifests.
+
+    Follows the spec's First Row ID Assignment: existing `first_row_id` values of data
+    manifests are preserved, delete manifests never carry one, and data manifests without a
+    `first_row_id` are assigned a running value starting at the snapshot's `first-row-id`,
+    advanced by each assigned manifest's existing and added row counts.
+    """
+
+    _next_row_id: int
+
+    def __init__(
+        self,
+        output_file: OutputFile,
+        snapshot_id: int,
+        parent_snapshot_id: int | None,
+        sequence_number: int,
+        compression: AvroCompressionCodec,
+        first_row_id: int,
+    ):
+        super().__init__(output_file, snapshot_id, parent_snapshot_id, sequence_number, compression)
+        self._format_version = 3
+        self._meta = {
+            **self._meta,
+            "first-row-id": str(first_row_id),
+            "format-version": "3",
+        }
+        self._next_row_id = first_row_id
+
+    @property
+    def next_row_id(self) -> int:
+        """The row ID after the last assigned one; the table's `next-row-id` after this snapshot."""
+        return self._next_row_id
+
+    def prepare_manifest(self, manifest_file: ManifestFile) -> ManifestFile:
+        # Rebind to a fresh record so that assigning `first_row_id` never mutates the caller's manifest file
+        wrapped_manifest_file = super().prepare_manifest(ManifestFile(*manifest_file._data))
+
+        if wrapped_manifest_file.content != ManifestContent.DATA:
+            wrapped_manifest_file.first_row_id = None
+        elif wrapped_manifest_file.first_row_id is None:
+            if wrapped_manifest_file.existing_rows_count is None or wrapped_manifest_file.added_rows_count is None:
+                # assigning first-row-id with unknown row counts would overlap row ID ranges
+                raise ValueError(
+                    f"Cannot assign first-row-id to manifest with unknown row counts: {wrapped_manifest_file.manifest_path}"
+                )
+            wrapped_manifest_file.first_row_id = self._next_row_id
+            self._next_row_id += wrapped_manifest_file.existing_rows_count + wrapped_manifest_file.added_rows_count
+        return wrapped_manifest_file
+
+
 def write_manifest_list(
     format_version: TableVersion,
     output_file: OutputFile,
@@ -1535,6 +1628,7 @@ def write_manifest_list(
     parent_snapshot_id: int | None,
     sequence_number: int | None,
     avro_compression: AvroCompressionCodec,
+    first_row_id: int | None = None,
 ) -> ManifestListWriter:
     if format_version == 1:
         return ManifestListWriterV1(output_file, snapshot_id, parent_snapshot_id, avro_compression)
@@ -1542,5 +1636,11 @@ def write_manifest_list(
         if sequence_number is None:
             raise ValueError(f"Sequence-number is required for V2 tables: {sequence_number}")
         return ManifestListWriterV2(output_file, snapshot_id, parent_snapshot_id, sequence_number, avro_compression)
+    elif format_version == 3:
+        if sequence_number is None:
+            raise ValueError(f"Sequence-number is required for V3 tables: {sequence_number}")
+        if first_row_id is None:
+            raise ValueError("First-row-id is required for V3 tables")
+        return ManifestListWriterV3(output_file, snapshot_id, parent_snapshot_id, sequence_number, avro_compression, first_row_id)
     else:
         raise ValueError(f"Cannot write manifest list for table version: {format_version}")
