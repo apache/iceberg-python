@@ -3167,6 +3167,44 @@ def test_bin_pack_record_batches_microbatched(arrow_table_with_null: pa.Table) -
         assert sum(b.nbytes for b in bin_) >= bin_size
 
 
+def test_bin_pack_record_batches_splits_oversized_batch() -> None:
+    table = pa.table({"x": list(range(10_000))})
+    batch = table.to_batches()[0]
+    target = table.nbytes // 4
+    bins = list(bin_pack_record_batches(iter([batch]), target_file_size=target))
+    assert len(bins) == 4
+    for bin_ in bins:
+        assert sum(b.nbytes for b in bin_) <= target
+    assert pa.Table.from_batches([b for bin_ in bins for b in bin_]).equals(table)
+
+
+def test_bin_pack_record_batches_splits_batch_after_partial_buffer() -> None:
+    small = pa.table({"x": list(range(10))}).to_batches()[0]
+    table = pa.table({"x": list(range(10_000))})
+    bins = list(bin_pack_record_batches(iter([small, table.to_batches()[0]]), target_file_size=table.nbytes // 4))
+    assert len(bins) > 1
+    assert sum(b.num_rows for bin_ in bins for b in bin_) == table.num_rows + small.num_rows
+    for bin_ in bins[:-1]:
+        assert sum(b.nbytes for b in bin_) <= table.nbytes // 4
+
+
+def test_bin_pack_record_batches_exact_target_flushes_without_reading_ahead() -> None:
+    table = pa.table({"x": list(range(100))})
+    single_row = pa.table({"x": [100]}).to_batches()[0]
+    consumed: list[int] = []
+
+    def tracking_iter() -> Iterator[pa.RecordBatch]:
+        for i, batch in enumerate([table.to_batches()[0], single_row]):
+            consumed.append(i)
+            yield batch
+
+    bins_iter = bin_pack_record_batches(tracking_iter(), target_file_size=table.nbytes)
+    first_bin = next(bins_iter)
+    assert sum(b.nbytes for b in first_bin) == table.nbytes
+    assert consumed == [0]
+    assert [sum(b.num_rows for b in bin_) for bin_ in bins_iter] == [1]
+
+
 def test_bin_pack_record_batches_empty() -> None:
     assert list(bin_pack_record_batches(iter([]), target_file_size=1024)) == []
 
