@@ -186,6 +186,13 @@ For the FileIO there are several configuration options available:
 
 <!-- markdown-link-check-enable-->
 
+Recent AWS SDKs, including botocore 1.36+ (used by `FsspecFileIO` through s3fs) and the AWS SDK for C++ bundled with recent PyArrow releases, add CRC-based integrity checksums to requests by default. Some S3-compatible object stores do not support these and reject writes, for example with `MissingContentLength` or `XAmzContentSHA256Mismatch`. In that case, set the following environment variables before creating the catalog, so that checksums are only sent and validated when an operation requires them:
+
+```sh
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+```
+
 ### HDFS
 
 <!-- markdown-link-check-disable -->
