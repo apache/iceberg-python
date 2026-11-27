@@ -242,7 +242,7 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
             raise ValueError(f"Incompatible change: cannot add required column: {'.'.join(path)}")
 
         # update tracking for moves
-        self._added_name_to_id[full_name] = new_id
+        self._added_name_to_id[full_name if self._case_sensitive else full_name.lower()] = new_id
         self._id_to_parent[new_id] = parent_full_path
 
         field = NestedField(
@@ -508,11 +508,12 @@ class UpdateSchema(UpdateTableMetadata["UpdateSchema"]):
         return self
 
     def _find_for_move(self, name: str) -> int | None:
-        field = self._schema._find_field_or_none(name, self._case_sensitive)
-        if field is not None:
-            return field.field_id
+        # A column added in this update shadows a deleted column with the same name
+        if (added_id := self._added_name_to_id.get(name if self._case_sensitive else name.lower())) is not None:
+            return added_id
 
-        return self._added_name_to_id.get(name)
+        field = self._schema._find_field_or_none(name, self._case_sensitive)
+        return field.field_id if field is not None else None
 
     def _move(self, move: _Move) -> None:
         if parent_name := self._id_to_parent.get(move.field_id):
