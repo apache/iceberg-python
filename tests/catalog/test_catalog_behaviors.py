@@ -1423,6 +1423,19 @@ def test_drop_namespace_raises_error_when_namespace_not_empty(
         catalog.drop_namespace(namespace)
 
 
+def test_drop_namespace_raises_error_when_namespace_has_child_namespaces(catalog: Catalog, test_namespace: Identifier) -> None:
+    child_namespace = test_namespace + ("child",)
+    catalog.create_namespace(test_namespace)
+    catalog.create_namespace(child_namespace)
+    with pytest.raises(NamespaceNotEmptyError, match=f"Namespace {'.'.join(test_namespace)} is not empty. 1 namespaces exist."):
+        catalog.drop_namespace(test_namespace)
+    assert catalog.namespace_exists(test_namespace)
+    assert catalog.namespace_exists(child_namespace)
+    catalog.drop_namespace(child_namespace)
+    catalog.drop_namespace(test_namespace)
+    assert not catalog.namespace_exists(test_namespace)
+
+
 # RecordBatchReader streaming append/overwrite tests
 #
 # Streaming writes accept a pa.RecordBatchReader and microbatch it into target-sized
@@ -1505,6 +1518,23 @@ def test_overwrite_record_batch_reader(catalog: Catalog) -> None:
     assert len(tbl.scan().to_arrow()) == total_rows
 
 
+def test_overwrite_adds_one_entry_to_history(catalog: Catalog) -> None:
+    catalog.create_namespace("default")
+    table = catalog.create_table("default.overwrite_history", schema=pa.schema([("x", pa.int64())]))
+    table.append(pa.table({"x": [1]}))
+    table.overwrite(pa.table({"x": [2]}))
+
+    append, delete, overwrite = table.snapshots()
+    assert [snapshot.summary.operation for snapshot in (append, delete, overwrite) if snapshot.summary] == [
+        Operation.APPEND,
+        Operation.DELETE,
+        Operation.APPEND,
+    ]
+    # The delete and the append are committed together, so the table was never empty
+    for tbl in (table, catalog.load_table("default.overwrite_history")):
+        assert [entry.snapshot_id for entry in tbl.history()] == [append.snapshot_id, overwrite.snapshot_id]
+
+
 def test_append_record_batch_reader_to_partitioned_table_raises(catalog: Catalog) -> None:
     catalog.create_namespace("default")
     identifier = f"default.append_record_batch_reader_partitioned_{catalog.name}"
@@ -1528,7 +1558,7 @@ def test_append_invalid_input_type_raises(catalog: Catalog) -> None:
     identifier = f"default.append_invalid_input_{catalog.name}"
     pa_table = _simple_arrow_table()
     tbl = catalog.create_table(identifier=identifier, schema=pa_table.schema)
-    with pytest.raises(ValueError, match="Expected pa.Table or pa.RecordBatchReader"):
+    with pytest.raises(ValueError, match="Expected pa.Table, pa.RecordBatchReader, or an object implementing"):
         tbl.append("not an arrow object")
 
 

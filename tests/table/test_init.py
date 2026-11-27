@@ -241,6 +241,34 @@ def test_snapshot_by_timestamp(table_v2: Table) -> None:
     assert table_v2.snapshot_as_of_timestamp(1515100955770, inclusive=False) is None
 
 
+def test_snapshot_by_timestamp_with_unordered_snapshot_log(table_v2: Table) -> None:
+    # Writers with slightly skewed clocks can append snapshot log entries out of timestamp order
+    first, second = table_v2.metadata.snapshot_log
+    now = second.timestamp_ms
+    log = [
+        SnapshotLogEntry(snapshot_id=second.snapshot_id, timestamp_ms=now),
+        SnapshotLogEntry(snapshot_id=first.snapshot_id, timestamp_ms=now - 10_000),
+    ]
+    table_v2.metadata = table_v2.metadata.model_copy(update={"snapshot_log": log})
+
+    latest = table_v2.snapshot_as_of_timestamp(now)
+    assert latest is not None
+    assert latest.snapshot_id == second.snapshot_id
+
+    earlier = table_v2.snapshot_as_of_timestamp(now - 5_000)
+    assert earlier is not None
+    assert earlier.snapshot_id == first.snapshot_id
+
+    assert table_v2.snapshot_as_of_timestamp(now - 10_000, inclusive=False) is None
+
+    # On equal timestamps the later entry wins
+    tied = [SnapshotLogEntry(snapshot_id=first.snapshot_id, timestamp_ms=now), log[0]]
+    table_v2.metadata = table_v2.metadata.model_copy(update={"snapshot_log": tied})
+    result = table_v2.snapshot_as_of_timestamp(now)
+    assert result is not None
+    assert result.snapshot_id == second.snapshot_id
+
+
 def test_snapshot_by_id_does_not_exist(table_v2: Table) -> None:
     assert table_v2.snapshot_by_id(-1) is None
 
@@ -1403,6 +1431,43 @@ def test_update_metadata_add_snapshot(table_v2: Table) -> None:
     assert new_metadata.snapshots[-1] == new_snapshot
     assert new_metadata.last_sequence_number == new_snapshot.sequence_number
     assert new_metadata.last_updated_ms == new_snapshot.timestamp_ms
+
+
+def test_update_metadata_drops_intermediate_snapshots_from_snapshot_log(table_v2: Table) -> None:
+    metadata = table_v2.metadata
+    timestamp_ms = metadata.last_updated_ms + 1_000
+
+    updates: list[TableUpdate] = []
+    for offset, snapshot_id in enumerate((25, 26)):
+        updates += [
+            AddSnapshotUpdate(
+                snapshot=Snapshot(
+                    snapshot_id=snapshot_id,
+                    parent_snapshot_id=metadata.current_snapshot_id,
+                    sequence_number=metadata.last_sequence_number + 1 + offset,
+                    timestamp_ms=timestamp_ms + offset,
+                    manifest_list="s3:/a/b/c.avro",
+                    summary=Summary(Operation.APPEND),
+                    schema_id=1,
+                )
+            ),
+            SetSnapshotRefUpdate(ref_name=MAIN_BRANCH, type="branch", snapshot_id=snapshot_id),
+        ]
+
+    # Snapshot 25 is replaced by 26 in the same commit, so it was never the current snapshot
+    table_v2.metadata = update_table_metadata(metadata, tuple(updates))
+    assert table_v2.history() == metadata.snapshot_log + [SnapshotLogEntry(snapshot_id=26, timestamp_ms=timestamp_ms + 1)]
+    assert table_v2.snapshot_by_id(25) is not None
+    assert table_v2.snapshot_as_of_timestamp(timestamp_ms) == table_v2.snapshot_by_id(metadata.snapshot_log[-1].snapshot_id)
+    assert table_v2.snapshot_as_of_timestamp(timestamp_ms + 1) == table_v2.snapshot_by_id(26)
+
+    # Committed separately, both snapshots have been current
+    assert update_table_metadata(
+        update_table_metadata(metadata, tuple(updates[:2])), tuple(updates[2:])
+    ).snapshot_log == metadata.snapshot_log + [
+        SnapshotLogEntry(snapshot_id=25, timestamp_ms=timestamp_ms),
+        SnapshotLogEntry(snapshot_id=26, timestamp_ms=timestamp_ms + 1),
+    ]
 
 
 def test_update_metadata_set_ref_snapshot(table_v2: Table) -> None:
