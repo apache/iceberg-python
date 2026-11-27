@@ -3458,21 +3458,21 @@ def _dataframe_to_data_files(
         )
     else:
         partitions = _determine_partitions(spec=table_metadata.spec(), schema=table_metadata.schema(), arrow_table=df)
-        tasks: list[WriteTask] = []
-        for partition in partitions:
-            sorted_partition, sort_order_id = _sort_table_for_write(table_metadata, partition.arrow_table_partition)
-            tasks.extend(
-                WriteTask(
-                    write_uuid=write_uuid,
-                    task_id=next(counter),
-                    record_batches=batches,
-                    partition_key=partition.partition_key,
-                    schema=task_schema,
-                    sort_order_id=sort_order_id,
-                )
-                for batches in bin_pack_arrow_table(sorted_partition, target_file_size)
-            )
-        yield from write_file(io=io, table_metadata=table_metadata, tasks=iter(tasks))
+
+        def _tasks() -> Iterator[WriteTask]:
+            for partition in partitions:
+                sorted_partition, sort_order_id = _sort_table_for_write(table_metadata, partition.arrow_table_partition)
+                for batches in bin_pack_arrow_table(sorted_partition, target_file_size):
+                    yield WriteTask(
+                        write_uuid=write_uuid,
+                        task_id=next(counter),
+                        record_batches=batches,
+                        partition_key=partition.partition_key,
+                        schema=task_schema,
+                        sort_order_id=sort_order_id,
+                    )
+
+        yield from write_file(io=io, table_metadata=table_metadata, tasks=_tasks())
 
 
 def _sort_table_for_write(table_metadata: TableMetadata, table: pa.Table) -> tuple[pa.Table, int | None]:
