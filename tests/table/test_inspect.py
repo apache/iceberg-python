@@ -104,6 +104,21 @@ def test_inspect_entries_and_files_with_data_file_without_metrics(catalog: InMem
     assert files[0]["column_sizes"] is None
 
 
+def test_inspect_snapshots_operation_is_null_without_summary(catalog: InMemoryCatalog) -> None:
+    schema = Schema(NestedField(1, "x", LongType(), required=False))
+    tbl = catalog.create_table("default.snapshot_without_summary", schema)
+    tbl.append(pa.table({"x": [1]}, schema=pa.schema([pa.field("x", pa.int64())])))
+    assert tbl.inspect.snapshots().column("operation").to_pylist() == ["append"]
+
+    # The summary is optional in v1, so a snapshot without one has no operation
+    snapshot = tbl.metadata.snapshots[0].model_copy(update={"summary": None})
+    tbl.metadata = tbl.metadata.model_copy(update={"snapshots": [snapshot]})
+
+    snapshots = tbl.inspect.snapshots()
+    assert snapshots.column("operation").to_pylist() == [None]
+    assert snapshots.column("summary").to_pylist() == [None]
+
+
 @pytest.mark.parametrize("newest_first", [False, True])
 def test_partitions_last_updated_uses_latest_snapshot_regardless_of_order(newest_first: bool) -> None:
     # Manifest entries are visited in manifest order, which is not chronological, so the
