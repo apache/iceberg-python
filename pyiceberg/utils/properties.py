@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from collections.abc import Mapping
 from typing import (
     Any,
 )
@@ -26,11 +27,11 @@ HEADER_PREFIX = "header."
 
 
 def property_as_int(
-    properties: dict[str, str],
+    properties: Mapping[str, Any],
     property_name: str,
     default: int | None = None,
 ) -> int | None:
-    if value := properties.get(property_name):
+    if (value := properties.get(property_name)) is not None and value != "":
         try:
             return int(value)
         except ValueError as e:
@@ -40,11 +41,11 @@ def property_as_int(
 
 
 def property_as_float(
-    properties: dict[str, str],
+    properties: Mapping[str, Any],
     property_name: str,
     default: float | None = None,
 ) -> float | None:
-    if value := properties.get(property_name):
+    if (value := properties.get(property_name)) is not None and value != "":
         try:
             return float(value)
         except ValueError as e:
@@ -71,7 +72,7 @@ def get_first_property_value(
     *property_names: str,
 ) -> Any | None:
     for property_name in property_names:
-        if property_value := properties.get(property_name):
+        if (property_value := properties.get(property_name)) is not None and property_value != "":
             return property_value
     return None
 
