@@ -126,6 +126,18 @@ def test_not_equal_to() -> None:
     assert NotEqualTo("foo", 5) == parser.parse("5 <> foo")
 
 
+@pytest.mark.parametrize(
+    ("expression", "message"),
+    [
+        ("id =", "Expected a literal value"),
+        ("id IN ()", "Expected a non-empty list of literals"),
+    ],
+)
+def test_missing_literal_error(expression: str, message: str) -> None:
+    with pytest.raises(ParseException, match=message):
+        parser.parse(expression)
+
+
 def test_in() -> None:
     assert In("foo", {5, 6, 7}) == parser.parse("foo in (5, 6, 7)")
     assert In("foo", {"a", "b", "c"}) == parser.parse("foo IN ('a', 'b', 'c')")

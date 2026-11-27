@@ -236,6 +236,14 @@ def test_fetch_manifest_entry_with_filter(generated_manifest_entry_file: str) ->
     assert len(no_match) == 0
 
 
+@pytest.mark.parametrize(
+    "status, expected",
+    [(ManifestEntryStatus.ADDED, True), (ManifestEntryStatus.EXISTING, True), (ManifestEntryStatus.DELETED, False)],
+)
+def test_manifest_entry_is_live(status: ManifestEntryStatus, expected: bool) -> None:
+    assert ManifestEntry.from_args(status=status).is_live() is expected
+
+
 def test_fetch_manifest_entry_inherits_first_row_id(tmp_path: Path) -> None:
     """Data files inherit first row IDs from data manifests in file order, and have them cleared otherwise."""
     io = PyArrowFileIO()

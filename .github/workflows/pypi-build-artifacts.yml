@@ -51,6 +51,7 @@ jobs:
             3.12
             3.13
             3.14
+            3.15
 
       - name: Install UV
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -75,13 +76,16 @@ jobs:
         env:
           # Ignore 32 bit architectures
           CIBW_ARCHS: "auto64"
-          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.11,<3.15"
+          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.11,<3.16"
           # Keep these in sync with Python CI job `cibw-dev-env-smoke-test`
           # in .github/workflows/python-ci.yml to catch import-time regressions early.
           CIBW_BEFORE_TEST: "uv sync --directory {project} --only-group dev --no-install-project"
           CIBW_TEST_COMMAND: "uv run --directory {project} pytest tests/avro/test_decoder.py"
           # Skip free-threaded (PEP 703) builds until we evaluate decoder_fast support
           CIBW_SKIP: "cp3*t-*"
+          # The locked dev group (pyarrow 25.0.1, numpy 2.4.6) has no CPython 3.15 wheels yet:
+          # build the cp315 wheels, and test them once it does
+          CIBW_TEST_SKIP: "cp315-*"
 
 
       - name: Add source distribution

@@ -443,9 +443,8 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
         """
         # When the schema doesn't have an ID
         schema = data.get("schema")
-        if isinstance(schema, dict):
-            if "schema_id" not in schema and "schema-id" not in schema:
-                schema["schema_id"] = DEFAULT_SCHEMA_ID
+        if isinstance(schema, dict) and "schema_id" not in schema and "schema-id" not in schema:
+            schema["schema_id"] = DEFAULT_SCHEMA_ID
 
         return data
 
@@ -495,6 +494,16 @@ class TableMetadataV1(TableMetadataCommonFields, IcebergBaseModel):
                 data[DEFAULT_SPEC_ID] = INITIAL_SPEC_ID
             else:
                 data[PARTITION_SPECS] = [{"field-id": 0, "fields": ()}]
+
+        # In v1 the partition field ids were not tracked, but assigned sequentially from 1000 in each spec
+        for spec in data[PARTITION_SPECS]:
+            fields = spec[FIELDS]
+            missing = sum(1 for field in fields if field.get(FIELD_ID) is None)
+            if missing == len(fields):
+                for pos, field in enumerate(fields):
+                    field[FIELD_ID] = PARTITION_FIELD_ID_START + pos
+            elif missing:
+                raise ValueError(f"Cannot parse spec with missing field IDs: {missing} missing of {len(fields)} fields.")
 
         data[LAST_PARTITION_ID] = max(
             [field.get(FIELD_ID) for spec in data[PARTITION_SPECS] for field in spec[FIELDS]],
@@ -677,7 +686,8 @@ def new_table_metadata(
 ) -> TableMetadata:
     from pyiceberg.table import TableProperties
 
-    # Remove format-version so it does not get persisted
+    # Remove format-version so it does not get persisted, without changing the caller's properties
+    properties = dict(properties)
     format_version = int(properties.pop(TableProperties.FORMAT_VERSION, TableProperties.DEFAULT_FORMAT_VERSION))
 
     schema.check_format_version_compatibility(format_version)

@@ -195,6 +195,7 @@ class InspectTable:
 
         partition_record = self.tbl.metadata.specs_struct()
         pa_record_struct = schema_to_pyarrow(partition_record)
+        id_to_name = {field.field_id: field.name for field in partition_record.fields}
 
         entries_schema = pa.schema(
             [
@@ -254,8 +255,9 @@ class InspectTable:
                 }
 
                 partition = entry.data_file.partition
+                # specs_struct guarantees all partition field IDs across specs are mapped to their latest names
                 partition_record_dict = {
-                    field.name: partition[pos]
+                    id_to_name[field.field_id]: partition[pos]
                     for pos, field in enumerate(self.tbl.metadata.specs()[manifest.partition_spec_id].fields)
                 }
 
@@ -272,7 +274,7 @@ class InspectTable:
                             "partition": partition_record_dict,
                             "record_count": entry.data_file.record_count,
                             "file_size_in_bytes": entry.data_file.file_size_in_bytes,
-                            "column_sizes": dict(entry.data_file.column_sizes),
+                            "column_sizes": dict(entry.data_file.column_sizes or {}),
                             "value_counts": dict(entry.data_file.value_counts or {}),
                             "null_value_counts": dict(entry.data_file.null_value_counts or {}),
                             "nan_value_counts": dict(entry.data_file.nan_value_counts or {}),
@@ -386,6 +388,7 @@ class InspectTable:
         spec_ids = {manifest.partition_spec_id for manifest in snapshot.manifests(self.tbl.io, self.tbl.encryption_manager)}
         partition_record = self.tbl.metadata.specs_struct(spec_ids=spec_ids)
         has_partitions = len(partition_record.fields) > 0
+        id_to_name = {field.field_id: field.name for field in partition_record.fields}
 
         if has_partitions:
             pa_record_struct = schema_to_pyarrow(partition_record)
@@ -407,13 +410,15 @@ class InspectTable:
             encryption_manager=self.tbl.encryption_manager,
         )
 
-        partitions_map: dict[tuple[str, Any], Any] = {}
+        partitions_map: dict[tuple[int, Any], Any] = {}
         snapshots_by_id = self._get_snapshots_by_id()
 
         for entry in itertools.chain.from_iterable(scan._plan_manifest_entries()):
             partition = entry.data_file.partition
+            # specs_struct guarantees all partition field IDs across specs are mapped to their latest names
             partition_record_dict = {
-                field.name: partition[pos] for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
+                id_to_name[field.field_id]: partition[pos]
+                for pos, field in enumerate(self.tbl.metadata.specs()[entry.data_file.spec_id].fields)
             }
             entry_snapshot = snapshots_by_id.get(entry.snapshot_id) if entry.snapshot_id is not None else None
             self._update_partitions_map_from_manifest_entry(
@@ -427,7 +432,7 @@ class InspectTable:
 
     def _update_partitions_map_from_manifest_entry(
         self,
-        partitions_map: dict[tuple[str, Any], Any],
+        partitions_map: dict[tuple[int, Any], Any],
         file: DataFile,
         partition_record_dict: dict[str, Any],
         snapshot: Snapshot | None,
@@ -444,7 +449,7 @@ class InspectTable:
             partition_record_dict: Maps partition field names to their values.
             snapshot: The owning snapshot, used to track last-updated timestamps.
         """
-        partition_record_key = _convert_to_hashable_type(partition_record_dict)
+        partition_record_key = (file.spec_id, _convert_to_hashable_type(partition_record_dict))
         if partition_record_key not in partitions_map:
             partitions_map[partition_record_key] = {
                 "partition": partition_record_dict,
@@ -747,6 +752,7 @@ class InspectTable:
 
         files: list[dict[str, Any]] = []
         schema = self.tbl.metadata.schema()
+        id_to_name = {field.field_id: field.name for field in self.tbl.metadata.specs_struct().fields}
         io = self.tbl.io
 
         for manifest_entry in manifest_list.fetch_manifest_entry(io):
@@ -771,8 +777,9 @@ class InspectTable:
                 for field in self.tbl.metadata.schema().fields
             }
             partition = data_file.partition
+            # specs_struct guarantees all partition field IDs across specs are mapped to their latest names
             partition_record_dict = {
-                field.name: partition[pos]
+                id_to_name[field.field_id]: partition[pos]
                 for pos, field in enumerate(self.tbl.metadata.specs()[manifest_list.partition_spec_id].fields)
             }
             files.append(
@@ -794,6 +801,7 @@ class InspectTable:
                     "split_offsets": data_file.split_offsets,
                     "equality_ids": data_file.equality_ids,
                     "sort_order_id": data_file.sort_order_id,
+                    "first_row_id": data_file.first_row_id,
                     "readable_metrics": readable_metrics,
                 }
             )
@@ -814,7 +822,7 @@ class InspectTable:
                 ``file_size_in_bytes``, ``column_sizes``, ``value_counts``,
                 ``null_value_counts``, ``nan_value_counts``, ``lower_bounds``,
                 ``upper_bounds``, ``key_metadata``, ``split_offsets``,
-                ``equality_ids``, ``sort_order_id``, and ``readable_metrics``.
+                ``equality_ids``, ``sort_order_id``, ``first_row_id``, and ``readable_metrics``.
         """
         import pyarrow as pa
 
@@ -863,6 +871,7 @@ class InspectTable:
                 pa.field("split_offsets", pa.list_(pa.int64()), nullable=True),
                 pa.field("equality_ids", pa.list_(pa.int32()), nullable=True),
                 pa.field("sort_order_id", pa.int32(), nullable=True),
+                pa.field("first_row_id", pa.int64(), nullable=True),
                 pa.field("readable_metrics", pa.struct(readable_metrics_struct), nullable=True),
             ]
         )
