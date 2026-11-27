@@ -3210,6 +3210,17 @@ def bin_pack_arrow_table(tbl: pa.Table, target_file_size: int) -> Iterator[list[
     return bin_packed_record_batches
 
 
+def _rows_fitting(batch: pa.RecordBatch, max_bytes: int) -> int:
+    lo, hi = 0, batch.num_rows
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if batch.slice(0, mid).nbytes <= max_bytes:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo
+
+
 def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size: int) -> Iterator[list[pa.RecordBatch]]:
     """Microbatch a single-pass stream of RecordBatches into target-sized groups.
 
@@ -3221,7 +3232,12 @@ def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size:
 
     Each yielded list of batches is intended to be written as a single Parquet
     data file. Because this is single-pass FIFO accumulation (no lookback), the
-    last bin may be smaller than ``target_file_size``.
+    last bin may be smaller than ``target_file_size``. A batch that would push
+    the buffer past ``target_file_size`` is sliced with
+    ``RecordBatch.slice`` (zero copy), so a single large batch is split across
+    bins instead of forcing one oversized file. A batch that cannot be sliced
+    to fit, such as a single row larger than ``target_file_size``, is kept
+    whole.
 
     Note:
         ``target_file_size`` is measured in **uncompressed in-memory** Arrow
@@ -3235,12 +3251,44 @@ def bin_pack_record_batches(batches: Iterable[pa.RecordBatch], target_file_size:
     buffer: list[pa.RecordBatch] = []
     buffer_bytes = 0
     for batch in batches:
-        buffer.append(batch)
-        buffer_bytes += batch.nbytes
-        if buffer_bytes >= target_file_size:
-            yield buffer
-            buffer = []
-            buffer_bytes = 0
+        if batch.num_rows == 0:
+            buffer.append(batch)
+            continue
+        offset = 0
+        while offset < batch.num_rows:
+            remaining = batch.slice(offset)
+            space = target_file_size - buffer_bytes
+            if remaining.nbytes <= space:
+                buffer.append(remaining)
+                buffer_bytes += remaining.nbytes
+                offset = batch.num_rows
+                if buffer_bytes >= target_file_size:
+                    yield buffer
+                    buffer = []
+                    buffer_bytes = 0
+            else:
+                fit = _rows_fitting(remaining, space)
+                if fit > 0:
+                    piece = remaining.slice(0, fit)
+                    buffer.append(piece)
+                    buffer_bytes += piece.nbytes
+                    offset += fit
+                    yield buffer
+                    buffer = []
+                    buffer_bytes = 0
+                elif remaining.num_rows == 1 or not buffer:
+                    piece = remaining.slice(0, 1)
+                    buffer.append(piece)
+                    buffer_bytes += piece.nbytes
+                    offset += 1
+                    if buffer_bytes >= target_file_size:
+                        yield buffer
+                        buffer = []
+                        buffer_bytes = 0
+                else:
+                    yield buffer
+                    buffer = []
+                    buffer_bytes = 0
     if buffer:
         yield buffer
 
