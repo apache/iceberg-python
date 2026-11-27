@@ -1509,6 +1509,20 @@ Remove an existing branch:
 table.manage_snapshots().remove_branch("dev").commit()
 ```
 
+#### Scanning a branch or tag
+
+Use `use_ref` to scan a named branch or tag instead of the current snapshot of `main`:
+
+```python
+# Scan the latest snapshot of the dev branch
+table.scan().use_ref("dev").to_arrow()
+
+# Tags work the same way
+table.scan().use_ref("v1.0.0").to_arrow()
+```
+
+This is equivalent to looking up the ref's snapshot id and passing it to `table.scan(snapshot_id=...)`. Scanning an unknown ref raises a `ValueError`.
+
 #### Fast-forwarding a branch
 
 Fast-forward the `main` branch to the `audit-branch` branch:
@@ -1598,8 +1612,7 @@ table.append(new_rows, branch="audit")
 
 # 2. AUDIT — scan the audit branch and run whatever validation your data-quality contract requires.
 #    Nothing on `main` has changed yet, so readers of `main` still see the pre-write state.
-audit_snapshot_id = table.refs()["audit"].snapshot_id
-audit_data = table.scan(snapshot_id=audit_snapshot_id).to_arrow()
+audit_data = table.scan().use_ref("audit").to_arrow()
 
 assert audit_data.num_rows > 0, "audit branch is empty"
 assert pc.all(pc.greater(audit_data["amount"], 0)).as_py(), \
