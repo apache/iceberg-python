@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING, Generic
 
 from pyiceberg.avro.codecs import AvroCompressionCodec
 from pyiceberg.exceptions import (
-    CommitFailedException,
     NoSuchSnapshotRefError,
     NotAncestorError,
     SnapshotRefTypeError,
@@ -108,33 +107,26 @@ def _new_manifest_list_file_name(snapshot_id: int, attempt: int, commit_uuid: uu
 class CommitWindow:
     """Tracks the commit range to validate against during retry.
 
-    base: The snapshot when the operation began (exclusive lower bound, fixed across retries).
+    base_id: The starting snapshot id (exclusive lower bound, fixed across retries). It is kept
+        even when the refreshed metadata no longer exposes the snapshot.
     head: The branch HEAD snapshot after metadata refresh (inclusive upper bound).
-    base_id: The starting snapshot id, also kept when the catalog no longer exposes it.
-    base_missing: True when the starting snapshot is not in the refreshed metadata, for
-        example when the catalog only exposes the current snapshot.
     """
 
-    base: Snapshot | None
     head: Snapshot | None
     base_id: int | None = None
-    base_missing: bool = False
 
     @classmethod
     def resolve(cls, metadata: TableMetadata, base_id: int | None, branch: str | None) -> CommitWindow:
         """Resolve a CommitWindow from metadata, starting snapshot ID, and target branch."""
-        head = metadata.snapshot_by_name(branch)
-        base = metadata.snapshot_by_id(base_id) if base_id is not None else None
-        return cls(base=base, head=head, base_id=base_id, base_missing=base_id is not None and base is None)
+        return cls(head=metadata.snapshot_by_name(branch), base_id=base_id)
 
     def is_empty(self) -> bool:
         """Return True if no concurrent commits occurred (validation can be skipped).
 
-        A None base means the operation started on a table with no snapshots, or that the
-        catalog did not expose the starting snapshot. If a head exists, another writer landed
-        a snapshot concurrently, so the window is not empty.
+        A None base_id means the operation started on a table with no snapshots. If a head
+        exists, another writer landed a snapshot concurrently, so the window is not empty.
         """
-        return self.head is None or (self.base is not None and self.base.snapshot_id == self.head.snapshot_id)
+        return self.head is None or (self.base_id is not None and self.base_id == self.head.snapshot_id)
 
 
 class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
@@ -491,14 +483,8 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         if self._commit_window is None or self._commit_window.is_empty():
             return
 
-        if self._commit_window.base_missing:
-            raise CommitFailedException(
-                f"Cannot determine history between starting snapshot {self._commit_window.base_id} "
-                "and the current snapshot; the catalog does not expose the starting snapshot"
-            )
-
         catalog_head = self._commit_window.head
-        starting_snapshot = self._commit_window.base
+        starting_snapshot_id = self._commit_window.base_id
 
         if catalog_head is None:
             return
@@ -508,19 +494,19 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         conflict_detection_filter = self._predicate if self._predicate != AlwaysFalse() else None
 
         if isolation_level == IsolationLevel.SERIALIZABLE:
-            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+            _validate_added_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot_id)
 
         if self._predicate != AlwaysFalse():
             # partition_set is None, so any concurrently committed delete file counts as
             # a conflict even in unrelated partitions. Scope this via partition projection
             # (as Java does) when delete-file write support lands.
-            _validate_no_new_delete_files(table, catalog_head, conflict_detection_filter, None, starting_snapshot)
-            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot)
+            _validate_no_new_delete_files(table, catalog_head, conflict_detection_filter, None, starting_snapshot_id)
+            _validate_deleted_data_files(table, catalog_head, conflict_detection_filter, starting_snapshot_id)
 
         if self._deleted_data_files:
-            _validate_data_files_exist(table, catalog_head, self._deleted_data_files, starting_snapshot)
+            _validate_data_files_exist(table, catalog_head, self._deleted_data_files, starting_snapshot_id)
             _validate_no_new_deletes_for_data_files(
-                table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot
+                table, catalog_head, conflict_detection_filter, self._deleted_data_files, starting_snapshot_id
             )
 
     def _build_partition_projection(self, spec_id: int) -> BooleanExpression:
