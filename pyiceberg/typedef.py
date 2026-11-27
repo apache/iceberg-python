@@ -17,8 +17,9 @@
 from __future__ import annotations
 
 import math
+import sys
 from abc import abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import (
@@ -28,9 +29,11 @@ from typing import (
     Literal,
     Protocol,
     Self,
+    SupportsIndex,
     TypeAlias,
     TypeVar,
     Union,
+    overload,
     runtime_checkable,
 )
 from uuid import UUID
@@ -166,6 +169,7 @@ class IcebergBaseModel(BaseModel):
 
 
 T = TypeVar("T")
+S = TypeVar("S")
 
 
 class IcebergRootModel(RootModel[T], Generic[T]):
@@ -237,3 +241,153 @@ class Record(StructProtocol):
 
 TableVersion: TypeAlias = Literal[1, 2, 3]
 ViewVersion: TypeAlias = Literal[1]
+
+FetchNextPage: TypeAlias = Callable[[str], tuple[list[T], str | None]]
+
+
+class PaginationList(list[T]):
+    """A list that lazily fetches subsequent pages from a paginated API.
+
+    The first page is loaded when the list is created. Later pages are fetched
+    only when iteration or indexing moves past the items already in memory.
+    Operations that need the complete result set, such as ``len()``, ``in``,
+    slicing, and ``repr()``, fetch every remaining page first.
+
+    Args:
+        first_page: Items from the first API response.
+        next_page_token: Token for the next page, or ``None`` when there are no more pages.
+        fetch_next_page: Callable that takes a page token and returns the next
+            page's items together with its next page token.
+    """
+
+    def __init__(
+        self,
+        first_page: list[T],
+        next_page_token: str | None,
+        fetch_next_page: FetchNextPage[T],
+    ) -> None:
+        super().__init__(first_page)
+        self._next_page_token = next_page_token
+        self._fetch_next_page = fetch_next_page
+
+    def _fetch_all(self) -> None:
+        while self._next_page_token:
+            items, self._next_page_token = self._fetch_next_page(self._next_page_token)
+            list.extend(self, items)
+
+    def _fetch_through_index(self, index: int) -> None:
+        while list.__len__(self) <= index and self._next_page_token:
+            items, self._next_page_token = self._fetch_next_page(self._next_page_token)
+            list.extend(self, items)
+
+    def __iter__(self) -> Iterator[T]:
+        """Iterate lazily, fetching a page only when the current one is exhausted."""
+        index = 0
+        while True:
+            if index < list.__len__(self):
+                yield list.__getitem__(self, index)
+                index += 1
+            elif self._next_page_token:
+                items, self._next_page_token = self._fetch_next_page(self._next_page_token)
+                list.extend(self, items)
+            else:
+                return
+
+    def __len__(self) -> int:
+        """Return the total number of items, fetching all pages first."""
+        self._fetch_all()
+        return list.__len__(self)
+
+    def __contains__(self, item: object) -> bool:
+        """Return whether the item is present, fetching all pages first."""
+        self._fetch_all()
+        return list.__contains__(self, item)
+
+    def __repr__(self) -> str:
+        """Return the representation after fetching all pages."""
+        self._fetch_all()
+        return f"PaginationList({list.__repr__(self)})"
+
+    def __eq__(self, other: object) -> bool:
+        """Compare for equality after fetching all pages."""
+        self._fetch_all()
+        return list.__eq__(self, other)
+
+    def __ne__(self, other: object) -> bool:
+        """Compare for inequality after fetching all pages."""
+        result = self.__eq__(other)
+        return result if result is NotImplemented else not result
+
+    @overload
+    def __getitem__(self, index: SupportsIndex) -> T: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[T]: ...
+
+    def __getitem__(self, index: SupportsIndex | slice) -> T | list[T]:
+        """Fetch pages as needed before returning the requested item or slice."""
+        if isinstance(index, slice):
+            self._fetch_all()
+        else:
+            item_index = index.__index__()
+            if item_index < 0:
+                self._fetch_all()
+            else:
+                self._fetch_through_index(item_index)
+        return list.__getitem__(self, index)
+
+    def count(self, value: T) -> int:
+        """Return the number of occurrences of the value, fetching all pages first."""
+        self._fetch_all()
+        return list.count(self, value)
+
+    def index(self, value: T, start: SupportsIndex = 0, stop: SupportsIndex = sys.maxsize, /) -> int:
+        """Return the first index of the value, fetching all pages first."""
+        self._fetch_all()
+        return list.index(self, value, start, stop)
+
+    def __reversed__(self) -> Iterator[T]:
+        """Return a reverse iterator, fetching all pages first."""
+        self._fetch_all()
+        return list.__reversed__(self)
+
+    def copy(self) -> list[T]:
+        """Return a plain list with all items, fetching all pages first."""
+        self._fetch_all()
+        return list.copy(self)
+
+    def sort(self, *, key: Callable[[T], Any] | None = None, reverse: bool = False) -> None:
+        """Sort the items in place, fetching all pages first."""
+        self._fetch_all()
+        list.__setitem__(self, slice(None), sorted(self, key=key, reverse=reverse))
+
+    def reverse(self) -> None:
+        """Reverse the items in place, fetching all pages first."""
+        self._fetch_all()
+        list.reverse(self)
+
+    @overload
+    def __add__(self, other: list[T]) -> list[T]: ...
+
+    @overload
+    def __add__(self, other: list[S]) -> list[S | T]: ...
+
+    def __add__(self, other: list[Any]) -> list[Any]:
+        """Return self plus other as a plain list, fetching all pages first."""
+        self._fetch_all()
+        return list.__add__(self, other)
+
+    def __radd__(self, other: list[T]) -> list[T]:
+        """Return other plus self as a plain list, fetching all pages first."""
+        self._fetch_all()
+        return list.__add__(other, self)
+
+    def __mul__(self, count: SupportsIndex) -> list[T]:
+        """Return self repeated count times as a plain list, fetching all pages first."""
+        self._fetch_all()
+        return list.__mul__(self, count)
+
+    def __rmul__(self, count: SupportsIndex) -> list[T]:
+        """Return self repeated count times as a plain list, fetching all pages first."""
+        self._fetch_all()
+        return list.__mul__(self, count)
