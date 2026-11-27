@@ -918,7 +918,8 @@ class RestCatalog(Catalog):
         if not isinstance(response, PlanCompleted):
             raise RuntimeError(f"Invalid planStatus for response: {type(response).__name__}")
 
-        tasks = self._expand_plan_tasks(identifier, response, request.filter or AlwaysTrue())
+        # BooleanExpression disallows truthiness checks; avoid `request.filter or AlwaysTrue()`
+        tasks = self._expand_plan_tasks(identifier, response, request.filter if request.filter is not None else AlwaysTrue())
         return PlannedScanResult(
             tasks=tasks,
             storage_credentials=list(response.storage_credentials or []),
