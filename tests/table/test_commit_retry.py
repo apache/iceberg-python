@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -1016,14 +1017,15 @@ def test_validate_concurrency_skips_when_commit_window_is_empty(catalog: Catalog
     # CommitWindow where base == head means no concurrent commits occurred
     assert table.metadata.current_snapshot_id is not None
     current = table.metadata.snapshot_by_id(table.metadata.current_snapshot_id)
-    producer._commit_window = CommitWindow(base=current, head=current)
+    assert current is not None
+    producer._commit_window = CommitWindow(head=current, base_id=current.snapshot_id)
 
     # Should not raise (validation is skipped)
     producer._validate_concurrency()
 
 
-def test_validate_concurrency_raises_on_missing_starting_snapshot(catalog: Catalog) -> None:
-    """CommitWindow.resolve should raise when starting_snapshot_id cannot be resolved."""
+def test_validate_concurrency_marks_missing_starting_snapshot(catalog: Catalog) -> None:
+    """CommitWindow.resolve should record a starting snapshot the refreshed metadata does not expose."""
     catalog.create_namespace("default")
     schema = _test_schema()
     table = catalog.create_table("default.missing_starting_test", schema=schema)
@@ -1034,8 +1036,132 @@ def test_validate_concurrency_raises_on_missing_starting_snapshot(catalog: Catal
 
     from pyiceberg.table.update.snapshot import CommitWindow
 
-    with pytest.raises(ValidationException, match="Cannot find starting snapshot"):
-        CommitWindow.resolve(table.metadata, base_id=99999999, branch="main")
+    window = CommitWindow.resolve(table.metadata, base_id=99999999, branch="main")
+
+    assert window.base_id == 99999999
+    assert window.head is not None
+    assert not window.is_empty()
+
+
+def _hiding_snapshots(rebuild: Any, hidden_ids: Callable[[Any], set[int]]) -> Any:
+    def patched_rebuild(self_tx: Any) -> None:
+        metadata_cls = type(self_tx._table.metadata)
+        original_snapshot_by_id = metadata_cls.snapshot_by_id
+        hidden = hidden_ids(self_tx)
+
+        def snapshot_by_id(self_md: Any, snapshot_id: int) -> Any:
+            return None if snapshot_id in hidden else original_snapshot_by_id(self_md, snapshot_id)
+
+        with patch.object(metadata_cls, "snapshot_by_id", snapshot_by_id):
+            rebuild(self_tx)
+
+    return patched_rebuild
+
+
+def _hiding_starting_snapshot(rebuild: Any) -> Any:
+    """Hide only the starting snapshot, as a catalog that keeps older history but drops the base would."""
+
+    def hidden_ids(self_tx: Any) -> set[int]:
+        return {self_tx._snapshot_producers[0]._starting_snapshot_id}
+
+    return _hiding_snapshots(rebuild, hidden_ids)
+
+
+def _hiding_all_but_head(rebuild: Any) -> Any:
+    """Expose only the current snapshot, as a catalog with no reachable history would."""
+
+    def hidden_ids(self_tx: Any) -> set[int]:
+        metadata = self_tx._table.metadata
+        return {snapshot.snapshot_id for snapshot in metadata.snapshots if snapshot.snapshot_id != metadata.current_snapshot_id}
+
+    return _hiding_snapshots(rebuild, hidden_ids)
+
+
+def test_append_retry_without_starting_snapshot(catalog: Catalog) -> None:
+    """An append retries on catalogs that only expose the current snapshot."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table("default.hidden_history_append_test", schema=schema)
+
+    import pyarrow as pa
+
+    import pyiceberg.table as _table_module
+
+    df = pa.table({"x": [1, 2, 3]})
+    table = catalog.load_table("default.hidden_history_append_test")
+    table.append(df)
+
+    tbl1 = catalog.load_table("default.hidden_history_append_test")
+    tbl2 = catalog.load_table("default.hidden_history_append_test")
+
+    tbl1.append(df)
+
+    RuntimeTransaction = _table_module.Transaction
+    original_rebuild = RuntimeTransaction._rebuild_snapshot_updates
+
+    with patch.object(RuntimeTransaction, "_rebuild_snapshot_updates", _hiding_all_but_head(original_rebuild)):
+        tbl2.append(df)
+
+    assert len(catalog.load_table("default.hidden_history_append_test").scan().to_arrow()) == 9
+
+
+def test_delete_retry_without_starting_snapshot_succeeds(catalog: Catalog) -> None:
+    """A delete retries when the history between the starting snapshot and the head is still reachable."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table("default.hidden_history_delete_test", schema=schema)
+
+    import pyarrow as pa
+
+    import pyiceberg.table as _table_module
+
+    df = pa.table({"x": [1, 2, 3]})
+    other_df = pa.table({"x": [10, 20, 30]})
+    table = catalog.load_table("default.hidden_history_delete_test")
+    table.append(df)
+
+    tbl1 = catalog.load_table("default.hidden_history_delete_test")
+    tbl2 = catalog.load_table("default.hidden_history_delete_test")
+
+    tbl1.append(other_df)
+
+    RuntimeTransaction = _table_module.Transaction
+    original_rebuild = RuntimeTransaction._rebuild_snapshot_updates
+
+    with patch.object(RuntimeTransaction, "_rebuild_snapshot_updates", _hiding_starting_snapshot(original_rebuild)):
+        tbl2.delete("x == 1")
+
+    result = catalog.load_table("default.hidden_history_delete_test").scan().to_arrow()
+    assert sorted(result.column("x").to_pylist()) == [2, 3, 10, 20, 30]
+
+
+def test_delete_retry_without_history_raises_validation_exception(catalog: Catalog) -> None:
+    """A delete cannot validate when two concurrent commits leave the history unresolvable."""
+    catalog.create_namespace("default")
+    schema = _test_schema()
+    catalog.create_table("default.hidden_history_delete_unresolvable_test", schema=schema)
+
+    import pyarrow as pa
+
+    import pyiceberg.table as _table_module
+
+    df = pa.table({"x": [1, 2, 3]})
+    table = catalog.load_table("default.hidden_history_delete_unresolvable_test")
+    table.append(df)
+
+    tbl1 = catalog.load_table("default.hidden_history_delete_unresolvable_test")
+    tbl2 = catalog.load_table("default.hidden_history_delete_unresolvable_test")
+    tbl3 = catalog.load_table("default.hidden_history_delete_unresolvable_test")
+
+    tbl1.append(df)
+    tbl2.append(df)
+
+    RuntimeTransaction = _table_module.Transaction
+    original_rebuild = RuntimeTransaction._rebuild_snapshot_updates
+
+    with patch.object(RuntimeTransaction, "_rebuild_snapshot_updates", _hiding_all_but_head(original_rebuild)):
+        with pytest.raises(ValidationException, match="Cannot determine history between starting snapshot"):
+            tbl3.delete("x == 1")
 
 
 def test_mixed_delete_overwrite_retries_successfully(catalog: Catalog) -> None:

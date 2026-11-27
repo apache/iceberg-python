@@ -90,7 +90,7 @@ def test_validation_history(table_v2_with_extensive_snapshots_and_manifests: tup
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
         manifests, snapshots = _validation_history(
             table,
-            oldest_snapshot,
+            oldest_snapshot.snapshot_id,
             newest_snapshot,
             {Operation.APPEND},
             ManifestContent.DATA,
@@ -116,21 +116,21 @@ def test_validation_history_fails_on_snapshot_with_no_summary(
         summary=None,
         manifest_list="foo/bar",
     )
-    with patch("pyiceberg.table.update.validate.ancestors_between", return_value=[snapshot_with_no_summary]):
+    with patch("pyiceberg.table.update.validate.ancestors_between_ids", return_value=[snapshot_with_no_summary]):
         with pytest.raises(ValidationException):
             _validation_history(
                 table,
-                oldest_snapshot,
+                oldest_snapshot.snapshot_id,
                 newest_snapshot,
                 {Operation.APPEND},
                 ManifestContent.DATA,
             )
 
 
-def test_validation_history_fails_on_from_snapshot_not_matching_last_snapshot(
+def test_validation_history_fails_when_history_does_not_reach_starting_snapshot(
     table_v2_with_extensive_snapshots_and_manifests: tuple[Table, dict[int, list[ManifestFile]]],
 ) -> None:
-    """Test the validation history function fails when from_snapshot doesn't match last_snapshot."""
+    """Test the validation history function fails when the chain does not connect to the starting snapshot."""
     table, mock_manifests = table_v2_with_extensive_snapshots_and_manifests
 
     oldest_snapshot = table.snapshots()[0]
@@ -146,11 +146,11 @@ def test_validation_history_fails_on_from_snapshot_not_matching_last_snapshot(
     missing_oldest_snapshot = table.snapshots()[1:]
 
     with patch("pyiceberg.table.snapshots.Snapshot.manifests", new=mock_read_manifest_side_effect):
-        with patch("pyiceberg.table.update.validate.ancestors_between", return_value=missing_oldest_snapshot):
+        with patch("pyiceberg.table.update.validate.ancestors_between_ids", return_value=missing_oldest_snapshot):
             with pytest.raises(ValidationException):
                 _validation_history(
                     table,
-                    oldest_snapshot,
+                    oldest_snapshot.snapshot_id,
                     newest_snapshot,
                     {Operation.APPEND},
                     ManifestContent.DATA,
@@ -177,9 +177,9 @@ def test_deleted_data_files(
         result = list(
             _deleted_data_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_filter=None,
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
                 partition_set=None,
             )
         )
@@ -208,9 +208,9 @@ def test_deleted_data_files(
         result = list(
             _deleted_data_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_filter=None,
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
                 partition_set=None,
             )
         )
@@ -232,9 +232,9 @@ def test_validate_deleted_data_files_raises_on_conflict(
         with pytest.raises(ValidationException):
             _validate_deleted_data_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_filter=None,
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
             )
 
 
@@ -263,9 +263,9 @@ def test_validate_data_files_exist_raises_on_conflict_in_nan_partition(
         with pytest.raises(ValidationException, match="Data files were concurrently deleted"):
             _validate_data_files_exist(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_files={data_file()},
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
             )
 
 
@@ -313,9 +313,9 @@ def test_validate_added_data_files_conflicting_count(
         result = list(
             _added_data_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_filter=None,
-                parent_snapshot=boundary_snapshot,
+                starting_snapshot_id=boundary_snapshot.snapshot_id,
                 partition_set=None,
             )
         )
@@ -367,9 +367,9 @@ def test_validate_added_data_files_non_conflicting_count(
         result = list(
             _added_data_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_filter=None,
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
                 partition_set=None,
             )
         )
@@ -391,9 +391,9 @@ def test_validate_added_data_files_raises_on_conflict(
         with pytest.raises(ValidationException):
             _validate_added_data_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_filter=None,
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
             )
 
 
@@ -438,9 +438,9 @@ def test_added_delete_files_non_conflicting_count(
     ):
         dfi = _added_delete_files(
             table=table,
-            starting_snapshot=newest_snapshot,
+            parent_snapshot=newest_snapshot,
             data_filter=None,
-            parent_snapshot=oldest_snapshot,
+            starting_snapshot_id=oldest_snapshot.snapshot_id,
             partition_set=None,
         )
 
@@ -499,9 +499,9 @@ def test_added_delete_files_conflicting_count(
     ):
         dfi = _added_delete_files(
             table=table,
-            starting_snapshot=newest_snapshot,
+            parent_snapshot=newest_snapshot,
             data_filter=None,
-            parent_snapshot=oldest_snapshot,
+            starting_snapshot_id=oldest_snapshot.snapshot_id,
             partition_set=None,
         )
 
@@ -552,10 +552,10 @@ def test_added_delete_files_case_insensitive_filter(
     ):
         dfi = _added_delete_files(
             table=table,
-            starting_snapshot=newest_snapshot,
+            parent_snapshot=newest_snapshot,
             data_filter=data_filter,
             partition_set=None,
-            parent_snapshot=oldest_snapshot,
+            starting_snapshot_id=oldest_snapshot.snapshot_id,
             case_sensitive=False,
         )
         assert not dfi.is_empty()
@@ -564,20 +564,20 @@ def test_added_delete_files_case_insensitive_filter(
         with pytest.raises(ValidationException):
             _validate_no_new_delete_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_filter=data_filter,
                 partition_set=None,
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
                 case_sensitive=False,
             )
 
         with pytest.raises(ValueError, match="Could not find field with name X"):
             _added_delete_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_filter=data_filter,
                 partition_set=None,
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
             )
 
 
@@ -592,10 +592,10 @@ def test_validate_no_new_delete_files_raises_on_conflict(
         with pytest.raises(ValidationException):
             _validate_no_new_delete_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_filter=None,
                 partition_set=None,
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
             )
 
 
@@ -612,7 +612,7 @@ def test_validate_no_new_delete_files_for_data_files_raises_on_conflict(
         with pytest.raises(ValidationException):
             _validate_no_new_deletes_for_data_files(
                 table=table,
-                starting_snapshot=newest_snapshot,
+                parent_snapshot=newest_snapshot,
                 data_files={mocked_data_file},
-                parent_snapshot=oldest_snapshot,
+                starting_snapshot_id=oldest_snapshot.snapshot_id,
             )
