@@ -47,10 +47,11 @@ jobs:
         enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
-    - name: Install
-      run: make install
     - name: Run integration tests with coverage
-      run: COVERAGE=1 make test-integration
+      env:
+        COVERAGE: "1"
+        KEEP_COMPOSE: "1"
+      run: uv run --locked --only-group tox tox run -e integration
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-integration.yml logs
@@ -77,10 +78,10 @@ jobs:
         enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
-    - name: Install
-      run: make install
     - name: Run s3 integration tests with coverage
-      run: COVERAGE=1 make test-s3
+      env:
+        COVERAGE: "1"
+      run: uv run --locked --only-group tox tox run -e s3
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose.yml logs
@@ -107,10 +108,10 @@ jobs:
         enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
-    - name: Install
-      run: make install
     - name: Run adls integration tests with coverage
-      run: COVERAGE=1 make test-adls
+      env:
+        COVERAGE: "1"
+      run: uv run --locked --only-group tox tox run -e adls
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-azurite.yml logs
@@ -137,10 +138,10 @@ jobs:
         enable-cache: true
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev # for kerberos
-    - name: Install
-      run: make install
     - name: Run gcs integration tests with coverage
-      run: COVERAGE=1 make test-gcs
+      env:
+        COVERAGE: "1"
+      run: uv run --locked --only-group tox tox run -e gcs
     - name: Show debug logs
       if: ${{ failure() }}
       run: docker compose -f dev/docker-compose-gcs-server.yml logs
@@ -165,15 +166,15 @@ jobs:
       uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         enable-cache: true
-    - name: Install dependencies
-      run: uv sync --group dev
     - name: Download all coverage artifacts
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         pattern: coverage-*
         merge-multiple: true
     - name: Generate coverage report (75%) # Coverage threshold should only increase over time — never decrease it!
-      run: COVERAGE_FAIL_UNDER=75 make coverage-report
+      env:
+        COVERAGE_FAIL_UNDER: "75"
+      run: uv run --locked --only-group tox tox run -e coverage
 
   python-integration-required:
     if: ${{ always() }}

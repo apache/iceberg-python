@@ -112,16 +112,16 @@ This section explains how to run the tests of the source distribution.
 
 <!-- prettier-ignore-end -->
 
-First step is to install the package:
+First step is to ensure `uv` is installed:
 
 ```sh
-make install
+make install-uv
 ```
 
 To run the full test coverage, with both unit tests and integration tests:
 
 ```sh
-make test-coverage
+COVERAGE=1 uv run --locked --only-group tox tox run -e unit,integration,s3,adls,gcs,coverage
 ```
 
 This will spin up Docker containers to facilitate running test coverage.

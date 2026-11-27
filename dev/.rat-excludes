@@ -4,6 +4,7 @@ uv.lock
 .ruff_cache/**
 .pytest_cache/**
 .mypy_cache/**
+.tox/**
 mkdocs/**
 notebooks/**
 .markdown-link-check.json

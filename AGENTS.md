@@ -83,14 +83,17 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 ## Commands
 
 - **Install / set up dev env:** `make install` (installs `uv`, syncs all extras, builds Cython, installs pre-commit hooks)
-- **Run unit tests:** `make test`
-- **Run a subset:** `make test PYTEST_ARGS="-v -k <pattern>"`
-- **Integration tests (Spark/Docker):** `make test-integration` (rebuild with `make test-integration-rebuild`)
-- **Cloud storage suites:** `make test-s3` / `make test-adls` / `make test-gcs`
+- **Run typecheck + unit tests across installed Pythons:** `uv run tox -p`
+- **Run unit tests (current or specific Python):** `uv run tox -e unit` / `uv run tox -e test-3.12`
+- **Run a subset:** `uv run tox -e unit -- -v -k <pattern>`
+- **Typecheck (mypy):** `uv run tox -e typecheck`
+- **Integration tests (Spark/Docker):** `uv run tox -e integration` (`KEEP_COMPOSE=1` to keep containers running)
+- **Cloud storage & notebook suites:** `uv run tox -e s3` / `adls` / `gcs` / `notebook`
+- **Coverage report:** `COVERAGE=1 uv run tox -e unit,coverage`
 - **Lint & format:** `make lint`
 - **Docs preview / build:** `make docs-serve` / `make docs-build`
 - **Clean build artifacts:** `make clean`
-- **Use a specific Python:** prefix with `PYTHON=3.12`, e.g. `PYTHON=3.12 make install`
+- **Use a specific Python with Make:** prefix with `PYTHON=3.12`, e.g. `PYTHON=3.12 make install`
 
 ## PR & Commit Conventions
 
@@ -99,7 +102,7 @@ lives under `pyiceberg/`, organized by concern rather than by engine:
 - Keep the first version of a PR minimal; defer optimizations and edge cases to follow-ups.
 - Commit messages explain the *what* and *why*, not line-by-line implementation. Be as succinct as possible.
 - The Apache License header is required on every new source file (enforced by `./dev/check-license`).
-- Run `make lint` and `make test` before pushing; CI runs both plus the lockfile check.
+- Run `make lint` and `uv run tox -p` before pushing; CI runs both plus the lockfile check.
 
 ## GitHub Write Approval
 
