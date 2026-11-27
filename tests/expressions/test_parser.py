@@ -213,6 +213,12 @@ def test_starts_with() -> None:
     assert StartsWith("foo", "some data%") == parser.parse("foo LIKE 'some data\\%%'")
 
 
+def test_like_escaped_underscore() -> None:
+    assert EqualTo("foo", "some_data") == parser.parse("foo LIKE 'some\\_data'")
+    assert StartsWith("foo", "some_") == parser.parse("foo LIKE 'some\\_%'")
+    assert NotStartsWith("foo", "some_") == parser.parse("foo NOT LIKE 'some\\_%'")
+
+
 def test_invalid_likes() -> None:
     invalid_statements = ["foo LIKE '%data%'", "foo LIKE 'da%ta'", "foo LIKE '%data'"]
 
