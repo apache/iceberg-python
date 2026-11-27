@@ -27,11 +27,19 @@ from pyiceberg.utils.datetime import (
     days_to_months,
     days_to_years,
     micros_to_days,
+    micros_to_hours,
     micros_to_months,
+    micros_to_time,
+    micros_to_timestamptz,
     micros_to_years,
     millis_to_datetime,
+    nanos_to_days,
     nanos_to_hours,
     nanos_to_micros,
+    nanos_to_months,
+    nanos_to_time,
+    nanos_to_timestamp,
+    nanos_to_years,
     time_str_to_nanos,
     time_to_nanos,
     timestamp_to_micros,
@@ -294,6 +302,60 @@ def test_to_human_timestamptz() -> None:
         (1_740_342_104_375_612, "2025-02-23T20:21:44.375612+00:00"),
     ]:
         assert to_human_timestamptz(micros) == expected
+
+
+def test_micros_to_time() -> None:
+    for micros, expected in [
+        (0, time(0, 0, 0)),
+        (3_661_000_000, time(1, 1, 1)),
+        (73_304_375_612, time(20, 21, 44, 375612)),
+    ]:
+        assert micros_to_time(micros) == expected
+
+
+def test_micros_to_timestamptz() -> None:
+    for micros, expected in [
+        (0, datetime(1970, 1, 1, 0, 0, 0, tzinfo=UTC)),
+        (-1, datetime(1969, 12, 31, 23, 59, 59, 999999, tzinfo=UTC)),
+        (1_740_342_104_375_612, datetime(2025, 2, 23, 20, 21, 44, 375612, tzinfo=UTC)),
+    ]:
+        assert micros_to_timestamptz(micros) == expected
+
+
+def test_micros_to_hours() -> None:
+    for micros, expected in [(0, 0), (3_600_000_000, 1), (-1, -1)]:
+        assert micros_to_hours(micros) == expected
+
+
+def test_nanos_to_timestamp() -> None:
+    for nanos, expected in [
+        (0, datetime(1970, 1, 1, 0, 0, 0)),
+        (1_740_342_104_375_612_000, datetime(2025, 2, 23, 20, 21, 44, 375612)),
+    ]:
+        assert nanos_to_timestamp(nanos) == expected
+
+
+def test_nanos_to_time() -> None:
+    for nanos, expected in [
+        (0, time(0, 0, 0)),
+        (73_304_375_612_000, time(20, 21, 44, 375612)),
+    ]:
+        assert nanos_to_time(nanos) == expected
+
+
+def test_nanos_to_days() -> None:
+    for nanos, expected in [(0, 0), (86_400_000_000_000, 1), (-1, -1)]:
+        assert nanos_to_days(nanos) == expected
+
+
+def test_nanos_to_months() -> None:
+    for nanos, expected in [(0, 0), (-1, -1), (1_740_342_104_375_612_000, 661)]:
+        assert nanos_to_months(nanos) == expected
+
+
+def test_nanos_to_years() -> None:
+    for nanos, expected in [(0, 0), (-1, -1), (1_740_342_104_375_612_000, 55)]:
+        assert nanos_to_years(nanos) == expected
 
 
 @pytest.mark.parametrize(
