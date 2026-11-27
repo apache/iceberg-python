@@ -76,7 +76,8 @@ from pyiceberg.exceptions import (
     TableAlreadyExistsError,
     ViewAlreadyExistsError,
 )
-from pyiceberg.io import ARROW_FILE_IO, FSSPEC_FILE_IO, PY_IO_IMPL, load_file_io
+from pyiceberg.io import ARROW_FILE_IO, FSSPEC_FILE_IO, PY_IO_IMPL, S3_REQUEST_SIGNER, load_file_io
+from pyiceberg.io.signer import S3V4RestSigner
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
@@ -3792,6 +3793,15 @@ def test_resolve_storage_credentials_no_match() -> None:
 def test_resolve_storage_credentials_empty() -> None:
     assert RestCatalog._resolve_storage_credentials([], "s3://warehouse/foo") == {}
     assert RestCatalog._resolve_storage_credentials([], None) == {}
+
+
+def test_load_file_io_passes_signer_instance(rest_mock: Mocker) -> None:
+    catalog = RestCatalog("rest", uri=TEST_URI, token=TEST_TOKEN, **{"s3.signer": "S3V4RestSigner"})
+
+    io = catalog._load_file_io(location="s3://warehouse/table")
+
+    assert isinstance(io.properties[S3_REQUEST_SIGNER], S3V4RestSigner)
+    assert io.properties[S3_REQUEST_SIGNER].properties["uri"] == TEST_URI
 
 
 def test_load_table_with_storage_credentials(rest_mock: Mocker, example_table_metadata_with_snapshot_v1: dict[str, Any]) -> None:
