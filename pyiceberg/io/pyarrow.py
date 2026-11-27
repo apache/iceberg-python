@@ -2028,6 +2028,23 @@ def _read_all_delete_files(io: FileIO, tasks: Iterable[FileScanTask]) -> dict[st
     return deletes_per_file
 
 
+def _read_deletes_for_task(io: FileIO, task: FileScanTask) -> dict[str, list[ChunkedArray]]:
+    """Read the delete files belonging to a single file scan task."""
+    deletes_per_file: dict[str, list[ChunkedArray]] = {}
+    unique_deletes: dict[_DeleteFileKey, DataFile] = {}
+    for delete_file in task.delete_files:
+        key = _DeleteFileKey(delete_file.file_path, delete_file.content_offset, delete_file.content_size_in_bytes)
+        unique_deletes.setdefault(key, delete_file)
+
+    for delete_file in unique_deletes.values():
+        for file, arr in _read_deletes(io, delete_file).items():
+            if file in deletes_per_file:
+                deletes_per_file[file].append(arr)
+            else:
+                deletes_per_file[file] = [arr]
+    return deletes_per_file
+
+
 class ArrowScan:
     _table_metadata: TableMetadata
     _io: FileIO
@@ -2164,6 +2181,36 @@ class ArrowScan:
             if limit_reached:
                 # This break will also cancel all running tasks in the executor
                 break
+
+    def to_record_batches_lazy(self, tasks: Iterable[FileScanTask]) -> Iterator[pa.RecordBatch]:
+        """Stream record batches one file scan task at a time, in the calling thread.
+
+        Unlike ``to_record_batches``, this does not fan work out to the executor
+        and does not read ahead of the consumer. Each task's delete files are
+        read only when the consumer reaches that task, and each task's batches
+        are yielded directly instead of being collected into a list first.
+
+        Args:
+            tasks: FileScanTasks representing the data files and delete files to read from.
+
+        Returns:
+            An Iterator of PyArrow RecordBatches, in task order.
+            Total number of rows will be capped if specified.
+
+        Raises:
+            ResolveError: When a required field cannot be found in the file
+            ValueError: When a file field type cannot be projected to the schema type
+        """
+        total_row_count = 0
+        for task in tasks:
+            deletes_per_file = _read_deletes_for_task(self._io, task)
+            for batch in self._record_batches_from_scan_tasks_and_deletes([task], deletes_per_file):
+                current_batch_size = len(batch)
+                if self._limit is not None and total_row_count + current_batch_size >= self._limit:
+                    yield batch.slice(0, self._limit - total_row_count)
+                    return
+                yield batch
+                total_row_count += current_batch_size
 
     def _record_batches_from_scan_tasks_and_deletes(
         self, tasks: Iterable[FileScanTask], deletes_per_file: dict[str, list[ChunkedArray]]
