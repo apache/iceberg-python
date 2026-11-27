@@ -696,6 +696,171 @@ def test_nested_schema_has_partial_missing_ids() -> None:
     assert not has_ids
 
 
+def _id(field_id: int) -> dict[str, str]:
+    return {"PARQUET:field_id": str(field_id)}
+
+
+def test_pyarrow_to_schema_prunes_fields_without_ids() -> None:
+    # A Databricks UniForm file may attach IDs only to data columns, leaving
+    # row-tracking columns unannotated. Without pruning, the file falls back to
+    # name mapping, which fails when physical names differ from the mapped names.
+    file_schema = pa.schema(
+        [
+            pa.field("col-2b93b371", pa.string(), metadata=_id(1)),
+            pa.field("_row-id-col-922d6355", pa.int64()),
+        ]
+    )
+    expected = Schema(NestedField(1, "col-2b93b371", StringType(), required=False))
+    name_mappings = [None, NameMapping([MappedField(field_id=1, names=["store_id"])])]
+    for name_mapping in name_mappings:
+        assert pyarrow_to_schema(file_schema, name_mapping, prune_fields_without_ids=True) == expected
+
+
+def test_pyarrow_to_schema_partial_ids_without_pruning() -> None:
+    # Without pruning (e.g. on write), partial IDs still fall back to the name mapping
+    file_schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), metadata=_id(1)),
+            pa.field("bar", pa.int64()),
+        ]
+    )
+    with pytest.raises(ValueError, match="Parquet file does not have field-ids"):
+        pyarrow_to_schema(file_schema)
+
+
+def test_pyarrow_to_schema_prunes_before_type_conversion() -> None:
+    # time32[ms] is not supported, but the column has no ID so it is never read
+    file_schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), metadata=_id(1)),
+            pa.field("bar", pa.time32("ms")),
+        ]
+    )
+    expected = Schema(NestedField(1, "foo", StringType(), required=False))
+    assert pyarrow_to_schema(file_schema, prune_fields_without_ids=True) == expected
+
+
+def test_pyarrow_to_schema_reads_by_id_when_all_fields_pruned() -> None:
+    # The only ID is on a list whose element has none, so every field is pruned. The file
+    # still has field IDs, so it is read by ID (like with one more column with an ID) instead
+    # of falling back to the name mapping.
+    file_schema = pa.schema(
+        [
+            pa.field("foo", pa.list_(pa.field("element", pa.int32())), metadata=_id(1)),
+            pa.field("bar", pa.string()),
+        ]
+    )
+    name_mapping = NameMapping(
+        [
+            MappedField(field_id=1, names=["foo"], fields=[MappedField(field_id=3, names=["element"])]),
+            MappedField(field_id=2, names=["bar"]),
+        ]
+    )
+    assert pyarrow_to_schema(file_schema, name_mapping, prune_fields_without_ids=True) == Schema()
+
+
+def test_pyarrow_to_schema_prunes_nested_fields_without_ids() -> None:
+    schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), nullable=False, metadata={"PARQUET:field_id": "1", "doc": "foo doc"}),
+            pa.field(
+                "quux",
+                pa.map_(
+                    pa.field("key", pa.string(), nullable=False, metadata=_id(7)),
+                    pa.field(
+                        "value",
+                        pa.map_(pa.field("key", pa.string(), nullable=False), pa.field("value", pa.int32())),
+                        nullable=False,
+                    ),
+                ),
+                nullable=False,
+                metadata={"PARQUET:field_id": "6", "doc": "quux doc"},
+            ),
+            pa.field(
+                "person",
+                pa.struct(
+                    [
+                        pa.field("name", pa.string(), metadata=_id(16)),
+                        pa.field("age", pa.int32()),
+                    ]
+                ),
+                metadata=_id(15),
+            ),
+        ]
+    )
+    actual = str(pyarrow_to_schema(schema, prune_fields_without_ids=True))
+    expected = """table {
+  1: foo: required string (foo doc)
+  15: person: optional struct<16: name: optional string>
+}"""
+    assert actual == expected
+
+
+def test_pyarrow_to_schema_prunes_list_without_element_id() -> None:
+    schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), metadata=_id(1)),
+            pa.field("no_element_id", pa.list_(pa.field("element", pa.int32())), metadata=_id(2)),
+            pa.field("with_element_id", pa.list_(pa.field("element", pa.int32(), metadata=_id(4))), metadata=_id(3)),
+        ]
+    )
+    expected = Schema(
+        NestedField(1, "foo", StringType(), required=False),
+        NestedField(3, "with_element_id", ListType(4, IntegerType(), element_required=False), required=False),
+    )
+    assert pyarrow_to_schema(schema, prune_fields_without_ids=True) == expected
+
+
+@pytest.mark.parametrize(
+    "key_metadata, value_metadata",
+    [
+        (None, _id(4)),  # value only
+        (_id(3), None),  # key only, the value can't be kept on its own so the whole map goes
+    ],
+)
+def test_pyarrow_to_schema_prunes_map_without_key_or_value_id(
+    key_metadata: dict[str, str] | None, value_metadata: dict[str, str] | None
+) -> None:
+    schema = pa.schema(
+        [
+            pa.field("foo", pa.string(), metadata=_id(1)),
+            pa.field(
+                "partial_map",
+                pa.map_(
+                    pa.field("key", pa.string(), nullable=False, metadata=key_metadata),
+                    pa.field("value", pa.int32(), metadata=value_metadata),
+                ),
+                metadata=_id(2),
+            ),
+            pa.field(
+                "full_map",
+                pa.map_(
+                    pa.field("key", pa.string(), nullable=False, metadata=_id(6)),
+                    pa.field("value", pa.int32(), metadata=_id(7)),
+                ),
+                metadata=_id(5),
+            ),
+        ]
+    )
+    expected = Schema(
+        NestedField(1, "foo", StringType(), required=False),
+        NestedField(
+            5,
+            "full_map",
+            MapType(key_id=6, key_type=StringType(), value_id=7, value_type=IntegerType(), value_required=False),
+            required=False,
+        ),
+    )
+    assert pyarrow_to_schema(schema, prune_fields_without_ids=True) == expected
+
+
+def test_pyarrow_to_schema_without_any_ids_uses_name_mapping_when_pruning() -> None:
+    schema = pa.schema([pa.field("foo", pa.string())])
+    name_mapping = NameMapping([MappedField(field_id=1, names=["foo"])])
+    expected = Schema(NestedField(1, "foo", StringType(), required=False))
+    assert pyarrow_to_schema(schema, name_mapping, prune_fields_without_ids=True) == expected
+
+
 def test_pyarrow_schema_to_schema_missing_ids_and_name_mapping(pyarrow_schema_simple_without_ids: pa.Schema) -> None:
     schema = pyarrow_schema_simple_without_ids
     with pytest.raises(ValueError) as exc_info:
