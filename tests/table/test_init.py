@@ -2724,3 +2724,101 @@ def test_table_to_polars_forwards_kwargs(table_v2: Table, monkeypatch: pytest.Mo
         table_v2,
         {"storage_options": storage_options, "snapshot_id": 12345, "reader_override": "native"},
     )
+
+
+@pytest.mark.parametrize("upgrade_to_v2", [False, True])
+def test_dynamic_partition_overwrite_with_void_partition_field(catalog: Catalog, upgrade_to_v2: bool) -> None:
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "region", StringType(), required=False),
+        NestedField(3, "value", LongType(), required=False),
+    )
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="region"),
+    )
+    table = catalog.create_table(
+        f"default.dynamic_overwrite_void_{upgrade_to_v2}",
+        schema=schema,
+        partition_spec=spec,
+        properties={"format-version": "1"},
+    )
+    table.append(
+        pa.table(
+            {"category": ["A", "A", "B"], "region": ["us", "eu", "eu"], "value": [1, 2, 3]},
+            schema=schema.as_arrow(),
+        )
+    )
+
+    with table.update_spec() as update:
+        update.remove_field("region")
+    if upgrade_to_v2:
+        with table.transaction() as tx:
+            tx.upgrade_table_version(2)
+
+    table.dynamic_partition_overwrite(pa.table({"category": ["A"], "region": ["us"], "value": [100]}, schema=schema.as_arrow()))
+
+    rows = sorted(zip(*table.scan().to_arrow().to_pydict().values(), strict=True))
+    assert rows == [("A", "us", 100), ("B", "eu", 3)]
+
+
+def test_dynamic_partition_overwrite_with_leading_void_partition_field(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "region", StringType(), required=False),
+        NestedField(3, "value", LongType(), required=False),
+    )
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"),
+        PartitionField(source_id=2, field_id=1001, transform=IdentityTransform(), name="region"),
+    )
+    table = catalog.create_table(
+        "default.dynamic_overwrite_leading_void",
+        schema=schema,
+        partition_spec=spec,
+        properties={"format-version": "1"},
+    )
+    table.append(
+        pa.table(
+            {"category": ["A", "B"], "region": ["us", "eu"], "value": [1, 2]},
+            schema=schema.as_arrow(),
+        )
+    )
+
+    with table.update_spec() as update:
+        update.remove_field("category")
+
+    table.dynamic_partition_overwrite(pa.table({"category": ["C"], "region": ["eu"], "value": [200]}, schema=schema.as_arrow()))
+
+    rows = sorted(zip(*table.scan().to_arrow().to_pydict().values(), strict=True))
+    assert rows == [("A", "us", 1), ("C", "eu", 200)]
+
+
+def test_dynamic_partition_overwrite_all_void_partition_fields_raises(catalog: Catalog) -> None:
+    import pyarrow as pa
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "value", LongType(), required=False),
+    )
+    spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"),
+    )
+    table = catalog.create_table(
+        "default.dynamic_overwrite_all_void",
+        schema=schema,
+        partition_spec=spec,
+        properties={"format-version": "1"},
+    )
+    with table.update_spec() as update:
+        update.remove_field("category")
+
+    with pytest.raises(ValueError, match="Cannot apply dynamic overwrite on an unpartitioned table."):
+        table.dynamic_partition_overwrite(pa.table({"category": ["A"], "value": [1]}, schema=schema.as_arrow()))
