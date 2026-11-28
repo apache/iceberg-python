@@ -188,6 +188,139 @@ def test_create_table_transaction(catalog: Catalog, format_version: int) -> None
     assert len(tbl.scan().to_arrow()) == 6
 
 
+def test_create_or_replace_table(catalog: Catalog, random_table_identifier: Identifier) -> None:
+    catalog.create_namespace(Catalog.namespace_from(random_table_identifier))
+    df = pa.table({"foo": ["a", "b"], "bar": pa.array([1, 2], pa.int32())})
+
+    # Creates the table when it does not exist
+    table = catalog.create_or_replace_table_transaction(
+        random_table_identifier, df.schema, properties={"keep": "me"}
+    ).commit_transaction()
+    table.append(df)
+    old_snapshot_id = table.metadata.current_snapshot_id
+
+    new_df = pa.table({"bar": pa.array([3], pa.int32()), "baz": [True]})
+    with catalog.create_or_replace_table_transaction(random_table_identifier, new_df.schema, properties={"new": "prop"}) as txn:
+        txn.append(new_df)
+
+    replaced = catalog.load_table(random_table_identifier)
+    assert replaced.metadata.table_uuid == table.metadata.table_uuid
+    # bar keeps its field ID, baz gets a new one above last-column-id
+    assert [(f.name, f.field_id) for f in replaced.schema().fields] == [("bar", 2), ("baz", 3)]
+    assert replaced.properties["keep"] == "me" and replaced.properties["new"] == "prop"
+    # History is kept, but the new snapshot starts a fresh lineage with only the new data
+    assert old_snapshot_id in [s.snapshot_id for s in replaced.snapshots()]
+    assert replaced.current_snapshot().parent_snapshot_id is None  # type: ignore
+    assert replaced.scan().to_arrow() == new_df
+
+
+def test_replace_table_reuses_partition_spec_and_schema(catalog: Catalog, test_table_identifier: Identifier) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    schema = Schema(NestedField(1, "foo", StringType()), NestedField(2, "bar", IntegerType()))
+    spec = PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="bar"))
+    catalog.create_table(test_table_identifier, schema, partition_spec=spec)
+
+    unpartitioned = catalog.replace_table_transaction(test_table_identifier, schema).commit_transaction()
+    assert unpartitioned.spec().is_unpartitioned()
+    assert unpartitioned.current_snapshot() is None
+
+    replaced = catalog.replace_table_transaction(test_table_identifier, schema, partition_spec=spec).commit_transaction()
+    assert replaced.metadata.default_spec_id == 0
+    assert replaced.spec().fields[0].field_id == 1000
+    assert len(replaced.metadata.schemas) == 1
+
+
+def test_replace_table_transaction_raises_when_table_does_not_exist(
+    catalog: Catalog, test_table_identifier: Identifier, table_schema_simple: Schema
+) -> None:
+    with pytest.raises(NoSuchTableError):
+        catalog.replace_table_transaction(test_table_identifier, table_schema_simple)
+
+
+def test_replace_table_fails_when_table_is_recreated(
+    catalog: Catalog, test_table_identifier: Identifier, table_schema_simple: Schema
+) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    catalog.create_table(test_table_identifier, table_schema_simple)
+    txn = catalog.replace_table_transaction(test_table_identifier, table_schema_simple)
+
+    catalog.drop_table(test_table_identifier)
+    catalog.create_table(test_table_identifier, table_schema_simple)
+
+    with pytest.raises(CommitFailedException):
+        txn.commit_transaction()
+
+
+def test_replace_table_fails_on_concurrent_schema_or_sort_order_change(
+    catalog: Catalog, test_table_identifier: Identifier, table_schema_simple: Schema
+) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    table = catalog.create_table(test_table_identifier, table_schema_simple)
+    new_schema = Schema(NestedField(1, "foo", StringType()), NestedField(2, "qux", IntegerType()))
+
+    # A concurrent change that adds no column IDs would otherwise reuse the ID of the schema added by the replace
+    txn = catalog.replace_table_transaction(test_table_identifier, new_schema)
+    table.update_schema().rename_column("baz", "renamed").commit()
+    with pytest.raises(CommitFailedException):
+        txn.commit_transaction()
+
+    txn = catalog.replace_table_transaction(test_table_identifier, table.schema(), sort_order=SortOrder(SortField(source_id=1)))
+    table.update_sort_order().desc("foo", IdentityTransform()).commit()
+    with pytest.raises(CommitFailedException):
+        txn.commit_transaction()
+
+    loaded = catalog.load_table(test_table_identifier)
+    assert loaded.schema() == table.schema()
+    assert len(loaded.metadata.schemas) == 2
+
+
+def test_replace_table_cleans_up_on_failed_commit(catalog: Catalog, random_table_identifier: Identifier) -> None:
+    catalog.create_namespace(Catalog.namespace_from(random_table_identifier))
+    df = pa.table({"foo": ["a", "b"]})
+    table = catalog.create_table(random_table_identifier, df.schema)
+
+    txn = catalog.replace_table_transaction(random_table_identifier, df.schema)
+    txn.append(df)
+    manifest_list = txn.table_metadata.snapshot_by_name("main").manifest_list  # type: ignore
+
+    # A concurrent column addition fails the last-assigned field ID requirement
+    table.update_schema().add_column("bar", StringType()).commit()
+    with pytest.raises(CommitFailedException):
+        txn.commit_transaction()
+    assert not table.io.new_input(manifest_list).exists()
+
+    with pytest.raises(RuntimeError, match="cannot be reused"):
+        txn.commit_transaction()
+
+
+def test_replace_table_writes_to_new_location(catalog: Catalog, random_table_identifier: Identifier) -> None:
+    catalog.create_namespace(Catalog.namespace_from(random_table_identifier))
+    df = pa.table({"foo": ["a", "b"]})
+    table = catalog.create_table(random_table_identifier, df.schema)
+    new_location = f"{table.location()}_replaced"
+
+    with catalog.replace_table_transaction(random_table_identifier, df.schema, location=new_location) as txn:
+        txn.append(df)
+
+    replaced = catalog.load_table(random_table_identifier)
+    snapshot = replaced.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.manifest_list.startswith(new_location)
+    assert all(m.manifest_path.startswith(new_location) for m in snapshot.manifests(replaced.io))
+    assert all(task.file.file_path.startswith(new_location) for task in replaced.scan().plan_files())
+
+
+def test_replace_table_rejects_invalid_format_version(
+    catalog: Catalog, test_table_identifier: Identifier, table_schema_simple: Schema
+) -> None:
+    catalog.create_namespace(Catalog.namespace_from(test_table_identifier))
+    catalog.create_table(test_table_identifier, table_schema_simple)
+
+    for properties in [{TableProperties.FORMAT_VERSION: "99"}, {TableProperties.ENCRYPTION_KEY_ID: "key"}]:
+        with pytest.raises(ValueError):
+            catalog.replace_table_transaction(test_table_identifier, table_schema_simple, properties=properties)
+
+
 def test_create_table_default_sort_order(
     catalog: Catalog, table_schema_nested: Schema, test_table_identifier: Identifier
 ) -> None:

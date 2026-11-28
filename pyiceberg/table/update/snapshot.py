@@ -57,6 +57,7 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table.locations import load_location_provider
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef, SnapshotRefType
 from pyiceberg.table.snapshots import (
     Operation,
@@ -344,7 +345,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
             attempt=0,
             commit_uuid=self.commit_uuid,
         )
-        location_provider = self._transaction._table.location_provider()
+        location_provider = load_location_provider(
+            self._transaction.table_metadata.location, self._transaction.table_metadata.properties
+        )
         manifest_list_file_path = location_provider.new_metadata_location(file_name)
         self._written_manifest_lists.append(manifest_list_file_path)
 
@@ -422,7 +425,9 @@ class _SnapshotProducer(UpdateTableMetadata[U], Generic[U]):
         )
 
     def new_manifest_output(self) -> OutputFile:
-        location_provider = self._transaction._table.location_provider()
+        location_provider = load_location_provider(
+            self._transaction.table_metadata.location, self._transaction.table_metadata.properties
+        )
         file_name = _new_manifest_file_name(num=next(self._manifest_num_counter), commit_uuid=self.commit_uuid)
         file_path = location_provider.new_metadata_location(file_name)
         self._written_manifests.append(file_path)

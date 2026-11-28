@@ -1342,6 +1342,13 @@ def assign_fresh_schema_ids(schema_or_type: Schema | IcebergType, next_id: Calla
     return pre_order_visit(schema_or_type, _SetFreshIDs(next_id_func=next_id))
 
 
+def assign_fresh_schema_ids_for_replace(schema: Schema, base_schema: Schema, last_column_id: int) -> Schema:
+    """Assign fresh IDs, reusing the base schema's ID for fields with the same name, like Java's TypeUtil.assignFreshIds."""
+    # Make the IDs unique first: schemas converted from PyArrow have -1 for every field
+    schema = assign_fresh_schema_ids(schema)
+    return pre_order_visit(schema, _SetFreshIDsReusingBase(schema, base_schema, last_column_id))
+
+
 class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
     """Traverses the schema and assigns monotonically increasing ids."""
 
@@ -1402,6 +1409,22 @@ class _SetFreshIDs(PreOrderSchemaVisitor[IcebergType]):
 
     def primitive(self, primitive: PrimitiveType) -> PrimitiveType:
         return primitive
+
+
+class _SetFreshIDsReusingBase(_SetFreshIDs):
+    """Reuses the base schema's ID for fields with the same name and assigns new IDs above last_column_id otherwise."""
+
+    def __init__(self, schema: Schema, base_schema: Schema, last_column_id: int) -> None:
+        counter = itertools.count(last_column_id + 1)
+        super().__init__(lambda: next(counter))
+        self._names = index_name_by_id(schema)
+        self._base_ids = index_by_name(base_schema)
+
+    def _get_and_increment(self, current_id: int) -> int:
+        name = self._names[current_id]
+        new_id = self._base_ids[name] if name in self._base_ids else self.next_id_func()
+        self.old_id_to_new_id[current_id] = new_id
+        return new_id
 
 
 # Implementation copied from Apache Iceberg repo.
