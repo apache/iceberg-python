@@ -60,7 +60,11 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ inputs.VERSION }}
-        run: uv version "$VERSION"
+        # --frozen stamps the version in pyproject.toml without re-locking or
+        # syncing the environment. A sync here resolves the dev group against
+        # the default interpreter, which is now 3.15, and pyarrow has no 3.15
+        # wheels yet, so it would fall back to building Arrow from source.
+        run: uv version --frozen "$VERSION"
 
       # Publish the source distribution with the version that's in
       # the repository, otherwise the tests will fail
