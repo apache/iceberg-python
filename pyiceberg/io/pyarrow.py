@@ -2105,6 +2105,10 @@ class ArrowScan:
             ValueError: When a field type in the file cannot be projected to the schema type
         """
         batches = self.to_record_batches(tasks)
+        if not self._projected_schema.fields:
+            # pa.concat_tables drops the rows of tables without columns
+            return pa.Table.from_batches(batches, schema=arrow_schema)
+
         try:
             first_batch = next(batches)
         except StopIteration:
@@ -2207,6 +2211,10 @@ def _to_requested_schema(
     allow_timestamp_tz_mismatch: bool = False,
     format_model: FileFormatModel | None = None,
 ) -> pa.RecordBatch:
+    if not requested_schema.fields:
+        # A struct array without fields has length 0, so keep the rows of the batch instead
+        return batch.select([])
+
     # We could reuse some of these visitors
     struct_array = visit_with_partner(
         requested_schema,
