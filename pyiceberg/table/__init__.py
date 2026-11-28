@@ -104,7 +104,7 @@ from pyiceberg.table.update.snapshot import ManageSnapshots, UpdateSnapshot, _Fa
 from pyiceberg.table.update.sorting import UpdateSortOrder
 from pyiceberg.table.update.spec import UpdateSpec
 from pyiceberg.table.update.statistics import UpdateStatistics
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import IdentityTransform, VoidTransform
 from pyiceberg.typedef import (
     EMPTY_DICT,
     ArrowStreamExportable,
@@ -657,10 +657,15 @@ class Transaction:
         if not isinstance(df, pa.Table):
             raise ValueError(f"Expected PyArrow table, got: {df}")
 
-        if self.table_metadata.spec().is_unpartitioned():
+        non_void_fields = [
+            (pos, field)
+            for pos, field in enumerate(self.table_metadata.spec().fields)
+            if not isinstance(field.transform, VoidTransform)
+        ]
+        if not non_void_fields:
             raise ValueError("Cannot apply dynamic overwrite on an unpartitioned table.")
 
-        for field in self.table_metadata.spec().fields:
+        for _, field in non_void_fields:
             if not isinstance(field.transform, IdentityTransform):
                 raise ValueError(
                     f"For now dynamic overwrite does not support a table with non-identity-transform field "
@@ -686,10 +691,8 @@ class Transaction:
             )
         )
 
-        partitions_to_overwrite = {data_file.partition for data_file in data_files}
-        partitions_fields = [
-            self.table_metadata.schema().find_field(field.source_id).name for field in self.table_metadata.spec().fields
-        ]
+        partitions_to_overwrite = {Record(*(data_file.partition[pos] for pos, _ in non_void_fields)) for data_file in data_files}
+        partitions_fields = [self.table_metadata.schema().find_field(field.source_id).name for _, field in non_void_fields]
         delete_filter = self._build_partition_predicate(
             partition_records=partitions_to_overwrite, partition_fields=partitions_fields
         )
