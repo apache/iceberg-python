@@ -17,7 +17,11 @@
 # pylint:disable=redefined-outer-name
 
 
+import gc
+import logging
+import warnings
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import PosixPath
 
 import pytest
@@ -101,3 +105,34 @@ class TestCatalogClose:
 
         # InMemoryCatalog inherits close from SqlCatalog, so engine should be disposed
         assert hasattr(cat, "engine")
+
+    def test_in_memory_catalog_cross_thread_use_and_close(self, tmp_path: PosixPath, caplog: pytest.LogCaptureFixture) -> None:
+        """An InMemoryCatalog created in a worker thread can be used and closed cleanly on the main thread."""
+        gc.collect()
+
+        def create_in_worker() -> InMemoryCatalog:
+            cat = InMemoryCatalog("test", warehouse=tmp_path.absolute().as_posix())
+            cat.create_namespace("ns")
+            return cat
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            catalog = executor.submit(create_in_worker).result()
+            assert executor.submit(catalog.list_namespaces).result() == [("ns",)]
+
+        assert catalog.list_namespaces() == [("ns",)]
+
+        with warnings.catch_warnings(record=True) as caught_warnings:
+            warnings.simplefilter("always", ResourceWarning)
+            with caplog.at_level(logging.ERROR, logger="sqlalchemy.pool"):
+                catalog.close()
+
+            pool_errors = [
+                (record.exc_info[0], str(record.exc_info[1]))
+                for record in caplog.records
+                if record.exc_info and record.exc_info[0] is not None and record.exc_info[1] is not None
+            ]
+            del catalog
+            gc.collect()
+
+        assert pool_errors == []
+        assert [str(w.message) for w in caught_warnings] == []
