@@ -34,5 +34,12 @@ class InMemoryCatalog(SqlCatalog):
     ) -> None:
         self._warehouse_location = warehouse
         if engine is None and URI not in kwargs:
-            engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+            echo_str = str(kwargs.get("echo", DEFAULT_ECHO_VALUE)).lower()
+            engine = create_engine(
+                "sqlite://",
+                echo=strtobool(echo_str) if echo_str != "debug" else "debug",
+                pool_pre_ping=strtobool(kwargs.get("pool_pre_ping", DEFAULT_POOL_PRE_PING_VALUE)),
+                poolclass=StaticPool,
+                connect_args={"check_same_thread": False},
+            )
         super().__init__(name=name, engine=engine, warehouse=warehouse, **kwargs)
