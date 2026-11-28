@@ -194,7 +194,7 @@ with catalog.create_or_replace_table_transaction(identifier="docs_example.bids",
     txn.append(df)
 ```
 
-A replaced table keeps its UUID and snapshot history, field IDs are reused for columns with the same name, and the given properties are merged into the existing ones. Use `create_or_replace_table` to replace only the definition, or `replace_table_transaction` to fail with `NoSuchTableError` when the table does not exist.
+A replaced table keeps its UUID and snapshot history, field IDs are reused for columns with the same name, and the given properties are merged into the existing ones. Use `replace_table_transaction` to fail with `NoSuchTableError` when the table does not exist.
 
 ## Register a table
 

@@ -555,32 +555,6 @@ class Catalog(ABC):
         except NoSuchTableError:
             return self.create_table_transaction(identifier, schema, location, partition_spec, sort_order, properties)
 
-    def create_or_replace_table(
-        self,
-        identifier: str | Identifier,
-        schema: Schema | pa.Schema,
-        location: str | None = None,
-        partition_spec: PartitionSpec = UNPARTITIONED_PARTITION_SPEC,
-        sort_order: SortOrder = UNSORTED_SORT_ORDER,
-        properties: Properties = EMPTY_DICT,
-    ) -> Table:
-        """Create a table, or atomically replace it if it already exists.
-
-        Args:
-            identifier (str | Identifier): Table identifier.
-            schema (Schema): Table's schema.
-            location (str | None): Location for the table. Optional Argument.
-            partition_spec (PartitionSpec): PartitionSpec for the table.
-            sort_order (SortOrder): SortOrder for the table.
-            properties (Properties): Table properties that can be a string based dictionary.
-
-        Returns:
-            Table: the created or replaced table instance.
-        """
-        return self.create_or_replace_table_transaction(
-            identifier, schema, location, partition_spec, sort_order, properties
-        ).commit_transaction()
-
     @abstractmethod
     def load_table(self, identifier: str | Identifier) -> Table:
         """Load the table's metadata and returns the table instance.

@@ -70,7 +70,12 @@ from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.labels import Labels
 from pyiceberg.table.locations import LocationProvider, load_location_provider
 from pyiceberg.table.maintenance import MaintenanceTable
-from pyiceberg.table.metadata import INITIAL_SEQUENCE_NUMBER, TableMetadata
+from pyiceberg.table.metadata import (
+    INITIAL_SEQUENCE_NUMBER,
+    SUPPORTED_TABLE_FORMAT_VERSION,
+    TableMetadata,
+    _check_properties_format_version_compatibility,
+)
 from pyiceberg.table.metadata_columns import project_schema, split_selected_fields
 from pyiceberg.table.name_mapping import NameMapping
 from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRef
@@ -1396,10 +1401,13 @@ class ReplaceTableTransaction(Transaction):
         format_version = int(properties.pop(TableProperties.FORMAT_VERSION, base.format_version))
         if format_version < base.format_version:
             raise ValueError(f"Cannot downgrade v{base.format_version} table to v{format_version}")
+        if format_version > base.format_version and format_version > SUPPORTED_TABLE_FORMAT_VERSION:
+            raise ValueError(f"Unsupported table format version: {format_version}")
         if format_version == 1 and not (base.spec().is_unpartitioned() and partition_spec.is_unpartitioned()):
             # TODO: support Java's carry-forward of the current v1 partition fields as void transforms
             raise ValueError("Replacing a partitioned v1 table is not supported, set format-version to 2 or higher")
         schema.check_format_version_compatibility(format_version)
+        _check_properties_format_version_compatibility(properties, format_version)
 
         fresh_schema = assign_fresh_schema_ids_for_replace(schema, base.schema(), base.last_column_id)
         fresh_spec = assign_fresh_partition_spec_ids(partition_spec, schema, fresh_schema)
@@ -1474,6 +1482,8 @@ class ReplaceTableTransaction(Transaction):
         Returns:
             The table with the updates applied.
         """
+        if self._failed:
+            raise RuntimeError("This transaction failed to commit and cannot be reused; create a new transaction.")
         if len(self._updates) > 0:
             base = self._table.metadata
             requirements: tuple[TableRequirement, ...] = (
@@ -1488,7 +1498,20 @@ class ReplaceTableTransaction(Transaction):
                 requirements += (AssertDefaultSpecId(default_spec_id=base.default_spec_id),)
             if AddSortOrderUpdate in update_types:
                 requirements += (AssertDefaultSortOrderId(default_sort_order_id=base.default_sort_order_id),)
-            self._table._do_commit(updates=self._updates, requirements=requirements)  # pylint: disable=W0212
+            try:
+                try:
+                    self._table._do_commit(updates=self._updates, requirements=requirements)  # pylint: disable=W0212
+                except CommitFailedException:
+                    # Same as Transaction.commit_transaction: only delete the written files when the commit did not land
+                    if not (self._snapshot_producers and self._attempt_landed()):
+                        for producer in self._snapshot_producers:
+                            producer._clean_all_uncommitted()
+                        raise
+            except Exception:
+                self._failed = True
+                raise
+
+            self._snapshot_producers = []
 
         self._updates = ()
         self._requirements = ()
