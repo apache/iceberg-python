@@ -3250,11 +3250,14 @@ def _check_pyarrow_schema_compatible(
     provided_schema: pa.Schema,
     downcast_ns_timestamp_to_us: bool = False,
     format_version: TableVersion = TableProperties.DEFAULT_FORMAT_VERSION,
-) -> None:
+) -> Schema:
     """
     Check if the `requested_schema` is compatible with `provided_schema`.
 
     Two schemas are considered compatible when they are equal in terms of the Iceberg Schema type.
+
+    Returns:
+        The provided schema with Iceberg field IDs.
 
     Raises:
         ValueError: If the schemas are not compatible.
@@ -3262,22 +3265,23 @@ def _check_pyarrow_schema_compatible(
     name_mapping = requested_schema.name_mapping
 
     try:
-        provided_schema = pyarrow_to_schema(
+        provided_iceberg_schema = pyarrow_to_schema(
             provided_schema,
             name_mapping=name_mapping,
             downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             format_version=format_version,
         )
     except ValueError as e:
-        provided_schema = _pyarrow_to_schema_without_ids(
+        provided_iceberg_schema = _pyarrow_to_schema_without_ids(
             provided_schema, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us, format_version=format_version
         )
-        additional_names = set(provided_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())
+        additional_names = set(provided_iceberg_schema._name_to_id.keys()) - set(requested_schema._name_to_id.keys())
         raise ValueError(
             f"PyArrow table contains more columns: {', '.join(sorted(additional_names))}. "
             "Update the schema first (hint, use union_by_name)."
         ) from e
-    _check_schema_compatible(requested_schema, provided_schema)
+    _check_schema_compatible(requested_schema, provided_iceberg_schema)
+    return provided_iceberg_schema
 
 
 def parquet_files_to_data_files(io: FileIO, table_metadata: TableMetadata, file_paths: Iterator[str]) -> Iterator[DataFile]:

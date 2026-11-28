@@ -57,7 +57,7 @@ from pyiceberg.manifest import (
     ManifestFile,
 )
 from pyiceberg.partitioning import PARTITION_FIELD_ID_START, UNPARTITIONED_PARTITION_SPEC, PartitionKey, PartitionSpec
-from pyiceberg.schema import Schema
+from pyiceberg.schema import Schema, prune_columns
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.inspect import InspectTable
 from pyiceberg.table.labels import Labels
@@ -982,11 +982,12 @@ class Transaction:
         if upsert_util.has_duplicate_rows(df, join_cols):
             raise ValueError("Duplicate rows found in source dataset based on the key columns. No upsert executed")
 
-        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible
+        from pyiceberg.io.pyarrow import _check_pyarrow_schema_compatible, _to_requested_schema
 
         downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
-        _check_pyarrow_schema_compatible(
-            self.table_metadata.schema(),
+        table_schema = self.table_metadata.schema()
+        source_schema = _check_pyarrow_schema_compatible(
+            table_schema,
             provided_schema=df.schema,
             downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
             format_version=self.table_metadata.format_version,
@@ -1007,7 +1008,41 @@ class Transaction:
         if branch in self.table_metadata.refs:
             matched_iceberg_record_batches_scan = matched_iceberg_record_batches_scan.use_ref(branch)
 
-        matched_iceberg_record_batches = matched_iceberg_record_batches_scan.to_arrow_batch_reader()
+        # Compare only the supplied fields, using current field types even for older snapshots.
+        comparison_schema = table_schema
+        if source_schema.field_ids != table_schema.field_ids:
+            supplied_fields = {
+                field_id
+                for field_id in source_schema.field_ids
+                if (field_type := source_schema.find_type(field_id)).is_primitive or field_type.is_struct
+            }
+            comparison_schema = prune_columns(table_schema, supplied_fields, select_full_types=False)
+
+        # Align renamed fields and omit dropped fields for comparison while keeping the original rows for writes.
+        comparison_source = None
+        if (
+            when_matched_update_all
+            and df.num_rows
+            and any(
+                source_schema.find_column_name(field_id) != comparison_schema.find_column_name(field_id)
+                for field_id in source_schema.field_ids
+            )
+        ):
+            comparison_source = pa.Table.from_batches(
+                _to_requested_schema(
+                    comparison_schema,
+                    source_schema,
+                    batch,
+                    downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+                )
+                for batch in df.to_batches()
+            )
+
+        matched_iceberg_record_batches = _to_arrow_batch_reader_via_file_scan_tasks(
+            matched_iceberg_record_batches_scan,
+            comparison_schema,
+            matched_iceberg_record_batches_scan.plan_files(),
+        )
 
         batches_to_overwrite = []
         overwrite_predicates = []
@@ -1021,7 +1056,7 @@ class Transaction:
                 # values have actually changed. We don't want to do just a blanket overwrite for matched
                 # rows if the actual non-key column data hasn't changed.
                 # this extra step avoids unnecessary IO and writes
-                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols)
+                rows_to_update = upsert_util.get_rows_to_update(df, rows, join_cols, comparison_source=comparison_source)
 
                 if len(rows_to_update) > 0:
                     # build the match predicate filter
@@ -1032,7 +1067,7 @@ class Transaction:
 
             if when_not_matched_insert_all:
                 expr_match = upsert_util.create_match_filter(rows, join_cols)
-                expr_match_bound = bind(self.table_metadata.schema(), expr_match, case_sensitive=case_sensitive)
+                expr_match_bound = bind(table_schema, expr_match, case_sensitive=case_sensitive)
                 expr_match_arrow = expression_to_pyarrow(expr_match_bound)
 
                 # Filter rows per batch.
