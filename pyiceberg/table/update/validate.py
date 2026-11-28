@@ -15,11 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from pyiceberg.exceptions import ValidationException
 from pyiceberg.expressions import BooleanExpression
-from pyiceberg.expressions.visitors import ROWS_CANNOT_MATCH, _InclusiveMetricsEvaluator
+from pyiceberg.expressions.visitors import (
+    ROWS_CANNOT_MATCH,
+    _InclusiveMetricsEvaluator,
+    expression_evaluator,
+    inclusive_projection,
+)
 from pyiceberg.manifest import (
     INITIAL_SEQUENCE_NUMBER,
     DataFile,
@@ -32,7 +37,7 @@ from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.table.delete_file_index import DeleteFileIndex
 from pyiceberg.table.snapshots import Operation, Snapshot, ancestors_between
-from pyiceberg.typedef import Record
+from pyiceberg.typedef import KeyDefaultDict, Record
 
 VALIDATE_DATA_FILES_EXIST_OPERATIONS: set[Operation] = {Operation.OVERWRITE, Operation.REPLACE, Operation.DELETE}
 VALIDATE_ADDED_DATA_FILES_OPERATIONS: set[Operation] = {Operation.APPEND, Operation.OVERWRITE}
@@ -294,8 +299,24 @@ def _added_delete_files(
 
     dfi = DeleteFileIndex()
 
+    # Delete files have no stats on the data columns, so only the partition can rule them out:
+    # project the data filter onto each spec, as Java's DeleteFileIndex does.
+    partition_evaluators: KeyDefaultDict[int, Callable[[Record], bool]] | None = None
+    if data_filter is not None:
+        row_filter = data_filter
+
+        def _partition_evaluator(spec_id: int) -> Callable[[Record], bool]:
+            spec = table.specs()[spec_id]
+            partition_schema = Schema(*spec.partition_type(table.schema()).fields)
+            projected = inclusive_projection(table.schema(), spec, case_sensitive)(row_filter)
+            return expression_evaluator(partition_schema, projected, case_sensitive)
+
+        partition_evaluators = KeyDefaultDict(_partition_evaluator)
+
     for manifest in manifests:
         for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
+            if partition_evaluators is not None and not partition_evaluators[entry.data_file.spec_id](entry.data_file.partition):
+                continue
             if _filter_manifest_entries(
                 entry, snapshot_ids, data_filter, partition_set, ManifestEntryStatus.ADDED, table.schema(), case_sensitive
             ):
