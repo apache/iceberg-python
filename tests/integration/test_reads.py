@@ -1245,6 +1245,7 @@ def test_initial_default(catalog: Catalog, spark: SparkSession) -> None:
 
     # Do the bump version through Spark, since PyIceberg does not support this (yet)
     spark.sql(f"ALTER TABLE {identifier} SET TBLPROPERTIES('format-version'='3')")
+    tbl.refresh()
 
     with tbl.update_schema() as upd:
         upd.add_column("so_true", BooleanType(), required=False, default_value=True)
