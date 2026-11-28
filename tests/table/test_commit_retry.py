@@ -682,6 +682,51 @@ def test_partial_delete_validates_concurrent_delete_outside_the_filter(catalog: 
     assert catalog.load_table(identifier).scan().to_arrow()["k"].to_pylist() == [1, 3]
 
 
+def test_partition_filtered_write_validates_concurrent_position_delete_by_partition(catalog: Catalog) -> None:
+    """A retried write filtered to one partition must only conflict with a concurrent delete file in that partition."""
+    import pyarrow as pa
+
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    catalog.create_namespace("default")
+    schema = Schema(
+        NestedField(1, "category", StringType(), required=False),
+        NestedField(2, "value", LongType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="category"))
+
+    for operation in ("delete", "overwrite"):
+        for delete_partition, expect_conflict in (("a", True), ("b", False)):
+            identifier = f"default.concurrent_position_delete_{operation}_{delete_partition}"
+            table = catalog.create_table(identifier, schema=schema, partition_spec=spec, properties={"format-version": "2"})
+            table.append(pa.table({"category": ["a", "a", "b", "b"], "value": [1, 2, 3, 4]}))
+            target_file = next(task.file for task in table.scan().plan_files() if task.file.partition[0] == delete_partition)
+
+            writing_table = catalog.load_table(identifier)
+
+            # Another engine commits a merge-on-read delete of the first row of the file in `delete_partition`.
+            commit_partition_position_delete(table, Record(delete_partition), target_file.file_path, pos=0)
+
+            if expect_conflict:
+                with pytest.raises(ValidationException, match="Found new conflicting delete files"):
+                    _write_partition_a(writing_table, operation)
+                continue
+
+            _write_partition_a(writing_table, operation)
+            expected = [4] if operation == "delete" else [4, 10]
+            assert sorted(catalog.load_table(identifier).scan().to_arrow()["value"].to_pylist()) == expected, operation
+
+
+def _write_partition_a(table: Table, operation: str) -> None:
+    import pyarrow as pa
+
+    if operation == "delete":
+        table.delete("category == 'a'")
+    else:
+        table.overwrite(pa.table({"category": ["a"], "value": [10]}), overwrite_filter="category == 'a'")
+
+
 def test_concurrent_overwrite_append_retries_successfully(catalog: Catalog) -> None:
     """Append after a concurrent overwrite should succeed via retry."""
     catalog.create_namespace("default")

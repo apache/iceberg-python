@@ -527,6 +527,7 @@ def test_added_delete_files_case_insensitive_filter(
         content=DataFileContent.POSITION_DELETES,
         file_path="s3://dummy/path",
         record_count=1,
+        partition=Record(1),
     )
     mock_delete_file.spec_id = 0
 
